@@ -53,7 +53,7 @@ Two consequences, both load-bearing:
    therefore predicts **both α and F** (or equivalently premultiplied `α·F`). RVM does precisely
    this: its projection head emits 4 channels split into a 3-channel foreground residual plus
    1-channel alpha (`references/robust-video-matting/model/model.py:32,59-65`), and its composite is
-   `com = fgr*pha + bgr*(1-pha)` (`references/robust-video-matting/inference.py:134`).
+   `com = fgr*pha + bgr*(1-pha)` (`references/robust-video-matting/inference.py:135`).
 2. **A binary mask is the α∈{0,1} degenerate case.** Acceptable for a first prototype (with edge
    feathering as fake α), visibly wrong on moving hands: hard 1-px staircase edges against virtual
    content, flickering fringes under motion blur. This is why "segmentation" (artifact #2) and
@@ -190,7 +190,7 @@ augmentation (`Ego2Hands.py:219-313`) — then collapsed to grey via `cv2.cvtCol
 `Ego2Hands.py:337-341`) as a second input channel (`CSM.py:100`: 1 or 2 input channels; no 3-channel
 RGB path at all). Working resolution 288×512 (`Ego2Hands.py:211`). Input normalization mean 128 /
 scale 256 (`Ego2Hands.py:345`). Author's README states models were trained on greyscale, with the
-edge+energy variant the best performer (`README.md:26,70,148`).
+edge+energy variant the best performer (`README.md:25,70,149`).
 
 **Pretrained weights:** *not in the repo* — a Box link in `README.md:38` (plus 8 scene-adapted
 variants). Availability is at the mercy of a personal Box account; re-training requires the ~90 GB

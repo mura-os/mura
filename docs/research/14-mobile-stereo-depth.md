@@ -5,7 +5,7 @@ compositor needs: from two rectified camera images, produce per-view disparity/d
 fast and stable, on a Qualcomm XR2 / XR2+ Gen 2 class SoC (Adreno GPU / Hexagon NPU). This
 document defines the depth-backend options and the interface the compositor consumes. The
 Qualcomm hardware path (Adreno per-frame Depth-From-Stereo, CVP DFS engine) is audited in the
-sibling doc **14-perception-claims-audit** — here it appears only as one pluggable backend the
+sibling doc **16-perception-claims-audit** — here it appears only as one pluggable backend the
 interface must accommodate.
 
 Primary sources (local clones, paths relative to repo root; `file:line` citations against these):
@@ -463,7 +463,7 @@ Design decisions, each traceable to the research above:
   toolchain dependency, 1/16-px fixed point maps directly onto `FIXED_16(4)`; (b) **learned** —
   a TC-Stereo-class or LightStereo-class network on Hexagon/Adreno via ONNX→QNN; (c) **hardware**
   — the Adreno/CVP Depth-From-Stereo block, which produces disparity+confidence at fixed
-  resolution and zero NPU cost (claims audited in sibling doc **14-perception-claims-audit**;
+  resolution and zero NPU cost (claims audited in sibling doc **16-perception-claims-audit**;
   interface only needs to make room for it, hence `FIXED_16` and per-backend resolution).
 - **Teacher–student loop as a project workflow**: RAFT-Stereo (MIT, `references/raft-stereo/`) or
   FoundationStereo-class models run *offline* over sequences captured from the actual headset

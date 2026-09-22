@@ -179,6 +179,41 @@ in
         description = "Environment variables for the Monado service unit (the proven config channel).";
       };
 
+      ## Camera passthrough + hand cutout (ADR 0008) ----------------------
+      passthrough = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Enable video see-through passthrough (the compositor environment layer). See docs/architecture/perception-passthrough-hands.md.";
+        };
+        latencyMode = mkOption {
+          type = types.enum [ "low-latency" "high-quality" ];
+          default = "low-latency";
+          description = "Passthrough quality/latency tradeoff. Default favours latency (latency beats cleanliness); the quality knob lives on the geometry pipeline, never the display path.";
+        };
+        depthBackend = mkOption {
+          type = types.enum [ "classical" "vk-qcom" "adreno-dfs" "hexagon" "none" ];
+          default = "classical";
+          description = ''
+            The pluggable stereo-depth backend feeding passthrough (ADR 0008).
+            'classical' (standard Vulkan compute / SGBM) is the BSP-independent baseline; the others
+            are gated on per-device BSP inspection (docs/research/14-perception-claims-audit.md).
+          '';
+        };
+        handCutout = {
+          enable = mkOption {
+            type = types.bool;
+            default = false;
+            description = "Enable egocentric hand/upper-limb cutout as a compositor top layer.";
+          };
+          upperLimbVisibility = mkOption {
+            type = types.enum [ "visible" "hidden" "automatic" ];
+            default = "automatic";
+            description = "Shell default upper-limb composition policy (per-client overridable), mirroring the visionOS contract.";
+          };
+        };
+      };
+
       ## Session / greeter / lock model (ADR 0007) -------------------------
       session = {
         autoLogin = mkOption {

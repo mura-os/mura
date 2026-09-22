@@ -22,6 +22,10 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [10-xr-wayland-protocol-comparison.md](research/10-xr-wayland-protocol-comparison.md) — motorcar vs zxr vs zwin vs StardustXR vs WayVR
 - [11-display-managers-greeters.md](research/11-display-managers-greeters.md) — greetd/GDM/SDDM/seatd, the greeter, and the seat/DRM handoff
 - [12-lock-screens-and-appliance-login.md](research/12-lock-screens-and-appliance-login.md) — session-lock protocol, PAM, appliance autologin, doff/don policy
+- [13-passthrough.md](research/13-passthrough.md) — camera passthrough view-correction (Rectus, viewcorrection, NeuralPassthrough, production pattern)
+- [14-mobile-stereo-depth.md](research/14-mobile-stereo-depth.md) — mobile stereo depth backends (TC-Stereo, XR-Stereo, LightStereo, teacher-student)
+- [15-hand-segmentation-matting.md](research/15-hand-segmentation-matting.md) — egocentric hand cutout (four artifacts, Mercury prior, matting, policy)
+- [16-perception-claims-audit.md](research/16-perception-claims-audit.md) — verification of Qualcomm depth paths + 2026 preprint claims
 
 ## Architecture (`architecture/`)
 
@@ -31,6 +35,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [images-and-updates.md](architecture/images-and-updates.md) — image families + two-backend updates
 - [repo-structure.md](architecture/repo-structure.md) — monorepo layout + patch management
 - [zxr-shell-v2-composition.md](architecture/zxr-shell-v2-composition.md) — the XR compositor's renderer-agnostic colour+depth composition model and MVP
+- [perception-passthrough-hands.md](architecture/perception-passthrough-hands.md) — passthrough view-correction + hand cutout as compositor layers
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
   - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace
@@ -39,6 +44,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0005](architecture/adr/0005-flake-layout-and-outputs.md) flake layout and outputs
   - [0006](architecture/adr/0006-compositor-strategy.md) XR compositor strategy (revive zxr as zxr-shell-v2)
   - [0007](architecture/adr/0007-session-greeter-lock.md) session/greeter/lock model (appliance autologin + greetd; lock as compositor state)
+  - [0008](architecture/adr/0008-perception-services-placement.md) perception services placement (passthrough + hand cutout, Monado-side)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the review (fixed now vs.
   deferred to the Lynx spike / pre-release design)
