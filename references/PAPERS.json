@@ -1,0 +1,13 @@
+{
+  "swirski-dodgson-2013-eye-model-fit": {"topic": "eye-tracking", "status": "fetched", "url": "https://www.cl.cam.ac.uk/research/rainbow/projects/eyemodelfit/files/Swirski,%20Dodgson%20-%202013%20-%20A%20fully-automatic,%20temporal%20approach%20to%20single%20camera,%20glint-free%203D%20eye%20model%20fitting.pdf", "sha256": "0d58f792f6ac06ae5ef5e978508b0342d69bf61d5e6d06db20a6c1b15db0274a"},
+  "santini-2018-pure": {"topic": "eye-tracking", "status": "fetched", "url": "https://arxiv.org/pdf/1712.08900", "sha256": "c55d62b0c0ca63566440e12dad8f302732782f299dc92be711ac6d90c8604cf0"},
+  "fuhl-2016-else": {"topic": "eye-tracking", "status": "fetched", "url": "https://arxiv.org/pdf/1511.06575", "sha256": "775675621252525617e5115865f6a9721444ac2bb86faae50c3931fabf0aafcd"},
+  "chaudhary-2019-ritnet": {"topic": "eye-tracking", "status": "fetched", "url": "https://arxiv.org/pdf/1910.00694", "sha256": "6853605dc7cfd9c2468278d0709de1283451d2f1095abc5b165ebc561944f56e"},
+  "kothari-2021-ellseg": {"topic": "eye-tracking", "status": "fetched", "url": "https://arxiv.org/pdf/2007.09600", "sha256": "04abfa614ee29069da0786149768f5be5732b34ada7a6c51869e62f56f2f1551"},
+  "garbin-2019-openeds": {"topic": "eye-tracking", "status": "fetched", "url": "https://arxiv.org/pdf/1905.03702", "sha256": "b4b102f224f0194304e5790b596387323aa50842c160d90afb3cb375e84067de"},
+  "kim-2019-nvgaze": {"topic": "eye-tracking", "status": "fetched", "url": "https://users.aalto.fi/~laines9/publications/kim2019sigchi_paper.pdf", "sha256": "7dd226789f8c1c3a43783bcc3744f3b34051ff0b3e0154bdf0036807284fca90"},
+  "guestrin-eizenman-2006-pccr": {"topic": "eye-tracking", "status": "cite_only", "citation": "Guestrin & Eizenman 2006, \"General theory of remote gaze estimation using the pupil center and corneal reflections\", IEEE TBME 53(6). doi:10.1109/TBME.2005.863952"},
+  "dierkes-2018-refraction-eye-model": {"topic": "eye-tracking", "status": "cite_only", "citation": "Dierkes, Kassner, Bulling 2018, \"A novel approach to single camera, glint-free 3D eye model fitting including corneal refraction\", ETRA 2018. doi:10.1145/3204493.3204525 (basis of pye3d; see references/pye3d clone)"},
+  "santini-2018-purest": {"topic": "eye-tracking", "status": "cite_only", "citation": "Santini, Fuhl, Kasneci 2018, \"PuReST: robust pupil tracking for real-time pervasive eye tracking\", ETRA 2018. doi:10.1145/3204493.3204578"},
+  "fuhl-2015-excuse": {"topic": "eye-tracking", "status": "cite_only", "citation": "Fuhl et al. 2015, \"ExCuSe: Robust pupil detection in real-world scenarios\", CAIP 2015. doi:10.1007/978-3-319-23192-1_4"}
+}
