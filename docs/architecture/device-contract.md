@@ -43,10 +43,13 @@ under `modules/` or `devices/`.
 | `spatial.device.arch` | enum `aarch64`\|`x86_64` | build/host platform |
 | `spatial.device.supportTier` | enum `booting`\|`xr-functional`\|`release-supported` | gates mandatory checks (see §Qualification) |
 | `spatial.device.maintainers` | listOf str | empty ⇒ cannot exceed `booting` tier |
-| `spatial.device.skuConstraints` | attrs | hardware revision constraints this port is valid for |
+| `spatial.device.skuConstraints` | attrs | hardware revision constraints this port is valid for (defaults to "all revisions") |
 
-These seven are the only mandatory fields. Everything below has defaults, is set by the family, or
-is derived from the donor.
+Only `codename`, `vendor`, and `name` have no default and are strictly mandatory; `arch`,
+`supportTier`, `maintainers`, and `skuConstraints` have defaults (`aarch64`, `booting`, `[]`, "all
+revisions"). So a bring-up device sets ~3–5 fields. Everything below has defaults, is set by the
+family, or is derived from the donor. (The minimal example at the end of this document omits
+`skuConstraints` for exactly this reason.)
 
 ### `spatial.soc.*` and families
 
@@ -79,11 +82,22 @@ unlock-removing update.
 | `spatial.kernel.bootimg.hasVendorBoot` / `hasInitBoot` / `hasDtbo` | bool | from donor |
 | `spatial.kernel.contract` | enum alias set | which kconfig contract categories apply |
 
-The kernel is a standalone `buildLinux` derivation. `spatial.kernel.contract` composes categories
-(container/systemd prerequisites, per-subsystem-backend prerequisites, distro security policy, XR
-requirements) and is checked against the built `.config`, errors vs. warnings distinguished,
-toolchain-derived symbols stripped before diffing. This contract is the mechanism that lets NixOS be
-the default runtime safely (see [adr/0002](adr/0002-nixos-vs-nix-built-userspace.md)).
+The kernel is a standalone `buildLinux` derivation. `spatial.kernel.contract` composes named
+categories (container/systemd prerequisites, per-subsystem-backend prerequisites, distro security
+policy, XR requirements). It is checked in **two phases**, and **import-from-derivation is
+forbidden**:
+- **eval-time** (`nix flake check` default): typed/cross-field assertions against the *declared*
+  config intent (`structuredExtraConfig` + the literal `.config`'s recorded symbols), cheap and
+  building no kernel.
+- **realization-time** (sharded CI, not the default flake check): the composed contract checked
+  against the built kernel's final `.config`, errors vs. warnings distinguished, toolchain-derived
+  symbols stripped before diffing. Exposed as a per-device lazy check so `nix flake check` never
+  builds every device kernel.
+
+Source-of-truth precedence: the literal `spatial.kernel.configFile` is authoritative;
+`structuredExtraConfig` is applied on top and the realization-time check verifies the merged result
+(Mobile NixOS's validator model). This contract is the mechanism that lets NixOS be the default
+runtime safely (see [adr/0002](adr/0002-nixos-vs-nix-built-userspace.md)).
 
 ### `spatial.adaptation.*` — per-subsystem backend selection
 
@@ -121,7 +135,7 @@ Mirrors Monado's build/runtime surface ([05](../research/05-xr-userspace.md) §9
 
 | Option | Type | Notes |
 |---|---|---|
-| `spatial.xr.runtime` | enum `monado`\|`wivrn` | runtime package + manifest + service wiring |
+| `spatial.xr.runtime` | enum `monado`\|`wivrn`\|`none` | Monado is the only initial on-device runtime; `wivrn` models the optional streaming-**server** role (its headset side is an Android app on the vendor runtime, per [05-xr-userspace](../research/05-xr-userspace.md) §2.2) and is not a drop-in appliance runtime; `none` for headless bring-up |
 | `spatial.xr.monado.rev` + `.patches` | rev + listOf patch | per-device driver as monado-rev + patch series (WiVRn pattern) |
 | `spatial.xr.monado.drivers.<name>.enable` | bool | → `XRT_BUILD_DRIVER_*`, minimal per-device runtime |
 | `spatial.xr.compositor.backend` | enum `vk-display`\|`wayland-direct`\|`window` | vk-display for appliance; **first feasibility test** |

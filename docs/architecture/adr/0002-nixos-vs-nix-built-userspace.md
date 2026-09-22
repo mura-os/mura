@@ -14,10 +14,20 @@ needs ≥5.10. Halium shows the same cliff from the other side (systemd ≥217 n
 distro security policy propagates into kconfig — [03](../../research/03-android-compat.md) §5.2,
 §10.2). The user prefers NixOS. Can NixOS be the runtime on these headsets?
 
-The device landscape ([07](../../research/07-device-landscape.md)) is favorable: every priority target
-has a mainline-or-near-mainline kernel path — Quest 1 (MSM8998) and Lynx R1 (SM8250) already have
-postmarketOS mainline kernels; Steam Frame (SM8650) runs mainline-ish SteamOS; Galaxy XR / PFDM
-(XR2+ Gen 2, ~SM8550) have strong SM8550 upstream foundations.
+The device landscape ([07](../../research/07-device-landscape.md)) is *SoC-level* favorable, but SoC
+enablement is not headset enablement — a distinction the research is careful about and this ADR must
+not blur. Per-device **evidence levels** (not a blanket "mainline-capable" claim):
+
+| Device | SoC-supported | Board boots | Display proven | Tracking proven |
+|---|---|---|---|---|
+| Lynx R1 (SM8250) | yes (mature linux-msm) | yes (pmOS debug shell on 6.13) | no | no |
+| Quest 1 (MSM8998) | yes (mature linux-msm) | no public Monterey DTS | no | no |
+| Steam Frame (SM8650) | yes (mainline-ish SteamOS) | vendor OS boots; alt-OS policy unknown | vendor only | vendor only |
+| Galaxy XR / PFDM (~SM8550) | adjacent only; silicon/board mapping unverified | no | no | no |
+
+The mainline path is real at the SoC level and demonstrated only to a debug shell, only on Lynx R1.
+Everything above "board boots" is an open bet to be settled by a hardware spike, not an established
+fact.
 
 ## Decision
 

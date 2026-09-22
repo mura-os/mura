@@ -74,11 +74,14 @@ packaging is covered briefly in [device-contract.md](device-contract.md) §XR an
 doc.
 
 ### Common distribution layer (device-independent)
-Owns the shell, application environment, session management, networking policy, user management,
-update policy, logging, diagnostics, security policy, and the **XR runtime**: Monado running
-out-of-process and socket-activated, with `/etc/xdg/openxr/1/active_runtime.json` declared by the
-module system. "Common" means a shared package closure per CPU architecture and runtime family, plus
-a small device-specific configuration closure — not a byte-identical filesystem on every device.
+Owns the **packaging and session policy** for the shell, the application environment, networking
+policy, user management, update policy, logging, diagnostics, security policy, and the **XR
+runtime**: Monado running out-of-process and socket-activated, with
+`/etc/xdg/openxr/1/active_runtime.json` declared by the module system. The shell *process* runs at
+the application boundary (below) as an OpenXR/Wayland client; the common layer decides how it is
+packaged, wired into the session, and configured — it does not embed hardware knowledge. "Common"
+means a shared package closure per CPU architecture and runtime family, plus a small device-specific
+configuration closure — not a byte-identical filesystem on every device.
 
 Realized as NixOS modules under `modules/os/` (distro policy) and `modules/xr/` (runtime + session).
 
@@ -121,8 +124,14 @@ These fall out of the research and hold across every document:
    bootloader conditions.
 2. **Every donor input is hash-pinned** (`fetchurl` public, `requireFile` non-redistributable,
    explicit path option for on-device extraction) with recorded provenance.
-3. **Donor-containing outputs never reach a public cache** — a `redistributable = false` flag
-   mechanically forces `allowSubstitutes = false`.
+3. **Donor-containing outputs never reach a *public* cache.** Cache eligibility is a three-way
+   policy on every artifact: `publicRedistributable` (public cache OK), `privateSubstitutable`
+   (a private, access-controlled cache only), or `localOnly` (`allowSubstitutes = false;
+   preferLocalBuild = true`). Any closure containing non-redistributable donor bytes inherits the
+   strictest label of its inputs. `redistributable = false` in a donor manifest maps to
+   `localOnly` for outputs embedding those bytes, and at most `privateSubstitutable` for the private
+   device cache — never `publicRedistributable`. (Resolves the apparent
+   [invariant-3 vs. private-cache](repo-structure.md) contradiction the review flagged.)
 4. **Per-unit calibration/identity is sacred** — never copied between units, protected across flashes.
 5. **Signing keys live outside the Nix store**; in-store artifacts use test keys and are cacheable.
 6. **The common distribution is device-independent** — device modules select and configure, they do

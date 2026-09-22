@@ -75,7 +75,7 @@ done
   done
   echo
   echo '}'
-} > MANIFEST.json
+} >MANIFEST.json
 
 echo
 echo "Manifest written: $(pwd)/MANIFEST.json"

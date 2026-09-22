@@ -31,6 +31,9 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0003](architecture/adr/0003-android-compat-scope.md) Android-compat scope
   - [0004](architecture/adr/0004-cross-vs-native-builds.md) cross vs native builds
   - [0005](architecture/adr/0005-flake-layout-and-outputs.md) flake layout and outputs
+- [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the architecture
+- [design-backlog.md](architecture/design-backlog.md) — disposition of the review (fixed now vs.
+  deferred to the Lynx spike / pre-release design)
 
 ## Reference clones (`../references/`)
 
