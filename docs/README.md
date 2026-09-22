@@ -64,6 +64,9 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [REVIEW-perception.md](architecture/REVIEW-perception.md) — red-team review of the perception design
 - [perception-design-backlog.md](architecture/perception-design-backlog.md) — disposition of the
   perception review (fixed now vs. the P-1 BSP kill-gate vs. pre-release)
+- [REVIEW-mapping.md](architecture/REVIEW-mapping.md) — red-team review of the spatial-mapping design
+- [mapping-design-backlog.md](architecture/mapping-design-backlog.md) — disposition of the mapping
+  review (fixed now vs. the M0 foundations gate vs. design-before-milestone)
 
 ## Reference clones (`../references/`)
 
