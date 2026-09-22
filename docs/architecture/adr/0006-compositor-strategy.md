@@ -115,10 +115,23 @@ Because this is a rewrite, the base library is genuinely open:
   the XR ecosystem (StardustXR, WayVR, nixpkgs-xr) and gives memory safety for a compositor parsing
   untrusted client buffers.
 
-This sub-decision is deferred to the **D2 spike** (compile wxrc against modern wlroots to size the
-port) plus a smithay/WayVR evaluation, recorded as a follow-up amendment to this ADR. The protocol
-and the client-rendered/Monado-client/Vulkan decisions above are base-independent (a wire protocol
-is language-agnostic), so they are not blocked on this.
+**Current leaning (documented, NOT ratified): Rust + smithay.** Since this is a rewrite rather than
+a port, the wxrc-lineage argument for C/wlroots is weak, and Rust is preferred: memory safety for a
+compositor parsing untrusted client buffers and cross-process dmabuf/fd handles, and alignment with
+the rest of the XR ecosystem this project already depends on (StardustXR, WayVR, nixpkgs-xr are all
+Rust; WayVR's smithay stack already proves the 2D tier end-to-end on a headset). The expectation is
+**C FFI where it counts** — Monado/OpenXR loader, `libwayland`/protocol scanning where needed, and
+any wlroots-only helper without a mature Rust equivalent — via the usual `-sys` bindings.
+
+This is a *leaning to write down*, not a hard decision. It is **not ratified**: the sub-decision is
+still deferred to the **D2 spike** (compile wxrc against modern wlroots to size the port) plus a
+concrete smithay/WayVR evaluation, and will be ratified as a follow-up amendment to this ADR once
+those exist. Open checks before ratifying: smithay's coverage of the pieces we need beyond the 2D
+tier (Vulkan renderer integration, DRM leasing, the OpenXR/`ash` boundary, explicit-sync via
+`wp_linux_drm_syncobj_v1`), and whether any wlroots-only capability forces a larger C surface than
+"FFI where it counts" implies. The protocol and the client-rendered / Monado-client / Vulkan
+decisions above are base-independent (a wire protocol is language-agnostic), so none of this blocks
+protocol work.
 
 ### Sequencing: ship the 2D tier first
 
