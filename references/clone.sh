@@ -71,6 +71,50 @@ repos=(
   # ones (Fast-FoundationStereo, OpenStereo_DoItOnce) tracked-not-cloned per §Part 3.
   'liteanystereo|https://github.com/TomTomTommi/LiteAnyStereo.git|'
   'banet|https://github.com/gangweix/BANet.git|'
+  # --- spatial sharing: capture/consent/input stack (docs/research/17) ---
+  'xdg-desktop-portal|https://github.com/flatpak/xdg-desktop-portal.git|'
+  'xdg-desktop-portal-wlr|https://github.com/emersion/xdg-desktop-portal-wlr.git|'
+  'gnome-remote-desktop|https://gitlab.gnome.org/GNOME/gnome-remote-desktop.git|'
+  'wayvnc|https://github.com/any1/wayvnc.git|'
+  'neatvnc|https://github.com/any1/neatvnc.git|'
+  'obs-vkcapture|https://github.com/nowrep/obs-vkcapture.git|'
+  'libei|https://gitlab.freedesktop.org/libinput/libei.git|'
+  'pipewire|https://gitlab.freedesktop.org/pipewire/pipewire.git|'
+  # --- spatial sharing: streaming engines (docs/research/18) ---
+  'alvr|https://github.com/alvr-org/ALVR.git|'
+  'sunshine|https://github.com/LizardByte/Sunshine.git|'
+  'wolf|https://github.com/games-on-whales/wolf.git|'
+  # --- spatial sharing: wayland proxying / virtio (docs/research/19) ---
+  'waypipe|https://gitlab.freedesktop.org/mstoeckl/waypipe.git|'
+  'wprs|https://github.com/wayland-transpositor/wprs.git|'
+  'wayland-proxy-virtwl|https://github.com/talex5/wayland-proxy-virtwl.git|'
+  'crosvm|https://github.com/google/crosvm.git|'
+  'spectrum|https://spectrum-os.org/git/spectrum|'
+  # sommelier lives in chromiumos platform2 (vm_tools/sommelier); large repo, shallow
+  'platform2|https://chromium.googlesource.com/chromiumos/platform2|'
+  # --- spatial sharing: workspace replication datapoint ---
+  'overte|https://github.com/overte-org/overte.git|'
+  # --- spatial mapping: SLAM / anchors / dense geometry (Tier 4, docs/research/20-23) ---
+  'basalt-monado|https://gitlab.freedesktop.org/mateosss/basalt.git|'
+  'vit|https://gitlab.freedesktop.org/monado/utilities/vit.git|'
+  'orbslam3|https://github.com/UZ-SLAMLab/ORB_SLAM3.git|'
+  'orbslam3-monado|https://gitlab.freedesktop.org/mateosss/ORB_SLAM3.git|'
+  'open-vins|https://github.com/rpng/open_vins.git|'
+  'ov-plane|https://github.com/rpng/ov_plane.git|'
+  'kimera-vio|https://github.com/MIT-SPARK/Kimera-VIO.git|'
+  'kimera-rpgo|https://github.com/MIT-SPARK/Kimera-RPGO.git|'
+  'kimera-semantics|https://github.com/MIT-SPARK/Kimera-Semantics.git|'
+  'rtabmap|https://github.com/introlab/rtabmap.git|'
+  'voxblox|https://github.com/ethz-asl/voxblox.git|'
+  'vdbfusion|https://github.com/PRBonn/vdbfusion.git|'
+  'supereight2|https://github.com/smartroboticslab/supereight2.git|'
+  'nvblox|https://github.com/nvidia-isaac/nvblox.git|'
+  'hloc|https://github.com/cvg/Hierarchical-Localization.git|'
+  'lightglue|https://github.com/cvg/LightGlue.git|'
+  'mast3r-slam|https://github.com/rmurai0610/MASt3R-SLAM.git|'
+  'kalibr|https://github.com/ethz-asl/kalibr.git|'
+  'openxr-docs|https://github.com/KhronosGroup/OpenXR-Docs.git|'
+  'illixr|https://github.com/ILLIXR/ILLIXR.git|'
 )
 
 mkdir -p .logs
