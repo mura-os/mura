@@ -54,6 +54,38 @@ blocks** (atomic by construction) with view descriptors (per-view P·V, depth en
 custom metadata (`SPA_META_START_custom`), and `SPA_META_SyncTimeline` for explicit sync
 (gnome-remote-desktop proves that path is deployed practice).
 
+### 2.1 Spectate mechanics: the pre-distortion tap and the FOV crop
+
+Three implementation facts pin down mode 1 (from the mirroring analysis; Monado reference verified
+against the pinned clone):
+
+- **The tap is pre-distortion by construction, and it is ours.** zxr-shell-v2 is an OpenXR *client*
+  of Monado: we composite into rectilinear eye images and submit one projection layer; **Monado owns
+  the lens warp downstream** ([zxr-shell-v2-composition §7.4](zxr-shell-v2-composition.md)). Spectate
+  therefore taps **our own composed eye image, pre-`xrReleaseSwapchainImage`** — no inverse
+  distortion ever exists in the path, and no runtime cooperation is needed. Monado's
+  `comp_mirror_to_debug_gui` (`monado/src/xrt/compositor/main/comp_mirror_to_debug_gui.{c,h}`:
+  crop-blit → `vk_image_readback_to_xf_pool` → `u_sink`, with a `push_every_frame_out_of_X`
+  throttle) is the reference implementation of exactly this shape; ours feeds the PipeWire
+  publication from §2 instead of a debug sink.
+- **The "algorithm" is a symmetric-FOV crop + blit.** The composed eye image uses the asymmetric
+  off-axis frustum from `xrLocateViews` (tan-angle bounds l/r/u/d). A watchable mono spectator
+  frame crops to a **symmetric sub-frustum** (e.g. ±min(|l|,|r|) horizontally, likewise
+  vertically), then adjusts to the target aspect (16:9) — a linear mapping in eye-texture UV.
+  Default source is the left eye; mono is the default `view_config`, stereo an opt-in.
+- **A "nice" third-person spectator camera is an observer view, not new machinery.** The
+  standardized prior art is `XR_MSFT_secondary_view_configuration` +
+  `XR_MSFT_first_person_observer` (HoloLens mixed-reality capture: apps render an extra
+  camera-matched view). Our mode-3 mechanism — **observer views as additional authorized
+  `zxr_view`s** — is the generalization: a compositor-owned spectator camera is simply one more
+  budgeted view composed by us, through the same hook (§8.1).
+
+The known fork (already open question [17 §11.6](../research/17-sharing-capture-stack.md)): the
+crop-blit tee cannot *strip* content (notifications, other users' private windows). A
+policy-filtered spectate is a second composition pass over a policy-selected subset of the scene —
+architecturally the same as a compositor-owned observer view. v0 ships the tee; the re-compose
+variant rides the observer-view mechanism when policy demands it.
+
 ## 3. Mode 4: share-the-app (protocol proxying) — the default for remote 2D apps
 
 Per [19](../research/19-wayland-proxying.md), **waypipe, unmodified from nixpkgs, is the shipped
