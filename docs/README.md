@@ -45,9 +45,12 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0006](architecture/adr/0006-compositor-strategy.md) XR compositor strategy (revive zxr as zxr-shell-v2)
   - [0007](architecture/adr/0007-session-greeter-lock.md) session/greeter/lock model (appliance autologin + greetd; lock as compositor state)
   - [0008](architecture/adr/0008-perception-services-placement.md) perception services placement (passthrough + hand cutout, Monado-side)
-- [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the architecture
-- [design-backlog.md](architecture/design-backlog.md) — disposition of the review (fixed now vs.
+- [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the base architecture
+- [design-backlog.md](architecture/design-backlog.md) — disposition of the base review (fixed now vs.
   deferred to the Lynx spike / pre-release design)
+- [REVIEW-perception.md](architecture/REVIEW-perception.md) — red-team review of the perception design
+- [perception-design-backlog.md](architecture/perception-design-backlog.md) — disposition of the
+  perception review (fixed now vs. the P-1 BSP kill-gate vs. pre-release)
 
 ## Reference clones (`../references/`)
 

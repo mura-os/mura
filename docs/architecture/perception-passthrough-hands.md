@@ -31,7 +31,7 @@ fastest, low-texture — reprojection error scales `≈ f·t·δZ/Z²`, so ~3 px
 at 30 cm for a 1 cm error, invisible at 3 m) and the object of the cutout.** So the hand matte does
 double duty: alpha for MR compositing *and* a mask giving hands their own geometry/latency policy
 inside the passthrough warp. That coupling is why they share one research effort and one service
-(ADR 0007); world mapping does not couple this way and is separable.
+(ADR 0008); world mapping does not couple this way and is separable.
 
 ## The shared production architecture (settled)
 
@@ -175,22 +175,42 @@ Prototype path, each tier ships something:
 - **Depth refine.** Stereo patch refinement inside the matte ROI, seeded by capsule depth; keep a
   `smoothstep` fade for `.automatic` (a hard z-test on noisy hand depth flickers at contact).
 
-**Composition policy** (the visionOS contract, verified: premultiplied alpha, reverse-Z,
-`.visible`/`.hidden`/`.automatic`): a **per-spatial-client policy attribute** in the zxr protocol,
-shell-owned default `automatic`, applied as a compositor top layer *after* the nearest-depth resolve:
+**Composition policy** (the visionOS contract, verified: premultiplied alpha, reverse-Z depth
+submission, `.visible`/`.hidden`/`.automatic`): a **per-spatial-client policy attribute** in the zxr
+protocol, shell-owned default `automatic`.
+
+**The correctness subtlety (raised by the review, corrected here):** the passthrough environment
+layer already contains the real hand pixels, so a hand *top* layer alone cannot hide them. The hand
+must be the **sole owner of hand-region pixels** — the passthrough environment has the hand region
+**removed** (hand colour and depth excluded; the background behind held open / reconstructed, exactly
+what Meta's `HandsRemoval` does, [15 §6](../research/15-hand-segmentation-matting.md)) and the hand
+layer re-composites `αF_hand` per policy. Then `hidden` yields virtual content with no hand;
+`visible`/`automatic` add the hand back. This is another reason passthrough and the hand cutout are
+**one coupled service** (removing the hand from the environment needs the matte).
+
+All depth comparisons use one **canonical quantity — positive linear eye-space metres** (nearer =
+smaller), with one tested conversion from *each* producer (capsule/stereo metric `d_h`, and the
+environment's own depth `d_s`), never raw reverse-Z or disparity; the reverse-Z / near-far conversion
+to the shared depth attachment is a separate, tested step ([composition §2](zxr-shell-v2-composition.md)
+depth-meaning contract).
 
 ```
-resolve clients -> (C_scene, d_s)
-per eye: warp (αF_hand, α, d_h) camera(t_capture) -> eye(t_display)   # ALL channels, one warp
-  visible:   C = αF + (1-α)·C_scene
-  hidden:    C = C_scene
-  automatic: occ = smoothstep(-ε, +ε, d_h - d_s); α' = α·(1-occ·fade); C = α'F + (1-α')·C_scene
+resolve clients, hand region EXCLUDED from the passthrough environment -> (C_scene, d_s)
+  # d_s, d_h both in positive eye-space metres
+per eye: warp (αF_hand, α, d_h) camera(t_capture) -> eye(t_display)   # matte+F+depth: ONE atomic unit, one warp
+  visible:   C = αF_hand + (1-α)·C_scene
+  hidden:    C = C_scene                                    # hand absent from C_scene by construction
+  automatic: occ = smoothstep(-ε, +ε, d_s - d_h)            # d_s-d_h>0  <=>  hand nearer than scene -> occ->1
+             α' = α·(1 - fade·(1 - occ))                    # occ=1: full hand; occ=0: faded ghost (Apple's "fade as it goes behind")
+             C = α'·F_hand + (1-α')·C_scene
 ```
 
 Clients declare policy only — never see the matte or camera frames (a privacy boundary; hand images
 are biometric-adjacent), exactly as they declare bounds. The hand layer obeys the client deadline
-rule: no fresh matte at cutoff → late-warp the previous one by head-pose delta, drop past a staleness
-bound (degrade to passthrough-hands-absent), never stall.
+rule: no fresh matte at cutoff → late-warp the previous one by head-pose delta; past a staleness
+bound, **the environment can no longer have the hand removed (removal needs the matte), so the hand
+degrades to plain uncut passthrough at scene depth** (effectively `visible`-without-policy), never a
+stall.
 
 **Licensing** ([15 §7](../research/15-hand-segmentation-matting.md)): every path to shippable weights
 runs through **data we generate ourselves** (device captures + composited synthetic hands +
@@ -201,8 +221,13 @@ contract where a shipping decision would hit them.
 
 ## The shared invariants (both layers)
 
-1. **Same-timestamp atomicity.** Colour, depth/matte, confidence, and pose travel as one unit keyed
-   to the camera exposure time; a perfect matte or depth on the *wrong* frame is a wrong result.
+1. **Timestamp discipline — two contracts, not one** (corrected per review). The **hand matte is
+   strictly atomic**: `αF`, α, hand depth, and the source colour it cuts from share one
+   camera-exposure timestamp — a perfect matte on the wrong frame is a wrong cutout. **Passthrough
+   is deliberately *not* atomic across colour and geometry** — the three-rate architecture serves
+   fresher colour than geometry — so it carries **both `t_colour` and `t_geometry`** with their
+   respective poses/calibration versions and the transform that aligns geometry to colour. Never
+   describe the two cases with a single "same-timestamp" rule.
 2. **Pose-at-exposure.** Every camera frame carries its mid-exposure timestamp; the pose is *queried
    for that timestamp* (Passthrough+ saw visible float from a 4 ms timestamp error). If Monado's
    pose query can't serve arbitrary timestamps at the needed rate/accuracy, that is a **blocking
@@ -239,7 +264,7 @@ Passthrough milestones P0–P6 ([13 §7.4](../research/13-passthrough.md)) and h
 sequence independently but share the perception service and the camera pipeline. Both are gated
 behind the display-path feasibility work and the BSP-access unknowns the claims audit enumerated.
 
-## Open questions (carried to ADR 0007 and the backlog)
+## Open questions (carried to ADR 0008 and the backlog)
 
 Where the perception services live (Monado-side vs compositor-internal vs sibling) and the dmabuf +
 explicit-sync delivery interface — decided in [ADR 0008](adr/0008-perception-services-placement.md).
