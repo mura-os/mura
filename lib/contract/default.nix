@@ -214,6 +214,37 @@ in
         };
       };
 
+      ## Spatial mapping / anchors / world understanding (ADR 0009) --------
+      mapping = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Enable the mapping+anchor service (layers B/C: keyframes, loop closure, relocalization, persistent anchors). See docs/architecture/spatial-mapping.md.";
+        };
+        depthSource = mkOption {
+          type = types.enum [ "none" "flood-ir" "active-ir-pattern" "tof-sensor" "android-backed" ];
+          default = "none";
+          description = ''
+            The device's depth-assist hardware for mapping (docs/research/22 §6). A *policy* axis —
+            it sets the inferred-state budget and illuminator duty cycle for dense geometry — not a
+            backend selector (that stays passthrough.depthBackend). 'none' = stereo RGB only
+            (blank-wall/low-light geometry stays 'unknown'); 'flood-ir' improves SNR but not
+            texture (Steam Frame); 'active-ir-pattern' gives night-capable active stereo (Quest 3);
+            'tof-sensor'/'android-backed' are direct-depth paths (Galaxy XR class).
+          '';
+        };
+        persistence = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Enable the encrypted on-device map/anchor store and boot relocalization (anchors survive reboots). Requires mapping.enable.";
+        };
+        boundary = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Enable the compositor-owned boundary system (floor + play volume + keep-out; breach forces passthrough without client cooperation).";
+        };
+      };
+
       ## Session / greeter / lock model (ADR 0007) -------------------------
       session = {
         autoLogin = mkOption {

@@ -29,6 +29,10 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [17-sharing-capture-stack.md](research/17-sharing-capture-stack.md) — portals, gnome-remote-desktop, wayvnc, obs-vkcapture, libei, PipeWire ground truth
 - [18-xr-streaming.md](research/18-xr-streaming.md) — WiVRn protocol deep dive, ALVR, Sunshine/Moonlight, wolf, comp_multi
 - [19-wayland-proxying.md](research/19-wayland-proxying.md) — waypipe, wprs, Sommelier, crosvm cross-domain, wayland-proxy-virtwl, Spectrum OS
+- [20-slam-stacks-for-xr.md](research/20-slam-stacks-for-xr.md) — SLAM/VIO stacks at code level: the VIT seam, Basalt's marg-data egress, orbslam3-monado, Atlas internals, licenses
+- [21-anchors-persistence-openxr.md](research/21-anchors-persistence-openxr.md) — `XR_EXT_spatial_entity` family, the map/local frame split, anchor data model, privacy, Monado gap
+- [22-dense-geometry-no-lidar.md](research/22-dense-geometry-no-lidar.md) — planes/TSDF meshing/semantics without LiDAR; per-device depth sources; tri-state confidence
+- [23-relocalization-multisession.md](research/23-relocalization-multisession.md) — recognizing mapped rooms: reloc funnels, multi-session merging, map stores, dynamic-object gating
 
 ## Architecture (`architecture/`)
 
@@ -40,6 +44,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [zxr-shell-v2-composition.md](architecture/zxr-shell-v2-composition.md) — the XR compositor's renderer-agnostic colour+depth composition model and MVP
 - [perception-passthrough-hands.md](architecture/perception-passthrough-hands.md) — passthrough view-correction + hand cutout as compositor layers
 - [spatial-sharing.md](architecture/spatial-sharing.md) — the five sharing modes (spectate / 2D window / per-observer 3D / share-the-app proxying / workspace join)
+- [spatial-mapping.md](architecture/spatial-mapping.md) — anchors, persistence, relocalization, planes/mesh/boundary (Tier 4 world understanding)
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
   - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace
@@ -49,6 +54,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0006](architecture/adr/0006-compositor-strategy.md) XR compositor strategy (revive zxr as zxr-shell-v2)
   - [0007](architecture/adr/0007-session-greeter-lock.md) session/greeter/lock model (appliance autologin + greetd; lock as compositor state)
   - [0008](architecture/adr/0008-perception-services-placement.md) perception services placement (passthrough + hand cutout, Monado-side)
+  - [0009](architecture/adr/0009-spatial-mapping-architecture.md) spatial mapping architecture (layered Basalt VIO + separate mapping/anchor service, not single-SLAM)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the base architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the base review (fixed now vs.
   deferred to the Lynx spike / pre-release design)
