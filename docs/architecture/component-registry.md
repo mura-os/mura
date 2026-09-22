@@ -1,8 +1,9 @@
 # Component registry
 
 **Status:** draft, desktop-architecture workstream. **Date:** 2026-09-22.
-**Companions:** [desktop-environment.md](desktop-environment.md) (the plane model and the build
-ORDER — this registry deliberately does not sequence anything),
+**Companions:** [desktop-environment.md](desktop-environment.md) (the plane model and the
+component DEPENDENCY GRAPH — this registry deliberately does not sequence anything, and no build
+order has been chosen anywhere),
 [adr/0012-de-modularity-spinout-seams.md](adr/0012-de-modularity-spinout-seams.md) (the spin-out
 decisions — §8 below only nominates candidates).
 
@@ -11,8 +12,8 @@ decisions — §8 below only nominates candidates).
 The master inventory of every component spatial-os must create (or adopt) to be a complete
 desktop environment on a headset: what exists on paper, what is half-designed, what is missing
 entirely, and where each piece lives. It is the canonical "what we need to create, and what lives
-where" index; the order in which to build it lives in
-[desktop-environment.md](desktop-environment.md).
+where" index; the dependency structure between these components lives in
+[desktop-environment.md §5](desktop-environment.md) (build order is a later, separate decision).
 
 **The five runtime planes** (plus one build plane, §7):
 
@@ -359,5 +360,5 @@ Counts by status (rows in §2–§7 tables):
 The shape is stark and expected: the authority and perception planes are deeply specified (the
 ADR work to date), the build plane is specified-but-stubbed by deliberate policy (the Lynx-spike
 standing rule, [design-backlog.md](design-backlog.md)), and the desktop-environment surface —
-shell presentation and the service plane — is where nearly everything is missing. That is the
-workstream [desktop-environment.md](desktop-environment.md) sequences.
+shell presentation and the service plane — is where nearly everything is missing. The dependency
+structure among all of it is mapped in [desktop-environment.md §5](desktop-environment.md).

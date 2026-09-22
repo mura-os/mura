@@ -118,13 +118,14 @@ system.
   workspace previews need compositor rendering; OSD placement is a comfort/safety property;
   policy clients could violate boundary safety. Each XR twist pushed a candidate *toward* the
   compositor or a zxr extension — none pushed toward looser coupling than the desktop precedent.
-- **Spin-outs force the protocol surface early.** Building launcher/switcher/OSD as clients in
-  build-order stage 3 ([desktop-environment.md §5](../desktop-environment.md)) makes the
-  privileged-protocol implementations exist and be tested before the 3D tier depends on them.
+- **Spin-outs force the protocol surface to exist.** Building launcher/switcher/OSD as separate
+  clients makes the privileged-protocol implementations direct dependencies of the first shell
+  components (the seam-layer edges in [desktop-environment.md §5.3](../desktop-environment.md)),
+  so the seams get exercised by real consumers rather than staying speculative.
 
 ## Consequences
 
-- The zxr 2D tier implements, early: `ext-workspace-v1`, `ext-foreign-toplevel-list-v1` (+ wlr
+- The zxr 2D tier's protocol surface includes: `ext-workspace-v1`, `ext-foreign-toplevel-list-v1` (+ wlr
   management shim), `wlr-layer-shell`, `xdg-activation`, `xdg-decoration`, `ext-idle-notify` +
   idle-inhibit, dev-profile `ext-session-lock`, `security-context` + global filtering,
   text-input-v3 / input-method-v2 / virtual-keyboard-v1, `ext-image-capture-source` +
