@@ -425,3 +425,55 @@ The 2019 ecosystem patch burden has mostly disappeared. Do not estimate seven up
 4. one hardware qualification program.
 
 That is substantial, but bounded and mostly under spatial-os's control.
+
+---
+
+## Appendix — build spikes (D1, D2)
+
+Two spikes were run to check this analysis against reality (spike sources:
+[`pkgs/wxrc-archaeology/`](../../pkgs/wxrc-archaeology/default.nix) and
+[`spikes/wxrc-modern-probe.nix`](../../spikes/wxrc-modern-probe.nix)).
+
+### D1 — era-pinned archaeology build: NOT CONSTRUCTIBLE from stock nixpkgs
+
+wxrc's `meson.build` requires wlroots `>=0.8.1,<0.9.0` **and** a Monado OpenXR runtime with
+`XR_MNDX_egl_enable`. No nixpkgs channel ever shipped both simultaneously (versions evaluated
+live from the pinned tarballs):
+
+| nixpkgs channel | wlroots | openxr-loader | monado | satisfies wxrc? |
+|---|---|---|---|---|
+| nixos-19.09 | 0.7.0 | 1.0.2 | **absent** | no — wlroots even older than 0.8.1, no Monado |
+| nixos-20.09 | 0.11.0 | 1.0.11 | **absent** | no — wlroots too new, no Monado |
+| nixos-21.11 | 0.14.1 | 1.0.20 | 21.0.0 | no — wlroots far past `<0.9` |
+| nixos-23.11 | 0.16.2 | 1.0.31 | 2023-08 | no — wlroots far past `<0.9` |
+| current (flake) | 0.20.2 | 1.1.62 | 25.1.0 | no — see D2 |
+
+The wlroots 0.8.x window (2019) predates Monado's arrival in nixpkgs (~21.05); by then wlroots is
+≥0.14. So wxrc-as-2021 depended on a **patched, out-of-tree wlroots 0.8 plus a then-bleeding-edge
+OpenXR/Monado stack at the same time** — precisely the "patch large swaths of the ecosystem" the
+README warns of. This confirms *from the packaging side* that reviving wxrc is a rewrite, not a
+port (ADR 0006). A genuine archaeology build would require vendoring a 2019 patched wlroots 0.8 tree
+plus a pinned Monado source build carrying the then-unmerged `XR_MNDX_egl_enable` work — out of
+scope; the negative result is the finding.
+
+### D2 — modern-port probe: wxrc does not preprocess against wlroots 0.19.3
+
+Building wxrc against `wlroots_0_19` (0.19.3) from the flake's nixpkgs, after relaxing only the
+`wlroots` version constraint, fails immediately at the **first `#include`**:
+
+- `fatal error: wlr/types/wlr_surface.h: No such file` — 8 of the 10 source files include it; it
+  was folded into `wlr/types/wlr_compositor.h` in wlroots 0.16+. The build dies here, before most
+  deeper breaks are even reached.
+- `'wlr_backend_impl' has no member named 'get_renderer'` — the renderer-ownership rework (break
+  class B): `wlr_backend_get_renderer` and the backend `get_renderer` hook are gone.
+- `initialization ... from incompatible pointer type` on the backend/renderer wiring — the
+  `wlr_backend_autocreate(display, create_renderer)` callback signature (break class B) no longer
+  exists.
+- `invalid use of undefined type` — the custom `wlr_buffer_impl` / `wlr_output` plumbing against
+  now-opaque or restructured types (break classes C/D).
+
+Per-file error counts: `backend.c` 17, the rest 1–3 each — i.e. the XR backend and buffer glue are
+the most API-coupled. The probe stops at the missing-header wall, which is itself the headline
+result: **wxrc's source does not survive contact with a modern wlroots header set**, empirically
+confirming §4's "compositor-core rewrite, not a compatibility patch." The spike derivation captures
+`meson.log`, `ninja.log`, and a classified `summary.txt` for reproducibility.
