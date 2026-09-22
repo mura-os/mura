@@ -67,6 +67,10 @@ repos=(
   'egohos|https://github.com/owenzlz/EgoHOS.git|'
   'robust-video-matting|https://github.com/PeterL1n/RobustVideoMatting.git|'
   'lightweight-hand-segmentation|https://github.com/itap-robotica-medica/lightweight-hand-segmentation.git|'
+  # Tier 2 depth extras confirmed by docs/research/14 (both MIT). Non-commercial
+  # ones (Fast-FoundationStereo, OpenStereo_DoItOnce) tracked-not-cloned per §Part 3.
+  'liteanystereo|https://github.com/TomTomTommi/LiteAnyStereo.git|'
+  'banet|https://github.com/gangweix/BANet.git|'
 )
 
 mkdir -p .logs
