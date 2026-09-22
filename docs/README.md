@@ -28,6 +28,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [donor-pipeline.md](architecture/donor-pipeline.md) — acquire→identify→parse→extract→qualify
 - [images-and-updates.md](architecture/images-and-updates.md) — image families + two-backend updates
 - [repo-structure.md](architecture/repo-structure.md) — monorepo layout + patch management
+- [zxr-shell-v2-composition.md](architecture/zxr-shell-v2-composition.md) — the XR compositor's renderer-agnostic colour+depth composition model and MVP
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
   - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace

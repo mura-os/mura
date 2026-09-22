@@ -148,6 +148,11 @@ protocol is finished, and it directly closes the open 2D-app question in
 - Open protocol questions are carried in [10 §4.5](../../research/10-xr-wayland-protocol-comparison.md)
   (frame pacing across clients, 2D-toplevel→3D mapping, whether geometry ever crosses the wire, depth
   trust/clipping, and the depth-dmabuf driver matrix).
+- The concrete composition model (renderer-agnostic opaque colour+depth "sort-last" baseline, the
+  transparency/reprojection/light-transport tiers, the renderer-agnostic GL/Vulkan/CPU transport,
+  first-class 2D windows, and the MVP milestones) is worked out in
+  [zxr-shell-v2-composition.md](../zxr-shell-v2-composition.md), which also records the verification
+  of the 2026 OpenXR spatial-container / depth-test-layer claims that bear on this decision.
 
 ## Alternatives considered
 
