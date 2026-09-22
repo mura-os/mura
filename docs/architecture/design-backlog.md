@@ -74,10 +74,11 @@ spikes on real hardware, then the *proven* path is encoded — not designed spec
 ## Desktop-environment gaps live in the component registry
 
 The backlog above covers the base build/donor/update architecture. The *desktop-environment*
-gaps — the 24 missing components (launcher, notifications, settings, polkit agent, input methods,
-audio policy, spatial-workspace model, …) — are enumerated with evidence in
+gaps — the 29 missing components (launcher, notifications, settings, polkit agent, input methods,
+audio policy, spatial-workspace model, session restoration, colour pipeline, …) — are enumerated
+with evidence in
 [component-registry.md §8](component-registry.md), dependency-mapped by
-[desktop-environment.md §5](desktop-environment.md), with their modularity/seam decisions in
+[desktop-environment.md §6](desktop-environment.md), with their modularity/seam decisions in
 [adr/0012-de-modularity-spinout-seams.md](adr/0012-de-modularity-spinout-seams.md). They are not
 duplicated here.
 

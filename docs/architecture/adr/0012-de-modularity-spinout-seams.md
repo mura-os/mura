@@ -32,7 +32,7 @@ knows what an OpenXR view, world anchor, depth buffer, or spatial thumbnail is.
 
 ## Decision
 
-The gating rule is [desktop-environment.md §3](../desktop-environment.md): mechanism stays in the
+The gating rule is [desktop-environment.md §4](../desktop-environment.md): mechanism stays in the
 authority plane; policy and presentation are spun out **where a seam exists**, kept as an
 in-process *plugin* where the seam would have to carry authority, and kept *compositor-internal*
 where latency, lock, or capture invariants forbid delegation.
@@ -49,6 +49,8 @@ where latency, lock, or capture invariants forbid delegation.
 | OSD framework | layer-shell + a narrow event channel | Non-focus-stealing; zxr constrains angular size/distance/persistence. OSDs never receive raw global input — values arrive over the service channel (e.g. ADR 0011 IPD-motor events). |
 | Display-config UI | `wlr-output-management` (non-HMD outputs only) | UI separate, zxr validates/applies atomically. **HMD configuration is explicitly not this** — see §4. |
 | Clipboard manager | `ext-data-control-v1`, binding-gated | Privileged global filtered to the trusted client; previews follow visibility policy (never floated into a shared/spectated space). |
+| Session restore manager | `xdg-session-management-v1` (served by zxr) + the `.desktop` database | The protocol restores window state for returning app instances but deliberately excludes relaunching — the manager owns relaunch and binds restored toplevels to **place IDs** (ADR 0009 anchors), so a room's workspace comes back apps-and-all. Evidence: doc 30 addendum. |
+| SNI watcher + host | StatusNotifierItem/Watcher D-Bus (de-facto spec, formally still draft 0.1) | **Decision: host SNI, don't drop it.** A supervised watcher service owns the bus name; the host renders items as typed badges in a panel applet/component (COSMIC's `cosmic-applet-status-area` + socket-activated watcher; Plasma's systemtray applet + KDED watcher — [30 §A3](../../research/30-wayland-de-anatomy-protocol-seams.md)). Dropping tray compatibility was rejected: too many long-running apps (chat, sync, audio) signal only through SNI. Never the sole route to critical/safety controls. |
 | Greeter, lock *auth*, PAM | greetd IPC / `spatial-authd` socketpair | Already decided in ADR 0007; listed for completeness as system-plane spin-outs. |
 
 ### 2. Pluggable in-process (plugin seam, not a protocol)
@@ -65,14 +67,24 @@ where latency, lock, or capture invariants forbid delegation.
   validated *configuration*; they do not hold a live policy socket.
 - **Lock scene (appliance profile)** — compositor-internal per ADR 0007 (the lock surface must
   exist when every client is dead); `ext-session-lock-v1` remains the dev/desktop-profile seam.
+- **Effects/animation module** — window open/close/move/switch transitions as an in-process
+  module (KWin-effects precedent: effects get paint hooks and the window list, never input or
+  protocol objects), under **authority-owned comfort caps**: in XR, sudden motion or scaling of
+  large surfaces is a vestibular-safety property, so maximum angular velocity/scale-rate limits
+  are compositor policy an effect cannot exceed. Never an external client (it runs inside the
+  frame loop).
 
 ### 3. Authority-only (never delegated)
 
 Final focus/activation decisions and global-shortcut/gesture interception; 2D/3D hit testing,
-input routing, and grabs; the window + space model and placement invariants; lock enforcement
-(ADR 0007 I1–I3) and every "presented safe frame" transition; capture/injection authorization and
-passthrough privacy redaction; sort-last composition and frame pacing (composition doc); boundary
-enforcement (dim/cut client content at the guardian fence).
+input routing, and grabs; the window + space model and placement invariants; decoration *policy*
+(per-window/per-state chrome decisions — the renderer is the §2 plugin, the policy is not); lock
+enforcement (ADR 0007 I1–I3) and every "presented safe frame" transition; capture/injection
+authorization and passthrough privacy redaction; sort-last composition and frame pacing
+(composition doc); the **colour pipeline** (serving `color-management-v1`/`color-representation-v1`
+to clients is a protocol duty, but applying panel calibration, choosing composition colour space,
+and matching passthrough to rendered content are composition-correctness mechanism that cannot
+leave the process); boundary enforcement (dim/cut client content at the guardian fence).
 
 ### 4. The zxr-private protocol surface (kept minimal)
 
@@ -82,7 +94,7 @@ spatial semantics ([30 §6](../../research/30-wayland-de-anatomy-protocol-seams.
 1. spatial workspace metadata + compositor-rendered space-preview sources (extends ext-workspace);
 2. spatial toplevel state/actions not expressible on upstream foreign handles;
 3. world/head/body anchoring + angular/metric exclusion zones for layer surfaces (reinterpreting
-   layer-shell's output-edge semantics per [desktop-environment.md §4](../desktop-environment.md));
+   layer-shell's output-edge semantics per [desktop-environment.md §5](../desktop-environment.md));
 4. spectator/stereo/depth capture source types + passthrough redaction (doc 17's SpatialCast);
 5. HMD/runtime configuration (IPD, render scale, refresh, recentering, passthrough toggle) as a
    narrow settings API backed by Monado capability checks — never `wl_output` mode-setting.
@@ -120,7 +132,7 @@ system.
   compositor or a zxr extension — none pushed toward looser coupling than the desktop precedent.
 - **Spin-outs force the protocol surface to exist.** Building launcher/switcher/OSD as separate
   clients makes the privileged-protocol implementations direct dependencies of the first shell
-  components (the seam-layer edges in [desktop-environment.md §5.3](../desktop-environment.md)),
+  components (the seam-layer edges in [desktop-environment.md §6.3](../desktop-environment.md)),
   so the seams get exercised by real consumers rather than staying speculative.
 
 ## Consequences
@@ -129,11 +141,18 @@ system.
   management shim), `wlr-layer-shell`, `xdg-activation`, `xdg-decoration`, `ext-idle-notify` +
   idle-inhibit, dev-profile `ext-session-lock`, `security-context` + global filtering,
   text-input-v3 / input-method-v2 / virtual-keyboard-v1, `ext-image-capture-source` +
-  `ext-image-copy-capture`, `ext-data-control`, `wlr-output-management`, cursor-shape.
-  ([30 §6](../../research/30-wayland-de-anatomy-protocol-seams.md) is the normative list.)
+  `ext-image-copy-capture`, `ext-data-control`, `wlr-output-management`, cursor-shape,
+  `xdg-session-management-v1`, `xdg-toplevel-icon-v1`, and `color-management-v1` +
+  `color-representation-v1`.
+  ([30 §6](../../research/30-wayland-de-anatomy-protocol-seams.md) plus its addenda are the
+  normative list.)
 - New separate components to build (tracked in [component-registry.md](../component-registry.md)):
   launcher, switcher UI, OSD daemon, notification daemon, portal backend, settings UI,
-  clipboard manager — each an ordinary client/daemon replaceable without recompiling zxr.
+  clipboard manager, session restore manager, and the panel's SNI host — each an ordinary
+  client/daemon replaceable without recompiling zxr.
+- **Non-goal recorded: desktop icons.** The environment is not an icon surface; the launcher (a
+  phone-style app grid / "start menu" scene) owns application icons, fed by the desktop-entry +
+  icon-theme XDG specs. No desktop-icons component will be built.
 - The zxr shell-integration protocol family (§4) is a deliverable beside zxr-shell-v2, versioned
   and documented like it; its workspace/preview extension is an upstreaming candidate.
 - Known gaps accepted: no merged ext foreign-toplevel *management* (we ship the wlr shim and

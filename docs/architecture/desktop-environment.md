@@ -50,7 +50,64 @@ ADRs 0008–0011 enforceable by process design rather than policy.
 
 Two questions, plus the boot-time trust root, yields five planes.
 
-## 2. The five planes
+## 2. Terminology: the five traps
+
+The desktop vocabulary spatial-os inherits is overloaded in ways that have historically confused
+architecture discussions. This document (and the registry and ADRs) uses the following
+disambiguations everywhere; when other documents' wording collides with these, these win.
+
+**1. "Compositor" means two things.** Narrow sense: the *composition engine* — the subsystem that
+combines surfaces into an output image. Broad sense (normal Wayland usage): the whole *display
+server* — the process owning input, outputs, window-management authority, and (usually) that
+engine. "KWin is the compositor" obscures exactly this: KWin-the-process is a Wayland display
+server; inside it lives a narrower compositing/rendering subsystem. The X11 mental model —
+display server plus a *replaceable* window manager — does not map onto Wayland: window-management
+policy is part of the compositor process, and anything exercising that authority from outside
+needs a compositor-granted privileged protocol. In this repository: **the zxr compositor** always
+means the authority-plane process (broad sense); **the composition engine** means the sort-last
+colour+depth subsystem inside it ([composition doc](zxr-shell-v2-composition.md) §2–§5, narrow
+sense). The named internal subsystems of the broad-sense compositor are listed in §3 under
+"Authority plane".
+
+**2. "Shell" means three things.** (a) The **desktop shell** — the launcher/panels/overview/OSD
+presentation layer: our shell plane. (b) **`xdg-shell`** — the Wayland protocol that gives
+surfaces desktop-window *roles* (`xdg_toplevel`, `xdg_popup`); despite the name it has nothing to
+do with (a) — every ordinary app uses it, no desktop-shell component need exist. (c)
+**Shell-integration privileged protocols** — layer-shell, `ext-workspace`, foreign-toplevel, the
+zxr shell-integration family (ADR 0012 §4) — the seams that (a) binds to talk to the compositor.
+`zxr-shell-v2` is named in tradition (b): it is a surface-role protocol for 3D clients, not a
+desktop shell.
+
+**3. "XDG" means three things.** (a) The **freedesktop Cross-Desktop Group specification
+family** — desktop entries (`.desktop`), base directories (`$XDG_*`), icon themes, MIME
+associations, autostart, trash, the desktop-notifications spec, StatusNotifierItem: file-format
+and D-Bus conventions with no Wayland involvement (sources pinned at
+`references/xdg-specs`). (b) The **`xdg_*` namespace inside `wayland-protocols`** (`xdg-shell`,
+`xdg-activation`, `xdg-decoration`, `xdg-session-management`) — a protocol-governance label,
+unrelated to (a)'s base-directory spec beyond shared ancestry. (c) **`xdg-desktop-portal`** — the
+sandboxed-app D-Bus mediation service (one frontend, per-DE backends). spatial-os needs all
+three, they evolve independently, and a claim about "XDG support" is meaningless until it says
+which one. Doc 30's addendum compares (a) against what KDE and GNOME actually implement.
+
+**4. Decorations are three concerns, not one.** *Decoration policy* — does this window get
+decorations at all; server-side vs client-side (the `xdg-decoration` negotiation, and our forced-
+SSD stance for proxied clients); border/chrome behaviour per window state. *Decoration
+rendering* — the theme/chrome drawn (pluggable, ADR 0012 §2). *Decoration input handling* — hit
+regions and move/resize/close grabs (inseparable from input dispatch). The worked example in §4
+places all three.
+
+**5. "Session management" is three concepts.** *Session supervision* — starting/stopping the
+session's services (`spatial-session.target`, ADR 0007). *Login-session tracking* — users, seats,
+device ownership (logind). *Application session restoration* — "these apps were open, these
+windows belonged here; restore them after login" (the `xdg-session-management-v1` seam plus a
+restore manager, §6.3 — XR-amplified, because anchored places persist *placement* but something
+must own *relaunching* apps into it). Only the first two were covered before this document;
+conflating the three hides the third.
+
+(A related historical naming note: a "display manager" manages graphical logins, not displays —
+greetd in our stack; output configuration is an unrelated responsibility.)
+
+## 3. The five planes
 
 ```mermaid
 flowchart TB
@@ -105,8 +162,23 @@ clients may bind the capture globals; the EIS server for injection, doc
 every visible surface into **one** OpenXR projection layer per
 [zxr-shell-v2-composition.md](zxr-shell-v2-composition.md).
 
-The authority plane is *mechanism-first*: per §3 below, policy and presentation are pushed out of
+The authority plane is *mechanism-first*: per §4 below, policy and presentation are pushed out of
 it wherever a seam exists that doesn't compromise latency or the lock/capture invariants.
+
+Because "the compositor" in the broad sense (§2 trap 1) hides real structure, the zxr process
+decomposes into **named subsystems**, each with a registry row:
+
+| Subsystem | What it owns | Registry evidence |
+|---|---|---|
+| Protocol server | core globals, `xdg-shell`, `zxr-shell-v2`, privileged globals + per-connection filtering | specified (ADR 0006) |
+| Window + space model, WM policy | lifecycle, placement, stacking, states, rules; places | window model partial; space model missing |
+| Input subsystem | seats, ray/6DoF/keyboard routing, focus, activation, shortcut interception, grabs | focus/activation missing |
+| Output paths | the OpenXR loop (Monado owns the HMD display — no desktop-style modesetting) and the desktop dev window; `wlr-output-management` for non-HMD heads | specified (composition §7) |
+| Scene graph | surface→world transforms, decoration nodes, damage tracking | implicit in composition doc — no explicit design |
+| Composition engine (narrow-sense "compositor") | sort-last colour+depth → one OpenXR projection layer; frame scheduling | specified (composition §2–§5, §7.4) |
+| Effects / animation module | open/close/move transitions under authority-owned comfort caps | missing |
+| Colour pipeline | `color-management`/`color-representation` protocols, panel calibration application, passthrough-vs-rendered matching | missing |
+| Privileged desktop interfaces | capture, EIS injection, dev-profile session-lock, the zxr shell-integration family | specified (ADR 0012) |
 
 ### Perception plane
 
@@ -124,7 +196,7 @@ opt-in per app) are properties of this plane's boundary, stated in the owning AD
 
 Presentation: the launcher, the spatial task switcher's UI, the places/workspace overview (pager),
 panels/docks, OSDs (volume/brightness/IPD), notification popups, the lock *scene* (on the
-appliance profile this one is rendered by the compositor itself — see the lock example in §3 and
+appliance profile this one is rendered by the compositor itself — see the lock example in §4 and
 the exception list in ADR 0012), and decoration chrome. Shell components hold *no* general
 authority: each binds exactly the privileged protocol(s) its job needs (foreign-toplevel list for
 a switcher, `ext-workspace` for a pager, layer-shell for panels/OSDs), and the compositor gates
@@ -146,7 +218,7 @@ The donor pipeline, image assembly, update bundles, and the device contract
 ([overview.md](overview.md)'s build boundary) sit outside runtime entirely. The registry keeps
 them in a separate build-plane section; nothing in this document changes them.
 
-## 3. The mechanism / policy / presentation rule
+## 4. The mechanism / policy / presentation rule
 
 Within every feature, separate:
 
@@ -174,12 +246,16 @@ seam. Where the *previews* come from is an XR twist: thumbnails of a 3D place mu
 the compositor (a client cannot re-render a space it can't see into) — the seam carries the model;
 preview images are compositor-provided (via the capture stack, doc 17).
 
-**3D decorations.** Hit-testing the grab handles / close affordances of a window's 3D chrome —
-deciding that a ray hit *decoration*, not *content* — is mechanism: input routing. The look of
-the chrome (handle geometry, hover glow, theme) is presentation and belongs behind a decoration
-boundary (in-process plugin or server-side default), with clients able to negotiate CSD/SSD via
-`xdg-decoration` for the 2D tier. What never leaves the compositor: the decision of *where*
-decoration regions are, because that is input-dispatch correctness.
+**3D decorations.** Three concerns (§2 trap 4), placed separately. *Input handling* — hit-testing
+the grab handles / close affordances of a window's 3D chrome, deciding that a ray hit
+*decoration*, not *content* — is mechanism: input routing. *Decoration policy* — whether a given
+window gets chrome at all, the SSD/CSD negotiation (`xdg-decoration` on the 2D tier; forced
+server-side for proxied clients per doc 19), and per-state behaviour (maximized/immersive windows
+shed borders; a grabbed window may grow handles) — is compositor policy, configurable but not
+delegable. *Rendering* — the look of the chrome (handle geometry, hover glow, theme) — is
+presentation and belongs behind a decoration boundary (in-process plugin, ADR 0012 §2). What
+never leaves the compositor: the decision of *where* decoration regions are, because that is
+input-dispatch correctness.
 
 **Lock — the exemplar (already decided).** ADR 0007 splits it exactly on this rule: enforcement
 (I1–I3) is compositor mechanism; the *policy* ladder (doff/don grace, idle steps, boot-locked) is
@@ -189,7 +265,7 @@ exist even when every client is dead), while the dev/desktop profile exposes
 `ext-session-lock-v1` so third-party lockers work. One feature, four placements, each argued from
 mechanism/policy/presentation. The rest of the DE should be factored with the same knife.
 
-## 4. XR redefinitions of desktop concepts
+## 5. XR redefinitions of desktop concepts
 
 What the standard vocabulary *means* on a headset — the compatibility surface stays (the protocols
 still speak of outputs and surfaces), but the semantics shift:
@@ -202,16 +278,19 @@ still speak of outputs and surfaces), but the semantics shift:
 | Panel / dock / bar | A world- or body-anchored quad (wrist panel, desk dock) built on layer-shell semantics with anchor reinterpretation (see above). Exclusive zones make no sense on a sphere; reserved space becomes reserved *solid angle* per reference frame. |
 | OSD | A head-locked, gaze-comfortable transient (volume, brightness, IPD readout during motor moves — ADR 0011's motor events are the canonical OSD trigger). |
 | Notification | Spec-compliant D-Bus service (service plane) + spatial presentation policy (shell): head-locked toast vs. world-anchored near its app vs. wrist summary; do-not-disturb tied to presence and app immersion state. While spectating/sharing, notification suppression is a *capture-policy* duty (doc 17's consent language). |
-| Alt-tab | The spatial switcher (§3). |
+| Alt-tab | The spatial switcher (§4). |
 | Wallpaper | The environment: passthrough (ADR 0008) or a skybox/scene client — selected by the same policy switch as the passthrough toggle. |
 | Screenshot / screencast | The five sharing modes ([spatial-sharing.md](spatial-sharing.md)); authorization always via the portal + compositor, with XR-specific consent language (observer-controlled viewpoint, gaze warnings). |
 | Session lock | ADR 0007's compositor state machine; "screen off" = panels blanked + doff grace timer. |
 | Login screen | The zxr `--greeter` scene (multi-user profile) or nothing (appliance autologin). |
+| Desktop icons | None. The environment is not an icon surface; app icons live in the launcher — a phone-style grid / "start menu" scene (ADR 0012's desktop-icons non-goal). |
+| System tray | A StatusNotifierItem (SNI) host in the panel — apps shipping SNI render as typed badges on panel surfaces (ADR 0012 decision; COSMIC precedent). There is no free-floating XR tray. |
+| Session restore | Places persist *where* windows belong (ADR 0009 anchors); the restore manager owns *relaunching* apps into them after login, over the `xdg-session-management-v1` seam (§2 trap 5, §6.3). |
 
 Desktop concepts with **no XR analog** (do not build them): physical multi-monitor arrangement
 UIs, cursor themes as a user-facing concern (the "cursor" is a ray/fingertip; shape feedback is
 decoration/interaction state), fullscreen-as-mode-set (everything is composited; "fullscreen" is
-an immersion *level*), tray icons as pixel wells (status becomes typed badges on panels).
+an immersion *level*), desktop icons (see table — the launcher owns the app grid).
 
 XR concepts with **no desktop analog** (someone must own them; registry rows exist for each):
 the guardian/boundary system (perception-plane data, authority-plane enforcement — it must dim/cut
@@ -221,7 +300,7 @@ switch affecting environment layer + boundary + notification policy); doff/don p
 grace ladder); per-user IPD/comfort application at session start (ADR 0011); motor/actuator OSDs;
 spectate/consent badging rendered *in-space* (doc 17).
 
-## 5. The component dependency graph
+## 6. The component dependency graph
 
 This section records **hard dependencies only**. An edge means *cannot function without* — never
 "should be built before". Components not connected by a path are mutually unordered by
@@ -241,14 +320,14 @@ Conventions:
 - Plane tags: `[A]`uthority, `[S]`ystem, `[P]`erception, `[H]` shell, `[V]` service,
   `[build]` build plane, `[OS]` plain OS infrastructure (systemd, D-Bus, PipeWire, logind).
 
-### 5.1 Roots
+### 6.1 Roots
 
 Components with no dependency on any other DE component — only on OS infrastructure or the build
 plane. Everything else in the graph descends from one or more of these:
 
 - `[A]` **compositor core** — Wayland protocol server + Vulkan renderer + frame scheduler, one
-  process (ADR 0006). The root of §5.2 and §5.3.
-- `[P]` **Monado + the device adaptation bundle** — the root of §5.5 and of every HMD-only
+  process (ADR 0006). The root of §6.2 and §6.3.
+- `[P]` **Monado + the device adaptation bundle** — the root of §6.5 and of every HMD-only
   feature. ◇ gated by the display-path feasibility test and the D1/D2 spikes (ADR 0006).
 - `[S]` **seatd/logind, the systemd user session, D-Bus** — the root of greetd, the session
   target, and every service daemon.
@@ -259,7 +338,7 @@ plane. Everything else in the graph descends from one or more of these:
   interfaces, audio session policy, power/thermal policy, default-apps/MIME database. These are
   mutually independent; each becomes load-bearing only when a consumer edge below is built.
 
-### 5.2 Authority plane: the in-compositor DAG and the session cluster
+### 6.2 Authority plane: the in-compositor DAG and the session cluster
 
 ```text
 [A] compositor core (protocol server · Vulkan renderer · frame scheduling)
@@ -268,24 +347,29 @@ plane. Everything else in the graph descends from one or more of these:
  │   └─ OpenXR loop ──► [P] Monado ──► [build] device adaptation
  │        └──► [S] per-unit calibration state
  │        (every node marked "HMD-only" below requires this path)
+ ├─ colour pipeline (colour-management/-representation protocols · panel
+ │      calibration from [build] adaptation · passthrough/rendered matching)
+ ├─ effects / animation module (in-process; authority-owned comfort caps)
  ├─ 2D quad tier (xdg-shell trees · subsurfaces · popups · plane depth)
  │   ├─ window model (lifecycle · stacking · world transforms)
  │   │   ├─ input routing & focus (ray/6DoF/keyboard → window-local events)
  │   │   │   ├─ xdg-activation authority
  │   │   │   ├─ global-shortcut / gesture interception
- │   │   │   ├─ decoration enforcement ── chrome renderer plugin (in-process seam)
+ │   │   │   ├─ decoration policy ── decoration enforcement ── chrome renderer
+ │   │   │   │      plugin (in-process seam)
  │   │   │   └─ EIS injection server ──► [V] portal RemoteDesktop session
+ │   │   ├─ session-restore mechanism (xdg-session-management-v1 server side)
  │   │   ├─ space model ("places") ┄┄► [P] mapping/anchor service
  │   │   │      (local, non-anchored places work without mapping;
  │   │   │       anchored/persistent places do not)
  │   │   └─ Xwayland integration (WM glue for rootless X clients)
- │   └─ window-local composition textures (feeds the capture seam, §5.3)
+ │   └─ window-local composition textures (feeds the capture seam, §6.3)
  ├─ 3D tier (zxr-shell-v2 colour+depth clients in the shared depth-tested space)
  │   └─ 3D decorations / manipulation affordances ──► input routing (hit volumes)
  ├─ lock state machine (I1–I3) ──► [S] spatial-authd ──► PAM stack ──► PIN credential
  │   ├─ lock scene (in-process presentation, appliance profile)
  │   └─ doff/don + idle ladder ──► presence (HMD-only: XR_EXT_user_presence)
- └─ boundary breach response ──► [P] boundary probes (§5.5)
+ └─ boundary breach response ──► [P] boundary probes (§6.5)
 ```
 
 The session cluster around it:
@@ -303,14 +387,14 @@ The session cluster around it:
 Notes on edges that are easy to get wrong:
 
 - The **desktop-window dev output** means the entire 2D subtree, the lock machine (minus
-  presence), and every §5.3 consumer are HMD-independent: they run and are testable on a
-  desktop. Only the OpenXR loop, presence, the greeter's tracking tier, and §5.5 need hardware.
+  presence), and every §6.3 consumer are HMD-independent: they run and are testable on a
+  desktop. Only the OpenXR loop, presence, the greeter's tracking tier, and §6.5 need hardware.
 - The **space model's edge to mapping is degraded, not hard** — that is what makes local places
   buildable while ADR 0009's M0 gate is unresolved.
 - **`spatial-session.target` supervises but is not depended on**: the compositor functions when
   launched by hand; the target is how the appliance profile arranges crash/restart.
 
-### 5.3 The privileged seam layer: authority models → protocols → consumers
+### 6.3 The privileged seam layer: authority models → protocols → consumers
 
 Each privileged protocol depends on the authority-plane model it exports; each shell/service
 component depends on the protocols it binds. `security-context-v1` + per-connection global
@@ -320,7 +404,10 @@ filtering (ADR 0012 §5) sits on **every** edge in the consumer column.
 AUTHORITY MODEL              EXPORTED SEAM                          CONSUMERS
 ──────────────────           ─────────────────────────────          ───────────────────────────────
 window model ──────────────► ext-foreign-toplevel-list-v1     ────► [H] switcher UI · [H] taskbar panel
-                             (+ wlr-…-management action shim)
+                             (+ wlr-…-management action shim
+                              + xdg-toplevel-icon for icons)
+window model +
+session-restore mechanism ─► xdg-session-management-v1        ────► [V] session restore manager
 space model ───────────────► ext-workspace-v1                 ────► [H] pager / places overview
                              (+ zxr spatial extension)
 composition textures ──────► ext-image-capture-source-v1      ────► [V] portal backend ──► OBS/WebRTC/…
@@ -340,6 +427,9 @@ Consumer-side edges that cross *out* of this table:
 
 ```text
 [H] launcher ─────────► [V] default-apps/MIME + .desktop database
+[V] session restore
+    manager ──────────► [V] .desktop database (relaunch) · [A] space model (place binding)
+[H] panels ───────────► [V] SNI watcher (D-Bus near-root; host renders in a panel applet — ADR 0012)
 [H] panels ┄┄──────────► status sources: [V] audio policy · power · network · [P] tracking state
 [H] OSDs ─────────────► event channels: [V] settings daemon · [P] IPD-motor events (ADR 0011)
 [H] notification UI ──► [V] notification service (org.freedesktop.Notifications)
@@ -350,10 +440,10 @@ Consumer-side edges that cross *out* of this table:
 [V] settings daemon ──► (near-root; consumers take defaults when absent — weak edges by design)
 ```
 
-### 5.4 Sharing modes onto the seams
+### 6.4 Sharing modes onto the seams
 
 ```text
-[A] capture seam (§5.3) ──► [V] portal backend ──► modes 1–2 (spectate · 2D window share)
+[A] capture seam (§6.3) ──► [V] portal backend ──► modes 1–2 (spectate · 2D window share)
                                   ├──► [H] consent picker
                                   └──► [A] EIS injection (remote input for mode 2)
 [A] observer-view objects ──► [V] sharing service ──► mode 3 ──► [A] RGBD bridge + per-app
@@ -365,7 +455,7 @@ Consumer-side edges that cross *out* of this table:
 Mode 5 is the deepest node in the whole graph: it transitively requires the space model, the
 sharing service, consent/portal machinery, and (for anchored spaces) the mapping chain.
 
-### 5.5 Perception chain into the authority plane
+### 6.5 Perception chain into the authority plane
 
 ```text
 [build] camera adaptation (spatial.adaptation.camera / .eyes)
@@ -395,27 +485,25 @@ sharing service, consent/portal machinery, and (for anchored spaces) the mapping
 ```
 
 Every perception output crosses into the authority plane as a finished layer or an
-OpenXR-visible device (§2); no shell or service component may take a dependency on anything
+OpenXR-visible device (§3); no shell or service component may take a dependency on anything
 above that line.
 
-### 5.6 Gates and known absences
+### 6.6 Gates and known absences
 
 The four ◇ gates block exactly their subtrees and nothing else: display-path/D1/D2 (the HMD
 output path and everything HMD-only), mapping M0 (anchored places and below), P-1 BSP
 (passthrough/cutout), S-1/R-1 (avatar). The 2D subtree, the seam layer, the session cluster, and
 every near-root service are gate-free.
 
-Components identified in review as missing from the registry (and therefore from this graph):
-application session restoration (would hang off the window model + launcher; the experimental
-xdg session-management protocol is the candidate seam), colour management/HDR (off the renderer
-and output paths), effects/animation policy (off composition), and an SNI/status-notifier host
-(off panels). They enter the graph when their registry rows are added.
+The components a terminology-trap review surfaced (session restoration, colour pipeline,
+effects module, SNI host, decoration policy, an explicit scene graph) are now nodes above and
+rows in the registry; the protocol evidence behind them is doc 30's addenda.
 
 The registry ([component-registry.md](component-registry.md)) inventories every node here with
-evidence-based status; its gap list (§8 there) shows the missing mass sits in the §5.3 consumer
+evidence-based status; its gap list (§8 there) shows the missing mass sits in the §6.3 consumer
 column and the near-root services (its §11 totals).
 
-## 6. Reading map
+## 7. Reading map
 
 - What exists / what's missing, per component: [component-registry.md](component-registry.md)
 - Which seams are standard and what precedent says: [research/30](../research/30-wayland-de-anatomy-protocol-seams.md)

@@ -3,6 +3,7 @@
 **Status:** research complete  
 **Date:** 2026-09-22  
 **Scope:** protocol and implementation evidence for ADR 0012; no architecture decision is made here.
+**Scope rule (added after a coverage failure):** protocol surveys in this repo must sweep the full `staging/` + `unstable/` + `experimental/` directories of the pinned wayland-protocols clone, never a named list. The addenda below close the gaps that rule found.
 
 ## 0. Executive result
 The useful dividing line is not “UI versus compositor.” It is **presentation versus authority**.
@@ -543,3 +544,337 @@ Keep inside the compositor:
 This follows COSMIC’s successful Smithay process split without copying temporary private duplicates, preserves
 Plasma’s proven in-process extension points where authority is inseparable, and concentrates zxr’s novel protocol work
 on genuinely spatial semantics.
+
+## Addendum A1 — The colour pipeline seam
+
+### A1.1 Two protocols, two different questions
+
+`color-management-v1` answers **what colorimetry the sample values mean and how content should be mapped**. It gives
+each output an immutable image description, gives each surface a compositor-selected preferred description, and lets
+a client attach its own description plus a rendering intent as double-buffered surface state
+([XML](../../references/wayland-protocols/staging/color-management/color-management-v1.xml)). Descriptions may be:
+
+- **parametric** — primaries/white point, named or power transfer function, primary and target luminance ranges,
+  mastering primaries/luminance, MaxCLL and MaxFALL;
+- **ICC v2/v4** — a bounded, readable profile supplied by file descriptor; or
+- predefined Windows-scRGB / Windows-BT.2100 descriptions where advertised.
+
+The compositor must support perceptual intent; relative, saturation, absolute, relative+BPC, and
+absolute-without-adaptation are optional. An untagged surface is implementation-defined, though the XML recommends
+treating it as sRGB. The protocol makes the compositor the conversion authority: a ready client description must be
+accepted, but the compositor may transform it for the actual output
+([surface semantics](../../references/wayland-protocols/staging/color-management/color-management-v1.xml)).
+
+`color-representation-v1` answers the lower-level **how to reconstruct channels from this buffer** question. It does
+not define RGB colorimetry. It supplies electrical/optical/straight alpha mode, H.273 matrix coefficients, full or
+limited quantization range, and 4:2:0 chroma sample location—especially the missing metadata for YCbCr dma-bufs
+([XML](../../references/wayland-protocols/staging/color-representation/color-representation-v1.xml)). Correct handling
+requires both protocols: representation converts stored channels to RGB tristimulus values; image description gives
+those values colorimetric meaning.
+
+Both remain staging/testing in the pinned 2026-09-09 clone. Color management entered
+wayland-protocols 1.41 on 2025-02-17
+([release](https://lists.freedesktop.org/archives/wayland-devel/2025-February/043980.html)); color representation entered
+1.44 on 2025-04-27
+([release](https://mail-archive.com/wayland-devel@lists.freedesktop.org/msg43457.html)).
+
+### A1.2 Shipping evidence and the Smithay gap
+
+KWin shipped user-selectable HDR in Plasma 6.0 using a temporary KDE protocol, then switched its server to the
+upstream color-management XML in October 2024
+([Plasma 6 account](https://zamundaaa.github.io/wayland/2023/12/18/update-on-hdr-and-colormanagement-in-plasma.html),
+[upstream switch](https://invent.kde.org/plasma/kwin/-/merge_requests/6711)). The pinned tree advertises v3 and
+implements ICC/parametric descriptions and intents in
+[`src/wayland/colormanagement_v1.cpp`](../../references/kwin/src/wayland/colormanagement_v1.cpp), and implements
+alpha/coefficient/range/chroma state in
+[`src/wayland/colorrepresentation_v1.cpp`](../../references/kwin/src/wayland/colorrepresentation_v1.cpp).
+
+Mutter shipped `wp_color_management_v1` and experimental HDR controls in GNOME 48 (48.0 released 2025-03-19);
+Mutter 48 NEWS names the protocol and HDR DisplayConfig support
+([NEWS](https://github.com/GNOME/mutter/blob/86097755798e96b10ae167086acbd0eaf2688804/NEWS)).
+The pinned tree contains its server in
+[`meta-wayland-color-management.c`](../../references/mutter/src/wayland/meta-wayland-color-management.c) and the
+representation global plus YCbCr tests in
+[`meta-wayland-color-representation.c`](../../references/mutter/src/wayland/meta-wayland-color-representation.c).
+
+wlroots now has a real `wlr_color_manager_v1` API with advertised features, descriptions, outputs, and surface
+feedback—not merely generated bindings
+([API](https://wlroots.pages.freedesktop.org/wlroots/wlr/types/wlr_color_management_v1.h.html)). Smithay/wayland-rs
+exposes generated staging bindings, but the pinned `cosmic-comp` has no color-management handler; generated bindings
+are not an end-to-end renderer/color pipeline
+([bindings](https://smithay.github.io/smithay/src/wayland_protocols/wp.rs.html),
+[`cosmic-comp`](../../references/cosmic-comp/)). A Smithay-leaning zxr therefore owns integration work even though it
+does not need to invent the wire protocol.
+
+### A1.3 OpenXR is the final output leg, not a replacement
+
+`XR_FB_color_space` lets an application enumerate runtime-supported spaces and call `xrSetColorSpaceFB`; if it does
+not call, the runtime chooses a default
+([Khronos reference](https://registry.khronos.org/OpenXR/specs/1.1/man/html/xrSetColorSpaceFB.html)). It is an optional
+vendor extension and is not implemented in the pinned Monado tree: a full-tree search finds no
+`XR_FB_color_space`, while Monado's compositor currently defaults its Vulkan target to
+`VK_COLOR_SPACE_SRGB_NONLINEAR_KHR`
+([settings](../../references/monado/src/xrt/compositor/main/comp_settings.c),
+[published extension list](https://monado.freedesktop.org/)).
+
+That makes zxr's baseline explicit: decode every client buffer according to representation + image description,
+blend and tone-map in a known linear working space, then encode exactly once for the OpenXR swapchain/runtime path.
+Sampling sRGB bytes through a UNORM view omits decode; sampling linear bytes through an sRGB view adds one; blending
+in encoded sRGB is wrong. Monado itself carries separate sRGB/UNORM image views and conversion paths, showing that
+the distinction is operational rather than terminology
+([swapchain code](../../references/monado/src/xrt/compositor/util/comp_swapchain.c),
+[OpenVR bridge](../../references/monado/src/xrt/state_trackers/openvr/compositor/openvr_compositor_vulkan.cpp)).
+
+Panel primaries, transfer response, black level, brightness limits, lenses, and camera response vary per headset.
+Consequently panel/camera characterization is device adaptation data, available before login like the lens/IPD
+calibration already required by ADR 0007—not an application preference
+([ADR 0007](../architecture/adr/0007-session-greeter-lock.md)). Passthrough matching is a second transform:
+camera raw/ISP output → characterized scene/display space → panel output. Matching rendered white to passthrough
+white requires camera exposure/white-balance metadata and panel calibration; neither Wayland protocol describes
+camera radiometry.
+
+| Boundary | Rating | zxr responsibility |
+|---|---|---|
+| Client surface → compositor | **standard-seam** | Serve both staging protocols; accept ICC/parametric descriptions and representation metadata; publish preferred descriptions. |
+| Compositor working space → HMD | **authority-only** | Own linearization, gamut/tone mapping, blend order, OpenXR swapchain encoding, panel calibration, and camera/display passthrough matching. `XR_FB_color_space` may optimize the final leg when Monado implements it, but cannot delegate policy. |
+
+## Addendum A2 — Application session restoration
+
+### A2.1 What `xdg-session-management-v1` restores
+
+The manager creates or reopens an application session using an opaque UTF-8 identity string and one of `launch`,
+`recover`, or `session_restore`. A new session emits `created(session_id)`; a recognized one emits `restored`; taking
+the same identity from another client emits `replaced`. Sessions persist across application and compositor restarts,
+subject to compositor retention/eviction policy
+([XML](../../references/wayland-protocols/staging/xdg-session-management/xdg-session-management-v1.xml)).
+
+Within a session, the application assigns stable names to individual `xdg_toplevel`s. `add_toplevel` starts tracking
+a new name; `restore_toplevel` must be sent before the toplevel's first surface commit and asks the compositor to
+apply its stored window-management state during the initial configure. Unknown names degrade to add, and clients
+must tolerate missing or partial state. The compositor chooses what “state” means
+([toplevel semantics](../../references/wayland-protocols/staging/xdg-session-management/xdg-session-management-v1.xml)).
+
+There is intentionally no executable, desktop-file ID, command line, document URI, application checkpoint payload,
+or relaunch request in the protocol. It restores compositor-owned state for a returning app instance; it does not
+restart that app or restore its internal tabs/documents. That negative boundary follows directly from the protocol's
+only objects—sessions and `xdg_toplevel`s—and is also the limit KDE documented for its initial implementation
+([KDE account](https://blogs.kde.org/2025/04/12/this-week-in-plasma-the-beginnings-of-wayland-session-restore/)).
+
+The old `xx-session-management-v1` experimental draft remains in the pinned clone for archaeology
+([old XML](../../references/wayland-protocols/experimental/xx-session-management/xx-session-management-v1.xml)).
+The finalized `xdg_` protocol graduated to staging in wayland-protocols **1.48 on 2026-04-01**
+([release announcement](https://lists.freedesktop.org/hyperkitty/list/wayland-devel@lists.freedesktop.org/thread/5PO3FZFL2EF4SKJTWX6J2IQ2S2DUX62O/)).
+
+### A2.2 Adoption and the necessary second component
+
+KWin first shipped opt-in draft support in Plasma 6.4, then merged the final `xdg_` spelling in March 2026
+([draft implementation](https://invent.kde.org/plasma/kwin/-/merge_requests/7475),
+[final implementation](https://invent.kde.org/plasma/kwin/-/merge_requests/8985)). The pinned implementation stores
+frame geometry and other compositor state in a bounded `KSharedDataCache`, rejects restore after initial configure,
+and exposes the final global
+([server](../../references/kwin/src/wayland/xdgsession_v1.cpp),
+[storage API](../../references/kwin/src/wayland/xdgsession_v1.h)). Qt 6.10 and Chromium had draft client work; broad
+application adoption still cannot be assumed, and no pinned niri implementation was found.
+
+Full desktop restore is therefore two cooperating mechanisms:
+
+1. **zxr implements the Wayland protocol** and stores placement/state keyed by session ID + toplevel name.
+2. **A session restore manager records and relaunches applications**, carrying each session ID back to the returning
+   process through toolkit/application integration.
+
+Plasma demonstrates that split. `ksmserver` still speaks XSMP to cooperating X11 clients, while its Wayland startup
+also asks KWin to load compositor state. A fallback saver records running application IDs; its restorer resolves
+desktop entries, skips entries already covered by autostart/ksmserver, and relaunches with `KIO::ApplicationLauncherJob`
+([startup overview](../../references/plasma-workspace/startkde/README.md),
+[restore code](../../references/plasma-workspace/startkde/session-restore/restore.cpp),
+[XSMP server](../../references/plasma-workspace/ksmserver/server.cpp)).
+
+GNOME removed legacy restore in GNOME 49 because it was dead under systemd-managed sessions and XSMP clients could
+not be reliably mapped to desktop files
+([removal](https://github.com/GNOME/gnome-session/commit/586db75b6ec75d3e52998a00f52ac64e9d9da2b1)).
+A replacement initiative based on `xdg_session_management_v1`, Mutter/toolkit support, and explicit app relaunch is
+in development, but was not a complete user-facing feature as of the pinned date
+([initiative](https://discourse.gnome.org/t/introducing-the-session-save-restore-initiative/33127)).
+
+### A2.3 XR amplification and verdict
+
+For spatial-os, a “place” is persistent compositor state, not application state. The compositor record should add
+`place_id`, anchor identifier/version, transform relative to that anchor, bounds, presentation kind, and a safe
+fallback when an anchor cannot be resolved. The restore manager must relaunch the app into the intended place and
+deliver its opaque session identity; zxr then decides whether the old transform is still safe. This extends the
+existing workspace/anchor model without putting executable launch authority in the Wayland protocol.
+
+| Boundary | Rating | spatial-os responsibility |
+|---|---|---|
+| Returning toplevel → old state | **standard-seam** | Implement `xdg-session-management-v1`; extend stored compositor data with place/anchor IDs and degrade safely when anchors disappear. |
+| Login/session → application relaunch | **private-seam** | A supervised `spatial-session-restore` service uses desktop entries and activation, deduplicates autostart, and hands session IDs back to apps/toolkits. It never grants apps arbitrary placement. |
+
+## Addendum A3 — Status items and toplevel icons
+
+### A3.1 SNI is a deployed D-Bus seam with draft governance
+
+The StatusNotifierItem document defines three session-bus roles: applications export `StatusNotifierItem`s; the
+single `StatusNotifierWatcher` tracks them; one or more `StatusNotifierHost`s render them. Items expose status,
+named/pixmap icons, tooltip, DBusMenu path, activation, secondary activation, and scroll
+([local spec](../../references/xdg-specs/status-notifier-item/status-notifier-item-spec.xml)). The clone's index marks
+SNI **draft**, version 0.1; the document itself still says `TBD`, so this is not a finished freedesktop standard even
+though `org.kde.StatusNotifier*` is de facto interoperable
+([index](../../references/xdg-specs/spec-index.toml),
+[revisions](../../references/xdg-specs/spec-revs.toml)).
+
+Plasma hosts it in the `plasma-workspace` system-tray applet and runs the watcher as a KDED module
+([host](../../references/plasma-workspace/applets/systemtray/statusnotifieritemhost.cpp),
+[watcher](../../references/plasma-workspace/statusnotifierwatcher/statusnotifierwatcher.cpp)). COSMIC hosts it in
+**`cosmic-applets`, component `cosmic-applet-status-area`**, not `cosmic-panel`; that component also installs a
+socket-activated watcher service
+([source](https://github.com/pop-os/cosmic-applets/blob/ae3f7225/cosmic-applet-status-area/src/status_notifier_watcher.rs),
+[installed component](https://archlinux.org/packages/extra/x86_64/cosmic-applets/files/)). In wlroots desktops,
+Waybar's tray and sfwbar's tray act as hosts
+([Waybar](https://github.com/Alexays/Waybar/blob/master/src/modules/sni/tray.cpp),
+[sfwbar](https://github.com/LBCrion/sfwbar/blob/main/doc/sfwbar.rst)).
+
+GNOME removed its built-in legacy tray in GNOME 3.26 (2017) and recommends that applications not require status
+icons; SNI/AppIndicator support is supplied by an extension, not core Shell
+([removal](https://lists.gnome.org/archives/commits-list/2017-August/msg02952.html),
+[extension](https://extensions.gnome.org/extension/615/appindicator-support/)). spatial-os should support SNI for
+compatibility, but must not make essential settings or safety state available only through it.
+
+### A3.2 `xdg-toplevel-icon-v1` is a different icon
+
+`xdg-toplevel-icon-v1` lets a client assign an icon to one particular toplevel, by XDG icon-theme name and/or one or
+more immutable square wl_shm buffers. The compositor advertises preferred sizes and may choose name or pixels; this
+is switcher/overview/taskbar input, not an application status item
+([XML](../../references/wayland-protocols/staging/xdg-toplevel-icon/xdg-toplevel-icon-v1.xml)).
+It entered staging in wayland-protocols 1.37 on 2024-08-31
+([release](https://lists.freedesktop.org/archives/wayland-devel/2024-August/043774.html)).
+
+Adoption is still narrow in the surveyed set: pinned/current KWin implements it, while the support matrix reports no
+Mutter or COSMIC global in the surveyed releases
+([matrix](https://wayland.app/protocols/xdg-toplevel-icon-v1),
+[COSMIC request](https://github.com/pop-os/cosmic-comp/issues/1958)). zxr should implement it because a window icon
+can differ from the launcher icon and because Wine/SDL/Qt windows may lack a useful desktop-entry mapping.
+
+| Facility | Rating | spatial-os use |
+|---|---|---|
+| SNI watcher/host | **standard-seam (de facto D-Bus)** | A panel applet hosts icons/menus; a supervised watcher owns the bus name. Keep actions focus-safe and map their 2D coordinates only as hints. |
+| `xdg-toplevel-icon-v1` | **standard-seam** | zxr stores the icon on the toplevel model; external switcher/taskbar reads the compositor's chosen icon through its trusted model/control seam. |
+
+## Addendum A4 — Effects and animation factoring
+
+KWin's C++ effects are same-process plugins loaded from `src/plugins/`. `Effect` exposes the global
+`EffectsHandler`, window/workspace properties, chained screen/window pre-paint, paint, and post-paint hooks,
+transform/opacity/brightness/saturation controls, custom drawing, and repaint scheduling
+([API source](../../references/kwin/src/effect/effect.h),
+[plugin inventory](../../references/kwin/src/plugins/)). `windowview` (Present Windows) is itself a `QuickSceneEffect`
+with compositor window IDs, modes, shortcuts, gestures, and activation state—not an external shell client
+([windowview](../../references/kwin/src/plugins/windowview/windowvieweffect.h)).
+
+One premise needs correction: modern KWin effects are **not unable to access input**. They have grabbed-keyboard,
+touch/tablet hooks and, in the pinned KWin 6.7 API, pointer motion/button/axis hooks. What they do not receive is a
+portable Wayland client API or ownership of KWin's protocol resources; their power comes precisely from running
+inside compositor authority. The API explicitly has no binary compatibility and plugins must match KWin
+([input/API warning](../../references/kwin/src/effect/effect.h)).
+
+The policy/eye-candy line is contextual. Blur, translucency, wobbly windows, and zoom primarily alter presentation;
+overview/windowview, tile editor, magnifier/accessibility, and system-bell visualization also mediate selection,
+input, or safety-visible state. KWin keeps both classes in process because they need live scene and frame hooks
+([plugins](../../references/kwin/src/plugins/)).
+
+COSMIC uses no comparable public plugin ABI. Its animation state is embedded in `cosmic-comp`: floating windows keep
+`Tiled`, `Minimize`, and `Unminimize` variants with fixed durations and geometry interpolation, while workspace
+gestures use an in-tree spring implementation
+([floating layout](../../references/cosmic-comp/src/shell/layout/floating/mod.rs),
+[spring](../../references/cosmic-comp/src/backend/render/animations/spring.rs)). GNOME brackets the other end:
+GNOME Shell is an in-process Mutter `MetaPlugin`, and overview/window animations are GJS actors/easing inside that
+process
+([plugin](../../references/gnome-shell/src/gnome-shell-plugin.c),
+[workspace animation](../../references/gnome-shell/js/ui/workspaceAnimation.js)).
+
+XR raises effects from taste to comfort policy. Large high-contrast surfaces moving or scaling across much of the
+field of view create optic flow and vection; Meta explicitly correlates discomfort with amount/speed of optic flow
+and recommends predictable movement, limiting acceleration, and comfort alternatives
+([optic flow](https://developers.meta.com/horizon/resources/locomotion-design-reduce-optic-flow/),
+[comfort](https://developers.meta.com/horizon/design/comfort/)). The shell must also preserve a head-tracked stable
+frame when an animation misses its deadline.
+
+**Verdict — effects/animations: `authority-only`.** Implement an in-process Rust module interface over scene
+handles, declared animation intent, and a small set of curves. zxr owns hard caps on angular velocity/acceleration,
+scale change, occupied field of view, duration, flashing, passthrough occlusion, and frame deadline. Configuration
+and theme assets may be external; an ordinary Wayland client must never receive scene-wide paint/input authority.
+
+## Addendum A5 — Systematic staging/unstable/experimental sweep
+
+The following is the complete remainder after subtracting protocols already treated in §§2/6 and A1–A4 from the
+pinned clone's actual XML inventory
+([staging](../../references/wayland-protocols/staging/),
+[unstable](../../references/wayland-protocols/unstable/),
+[experimental](../../references/wayland-protocols/experimental/)).
+
+| Protocol(s) | spatial-os relevance verdict |
+|---|---|
+| `alpha-modifier-v1` | Implement for correct translucent 2D composition and scanout hints; zxr still resolves final alpha in its linear composition pass. |
+| `commit-timing-v1`, `fifo-v1`, `tearing-control-v1` | Implement timing/fifo for compatible 2D clients, but translate them into zxr's OpenXR-paced scheduler. Commit timing is a desired earliest presentation time; FIFO prevents superseding queued commits; tearing is only a hint and must never tear the HMD projection. “Async” can reduce a client's queue latency, not bypass `xrWaitFrame`/one-layer composition. |
+| `content-type-v1` | Useful hint (`photo`, `video`, `game`) for scaling/color/power policy; never trust it to relax security or comfort limits. |
+| `ext-background-effect-v1` | Optional blur/background sampling request. Implement only with bounded compositor-owned kernels; it exposes no pixels to the client. |
+| `ext-transient-seat-v1` | Privileged creation of short-lived virtual seats; useful to portal-mediated remote/VM sessions, hidden from ordinary clients. |
+| `pointer-warp-v1` | Compatibility for relative-input games after compositor validation; never warp a controller ray or head pose. |
+| `single-pixel-buffer-v1` | Cheap solid-color surfaces for panels/backgrounds; straightforward and useful. |
+| `xdg-dialog-v1`, `xdg-system-bell-v1` | Implement modal-dialog relationship and system-bell request; zxr chooses spatial attention cues and caps flash/audio intensity. |
+| `xdg-toplevel-drag-v1` | Implement for dragging a toplevel with DnD. It directly bears on the open 3D DnD question: base protocol authenticates the drag/toplevel relationship, while zxr must add ray/grab pose, 3D target volumes, and place transfer. |
+| `xdg-toplevel-tag-v1` | Privileged tag assignment for shell/task routing; potentially useful for restore/place policy, so expose only to trusted launch/session components. |
+| `xwayland-shell-v1` | Required rootless Xwayland association/serial path; compositor-private to the Xwayland instance. |
+| `drm-lease-v1` | Already decided: Monado consumes leases in desktop/dev mode and appliance direct display bypasses them ([research 10](10-xr-wayland-protocol-comparison.md), [ADR 0006](../architecture/adr/0006-compositor-strategy.md)). |
+| `fractional-scale-v1` | Required 2D compatibility; advertise preferred buffer scale for spatial quads while zxr owns metric/angular size. |
+| `linux-drm-syncobj-v1` | Already a zxr-shell-v2 transport assumption for color/depth dma-bufs; implement and qualify driver timelines ([composition note](../architecture/zxr-shell-v2-composition.md)). |
+| `cursor-shape-v1` | Already covered in §2.10/§6; implement for 2D pointer imagery, not hand/ray authority. |
+| `relative-pointer-v1` + `pointer-constraints-v1` | Required together for 2D games and remote/VM viewers embedded in XR. Lock/confine the emulated 2D pointer only; provide an explicit compositor escape gesture and never constrain head/controller tracking. |
+| `keyboard-shortcuts-inhibit-v1` | Required for games/VMs to request unmodified keyboard delivery, but zxr retains reserved safety, lock, recenter, and escape chords. |
+| `pointer-gestures-v1` | Implement touchpad swipe/pinch/hold compatibility; do not reinterpret them as hand-tracking gestures. |
+| `primary-selection-v1` | Implement middle-click/primary-selection compatibility for Linux apps; keep it separate from clipboard history and shared-space exposure. |
+| `xdg-foreign-v1/v2`, `xdg-output-v1` | Implement v2 foreign parent/export handles where toolkits need them; xdg-output is legacy logical-output metadata now largely folded into `wl_output` v4, retained for compatibility. |
+| `tablet-v1/v2`, `input-timestamps-v1` | Implement tablet v2 and input timestamps for creative apps/latency accounting; v1 is legacy. Tablet coordinates remain on a focused 2D plane unless a future spatial stylus protocol exists. |
+| `linux-dmabuf-v1`, `linux-explicit-synchronization-v1` | linux-dmabuf is load-bearing. Keep legacy sync-file explicit synchronization for clients while preferring staging syncobj timelines for zxr native color/depth transport. |
+| `xwayland-keyboard-grab-v1` | Xwayland-only compatibility for fullscreen games/VMs; filter reserved XR system chords. |
+| `xdg-shell-v5/v6`, `text-input-v1`, `input-method-v1`, `fullscreen-shell-v1` | Historical/legacy XMLs: do not design new code around them. Serve only where toolkit/Xwayland compatibility evidence requires it; current xdg-shell/text-input-v3/input-method-v2 paths win. |
+| `xx-session-management-v1` | Superseded by staging `xdg-session-management-v1`; do not advertise in a new zxr session. |
+| `xx-text-input-v3` + `xx-input-method-v2` + `xx-keyboard-filter-v1` | Active experimental redesign cluster. Track upstream, but ship current text-input-v3/input-method-v2 first; keyboard filtering is privileged IME authority and must be global-filtered. |
+| `xx-hotkey-v1` | Promising protocol-level registration model, still experimental. Prefer the GlobalShortcuts portal for applications; reserve raw XR gestures to zxr. |
+| `xx-fractional-scale-v2` | Experimental two-coordinate-space replacement; track, but ship staging v1 until governance/adoption settles. |
+| `xx-cutouts-v1` | 2D display notches/corners; mostly irrelevant to HMD optics. Could describe companion-display cutouts, never lens hidden-area meshes. |
+| `xx-zones-v1` | Experimental client-specific positioning zones are relevant precedent for “places,” but are 2D and client-positioning-oriented. Do not overload them with metres/anchors; use zxr place extensions. |
+
+The timing cluster has one governing rule: **OpenXR owns physical presentation cadence**. A 2D client may request
+when its next commit becomes eligible and whether old commits may be superseded; zxr samples the newest eligible,
+ready buffer before its XR cutoff. No Wayland timing request may add an unsignaled dependency to the headset frame or
+cause asynchronous scanout into the single OpenXR projection layer.
+
+## Addendum A6 — “XDG” disambiguation and cross-desktop specs
+
+“XDG” names three unrelated families and must not be used without a qualifier:
+
+1. the freedesktop **Cross-Desktop Group specification family** (files, directories, icons, MIME, D-Bus services);
+2. the **`xdg_*` Wayland protocol namespace** (`xdg-shell`, activation, session management, etc.); and
+3. **xdg-desktop-portal**, a D-Bus permission/API broker with desktop-specific backends.
+
+This mirrors the architecture distinction: implementing an `xdg_` Wayland global says nothing about desktop-entry
+parsing or portal coverage. The local spec catalog explicitly mixes local, external, draft, and X11-only documents
+([catalog](../../references/xdg-specs/spec-index.toml)); versions below come from its revision manifest
+([revisions](../../references/xdg-specs/spec-revs.toml)).
+
+| CDG specification | Status and KDE/GNOME reality | spatial-os contract |
+|---|---|---|
+| [Base Directory](../../references/xdg-specs/basedir/basedir-spec.xml) | 0.8; tiny, old, and load-bearing. Both stacks use `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, `$XDG_CACHE_HOME`, state/runtime dirs through GLib/Qt/KF. Divergence is mostly fallback paths. | Use it everywhere; immutable Nix store assets do not erase per-user config/state/cache semantics. |
+| [Desktop Entry](../../references/xdg-specs/desktop-entry/desktop-entry-spec.xml) | 1.5; load-bearing launcher/app identity format. KDE `KService` and GNOME `GDesktopAppInfo` implement core keys, visibility, actions, MIME declarations, and `Exec`; vendor keys differ. GNOME does not “ignore desktop entries,” but does not use the menu hierarchy for its overview. | Launcher must parse via a mature library, honor `Hidden`, `NoDisplay`, `OnlyShowIn`, `NotShowIn`, `TryExec`, field-code quoting, DBus activation, actions, and desktop-file ID. Never hand-roll `Exec`. |
+| Icon Theme / Icon Naming | 0.13/0.8-era, externally managed in the catalog rather than cloned under this tree ([index](../../references/xdg-specs/spec-index.toml)). KDE and GNOME both rely on name lookup but ship different themes/fallbacks. | Ship `hicolor` fallback plus spatial theme; use spec lookup for launcher, notifications, SNI, and toplevel-icon names. Missing names must degrade to a placeholder. |
+| [MIME Applications](../../references/xdg-specs/mime-apps/mime-apps-spec.xml) + Shared MIME Info | MIME-apps 1.0.1; load-bearing default/recommended application mapping. KDE and GNOME both implement it, with UI/policy differences and shared-mime-info maintained externally. | Use for “open with” and defaults; portals remain the sandbox-aware chooser/launch path. |
+| [Autostart](../../references/xdg-specs/autostart/autostart-spec.xml) | 0.5 and effectively mature/frozen. Both desktops support `.desktop` autostart, but modern sessions increasingly translate it to systemd user services; the generator handles visibility/`TryExec` but skips `X-GNOME-Autostart-Phase` ([generator](https://man7.org/linux/man-pages/man8/systemd-xdg-autostart-generator.8.html)). | `spatial-session.target` owns native shell services. Start third-party XDG autostart via `xdg-desktop-autostart.target`; mark native units `X-systemd-skip=true`; deduplicate them during restore. |
+| [Desktop Menu](../../references/xdg-specs/menu/menu-spec.xml) | 1.1, elaborate XML merge/query hierarchy. KDE still consumes menu/category structure; upstream GNOME Shell explicitly stopped using the menu spec for Overview organization ([GNOME statement](https://lists.freedesktop.org/archives/xdg/2013-December/013060.html)). Effectively dead as a universal shell UI contract. | Do not build launcher architecture around `.menu` layout. Index desktop entries/categories directly; optional compatibility importer only. |
+| [Trash](../../references/xdg-specs/trash/index.rst) | 1.0; stable filesystem convention implemented by KDE KIO and GNOME GIO, including per-mount trash when permissions allow. | Use GIO/KIO-compatible trash semantics in file UI; not a compositor service. |
+| [Desktop Notifications](../../references/xdg-specs/notification/notification-spec.xml) | Active D-Bus spec 1.3 dated 2024-08-18, not frozen: it added activation-token signaling. Plasma and GNOME Shell both provide session-scoped `org.freedesktop.Notifications` servers but differ in hints, persistence, actions, and presentation. | Notification daemon implements mandatory calls/signals and capability negotiation; use the 1.3 activation token before `ActionInvoked`; treat all hints as optional and let zxr enforce spatial comfort/DND. |
+| [StatusNotifierItem](../../references/xdg-specs/status-notifier-item/status-notifier-item-spec.xml) | Draft 0.1/TBD despite KDE, COSMIC, Waybar and sfwbar deployment; GNOME core intentionally does not host it. The `org.kde.*` names and DBusMenu dependency are de facto, not a completed standard. | Compatibility panel feature, never the sole route to critical controls. Run watcher + host separately as in A3. |
+
+The design-changing divergences are concrete. The launcher can rely on desktop entries, basedir, icon lookup, and
+MIME defaults, but **not** on the menu spec producing one cross-desktop hierarchy. Notifications can rely on the D-Bus
+method/signals, but must capability-test actions, persistence, markup, sound, and activation tokens. Autostart is an
+input compatibility format, while `spatial-session.target` is the authority and supervision graph. SNI is optional
+compatibility UI, not notification delivery and not a safety/status authority.

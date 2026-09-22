@@ -13,7 +13,7 @@ The master inventory of every component spatial-os must create (or adopt) to be 
 desktop environment on a headset: what exists on paper, what is half-designed, what is missing
 entirely, and where each piece lives. It is the canonical "what we need to create, and what lives
 where" index; the dependency structure between these components lives in
-[desktop-environment.md §5](desktop-environment.md) (build order is a later, separate decision).
+[desktop-environment.md §6](desktop-environment.md) (build order is a later, separate decision).
 
 **The five runtime planes** (plus one build plane, §7):
 
@@ -97,6 +97,11 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Boundary breach response (forced passthrough, no client cooperation) + boundary overlay rendering | mech | in-compositor | internal; IMU-rate probe queries from geometry service | **specified** | spatial-mapping §7 (compositor-owned overlay + composition-policy breach response; threshold semantics part of the contract) |
 | Desktop windowed output mode (mouse-camera dev mode) | mech | in-compositor | ordinary window (`spatial.xr.compositor.backend = window`) | **specified** | composition §7.1; contract option (lib/contract) |
 | Decoration enforcement (force server-side) | mech | in-compositor | `zxdg_decoration_manager_v1` | **specified** | spatial-sharing §3 / research/19 §8 (force `server_side`); the *chrome renderer* itself is a shell-plane row (§5) |
+| Scene graph (surface→world transforms, decoration nodes, damage tracking) | mech | in-compositor | internal | **partial** | implicit in composition §7.3 (per-window texture/size/world transform) and the damage note in research/17 §8; never named or designed as a subsystem ([desktop-environment.md §3](desktop-environment.md) authority table) |
+| Decoration *policy* (per-window gets-chrome decision, SSD/CSD negotiation stance, per-state border behaviour) | policy | in-compositor | `zxdg_decoration_manager_v1` (negotiation only) | **partial** | forced-SSD for proxied clients is decided (research/19 §8); the per-window/per-state policy itself has no design; three-concern split in [desktop-environment.md §2](desktop-environment.md) trap 4 |
+| Colour pipeline (colour-management/-representation service, panel calibration application, sRGB/linear composition policy, passthrough↔rendered matching) | mech | in-compositor | `color-management-v1` + `color-representation-v1` (staging, in pinned wayland-protocols) | **missing** | no doc found; composition §2 fixes depth encoding but not colour; per-device panel calibration is a build-plane fact with no runtime owner; seam evidence in doc 30 addendum |
+| Effects / animation module (open/close/move/switch transitions under comfort caps) | policy+pres | in-compositor (plugin seam) | in-process plugin API (KWin-effects precedent) | **missing** | no doc found; XR comfort makes sudden large-surface motion a safety concern, not eye-candy; ADR 0012 places it in-process |
+| Session-restore mechanism (server side: session identity, toplevel state restore) | mech | in-compositor | `xdg-session-management-v1` (staging, in pinned wayland-protocols) | **missing** | no doc found; the relaunch half is the service-plane restore manager (§6); split per [desktop-environment.md §2](desktop-environment.md) trap 5 |
 
 ## 4. Perception plane
 
@@ -147,6 +152,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | IPD wizard (fixation-target measurement UX) | pres | shell/session | ET service | **partial** | ADR 0011 §4 names "a fixation-target 'IPD wizard' at enrollment"; no design; kappa-calibration UX open (research/28 §6) |
 | Avatar runtime renderer | pres | separate client (ordinary zxr client, opaque-cutout profile) | zxr-shell-v2; asset container | **specified** | avatar-persona §runtime; ADR 0010 (no privileged access); gated R-0/Z-1/R-1 |
 | Window placement/manipulation UI (grab, rotate, resize handles) | pres | in-compositor | zxr/xdg-shell interactions | **partial** | M1 acceptance test requires it (composition §7.5); no interaction design |
+| SNI watcher + host (items as typed panel badges) | pres | watcher: separate supervised daemon; host: panel applet/component | StatusNotifierItem D-Bus (de-facto spec, draft 0.1) | **missing** | no doc found; hosting decided by ADR 0012 (vs dropping tray compatibility); COSMIC `cosmic-applet-status-area` / Plasma systemtray are the precedent (doc 30 §A3); no design |
 
 ## 6. Service plane
 
@@ -168,6 +174,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Power/thermal policy (suspend sequencing, thermal governors, performance profiles) | mech+policy | separate daemon | logind/upower D-Bus | **missing** | no doc found. The *idle/doff* half is specified in-compositor (ADR 0007); system suspend is referenced only as a lock trigger (`lock.triggers = [ "suspend" ]`); nothing owns thermal/perf policy despite sustained-thermal being a qualification test (device-contract §tiers) |
 | Display/runtime configuration (refresh rate switching, render scale, FOV overrides) | mech+policy | none decided | none-yet | **missing** | no doc found. The contract declares hardware *facts* (`spatial.hardware.panel.{width,height,refresh}`); no runtime component lets a user or policy change render scale/refresh; foveation latency budget open in ADR 0011 |
 | Recentering / reference-space reset UX ownership | mech+policy | none decided | `XrEventDataReferenceSpaceChangePending` (reserved) | **missing** | no doc found. spatial-mapping §3 reserves the event for "genuine LOCAL/STAGE redefinition" but no component owns the recenter gesture/command |
+| Session restore manager (relaunch apps after login; bind restored windows to places) | mech+policy | separate daemon | `xdg-session-management-v1` (compositor side, §3) + .desktop database + space-model place IDs | **missing** | no doc found; the protocol deliberately excludes relaunching — a manager must own it (doc 30 addendum); XR-amplified: anchored places persist placement, nothing relaunches into them |
 | Sharing/session service (share lifecycle, mode-5 authority, consent state) | mech+policy | separate daemon (implied) | D-Bus/portal + compositor share objects | **partial** | "the sharing service" is load-bearing in spatial-sharing §6 invariant 4 (observer views added only through it) but has no named process, placement, or API |
 | Networking policy, logging/diagnostics, user management | policy | NixOS modules / standard daemons | systemd/D-Bus | **partial** | overview.md §Common layer assigns ownership to the common distribution layer; no spatial-specific design (may be fine — standard NixOS — but nothing says so explicitly) |
 | Update *policy* surface (channel selection, auto-update consent UI) | policy+pres | none decided | none-yet | **missing** | no doc found; images-and-updates.md covers transaction mechanics only |
@@ -273,6 +280,23 @@ starts from evidence rather than zero.
     (§5/§6, status partial) are one design pass away from missing — they are *named as
     obligations* by the sharing/security invariants but have no owning design.
 
+Added by the terminology-trap review (see [desktop-environment.md §2](desktop-environment.md) and
+doc 30's addenda for the evidence):
+
+24. **Colour pipeline / HDR** (authority, §3) — `color-management-v1`/`color-representation-v1`
+    are staging protocols with shipped KWin/Mutter precedent; XR-amplified (panel calibration,
+    sRGB/linear composition, passthrough colour matching); no owner.
+25. **Effects/animation module** (authority, §3) — every mature compositor names this subsystem;
+    in XR sudden large-surface motion is a comfort/safety concern; no owner.
+26. **Application session restoration, both halves** (authority §3 + service §6) — the
+    `xdg-session-management-v1` mechanism and the relaunch-owning restore manager; the deepest
+    XR amplification (places persist placement; nothing relaunches apps into them).
+27. **SNI host** (shell, §5) — StatusNotifierItem compatibility, hosted in the panel per
+    ADR 0012's decision; presentation design missing.
+
+(The same review upgraded two implicit subsystems to explicit **partial** rows in §3: the scene
+graph and decoration policy.)
+
 ## 9. Spin-out candidates (input to ADR 0012 — no decisions here)
 
 Components whose policy/presentation could plausibly be modular (separately replaceable,
@@ -350,15 +374,15 @@ Counts by status (rows in §2–§7 tables):
 | Plane | specified | partial | missing | total |
 |---|---|---|---|---|
 | System | 7 | 3 | 0 | 10 |
-| Authority | 19 | 4 | 2 | 25 |
+| Authority | 19 | 6 | 5 | 30 |
 | Perception | 17 | 6 | 0 | 23 |
-| Shell | 3 | 7 | 7 | 17 |
-| Service | 1 | 3 | 15 | 19 |
+| Shell | 3 | 7 | 8 | 18 |
+| Service | 1 | 3 | 16 | 20 |
 | Build | 7 | 8 | 0 | 15 |
-| **Total** | **54** | **31** | **24** | **109** |
+| **Total** | **54** | **33** | **29** | **116** |
 
 The shape is stark and expected: the authority and perception planes are deeply specified (the
 ADR work to date), the build plane is specified-but-stubbed by deliberate policy (the Lynx-spike
 standing rule, [design-backlog.md](design-backlog.md)), and the desktop-environment surface —
 shell presentation and the service plane — is where nearly everything is missing. The dependency
-structure among all of it is mapped in [desktop-environment.md §5](desktop-environment.md).
+structure among all of it is mapped in [desktop-environment.md §6](desktop-environment.md).

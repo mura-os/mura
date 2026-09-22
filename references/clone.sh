@@ -146,6 +146,19 @@ repos=(
   'lam-audio2expression|https://github.com/aigc3d/LAM_Audio2Expression.git|'
   '3dgs-cpp|https://github.com/shg8/3DGS.cpp.git|'
   'vkgs|https://github.com/jaesung-cs/vkgs.git|'
+  # --- desktop environment: XDG specs + DE implementation comparison (doc 30 addendum) ---
+  # xdg-specs = the freedesktop Cross-Desktop-Group specification sources (desktop-entry,
+  # basedir, autostart, icon-theme, menu, trash, notifications, status-notifier/SNI) —
+  # distinct from the xdg_* Wayland protocol namespace and from xdg-desktop-portal.
+  'xdg-specs|https://gitlab.freedesktop.org/xdg/xdg-specs.git|'
+  'kwin|https://invent.kde.org/plasma/kwin.git|'
+  'plasma-workspace|https://invent.kde.org/plasma/plasma-workspace.git|'
+  'mutter|https://gitlab.gnome.org/GNOME/mutter.git|'
+  'gnome-shell|https://gitlab.gnome.org/GNOME/gnome-shell.git|'
+  'cosmic-comp|https://github.com/pop-os/cosmic-comp.git|'
+  'cosmic-panel|https://github.com/pop-os/cosmic-panel.git|'
+  'cosmic-protocols|https://github.com/pop-os/cosmic-protocols.git|'
+  'xdg-desktop-portal-cosmic|https://github.com/pop-os/xdg-desktop-portal-cosmic.git|'
 )
 
 mkdir -p .logs
