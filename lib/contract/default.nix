@@ -93,6 +93,26 @@ in
         };
         description = "Per-eye panel geometry.";
       };
+      ipd = {
+        source = mkOption {
+          type = types.enum [ "fixed" "manual" "manual-sensed" "stored" "motorized-auto" ];
+          default = "fixed";
+          description = ''
+            Source of the rendering-IPD value (ADR 0011):
+            - fixed: hardcoded default (defaultMeters).
+            - manual: unsensed mechanical adjustment; user-entered/stored value.
+            - manual-sensed: device reports the mechanism position (Quest 1 / Lynx R1 class).
+            - stored: per-user software value on fixed optics.
+            - motorized-auto: eye-tracked servo (Galaxy XR / PFDM class); requires
+              spatial.adaptation.eyes.
+          '';
+        };
+        defaultMeters = mkOption {
+          type = types.float;
+          default = 0.063;
+          description = "Safe default IPD used pre-auth (greeter/lock, ADR 0007) and when no measured/stored value exists.";
+        };
+      };
     };
 
     ## Donor manifest (see lib/donor + docs/architecture/donor-pipeline.md) --
@@ -141,6 +161,24 @@ in
         type = backendModule;
         default = { backend = "device-specific"; };
         description = "6DoF tracking backend. Usually device-specific; no ecosystem compat precedent exists.";
+      };
+      eyes = mkOption {
+        type = types.submodule {
+          options.backend = mkOption {
+            type = types.enum [ "none" "native" "android-backed" "device-specific" ];
+            default = "none";
+            description = ''
+              Eye-tracking backend (ADR 0011): the session-scoped Monado-side eye-camera
+              service (gaze via XR_EXT_eye_gaze_interaction; rotation-center IPD into
+              eye_relation). 'none' = no eye-tracking hardware (most targets).
+              'android-backed' = the donor's vendor ET service closure (no target documents
+              V4L2 eye cameras); 'native' = our pipeline on directly accessible cameras;
+              'device-specific' = bespoke DSP/vendor protocol.
+            '';
+          };
+        };
+        default = { };
+        description = "Eye-tracking subsystem backend.";
       };
     };
 
@@ -242,6 +280,53 @@ in
           type = types.bool;
           default = false;
           description = "Enable the compositor-owned boundary system (floor + play volume + keep-out; breach forces passthrough without client cooperation).";
+        };
+      };
+
+      ## Expression/gaze sensing facts (adr/0010-avatar-control-space-and-driver.md)
+      # Declared per-device capabilities for the avatar driver's degraded-mode
+      # ladder. Initial population: the verified matrix in docs/research/25 §3.
+      # These are facts about what the device's runtime path exposes on Linux,
+      # not feature toggles; every value must survive the S-1 sensing kill-gate.
+      sensing = {
+        gaze = mkOption {
+          type = types.enum [ "none" "combined" "per-eye" ];
+          default = "none";
+          description = "Eye-gaze exposure: combined pose (XR_EXT_eye_gaze_interaction) or per-eye poses. No verified Linux per-eye path exists today (docs/research/25 §2).";
+        };
+        eyelid = mkOption {
+          type = types.enum [ "none" "weights" "openness" ];
+          default = "none";
+          description = "Eyelid signal: 'weights' = closure blendshapes inside the face-weight set (FB2/ANDROID indices 12/13); 'openness' = a dedicated per-eye openness channel (add-on trackers).";
+        };
+        faceWeights = mkOption {
+          type = types.enum [ "none" "fb2-visual" "fb2-audio" "android" "htc" ];
+          default = "none";
+          description = "Face expression-weight source/schema served through Monado's face-device role (docs/research/25 §1-2). fb2-audio requires a microphone.";
+        };
+        mouthCamera = mkOption {
+          type = types.enum [ "none" "internal" "addon" ];
+          default = "none";
+          description = "Optical mouth view: 'internal' = built-in face cameras feed the runtime's visual tracking; 'addon' = expansion-port/USB mouth camera (Baballonia path).";
+        };
+        micChannels = mkOption {
+          type = types.ints.unsigned;
+          default = 0;
+          description = "Microphone channels available to the audio-inferred rung (and fb2-audio).";
+        };
+      };
+
+      ## Persona avatar feature (adr/0010-avatar-control-space-and-driver.md) ----
+      avatar = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Enable the Persona avatar driver service + runtime (docs/architecture/avatar-persona.md).
+            The driver consumes Monado face/gaze devices per spatial.xr.sensing.* and emits the
+            versioned semantic control stream; the runtime renders assets as a zxr client.
+            Gated per device on the S-1 sensing and R-1 render kill-gates.
+          '';
         };
       };
 
@@ -347,9 +432,14 @@ in
     {
       # Any android-backed subsystem needs a donor to extract blobs from.
       assertion =
-        let backends = with cfg.adaptation; [ display.backend gpu.backend camera.backend sensors.backend audio.backend wifiBt.backend tracking.backend ];
+        let backends = with cfg.adaptation; [ display.backend gpu.backend camera.backend sensors.backend audio.backend wifiBt.backend tracking.backend eyes.backend ];
         in !(lib.any (b: b == "android-backed") backends) || cfg.donor != null;
       message = "An 'android-backed' adaptation subsystem requires spatial.donor to be set (blobs are extracted from the pinned donor).";
+    }
+    {
+      # ADR 0011: motorized auto-IPD is an eye-tracked servo; it needs the eyes subsystem.
+      assertion = cfg.hardware.ipd.source != "motorized-auto" || cfg.adaptation.eyes.backend != "none";
+      message = "spatial.hardware.ipd.source = \"motorized-auto\" requires spatial.adaptation.eyes.backend != \"none\" (the servo is driven by eye tracking; ADR 0011).";
     }
     {
       # ADR 0007: a device with an XR shell session must select exactly one profile.
@@ -363,6 +453,16 @@ in
       # A lockable session needs a runtime to compose the lock scene over.
       assertion = cfg.xr.shell == "none" || !cfg.xr.session.lock.enable || cfg.xr.runtime != "none";
       message = "spatial.xr.session.lock.enable requires spatial.xr.runtime != \"none\" (the lock scene composes over the runtime; ADR 0007).";
+    }
+    {
+      # adr/0010 (avatar): audio-derived face weights need a microphone.
+      assertion = cfg.xr.sensing.faceWeights != "fb2-audio" || cfg.xr.sensing.micChannels > 0;
+      message = "spatial.xr.sensing.faceWeights = \"fb2-audio\" requires spatial.xr.sensing.micChannels > 0 (adr/0010-avatar-control-space-and-driver.md).";
+    }
+    {
+      # adr/0010 (avatar): the avatar driver consumes Monado devices; the runtime renders via the zxr shell.
+      assertion = !cfg.xr.avatar.enable || (cfg.xr.runtime != "none" && cfg.xr.shell == "zxr");
+      message = "spatial.xr.avatar.enable requires spatial.xr.runtime != \"none\" and spatial.xr.shell = \"zxr\" (driver consumes Monado face/gaze devices; runtime is a zxr client; adr/0010-avatar-control-space-and-driver.md).";
     }
   ];
 }

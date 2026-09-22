@@ -32,27 +32,27 @@ papers=(
     [ $first -eq 1 ] || echo ','
     first=0
     case "$url" in
-      CITE_ONLY:*)
-        citation="${url#CITE_ONLY:}"
-        printf '  "%s": {"topic": "%s", "status": "cite_only", "citation": "%s"}' \
-          "$name" "$topic" "${citation//\"/\\\"}"
-        ;;
-      *)
-        out="papers/$topic/$name.pdf"
-        if [ ! -s "$out" ]; then
-          curl --fail --location --retry 3 --max-time 120 -o "$out" "$url" \
-            >/dev/null 2>&1 || rm -f "$out"
-        fi
-        if [ -s "$out" ] && head -c4 "$out" | grep -q '%PDF'; then
-          sha=$(sha256sum "$out" | cut -d' ' -f1)
-          printf '  "%s": {"topic": "%s", "status": "fetched", "url": "%s", "sha256": "%s"}' \
-            "$name" "$topic" "$url" "$sha"
-        else
-          rm -f "$out"
-          printf '  "%s": {"topic": "%s", "status": "fetch_failed", "url": "%s"}' \
-            "$name" "$topic" "$url"
-        fi
-        ;;
+    CITE_ONLY:*)
+      citation="${url#CITE_ONLY:}"
+      printf '  "%s": {"topic": "%s", "status": "cite_only", "citation": "%s"}' \
+        "$name" "$topic" "${citation//\"/\\\"}"
+      ;;
+    *)
+      out="papers/$topic/$name.pdf"
+      if [ ! -s "$out" ]; then
+        curl --fail --location --retry 3 --max-time 120 -o "$out" "$url" \
+          >/dev/null 2>&1 || rm -f "$out"
+      fi
+      if [ -s "$out" ] && head -c4 "$out" | grep -q '%PDF'; then
+        sha=$(sha256sum "$out" | cut -d' ' -f1)
+        printf '  "%s": {"topic": "%s", "status": "fetched", "url": "%s", "sha256": "%s"}' \
+          "$name" "$topic" "$url" "$sha"
+      else
+        rm -f "$out"
+        printf '  "%s": {"topic": "%s", "status": "fetch_failed", "url": "%s"}' \
+          "$name" "$topic" "$url"
+      fi
+      ;;
     esac
   done
   echo

@@ -181,9 +181,9 @@ if [ -d "ava-256/.git" ]; then
   for pr in 1 7 19; do
     git -C ava-256 rev-parse --verify "study/pr-$pr" >/dev/null 2>&1 && continue
     git -C ava-256 fetch --depth 1 origin "pull/$pr/head:study/pr-$pr" \
-      >>".logs/ava-256.log" 2>&1 \
-      && echo "ok    ava-256 study/pr-$pr" \
-      || echo "warn  ava-256 PR $pr fetch failed (see .logs/ava-256.log)"
+      >>".logs/ava-256.log" 2>&1 &&
+      echo "ok    ava-256 study/pr-$pr" ||
+      echo "warn  ava-256 PR $pr fetch failed (see .logs/ava-256.log)"
   done
 fi
 
