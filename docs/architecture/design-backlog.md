@@ -71,6 +71,16 @@ spikes on real hardware, then the *proven* path is encoded — not designed spec
   policy applied; define the dev-image storage layout or scope the `nixos-rebuild` promise to
   VM/remote.
 
+## Desktop-environment gaps live in the component registry
+
+The backlog above covers the base build/donor/update architecture. The *desktop-environment*
+gaps — the 24 missing components (launcher, notifications, settings, polkit agent, input methods,
+audio policy, spatial-workspace model, …) — are enumerated with evidence in
+[component-registry.md §8](component-registry.md), sequenced by
+[desktop-environment.md §5](desktop-environment.md), with their modularity/seam decisions in
+[adr/0012-de-modularity-spinout-seams.md](adr/0012-de-modularity-spinout-seams.md). They are not
+duplicated here.
+
 ## Standing rule from the review
 
 > Do not build the generic donor/update/backend machinery before a Lynx boot/display/tracking spike

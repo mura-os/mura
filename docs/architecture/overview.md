@@ -124,11 +124,29 @@ per-option provenance), a kconfig **contract** gate that verifies the kernel mee
 requirements, DTBs, and the donor-derived firmware/vendor-blob closure. Kernel builds are decoupled
 from image builds so a shell change never rebuilds a kernel.
 
+## The desktop environment: five runtime planes
+
+Orthogonal to the layers above (which sort by *device dependence*), the running system is also
+organized into **planes** sorted by *authority*: a **system plane** (greetd, seat brokering,
+session lifecycle — ADR 0007), the **authority plane** (the zxr compositor — the only process with
+knowledge/control over arbitrary clients), an XR-specific **perception plane** (Monado + the
+camera/pose services of ADRs 0008–0011, one clock/calibration domain, never client-visible), a
+**shell plane** (presentation clients on privileged protocols), and a **service plane** (D-Bus
+session services, portals). Each feature further splits into mechanism / policy / presentation.
+The model, the XR redefinitions of desktop vocabulary, and the dependency-ordered build sequence
+are in [desktop-environment.md](desktop-environment.md); the per-component inventory with
+evidence-based status (specified / partial / missing) is
+[component-registry.md](component-registry.md); which components spin out onto standard Wayland
+seams versus stay compositor-internal is decided in
+[adr/0012-de-modularity-spinout-seams.md](adr/0012-de-modularity-spinout-seams.md).
+
 ## Where each concern is documented
 
 | Concern | Document |
 |---|---|
 | What a device must declare (typed options) | [device-contract.md](device-contract.md) |
+| The desktop-environment plane model + build order | [desktop-environment.md](desktop-environment.md) |
+| Component inventory: what exists / what's missing | [component-registry.md](component-registry.md) |
 | Turning donor firmware into pinned artifacts | [donor-pipeline.md](donor-pipeline.md) |
 | Building flashable images and shipping updates | [images-and-updates.md](images-and-updates.md) |
 | Monorepo layout and patch management | [repo-structure.md](repo-structure.md) |
