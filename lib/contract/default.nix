@@ -178,6 +178,60 @@ in
         default = { };
         description = "Environment variables for the Monado service unit (the proven config channel).";
       };
+
+      ## Session / greeter / lock model (ADR 0007) -------------------------
+      session = {
+        autoLogin = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = ''
+            Appliance profile: the owner username to auto-login straight into the XR session
+            (greetd `initial_session`, no greeter UI). null selects the multi-user profile,
+            which requires `session.greeter != "none"`. See ADR 0007.
+          '';
+          example = "owner";
+        };
+        greeter = mkOption {
+          type = types.enum [ "none" "zxr-greeter" ];
+          default = "none";
+          description = ''
+            Multi-user profile greeter run via greetd `default_session`.
+            - zxr-greeter: the zxr compositor in restricted --greeter mode as the `greeter`
+              user (Monado + IMU-only tracking, built-in auth scene, sessions from
+              `spatial.xr.shell`), per docs/research/11.
+            - none: appliance profile (requires `session.autoLogin`).
+          '';
+        };
+        lock = {
+          enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Compositor-integrated lock (ADR 0007): an internal composition-policy state
+              (compose only the lock scene, route input only to it, PAM via out-of-process
+              spatial-authd). Not ext-session-lock-v1 (that is exposed only for the dev
+              profile / third-party lockers).
+            '';
+          };
+          triggers = mkOption {
+            type = types.listOf (types.enum [ "boot" "doff" "idle" "suspend" "explicit" ]);
+            default = [ "boot" "suspend" "explicit" ];
+            description = ''
+              Events that lock the session and require re-auth. `doff`/`idle` honor the
+              grace window (docs/research/12 §6.2). `boot` locks the session on start
+              whenever a credential is enrolled (Quest power-on-lock model).
+            '';
+          };
+          doffGraceSeconds = mkOption {
+            type = types.ints.unsigned;
+            default = 45;
+            description = ''
+              Grace window after doff/idle during which don/activity resumes the session
+              without re-auth. 0 = lock immediately (security-sensitive deployments).
+            '';
+          };
+        };
+      };
     };
 
     ## Deployment: partitions, images, flashing -----------------------------
@@ -230,6 +284,19 @@ in
         let backends = with cfg.adaptation; [ display.backend gpu.backend camera.backend sensors.backend audio.backend wifiBt.backend tracking.backend ];
         in !(lib.any (b: b == "android-backed") backends) || cfg.donor != null;
       message = "An 'android-backed' adaptation subsystem requires spatial.donor to be set (blobs are extracted from the pinned donor).";
+    }
+    {
+      # ADR 0007: a device with an XR shell session must select exactly one profile.
+      # Appliance = autoLogin (no greeter); multi-user = greeter (no autoLogin).
+      # Headless/bring-up images (shell = "none") are exempt.
+      assertion = cfg.xr.shell == "none"
+        || ((cfg.xr.session.autoLogin != null) != (cfg.xr.session.greeter != "none"));
+      message = "spatial.xr.session must select exactly one profile when spatial.xr.shell is set: session.autoLogin (appliance) OR session.greeter != \"none\" (multi-user), not both and not neither (ADR 0007).";
+    }
+    {
+      # A lockable session needs a runtime to compose the lock scene over.
+      assertion = cfg.xr.shell == "none" || !cfg.xr.session.lock.enable || cfg.xr.runtime != "none";
+      message = "spatial.xr.session.lock.enable requires spatial.xr.runtime != \"none\" (the lock scene composes over the runtime; ADR 0007).";
     }
   ];
 }

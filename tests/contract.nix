@@ -45,6 +45,42 @@ let
 
   eval = evalContract validDevice;
 
+  # A device with an XR shell + a valid appliance session profile (ADR 0007).
+  applianceSession = {
+    imports = [ validDevice ];
+    config = {
+      spatial.xr.shell = "zxr";
+      spatial.xr.session.autoLogin = "owner";
+    };
+  };
+
+  # A device with an XR shell + a valid multi-user greeter profile.
+  greeterSession = {
+    imports = [ validDevice ];
+    config = {
+      spatial.xr.shell = "zxr";
+      spatial.xr.session.greeter = "zxr-greeter";
+    };
+  };
+
+  # Invalid: shell set but NEITHER session profile chosen.
+  noProfile = {
+    imports = [ validDevice ];
+    config = {
+      spatial.xr.shell = "zxr";
+    };
+  };
+
+  # Invalid: shell set but BOTH profiles chosen.
+  bothProfiles = {
+    imports = [ validDevice ];
+    config = {
+      spatial.xr.shell = "zxr";
+      spatial.xr.session.autoLogin = "owner";
+      spatial.xr.session.greeter = "zxr-greeter";
+    };
+  };
+
   # Assertion helpers.
   assertsPass = e: builtins.all (a: a.assertion) e.config.assertions;
 
@@ -57,6 +93,16 @@ let
     defaultBackendNative = eval.config.spatial.adaptation.gpu.backend == "native";
     # tracking defaults to device-specific.
     trackingDeviceSpecific = eval.config.spatial.adaptation.tracking.backend == "device-specific";
+    # ADR 0007: headless bring-up (shell = none) needs no session profile.
+    headlessExemptFromProfile = assertsPass eval;
+    # ADR 0007: appliance and greeter profiles each pass.
+    applianceProfilePasses = assertsPass (evalContract applianceSession);
+    greeterProfilePasses = assertsPass (evalContract greeterSession);
+    # ADR 0007: neither / both profiles must fail the exactly-one assertion.
+    noProfileFails = !assertsPass (evalContract noProfile);
+    bothProfilesFail = !assertsPass (evalContract bothProfiles);
+    # Lock triggers default sensibly.
+    lockDefaultsOn = eval.config.spatial.xr.session.lock.enable == true;
   };
 
   failures = lib.filterAttrs (_: v: v != true) results;

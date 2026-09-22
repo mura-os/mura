@@ -20,6 +20,8 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [08-wxrc.md](research/08-wxrc.md) — the Motorcar→wxrc→wxrd 3D-windowing compositor lineage (philosophy + code)
 - [09-wxrc-ecosystem-gap-2026.md](research/09-wxrc-ecosystem-gap-2026.md) — which of wxrc's 2019 ecosystem patches are landed/superseded/still-needed in 2026
 - [10-xr-wayland-protocol-comparison.md](research/10-xr-wayland-protocol-comparison.md) — motorcar vs zxr vs zwin vs StardustXR vs WayVR
+- [11-display-managers-greeters.md](research/11-display-managers-greeters.md) — greetd/GDM/SDDM/seatd, the greeter, and the seat/DRM handoff
+- [12-lock-screens-and-appliance-login.md](research/12-lock-screens-and-appliance-login.md) — session-lock protocol, PAM, appliance autologin, doff/don policy
 
 ## Architecture (`architecture/`)
 
@@ -36,6 +38,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0004](architecture/adr/0004-cross-vs-native-builds.md) cross vs native builds
   - [0005](architecture/adr/0005-flake-layout-and-outputs.md) flake layout and outputs
   - [0006](architecture/adr/0006-compositor-strategy.md) XR compositor strategy (revive zxr as zxr-shell-v2)
+  - [0007](architecture/adr/0007-session-greeter-lock.md) session/greeter/lock model (appliance autologin + greetd; lock as compositor state)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the review (fixed now vs.
   deferred to the Lynx spike / pre-release design)

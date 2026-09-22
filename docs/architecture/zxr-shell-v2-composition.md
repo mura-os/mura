@@ -297,6 +297,15 @@ The T2/T3/T4 tiers map to optional, negotiated protocol capabilities (an ordered
 a declared-reprojection-validity capability; a ray-query service) that extend but never alter the T1
 core.
 
+**Lock as a composition-policy state.** Because the compositor composites everything and submits one
+projection layer, "locked" is simply a composition mode: sample zero client buffers, compose only a
+compositor-owned lock scene, and route the seat exclusively to it — the `ext-session-lock-v1`
+obligations internalized. "Locked" is reported externally only after a client-free frame has been
+submitted (the present-before-suspend race). This is specified in
+[adr/0007-session-greeter-lock.md](adr/0007-session-greeter-lock.md) and
+[12-lock-screens-and-appliance-login.md](../research/12-lock-screens-and-appliance-login.md) §2.4;
+it is the same "compose a chosen scene instead of client surfaces" mechanism the greeter mode uses.
+
 Open questions carried forward (and from [10 §4.5](../research/10-xr-wayland-protocol-comparison.md)):
 frame-pacing policy across heterogeneous clients (per-client deadline vs one clock); how 2D toplevels
 map to initial 3D placement; whether a deep-sample profile or deferred-stochastic-sample profile is

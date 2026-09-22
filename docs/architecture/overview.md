@@ -92,6 +92,16 @@ packaged, wired into the session, and configured — it does not embed hardware 
 means a shared package closure per CPU architecture and runtime family, plus a small device-specific
 configuration closure — not a byte-identical filesystem on every device.
 
+The **session/login model** is part of this layer: an appliance profile that auto-logs the owner
+straight into the XR session with a compositor-integrated lock as the only auth surface, and a
+multi-user profile using greetd with the zxr compositor run in a restricted `--greeter` mode.
+Because the greeter and lock need the full XR display path (panel, distortion, IPD, IMU tracking)
+before any user session exists, per-unit calibration is system state (not `$HOME`) and tracking is
+tiered (IMU-only pre-auth, full 6DoF with the session). The decision, the doff/don/idle re-auth
+policy, and the lock-as-composition-policy model are in
+[adr/0007-session-greeter-lock.md](adr/0007-session-greeter-lock.md), selected via
+`spatial.xr.session.*`.
+
 Realized as NixOS modules under `modules/os/` (distro policy) and `modules/xr/` (runtime + session).
 
 ### Hardware-adaptation layer (per device)
