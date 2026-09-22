@@ -5,6 +5,10 @@ set -u
 
 cd "$(dirname "$0")"
 
+# Never pull LFS payloads (research corpus is code-only; avoids multi-GB checkpoint
+# downloads and the smudge hang seen with LiteAnyStereo).
+export GIT_LFS_SKIP_SMUDGE=1
+
 # name|url|branch (empty branch = default)
 repos=(
   'mobile-nixos|https://github.com/mobile-nixos/mobile-nixos.git|'
@@ -55,6 +59,15 @@ repos=(
   'hyprlock|https://github.com/hyprwm/hyprlock.git|'
   'kscreenlocker|https://invent.kde.org/plasma/kscreenlocker.git|'
   'wayland-protocols|https://gitlab.freedesktop.org/wayland/wayland-protocols.git|'
+  # --- eye tracking / auto-IPD (read-only study; never build) ---
+  'pupil|https://github.com/pupil-labs/pupil.git|'
+  'pye3d|https://github.com/pupil-labs/pye3d-detector.git|'
+  'eyetrackvr|https://github.com/EyeTrackVR/EyeTrackVR.git|'
+  'ritnet|https://github.com/AayushKrChaudhary/RITnet.git|'
+  'ellseg|https://github.com/RSKothari/EllSeg.git|'
+  'deepvog|https://github.com/pydsgz/DeepVOG.git|'
+  'eyerectoo|https://github.com/tcsantini/EyeRecToo.git|'
+  'alvr|https://github.com/alvr-org/ALVR.git|'
   # --- perception: passthrough / depth / hands (Tier 1-3) ---
   'openxr-steamvr-passthrough|https://github.com/Rectus/openxr-steamvr-passthrough.git|'
   'viewcorrection|https://github.com/puzzlepaint/viewcorrection.git|'
@@ -115,6 +128,24 @@ repos=(
   'kalibr|https://github.com/ethz-asl/kalibr.git|'
   'openxr-docs|https://github.com/KhronosGroup/OpenXR-Docs.git|'
   'illixr|https://github.com/ILLIXR/ILLIXR.git|'
+  # --- avatar / persona: representation, driving, runtime (docs/research/24-27) ---
+  # Read-only study corpus. No checkpoints/datasets; LFS smudge globally skipped below.
+  # Tracked-not-cloned (no public code or weights-only): GAF, URAvatar, FiCA, SqueezeMe,
+  # Apple HeadsUp, HRM2Avatar, LAM main (only Audio2Expression needed).
+  'rgbavatar|https://github.com/gapszju/RGBAvatar.git|'
+  'gaussianavatars|https://github.com/ShenhanQian/GaussianAvatars.git|'
+  'match|https://github.com/malteprinzler/match.git|'
+  'flexavatar|https://github.com/tobias-kirschstein/flexavatar.git|'
+  'metrical-tracker|https://github.com/Zielon/metrical-tracker.git|'
+  'ava-256|https://github.com/facebookresearch/ava-256.git|'
+  'goliath|https://github.com/facebookresearch/goliath.git|'
+  'baballonia|https://github.com/Project-Babble/Baballonia.git|'
+  'eyetrackvr|https://github.com/EyeTrackVR/EyeTrackVR.git|'
+  'vrcfacetracking|https://github.com/benaclejames/VRCFaceTracking.git|'
+  'ofera|https://github.com/ysshwan147/OFERA.git|'
+  'lam-audio2expression|https://github.com/aigc3d/LAM_Audio2Expression.git|'
+  '3dgs-cpp|https://github.com/shg8/3DGS.cpp.git|'
+  'vkgs|https://github.com/jaesung-cs/vkgs.git|'
 )
 
 mkdir -p .logs
@@ -143,6 +174,18 @@ for i in "${!pids[@]}"; do
     failed+=("${names[$i]}")
   fi
 done
+
+# Ava-256 study branches: the unmerged headset-encoder / expression-code PRs
+# (docs/research/26). Fetched shallow into local branches; failures are non-fatal.
+if [ -d "ava-256/.git" ]; then
+  for pr in 1 7 19; do
+    git -C ava-256 rev-parse --verify "study/pr-$pr" >/dev/null 2>&1 && continue
+    git -C ava-256 fetch --depth 1 origin "pull/$pr/head:study/pr-$pr" \
+      >>".logs/ava-256.log" 2>&1 \
+      && echo "ok    ava-256 study/pr-$pr" \
+      || echo "warn  ava-256 PR $pr fetch failed (see .logs/ava-256.log)"
+  done
+fi
 
 # Pin the manifest from what actually exists on disk.
 {
