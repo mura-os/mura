@@ -166,6 +166,11 @@ protocol is finished, and it directly closes the open 2D-app question in
   first-class 2D windows, and the MVP milestones) is worked out in
   [zxr-shell-v2-composition.md](../zxr-shell-v2-composition.md), which also records the verification
   of the 2026 OpenXR spatial-container / depth-test-layer claims that bear on this decision.
+- Sharing (spectate / 2D window / per-observer 3D / protocol-proxied remote+VM apps / workspace
+  join) is designed in [spatial-sharing.md](../spatial-sharing.md), grounded in research docs
+  [17](../../research/17-sharing-capture-stack.md)–[19](../../research/19-wayland-proxying.md); it
+  adds the proxied-client globals baseline and security-context requirement to this compositor's
+  scope and treats remote observers as authorized `zxr_view`s.
 
 ## Alternatives considered
 

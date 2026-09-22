@@ -26,6 +26,9 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [14-mobile-stereo-depth.md](research/14-mobile-stereo-depth.md) — mobile stereo depth backends (TC-Stereo, XR-Stereo, LightStereo, teacher-student)
 - [15-hand-segmentation-matting.md](research/15-hand-segmentation-matting.md) — egocentric hand cutout (four artifacts, Mercury prior, matting, policy)
 - [16-perception-claims-audit.md](research/16-perception-claims-audit.md) — verification of Qualcomm depth paths + 2026 preprint claims
+- [17-sharing-capture-stack.md](research/17-sharing-capture-stack.md) — portals, gnome-remote-desktop, wayvnc, obs-vkcapture, libei, PipeWire ground truth
+- [18-xr-streaming.md](research/18-xr-streaming.md) — WiVRn protocol deep dive, ALVR, Sunshine/Moonlight, wolf, comp_multi
+- [19-wayland-proxying.md](research/19-wayland-proxying.md) — waypipe, wprs, Sommelier, crosvm cross-domain, wayland-proxy-virtwl, Spectrum OS
 
 ## Architecture (`architecture/`)
 
@@ -36,6 +39,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [repo-structure.md](architecture/repo-structure.md) — monorepo layout + patch management
 - [zxr-shell-v2-composition.md](architecture/zxr-shell-v2-composition.md) — the XR compositor's renderer-agnostic colour+depth composition model and MVP
 - [perception-passthrough-hands.md](architecture/perception-passthrough-hands.md) — passthrough view-correction + hand cutout as compositor layers
+- [spatial-sharing.md](architecture/spatial-sharing.md) — the five sharing modes (spectate / 2D window / per-observer 3D / share-the-app proxying / workspace join)
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
   - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace

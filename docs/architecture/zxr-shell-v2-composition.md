@@ -312,3 +312,10 @@ map to initial 3D placement; whether a deep-sample profile or deferred-stochasti
 the better T2 path; the depth-dmabuf driver matrix (per §5, negotiate + fall back to scalar depth);
 and bandwidth (two 2048² eyes × RGBA8 + D32 ≈ 96 MiB/app/frame ≈ 8.4 GiB/s read at 90 Hz before
 output — so cropped regions and resolution negotiation matter even with zero CPU readback).
+
+**Sharing hooks.** [spatial-sharing.md](spatial-sharing.md) reserves the protocol hooks this design
+must not preclude: observer views as authorized/budgeted `zxr_view`s (remote observers render inside
+the same atomic frame), per-app capture groups (egress endpoints for per-observer RGBD streaming),
+share-scope/consent objects, the proxied-client globals baseline (dmabuf v4+ feedback, viewporter,
+fractional-scale, xdg-decoration, `wp_security_context_manager_v1` with policy-gated capture), and
+one frame-descriptor schema serialized both protocol-locally and on the network bridge.
