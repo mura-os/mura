@@ -81,6 +81,23 @@ let
     };
   };
 
+  # ADR 0011: motorized auto-IPD with an eyes backend passes...
+  motorizedIpdWithEyes = {
+    imports = [ validDevice ];
+    config = {
+      spatial.hardware.ipd.source = "motorized-auto";
+      spatial.adaptation.eyes.backend = "device-specific";
+    };
+  };
+
+  # ...and without one fails.
+  motorizedIpdNoEyes = {
+    imports = [ validDevice ];
+    config = {
+      spatial.hardware.ipd.source = "motorized-auto";
+    };
+  };
+
   # Assertion helpers.
   assertsPass = e: builtins.all (a: a.assertion) e.config.assertions;
 
@@ -103,6 +120,12 @@ let
     bothProfilesFail = !assertsPass (evalContract bothProfiles);
     # Lock triggers default sensibly.
     lockDefaultsOn = eval.config.spatial.xr.session.lock.enable == true;
+    # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.
+    eyesDefaultNone = eval.config.spatial.adaptation.eyes.backend == "none";
+    ipdDefaultFixed = eval.config.spatial.hardware.ipd.source == "fixed";
+    # ADR 0011: motorized-auto requires an eyes backend.
+    motorizedIpdWithEyesPasses = assertsPass (evalContract motorizedIpdWithEyes);
+    motorizedIpdNoEyesFails = !assertsPass (evalContract motorizedIpdNoEyes);
   };
 
   failures = lib.filterAttrs (_: v: v != true) results;
