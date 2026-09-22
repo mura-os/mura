@@ -33,6 +33,10 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [21-anchors-persistence-openxr.md](research/21-anchors-persistence-openxr.md) — `XR_EXT_spatial_entity` family, the map/local frame split, anchor data model, privacy, Monado gap
 - [22-dense-geometry-no-lidar.md](research/22-dense-geometry-no-lidar.md) — planes/TSDF meshing/semantics without LiDAR; per-device depth sources; tri-state confidence
 - [23-relocalization-multisession.md](research/23-relocalization-multisession.md) — recognizing mapped rooms: reloc funnels, multi-session merging, map stores, dynamic-object gating
+- [24-avatar-representation-enrollment.md](research/24-avatar-representation-enrollment.md) — avatar representation code audit (RGBAvatar/GaussianAvatars/MATCH-GEM/FlexAvatar): controls, memory math, eyes/teeth, enrollment
+- [25-avatar-driving-sensing.md](research/25-avatar-driving-sensing.md) — the verified Linux expression/gaze path (WiVRn→Monado FB2), blendshape schema map, per-device sensing matrix, degraded modes
+- [26-codec-avatar-route.md](research/26-codec-avatar-route.md) — Ava-256 archaeology (main + PRs 1/7/19), the new-person-into-latent-space problem, v2 hooks + experiment sequence
+- [27-avatar-claims-audit.md](research/27-avatar-claims-audit.md) — avatar paper/repo claim verification, XR2-class splat-rendering feasibility, licensing map
 - [28-eye-tracking-stack.md](research/28-eye-tracking-stack.md) — pupil detection lineage, pye3d rotation-center IPD, Monado ET surface, placement + motor policy
 - [29-eye-hardware-ipd-per-target.md](research/29-eye-hardware-ipd-per-target.md) — per-target eye cameras, IPD mechanisms, access classes, iris auth, gaze privacy
 
@@ -47,6 +51,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [perception-passthrough-hands.md](architecture/perception-passthrough-hands.md) — passthrough view-correction + hand cutout as compositor layers
 - [spatial-sharing.md](architecture/spatial-sharing.md) — the five sharing modes (spectate / 2D window / per-observer 3D / share-the-app proxying / workspace join)
 - [spatial-mapping.md](architecture/spatial-mapping.md) — anchors, persistence, relocalization, planes/mesh/boundary (Tier 4 world understanding)
+- [avatar-persona.md](architecture/avatar-persona.md) — Persona avatars: enrollment/asset/driver/runtime decomposition, control-interface + asset-format specs, kill-gates
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
   - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace
@@ -57,6 +62,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0007](architecture/adr/0007-session-greeter-lock.md) session/greeter/lock model (appliance autologin + greetd; lock as compositor state)
   - [0008](architecture/adr/0008-perception-services-placement.md) perception services placement (passthrough + hand cutout, Monado-side)
   - [0009](architecture/adr/0009-spatial-mapping-architecture.md) spatial mapping architecture (layered Basalt VIO + separate mapping/anchor service, not single-SLAM)
+  - [0010](architecture/adr/0010-avatar-control-space-and-driver.md) Persona avatar control space + driver (semantic v1, versioned latent hook, Monado-side driver)
   - [0011](architecture/adr/0011-eye-tracking-ipd.md) eye tracking and IPD (Monado-side eye-frame service, rotation-center IPD, event-gated motors)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the base architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the base review (fixed now vs.
@@ -64,6 +70,9 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [REVIEW-perception.md](architecture/REVIEW-perception.md) — red-team review of the perception design
 - [perception-design-backlog.md](architecture/perception-design-backlog.md) — disposition of the
   perception review (fixed now vs. the P-1 BSP kill-gate vs. pre-release)
+- [REVIEW-avatar.md](architecture/REVIEW-avatar.md) — red-team review of the Persona avatar design
+- [avatar-design-backlog.md](architecture/avatar-design-backlog.md) — disposition of the avatar
+  review (fixed now vs. the A-1 adapter spike vs. pre-implementation/pre-release)
 - [REVIEW-mapping.md](architecture/REVIEW-mapping.md) — red-team review of the spatial-mapping design
 - [mapping-design-backlog.md](architecture/mapping-design-backlog.md) — disposition of the mapping
   review (fixed now vs. the M0 foundations gate vs. design-before-milestone)

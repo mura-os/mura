@@ -54,13 +54,21 @@ hook a learned-latent v2 driver needs; nothing else about the route is v1 work.
 FLAME vector RGBAvatar consumes, [24 §1.1](../../research/24-avatar-representation-enrollment.md)).
 Personal coefficients never travel between arbitrary drivers and avatars.
 
-**4. The avatar driver service is Monado-side** (in-process or a sibling behind Monado's
-transport, per the ADR 0008 invariant recast): it consumes `get_face_tracking` weights and gaze
-poses already rebased into the server clock, applies calibration and the degraded-mode ladder
-(visual → add-on mouth camera → audio-inferred mouth/jaw → procedural, each flagged in `source`),
-and **re-publishes synthesized weights as a Monado face device** so ordinary OpenXR clients get
-degraded-mode expressions through the standard extension. The avatar *runtime* is an ordinary
-zxr client and holds no privileged access.
+**4. The avatar driver service is Monado-side.** The v1 topology decision (correcting the
+in-process/sibling conflation the perception review flagged for ADR 0008 and this ADR repeated):
+Monado **owns** the sensor devices and clock; the driver's *execution* placement is decided at
+implementation against one specified boundary — if a sibling, a defined source-stream +
+virtual-device registration protocol; if in-process, a stated ABI and crash-containment story —
+it is not both. The driver consumes `get_face_tracking` weights and gaze poses already rebased
+into the server clock, applies calibration and the degraded-mode ladder (visual → add-on mouth
+camera → audio-inferred mouth/jaw → procedural, each flagged in `source`), and **re-publishes
+synthesized weights as a *derived* Monado face device** under these rules (correcting the
+recursion/lossiness the review caught): physical-source and derived-output roles are distinct;
+the driver never subscribes to its own descendants; which device serves the static `face` role
+is an explicit system policy, not an accident of registration order; and the published FB2 view
+is documented as lossy (UE-88 does not fit FB2-70; per-channel source/lineage metadata does not
+survive the extension). The avatar *runtime* is an ordinary zxr client and holds no privileged
+access.
 
 ## Rationale
 
@@ -89,8 +97,12 @@ zxr client and holds no privileged access.
 - The audio rung needs a small upstream-shaped piece: a Monado `xrt_device` registering
   `XRT_INPUT_FB_FACE_TRACKING2_AUDIO` (the state tracker already routes it; no device registers
   it today — verified).
-- The persona asset is biometric data and inherits the perception privacy boundary: untrusted
-  clients see the rendered avatar, never the control stream, sensing data, or the asset.
+- The persona asset is biometric data with **three distinct trust classes** (the review caught
+  the earlier wording contradicting remote rendering): the trusted local runtime holds the
+  user's own asset; **untrusted local apps** see only composited output — never assets,
+  controls, or sensing; a **remote peer's trusted runtime** may receive the asset only under
+  explicit consent via a dedicated Persona-sharing mode (transfer/retention/revocation to be
+  specified; until then, remote uses the rendered-RGBD observer mode).
 - **Not ratified here:** the enrollment tool's internals (tracker choice, representation
   training), the exact asset container encoding, and any latent-route work beyond the reserved
   hooks — all backlog, most gated on S-1/R-1.

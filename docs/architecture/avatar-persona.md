@@ -68,12 +68,27 @@ factoring already matches this design's control interface. ARKit-52 is explicitl
 ```text
 ControlFrame {
   control_space:  { id, kind: semantic-v1 | latent, dim, decoder_binding? }   # versioned pair
-  timestamp:      Monado-monotonic ns (sample time, not publish time)
-  head_pose:      from OpenXR views (never raw IMU)
-  channels[]:     { value: f32, validity: bool, confidence: f32,
-                    source: sensor | derived | audio-inferred | procedural | default }
+  seq, clock_domain_id                       # host-local Monado clock; remote use requires the
+                                             # sharing layer's explicit clock mapping
+  groups[]:       { members, t_observed, t_produced, state: measured | interpolated | predicted }
+  # one timestamp CANNOT describe the ladder (review): face weights, gaze, audio-inferred mouth
+  # (1 s windows @30 fps), and head pose are separate observations with separate ages —
+  # each signal group carries its own observation/production times.
+  head_pose:      sampled at a declared time in a declared reference space (avatar-root
+                  transform is a sharing-layer concern; raw local origins never leave the host)
+  channels[]:     { value: f32, confidence: f32,
+                    state:  measured | derived | unobserved | unsupported | invalid,
+                    source: sensor | derived | audio-inferred | procedural | default,
+                    lineage: confidence-region / source-channel id }
+  # Validity is honest about granularity: FB2 carries ONE validity bit + TWO region
+  # confidences for 70 weights ([25 §2]) — per-channel values are *derived* from set-level
+  # evidence and say so via lineage; `unsupported` (schema lacks it) is distinct from
+  # `unobserved` (temporarily missing) and `invalid` (sensor failure).
   # semantic-v1 channel set: UE-88 shapes; gaze (combined dir + per-eye when available);
-  #   eyelid openness L/R; jaw pose; optional pupil (reserved, no Linux source today)
+  #   eyelid openness L/R; jaw pose; optional pupil (reserved, no Linux source today).
+  #   The channel registry (stable IDs, units, frames, ranges, neutral values) is a
+  #   normative machine-readable artifact to publish before implementation — "UE-88" names
+  #   the factoring, not a frozen registry (backlog).
   # latent (reserved, v2): opaque f32[dim] bound to a named decoder artifact hash
 }
 ```
@@ -90,12 +105,20 @@ Non-negotiable rules, each with a verified precedent or failure mode behind it:
   [26 §implications](../research/26-codec-avatar-route.md)); `decoder_binding` is a content hash.
   Semantic-v1 needs no binding. Renderers ignore control spaces they don't declare — this one
   field is the entire hook that lets a learned driver slot in later without renderer changes.
-- **Adapters, not unification.** Control spaces are related by learned per-person adapters (the
-  MATCH bridge shape, [26 §4](../research/26-codec-avatar-route.md)); the asset carries adapter
-  weights and per-user calibration blobs keyed `(control_space id, driver id)` rather than the
-  system assuming one canonical space. Personal PCA/basis coefficients are **never** a wire
-  format between arbitrary drivers and avatars (independently fitted bases have arbitrary
-  meaning/order/sign across people).
+- **Adapters, not unification — and the adapter is NOT solved.** Control spaces are related by
+  per-person adapters; the asset carries adapter weights and per-user calibration blobs keyed
+  `(control_space id, driver id)` rather than the system assuming one canonical space. Personal
+  PCA/basis coefficients are **never** a wire format between arbitrary drivers and avatars
+  (independently fitted bases have arbitrary meaning/order/sign across people). **The
+  correction from the review:** the UE→FLAME-129 adapter has a supervision gap — phone
+  enrollment produces FLAME tracks with no UE observations; live use produces UE observations
+  with no FLAME ground truth; the learned precedent (OFERA,
+  [25 §2](../research/25-avatar-driving-sensing.md)) used *paired recordings*. v1 therefore
+  ships one of exactly two honest options: (a) a **generic heuristic UE→FLAME mapping**
+  (semantic tables + published ARKit/FLAME regressors), explicitly lower-fidelity; or (b) a
+  **per-user headset-calibration capture** (repeat a coverage-defined script wearing the
+  headset; fit the smallest adapter on the paired data; held-out jaw/lip/lid/gaze error
+  thresholds). The **A-1 adapter spike** (below) decides which before any schema freeze.
 
 ## The asset format specification
 
@@ -156,14 +179,25 @@ calibration, emits `ControlFrame`s. Two obligations beyond pass-through:
 
 ## The runtime renderer: a zxr client
 
-The avatar runtime is an ordinary **zxr-shell-v2 3D client** — it renders the peer's (or in
-mirror mode, the user's own) head into pooled colour+depth images for the compositor's atomic
-frame submission ([composition §7.2](zxr-shell-v2-composition.md)). Nothing new is required from
-the compositor; the avatar is the first natively-3D zxr application. Telepresence transport is
-`ControlFrame`s (~hundreds of bytes/frame), not geometry or video: the receiver holds the asset
-(versioned by manifest hash) and renders locally — the sharing stack
-([spatial-sharing.md](spatial-sharing.md)) carries the control stream and the one-time asset
-transfer under consent.
+The avatar runtime is a **zxr-shell-v2 3D client** — it renders the peer's (or in mirror mode,
+the user's own) head into pooled colour+depth images for the compositor's atomic frame
+submission ([composition §7.2](zxr-shell-v2-composition.md)). **One real compositor-facing
+gap (review):** Gaussian splatting is alpha rendering, and zxr's T1 baseline is nearest-*opaque*
+composition ([composition §2–3](zxr-shell-v2-composition.md)) — hair, lashes, and silhouettes
+have partial coverage that a single colour+depth cannot interleave against other clients. v1
+therefore renders under an **opaque-cutout profile**: internally alpha-composited, resolved to
+opaque colour+depth with a declared coverage threshold at the silhouette (edge loss to be
+quantified in Z-1); true cross-client edge interleaving is a T2 deep/ordered-sample concern,
+not claimed here.
+
+Telepresence transport is `ControlFrame`s (order-of-a-KiB/frame), not geometry or video: the
+receiver holds the asset (versioned by manifest hash) and renders locally. **Trust classes are
+distinct (review):** the *trusted local runtime* holds the user's own asset; *untrusted local
+apps* never see assets, controls, or sensing — only the composited output; a *remote peer's
+trusted runtime* receives the asset **only under explicit consent** (it is a biometric artifact
+— transfer, retention, revocation and deletion are a Persona-sharing mode that
+[spatial-sharing.md](spatial-sharing.md) does not yet define; until it exists, remote v1 uses
+the existing rendered-RGBD observer mode instead of asset transfer).
 
 Budget discipline ([27 §16](../research/27-avatar-claims-audit.md)): decoder, animation
 transforms, projection/sort, splat raster, and full-XR-frame costs are measured **separately** —
@@ -185,11 +219,23 @@ Modeled on perception's P-1: cheap, binary, per-device.
   and Galaxy XR pass on paper (verified plumbing); Steam Frame gaze exposure on Linux is
   UNKNOWN (this gate decides); Play for Dream is WiVRn-unsupported; Lynx R1's floor is head pose
   + mics (audio/procedural rungs only).
-- **R-1 render gate** ([27 §17](../research/27-avatar-claims-audit.md)): on-headset stereo splat
-  benchmark — 40k/60k animated splats, representative head close-up, both eyes at target render
-  scale, animation updated every frame, compositor + reprojection active, sustained
-  thermal/power logging. No open stack has demonstrated this on XR2-class hardware; until R-1
-  passes on a named device, the avatar runtime is desktop-class work only.
+- **A-1 adapter spike** (the review's top risk): record one coverage-defined calibration
+  performance observed *simultaneously* by a verified FB2/UE source and an independently fitted
+  FLAME tracker; fit the smallest allowed adapter; hold-out jaw/lip/lid/gaze error thresholds.
+  If per-person paired capture is unavoidable, "enroll once on a phone, drive from any headset"
+  is amended to include a headset-calibration step; the schemas do not freeze before this
+  answer.
+- **Render gates, split to break the circularity the review caught** (R-1 as originally written
+  depended on a compositor that is itself design-stage):
+  **R-0** — standalone Vulkan animation+splat benchmark on the target BSP (no compositor):
+  40k/60k animated splats, stereo, target render scale, sustained thermal/power logging.
+  **Z-1** — generic zxr T1 acceptance including the opaque-cutout profile (edge-loss
+  quantification) once the compositor MVP exists.
+  **R-1** — the integrated sustained run (compositor + reprojection active). Numeric
+  thresholds and the named device are set when R-0 is scheduled; investment is bounded per
+  stage. No open stack has demonstrated any of this on XR2-class hardware
+  ([27 §17](../research/27-avatar-claims-audit.md)); until R-0 passes, the avatar runtime is
+  desktop-class work only.
 
 ## Non-goals for v1 (hooks reserved, work deferred)
 
