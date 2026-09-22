@@ -79,7 +79,9 @@ module (fprintd timeout, network modules) can't stall `xrWaitFrame`. NixOS servi
 renders **generic** PAM prompts (`visible`/`secret`/`info`/`error`) with a controller-ray PIN-pad
 fast path and a ray-reachable virtual keyboard fallback. PIN is a `pam_spatial_pin`-style
 argon2-hashed credential in per-unit system state (MVP: owner-password-is-PIN). Biometrics (iris/
-face) come later as a parallel unlock path beside PAM, never replacing it.
+face) come later as a parallel unlock path beside PAM, never replacing it — the eye-camera privacy
+boundary and hardware substrate for iris auth are specified in
+[adr/0011-eye-tracking-ipd.md](0011-eye-tracking-ipd.md).
 
 ### Cross-cutting requirements
 

@@ -112,6 +112,7 @@ spatial.adaptation = {
   audio     = { backend = "native"; };          # PipeWire
   wifiBt    = { backend = "native"; };          # mac80211 / BlueZ
   tracking  = { backend = "device-specific"; }; # the hard one; see below
+  eyes      = { backend = "none"; };            # eye tracking; most targets lack the hardware (ADR 0011)
 };
 ```
 
@@ -153,6 +154,19 @@ Mirrors Monado's build/runtime surface ([05](../research/05-xr-userspace.md) §9
 | `spatial.deployment.flashMethod` | enum | `fastboot`\|`heimdall`\|`edl-qdl`\|`rauc`\|… (declarative flasher table) |
 | `spatial.deployment.protectedPartitions` | listOf str | persist/calib/NV — never touched without a separately-reviewed op |
 | `spatial.deployment.imageVariants` | listOf str | which `lib/images/` variants to build |
+
+### `spatial.hardware.ipd.*` and the `eyes` subsystem (ADR 0011)
+
+`spatial.hardware.ipd.source` ∈ `fixed | manual | manual-sensed | stored | motorized-auto` declares
+where the rendering-IPD value comes from, with `ipd.defaultMeters` as the safe pre-auth default
+(greeter/lock render with it per [adr/0007](adr/0007-session-greeter-lock.md)). `motorized-auto`
+(an eye-tracked lens servo, Galaxy XR / Play For Dream class) requires
+`spatial.adaptation.eyes.backend != "none"` — asserted. The eyes backend selects the session-scoped
+Monado-side eye-tracking service (gaze via `XR_EXT_eye_gaze_interaction`, rotation-center IPD into
+`eye_relation`, event-gated motor proposals); see
+[adr/0011-eye-tracking-ipd.md](adr/0011-eye-tracking-ipd.md). The qualification matrix gains
+per-device rows — *IPD source*, *eye-camera access class*, *ET capability*, *iris auth* — with
+current values in [research/29](../research/29-eye-hardware-ipd-per-target.md).
 
 ### `spatial.qualification.*` — required functionality and tests
 

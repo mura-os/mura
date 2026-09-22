@@ -1,4 +1,4 @@
-# 25 — Eye-tracking hardware and IPD mechanisms per target
+# 29 — Eye-tracking hardware and IPD mechanisms per target
 
 **Research date:** 2026-09-22  
 **Scope:** Oculus Quest 1, Lynx R1, Samsung Galaxy XR, Play For Dream MR, and

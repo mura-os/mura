@@ -1,8 +1,8 @@
-# 24 — Eye-tracking / auto-IPD software stack
+# 28 — Eye-tracking / auto-IPD software stack
 
 **Scope:** the software pipeline that turns inward-facing IR eye-camera frames into (a) a gaze
 signal exposed through OpenXR and (b) a metric IPD measurement good enough to drive a lens motor
-and Monado's `eye_relation` — and where that pipeline should execute (input to ADR 0009).
+and Monado's `eye_relation` — and where that pipeline should execute (input to ADR 0011).
 **Date:** 2026-09-22.
 
 **Sources studied locally:** `references/pye3d/`, `references/pupil/`, `references/eyetrackvr/`,
@@ -261,7 +261,7 @@ More complete than expected:
 
 ---
 
-## 4. Monado integration options (input to ADR 0009)
+## 4. Monado integration options (input to ADR 0011)
 
 The pipeline to place: eye-camera frame pair → per-eye detector (PuRe-class or CNN) → per-eye
 pye3d-style model → (gaze pose, two eyeball centers, blink/openness) → OpenXR gaze input + IPD
@@ -313,7 +313,7 @@ translation, and one more privileged camera-holding process to sandbox (eye imag
 iris — so the privacy bar is the *highest* of all camera consumers, ADR 0007's tiered-tracking
 rationale).
 
-**Recommendation (for ADR 0009):** target architecture **(a)**, with the detector+model behind an
+**Recommendation (for ADR 0011):** target architecture **(a)**, with the detector+model behind an
 internal interface so **(b)**'s pluggability can be added later; use **(c)** explicitly and only as
 the bring-up/prototyping vehicle (Python pye3d + PuRe port against recorded/live V4L2, feeding a
 socket driver), to be retired once the C++ port lands as a frame sink. Session scoping per ADR
@@ -424,7 +424,7 @@ applied post-login exactly as ADR 0007 already specifies for per-user IPD prefer
 - **Closed-loop motor servoing off the raw estimator** — event-shaped, hysteresis-gated actuation
   only (§5.2).
 
-### Open questions (for ADR 0009 and hardware spikes)
+### Open questions (for ADR 0011 and hardware spikes)
 
 1. **Eye-camera BSP access and exposure timestamps** per target (doc 25's qualification matrix):
    V4L2 vs vendor path, timestamp quality against the monotonic clock, achievable rate (60–120 Hz
@@ -446,7 +446,7 @@ applied post-login exactly as ADR 0007 already specifies for per-user IPD prefer
    interaction; whether the PuRe+pye3d path at 120 Hz meets it on target hardware is a
    measurement, not a design, question.
 
-### Recommended baseline (marked as ADR 0009 input, not a decision)
+### Recommended baseline (marked as ADR 0011 input, not a decision)
 
 Per authenticated session, on the eye-camera frame group inside Monado: **per-eye PuRe-class
 detector (CPU) → ported pye3d two-sphere model with refraction correction → (i) gaze via an
