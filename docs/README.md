@@ -1,0 +1,38 @@
+# spatial-os documentation
+
+A Nix-built, NixOS-based, Wayland-based Linux XR distribution targeting many standalone VR headsets,
+producing reproducible flashable images from pinned vendor firmware ("donor") inputs.
+
+## Research (`research/`)
+
+Study of the reference multi-device OS projects, done as parallel deep-dives. Each doc follows the
+same template (purpose · build architecture · device abstraction · donor handling · kernel · images ·
+updates · reproducibility · adopt · reject · open questions) so they compare like-for-like.
+
+- [00-synthesis.md](research/00-synthesis.md) — cross-cutting analysis; the bridge to architecture
+- [01-mobile-nixos.md](research/01-mobile-nixos.md) — Mobile NixOS + Tow-Boot
+- [02-postmarketos.md](research/02-postmarketos.md) — postmarketOS (pmbootstrap/pmaports) + meta-qcom
+- [03-android-compat.md](research/03-android-compat.md) — Halium, libhybris, UBports, droid-hal, Waydroid
+- [04-nix-imaging.md](research/04-nix-imaging.md) — robotnix, nixpkgs images, Jovian, apple-silicon, mkosi
+- [05-xr-userspace.md](research/05-xr-userspace.md) — Monado, WiVRn, StardustXR, nixpkgs-xr, Envision
+- [06-donor-pipeline.md](research/06-donor-pipeline.md) — donor ingestion (brick, SteamOS, robotnix)
+- [07-device-landscape.md](research/07-device-landscape.md) — the target headsets
+
+## Architecture (`architecture/`)
+
+- [overview.md](architecture/overview.md) — layers, boundaries, invariants
+- [device-contract.md](architecture/device-contract.md) — the typed `spatial.*` device contract
+- [donor-pipeline.md](architecture/donor-pipeline.md) — acquire→identify→parse→extract→qualify
+- [images-and-updates.md](architecture/images-and-updates.md) — image families + two-backend updates
+- [repo-structure.md](architecture/repo-structure.md) — monorepo layout + patch management
+- [adr/](architecture/adr/) — decision records:
+  - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
+  - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace
+  - [0003](architecture/adr/0003-android-compat-scope.md) Android-compat scope
+  - [0004](architecture/adr/0004-cross-vs-native-builds.md) cross vs native builds
+  - [0005](architecture/adr/0005-flake-layout-and-outputs.md) flake layout and outputs
+
+## Reference clones (`../references/`)
+
+Git-ignored study clones, reproducible from `references/clone.sh` + the pinned
+`references/MANIFEST.json`.
