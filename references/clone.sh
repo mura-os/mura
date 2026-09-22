@@ -55,6 +55,18 @@ repos=(
   'hyprlock|https://github.com/hyprwm/hyprlock.git|'
   'kscreenlocker|https://invent.kde.org/plasma/kscreenlocker.git|'
   'wayland-protocols|https://gitlab.freedesktop.org/wayland/wayland-protocols.git|'
+  # --- perception: passthrough / depth / hands (Tier 1-3) ---
+  'openxr-steamvr-passthrough|https://github.com/Rectus/openxr-steamvr-passthrough.git|'
+  'viewcorrection|https://github.com/puzzlepaint/viewcorrection.git|'
+  'neuralpassthrough|https://github.com/facebookresearch/NeuralPassthrough.git|'
+  'tc-stereo|https://github.com/jiaxiZeng/Temporally-Consistent-Stereo-Matching.git|'
+  'xr-stereo|https://github.com/za-cheng/XR-Stereo.git|'
+  'openstereo|https://github.com/XiandaGuo/OpenStereo.git|'
+  'raft-stereo|https://github.com/princeton-vl/RAFT-Stereo.git|'
+  'ego2hands|https://github.com/AlextheEngineer/Ego2Hands.git|'
+  'egohos|https://github.com/owenzlz/EgoHOS.git|'
+  'robust-video-matting|https://github.com/PeterL1n/RobustVideoMatting.git|'
+  'lightweight-hand-segmentation|https://github.com/itap-robotica-medica/lightweight-hand-segmentation.git|'
 )
 
 mkdir -p .logs
