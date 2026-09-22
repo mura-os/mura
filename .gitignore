@@ -1,0 +1,6 @@
+# Reference clones are reproducible from references/clone.sh + MANIFEST.json
+references/*/
+references/.logs/
+result
+result-*
+.direnv/
