@@ -67,11 +67,20 @@ flowchart TB
 ## The layers, top to bottom
 
 ### Application layer (device-independent)
-The XR shell (StardustXR reference server, an OpenXR client), OpenXR applications, and 2D Wayland
-applications. Talks only OpenXR and Wayland. Knows nothing about specific hardware. This layer is
-in scope for the project but deliberately not the focus of the build-system architecture; its
-packaging is covered briefly in [device-contract.md](device-contract.md) §XR and in the XR research
-doc.
+The XR shell/compositor, OpenXR applications, and 2D Wayland applications. Talks only OpenXR and
+Wayland. Knows nothing about specific hardware.
+
+The shell is the spatial-os XR compositor — a Wayland-native, client-renders / compositor-composites
+design continuing the wxrc `zxr` protocol lineage as `zxr-shell-v2`, itself an OpenXR client of
+Monado, serving `xdg-shell` for 2D apps and `zxr-shell-v2` for 3D apps in one depth-tested space.
+This resolves the previously-open "2D apps in a headset session" question from
+[docs/research/05-xr-userspace.md](../research/05-xr-userspace.md) §11. The decision, its
+alternatives (StardustXR and WayVR are packaged as optional sessions, not the backbone), the Vulkan
+renderer choice, and the ship-the-2D-tier-first sequencing are recorded in
+[adr/0006-compositor-strategy.md](adr/0006-compositor-strategy.md), grounded in research docs
+[08](../research/08-wxrc.md), [09](../research/09-wxrc-ecosystem-gap-2026.md), and
+[10](../research/10-xr-wayland-protocol-comparison.md). Build-system-wise this layer is packaging +
+session policy; the compositor engineering program itself is tracked in the ADR.
 
 ### Common distribution layer (device-independent)
 Owns the **packaging and session policy** for the shell, the application environment, networking

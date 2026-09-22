@@ -17,6 +17,9 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [05-xr-userspace.md](research/05-xr-userspace.md) — Monado, WiVRn, StardustXR, nixpkgs-xr, Envision
 - [06-donor-pipeline.md](research/06-donor-pipeline.md) — donor ingestion (brick, SteamOS, robotnix)
 - [07-device-landscape.md](research/07-device-landscape.md) — the target headsets
+- [08-wxrc.md](research/08-wxrc.md) — the Motorcar→wxrc→wxrd 3D-windowing compositor lineage (philosophy + code)
+- [09-wxrc-ecosystem-gap-2026.md](research/09-wxrc-ecosystem-gap-2026.md) — which of wxrc's 2019 ecosystem patches are landed/superseded/still-needed in 2026
+- [10-xr-wayland-protocol-comparison.md](research/10-xr-wayland-protocol-comparison.md) — motorcar vs zxr vs zwin vs StardustXR vs WayVR
 
 ## Architecture (`architecture/`)
 
@@ -31,6 +34,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0003](architecture/adr/0003-android-compat-scope.md) Android-compat scope
   - [0004](architecture/adr/0004-cross-vs-native-builds.md) cross vs native builds
   - [0005](architecture/adr/0005-flake-layout-and-outputs.md) flake layout and outputs
+  - [0006](architecture/adr/0006-compositor-strategy.md) XR compositor strategy (revive zxr as zxr-shell-v2)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the review (fixed now vs.
   deferred to the Lynx spike / pre-release design)

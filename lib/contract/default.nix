@@ -160,6 +160,19 @@ in
           'window' is for the virtual-headset VM.
         '';
       };
+      shell = mkOption {
+        type = types.enum [ "zxr" "stardust" "wayvr" "none" ];
+        default = "none";
+        description = ''
+          The XR shell/compositor session run above the OpenXR runtime (ADR 0006).
+          - zxr: the spatial-os compositor (Wayland-native, continues the wxrc zxr lineage
+            as zxr-shell-v2; xdg-shell 2D apps + zxr-shell-v2 3D apps in one depth-tested space).
+            Ships the 2D tier first, then the 3D-native tier (docs/research/10).
+          - stardust: StardustXR as a packaged alternative session (not the backbone).
+          - wayvr: WayVR as a packaged 2D-panels-in-XR overlay session.
+          - none: headless/bring-up (the virtual-headset VM default until the compositor exists).
+        '';
+      };
       environment = mkOption {
         type = types.attrsOf types.str;
         default = { };
