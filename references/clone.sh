@@ -41,6 +41,20 @@ repos=(
   'zwin|https://github.com/zwin-project/zwin.git|'
   'zen|https://github.com/zwin-project/zen.git|'
   'wayvr|https://github.com/wayvr-org/wayvr.git|'
+  # --- session / greeter / lock stack (XR login research) ---
+  'greetd|https://git.sr.ht/~kennylevinsen/greetd|'
+  'gtkgreet|https://git.sr.ht/~kennylevinsen/gtkgreet|'
+  'seatd|https://git.sr.ht/~kennylevinsen/seatd|'
+  'tuigreet|https://github.com/apognu/tuigreet.git|'
+  'regreet|https://github.com/rharish101/ReGreet.git|'
+  'cage|https://github.com/cage-kiosk/cage.git|'
+  'sddm|https://github.com/sddm/sddm.git|'
+  'gdm|https://gitlab.gnome.org/GNOME/gdm.git|'
+  'lightdm|https://github.com/canonical/lightdm.git|'
+  'swaylock|https://github.com/swaywm/swaylock.git|'
+  'hyprlock|https://github.com/hyprwm/hyprlock.git|'
+  'kscreenlocker|https://invent.kde.org/plasma/kscreenlocker.git|'
+  'wayland-protocols|https://gitlab.freedesktop.org/wayland/wayland-protocols.git|'
 )
 
 mkdir -p .logs
