@@ -30,6 +30,17 @@ repos=(
   'meta-qcom|https://github.com/qualcomm-linux/meta-qcom.git|'
   'mkosi|https://github.com/systemd/mkosi.git|'
   'freexr|https://github.com/FreeXR/FreeXR.git|init'
+  # --- wxrc compositor lineage (spatial-os compositor research) ---
+  'motorcar|https://github.com/evil0sheep/motorcar.git|stable'
+  'motorcar-thesis|https://github.com/evil0sheep/MastersThesis.git|'
+  'wxrc|https://git.sr.ht/~sircmpwn/wxrc|'
+  'wxrc-mirror|https://github.com/patchedsoul/wxrc.git|'
+  'wxrd|https://gitlab.freedesktop.org/xrdesktop/wxrd.git|'
+  'xrdesktop|https://gitlab.freedesktop.org/xrdesktop/xrdesktop.git|'
+  'gxr|https://gitlab.freedesktop.org/xrdesktop/gxr.git|'
+  'zwin|https://github.com/zwin-project/zwin.git|'
+  'zen|https://github.com/zwin-project/zen.git|'
+  'wayvr|https://github.com/wayvr-org/wayvr.git|'
 )
 
 mkdir -p .logs
