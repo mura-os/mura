@@ -159,6 +159,14 @@ repos=(
   'cosmic-panel|https://github.com/pop-os/cosmic-panel.git|'
   'cosmic-protocols|https://github.com/pop-os/cosmic-protocols.git|'
   'xdg-desktop-portal-cosmic|https://github.com/pop-os/xdg-desktop-portal-cosmic.git|'
+  # --- KWin VR study (docs/research/31, ADR 0013): the lightofmysoul fork family ---
+  # kwin-vr = the VR-plugin fork branch behind KWin MR !8671 (upstream kwin master is
+  # already pinned above for diffing); vr-patches = required Qt/XWayland patch series;
+  # monado-galaxyxr = Galaxy XR bring-up branch; xrinfo = the author's OpenXR probe tool.
+  'kwin-vr|https://invent.kde.org/lightofmysoul/kwin.git|vr'
+  'kwin-vr-patches|https://invent.kde.org/lightofmysoul/vr-patches.git|'
+  'monado-galaxyxr|https://gitlab.freedesktop.org/lightofmysoul/monado.git|galaxyxr'
+  'xrinfo|https://gitlab.freedesktop.org/lightofmysoul/xrinfo.git|'
 )
 
 mkdir -p .logs
