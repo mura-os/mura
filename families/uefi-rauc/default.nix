@@ -166,10 +166,53 @@ in
     fsType = "ext4";
     options = [ "nofail" ];
   };
+  # Per-unit persistent state. Read-write: per-unit state durability is a contract
+  # requirement (device-contract `spatial.xr.calibration.paths`, overview invariant 4)
+  # — the earlier `ro` mount was donor-mirroring that couldn't survive first contact
+  # with the lock/PIN/calibration design (PIN hashes, user calibration, and the
+  # provisioning marker all live here; docs/architecture/first-run-onboarding.md).
+  #
+  # /persist/spatial subtree classes (first-run-onboarding.md §state classes —
+  # factory reset treats each differently, never the tree as one blob):
+  #   factory/    factory calibration — survives factory reset
+  #   identity/   device keys — survive reset; regenerated only by re-provisioning
+  #   enrollment/ PIN hash, user credentials — wiped on reset
+  #   state/      update/migration state — reset per policy
+  #   machine-id  own class: survives A/B slot updates, rotated on factory reset
   fileSystems."/persist" = {
     device = "/dev/disk/by-partlabel/syspersist";
     fsType = "ext4";
-    options = [ "ro" "nofail" ];
+    options = [ "nofail" ];
+  };
+  # /var/lib/spatial is the contract-visible path; it binds into /persist so it
+  # survives A/B slot switches. The bind mount *pulls in* the setup service
+  # (x-systemd.requires — ordering alone is not a dependency); the service creates
+  # the directory skeleton, which is what makes this work after a factory reset
+  # (an image-seeded directory would not).
+  fileSystems."/var/lib/spatial" = {
+    device = "/persist/spatial";
+    fsType = "none";
+    options = [
+      "bind"
+      "nofail"
+      "x-systemd.requires=spatial-persist-setup.service"
+      "x-systemd.after=spatial-persist-setup.service"
+    ];
+  };
+  systemd.services.spatial-persist-setup = {
+    description = "Create the /persist/spatial state skeleton";
+    unitConfig.RequiresMountsFor = "/persist";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      install -d -m 0750 /persist/spatial
+      install -d -m 0750 /persist/spatial/factory
+      install -d -m 0700 /persist/spatial/identity
+      install -d -m 0700 /persist/spatial/enrollment
+      install -d -m 0750 /persist/spatial/state
+    '';
   };
 
   boot.initrd.systemd.enable = true;
