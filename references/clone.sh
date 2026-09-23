@@ -171,6 +171,22 @@ repos=(
   'simula|https://github.com/SimulaVR/Simula.git|'
   'breezy-desktop|https://github.com/wheaney/breezy-desktop.git|'
   'xr-linux-driver|https://github.com/wheaney/XRLinuxDriver.git|'
+  # --- compositor base (ADR 0006 ratification study, docs/research/39) ---
+  # smithay = the ratified base (smallvil/anvil examples in-tree); wlroots = the
+  # recorded fallback + Vulkan-renderer study (current freedesktop upstream — the
+  # archived swaywm/wlroots GitHub mirror is a known trap); niri = the pattern
+  # reference for smithay state/calloop/damage structure; openxrs = the Rust
+  # OpenXR bindings (the ash/OpenXR boundary zxr owns); waynest = StardustXR's
+  # Wayland wire layer (datapoint, not a candidate); weston/louvre/mir cloned
+  # only for evidence-cited disposition.
+  'smithay|https://github.com/Smithay/smithay.git|'
+  'wlroots|https://gitlab.freedesktop.org/wlroots/wlroots.git|'
+  'niri|https://github.com/YaLTeR/niri.git|'
+  'openxrs|https://github.com/Ralith/openxrs.git|'
+  'waynest|https://github.com/verdiwm/waynest.git|'
+  'weston|https://gitlab.freedesktop.org/wayland/weston.git|'
+  'louvre|https://github.com/CuarzoSoftware/Louvre.git|'
+  'mir|https://github.com/canonical/mir.git|'
 )
 
 mkdir -p .logs
