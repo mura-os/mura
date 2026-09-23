@@ -145,7 +145,7 @@ one ([17 §1.1](../research/17-sharing-capture-stack.md)).
 | Scope \ Projection | texture-space | flat-composition | head-view | observer-view | +depth |
 |---|---|---|---|---|---|
 | window | **preferred** (the M1 window screenshot) | degenerate (set of one) | invalid† | mode 2 alt | mode 3 (3D client) |
-| window-set | — | **preferred** (ad-hoc or virtual screen) | invalid† | valid | deferred |
+| window-set | — | **preferred** (ad-hoc or virtual screen) | invalid† | valid | open (capture-tool design decides) |
 | plane-region | **preferred** (region UX below) | valid | invalid† | — | — |
 | full-scene | undefined (no single buffer) | undefined | **preferred** (spectate/screenshot of "what I see") | valid (3rd-person spectator, §2.1) | valid |
 | world-volume | undefined | undefined | (is just full-scene cropped) | valid | **preferred** (spatial snapshot; single-frame `APP_VOLUME` group) |
@@ -169,7 +169,8 @@ XR desktops.
   and depth makes a screen rectangle a frustum). The UX is: ray-pick a plane (window or virtual
   screen) → sweep a rectangle **in that plane's texture space** → capture the sub-rectangle from
   the view-independent source. A true "region of the world" is not a region — it is
-  `world-volume` scope. Volume-selection UX is deferred with the spatial-snapshot tier.
+  `world-volume` scope. Volume-selection UX is an open question whose decider is the
+  spatial-snapshot tier's design round (the capture tool ships without it until then).
 - **Privacy attaches to cells, not tools.** Passthrough camera pixels can appear *only* in
   `head-view`/`observer-view`/`world-volume` projections — never in texture-space or
   flat-composition cells, which are safe by construction. **Normative default: stills and streams
@@ -245,13 +246,15 @@ Hard consequences for zxr-shell-v2 (the [19 §8](../research/19-wayland-proxying
   endpoints only against measured NCM latency.
 - **VM isolation end-state:** Spectrum's process shape — per-VM unprivileged, bwrap-jailed
   cross-domain backend holding only our compositor socket — recorded as the target architecture;
-  virtio-gpu cross-domain deferred until `--vsock` copies measurably bottleneck.
+  virtio-gpu cross-domain is condition-gated: adopted only if `--vsock` copies measurably
+  bottleneck on the target SoC (the measurement is the decider, not a schedule).
 - **Proxied 3D clients are a virtualization feature, not a networking one**
   ([19 §9.3](../research/19-wayland-proxying.md)): the zxr control plane proxies for free
   (fd-free pass-through), but colour+depth cannot cross a network link (full-area damage; lossy
   video destroys the `argmin` identity T1 correctness depends on). In-VM zero-copy via virtgpu
-  resource sharing is credible but gated on four missing pieces (guest dmabuf forwarding, guest
-  syncobj support, fd-aware proxying of our protocol, a guest GPU context decision) — deferred.
+  resource sharing is credible but condition-gated on four missing pieces (guest dmabuf
+  forwarding, guest syncobj support, fd-aware proxying of our protocol, a guest GPU context
+  decision) — it exists in the design only when all four do.
 
 ## 4. Mode 3: the per-observer RGBD bridge
 
@@ -372,9 +375,11 @@ dmabuf feedback surviving waypipe's modifier intersection on mobile GPUs; frame-
 remote apps at 90 Hz; presentation time of stale planes; the input-latency threshold where a proxied
 window stops feeling attached to the hand ray.
 
-From §2.2 (stills taxonomy): the world-volume *selection* UX (deferred with the spatial-snapshot
-tier); the on-disk format for `+depth` stills (a gallery-viewable RGBD container does not
-meaningfully exist); lifecycle of ephemeral flat-composition outputs for ad-hoc window-set
-captures (creation/teardown vs portal session lifetime, and keeping them invisible to
-`wlr-output-management` consumers); whether the appliance capture chord needs a
-consent-free owner-only carve-out or always runs the shutter consent.
+From §2.2 (stills taxonomy), each with its decider: the world-volume *selection* UX (decider:
+the spatial-snapshot tier's design round); the on-disk format for `+depth` stills (a
+gallery-viewable RGBD container does not meaningfully exist — decider: the SpatialCast upstream
+milestone, where the wire and disk formats should be settled together); lifecycle of ephemeral
+flat-composition outputs for ad-hoc window-set captures (creation/teardown vs portal session
+lifetime, invisibility to `wlr-output-management` consumers — decider: the capture-tool design);
+whether the appliance capture chord needs a consent-free owner-only carve-out or always runs the
+shutter consent (decider: the pre-release privacy review).

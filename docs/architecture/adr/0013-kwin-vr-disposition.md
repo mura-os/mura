@@ -111,7 +111,9 @@ consequences). If and when packaged, it follows the monado-rev model: pinned for
 patch series (KWin fork, Qt series, XWayland MRs, Monado fork) built from the pinned
 `references/` recipe. Its value: a KDE-maturity 2D-in-VR fallback and a working comparison
 target for zxr's M1/M4 acceptance tests (composition doc §7.5). **No packaging work is
-scheduled by this ADR** — the contract enum change itself is deferred to packaging time.
+scheduled by this ADR** — scheduling lives in
+[implementation-path.md §5](../implementation-path.md); the contract enum change lands with the
+packaging work itself, whenever that is scheduled there.
 
 ### 4. The Monado `galaxyxr` fork enters the Galaxy XR adaptation evidence base
 
@@ -179,5 +181,5 @@ GL-multiview path; our Vulkan renderer uses `VK_KHR_multiview`, unaffected).
 - Doc 07's Galaxy XR section gains the `monado-galaxyxr` bring-up evidence; gaze-driven foveation
   is recorded as evidence under [28 §Open questions item 7](../../research/28-eye-tracking-stack.md)
   (ADR 0011 unchanged; foveation policy placement remains open).
-- `spatial.xr.shell = kwin-vr` is reserved in documentation; contract/packaging changes deferred.
+- `spatial.xr.shell = kwin-vr` is reserved in documentation; contract/packaging changes land with the packaging work (implementation-path §5 owns the ordering).
 - The references manifest pins the four fork repos for reproducible future study.

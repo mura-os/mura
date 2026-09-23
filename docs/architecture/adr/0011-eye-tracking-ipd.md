@@ -59,8 +59,9 @@ vergence-invariant rotation center, in metric eye-camera coordinates ([28 §1.2]
 Outputs: (i) gaze via an eyes-role `xrt_device` + relation history (the in-tree PSVR2/WiVRn pattern),
 (ii) filtered rotation-center IPD into the driver's `eye_relation`, (iii) an actuation-proposal
 event. A quantized RITnet-class CNN front end is a per-device NPU substitution behind the same
-ellipse+confidence interface. A VIT-style plugin ABI (option b) is deferred until a second backend
-exists; an external Python process (option c) is the **prototyping rig only**.
+ellipse+confidence interface. A VIT-style plugin ABI (option b) is a condition-shaped rule: it is
+added only when a second backend materializes, never speculatively; an external Python process
+(option c) is the **prototyping rig only**.
 
 ### 3. Motors: event-shaped, never a servo loop
 
@@ -115,7 +116,8 @@ are re-resolved at the new encoder position before unfreezing
   no IPD; possible later as a low-power gaze-only mode.
 - **Closed-loop motor servoing off the raw estimator:** rejected — event-shaped, hysteresis-gated
   actuation only.
-- **A second plugin ABI now (VIT-style):** deferred — it is a refinement of the chosen placement,
-  added when a second backend materializes.
+- **A second plugin ABI now (VIT-style):** rejected as speculative — it is a refinement of the
+  chosen placement whose existence condition is a second backend materializing (the condition,
+  not a schedule, is the rule).
 - **Skipping contract modeling until a device needs it:** rejected — the IPD source already differs
   across all five targets today.

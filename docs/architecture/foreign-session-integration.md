@@ -123,8 +123,9 @@ touch with device class, IDs, timestamps, frames); the **producer** generates se
 implicit grabs, popup dismissal, and focus state for its clients; activation crosses as
 *gesture-derived intent* (the producer mints and validates its own xdg-activation tokens — a
 foreign token is never trusted). Implementations may route these events into libei/KWin
-`InputDevice`/Clutter internally. DnD is capability-gated and initially unsupported (the
-cross-export data-offer problem is real and deferred).
+`InputDevice`/Clutter internally. DnD is capability-gated and initially unsupported: the
+cross-export data-offer problem is real, and its decider is the delegation M-A implementation
+round (ADR 0014), where the consumer's data-device topology becomes concrete.
 
 ### 3.6 Lifecycle (R20)
 

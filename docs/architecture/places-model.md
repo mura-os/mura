@@ -172,12 +172,16 @@ lines. Net new frame-path cost: none. Net new async cost: negligible (event hand
 
 ## 9. Open items
 
+Every item names its decider (docs README rule: designs specify or ask; order lives in
+implementation-path).
+
 - The place-volume definition (how a place's containment region is authored/derived — bounds
-  from layout vs explicit volume vs room mesh) — needs the geometry service's room segmentation
-  (spatial-mapping §7) and a UX pass.
-- Multi-user appliance profiles: whether per-user place sets partition by login only or need
-  in-model owner tags (deferred with the multi-user profile).
-- Vehicle frame semantics (travel mode) — deferred until a target device ships motion-vs-visual
-  disagreement handling.
-- The zxr workspace extension XML draft — follows zxr-shell-v2's drafting (protocols/README),
-  not before.
+  from layout vs explicit volume vs room mesh) — decided by the geometry service's room
+  segmentation (spatial-mapping §7) plus a UX pass in the shell-plane design round.
+- ~~Multi-user place ownership~~ **RESOLVED** by [multi-user.md](multi-user.md) §places
+  (per-account place sets partition by login; shared-place semantics recorded there).
+- Vehicle frame semantics (travel mode): a condition-shaped rule — the vehicle frame type is
+  added only when a target device ships motion-vs-visual disagreement handling; until then the
+  frame taxonomy deliberately excludes it.
+- The zxr workspace extension is drafted (`protocols/zxr-workspace-v1.xml`, rev 2); its
+  remaining field questions are tracked in the protocol file itself.

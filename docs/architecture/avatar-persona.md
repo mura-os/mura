@@ -237,7 +237,7 @@ Modeled on perception's P-1: cheap, binary, per-device.
   ([27 §17](../research/27-avatar-claims-audit.md)); until R-0 passes, the avatar runtime is
   desktop-class work only.
 
-## Non-goals for v1 (hooks reserved, work deferred)
+## Non-goals for v1 (hooks reserved)
 
 - **Learned-latent driver** (the codec-avatar route): a research project with a bounded core
   ([26 §verdict](../research/26-codec-avatar-route.md)) — driving *Ava-256 subjects* is
