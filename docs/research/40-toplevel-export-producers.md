@@ -261,8 +261,10 @@ is Mutter C — no extension-based implementation is possible (confirming 32 §6
 harder. Upstream-sized MRs (a) ext-foreign-toplevel-list, (b) release-join + plane accessors,
 (c) popup bounds override, (d) pacing hook are individually defensible; the export module and
 input targeting only after upstream standing. Adoption record (NEWS): externally-sponsored,
-post-standardization protocols only — syncobj 46.1 (NVIDIA), toplevel-drag 47 (Igalia),
-commit-timing/fifo (Valve); meanwhile ext-session-lock/foreign-toplevel-list/copy-capture are
+post-standardization protocols only — syncobj 46.1 (!3300), toplevel-drag **48.0** (!4107),
+commit-timing/fifo 48.0 (!3355); NEWS records versions/MRs only — the sponsor attributions
+(NVIDIA, Igalia, Valve respectively) are external knowledge of those MRs, corrected and flagged
+by the Mutter-persona review. Meanwhile ext-session-lock/foreign-toplevel-list/copy-capture are
 deliberately skipped where private D-Bus + portals cover GNOME's own need. **Plan Mutter as the
 third producer**; engagement conditions in [producers/mutter.md](../architecture/producers/mutter.md).
 
