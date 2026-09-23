@@ -1,18 +1,187 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="zxr_workspace_v1">
   <copyright>
-    Copyright © 2026 the spatial-os authors
+    Copyright © 2026 spatial-os contributors.
 
     SPDX-License-Identifier: MIT
   </copyright>
 
-  <interface name="zxr_workspace_v1" version="1">
-    <description summary="stub: claimed by the specification workstream">
-      STUB — claimed by the specification workstream (wave 4). Defines no real
-      interface yet; fields are enumerated in the owning design docs.
+  <description summary="spatial extensions to ext-workspace">
+    This protocol extends ext-workspace-v1 workspaces with the spatial
+    properties of a place: its kind, its anchoring state, its pose and bounds
+    in space, a compositor-rendered preview source, and continuous switch
+    transitions. It adds no workspace lifecycle of its own; grouping,
+    activation, and enumeration remain ext-workspace-v1's.
+
+    A workspace group in this compositor corresponds to a reference frame;
+    ext_workspace_handle_v1.assign moves a place between frames. Workspace
+    coordinates remain opaque sort keys; spatial poses travel only through
+    this extension.
+
+    The key words "must", "must not", "required", "shall", "shall not",
+    "should", "should not", "recommended", "may", and "optional" in this
+    document are to be interpreted as described in IETF RFC 2119.
+
+    Warning! The protocol described in this file is currently in the
+    experimental phase. Backward incompatible changes may be added without
+    bumping the major version of the extension. As such, gating usage on the
+    protocol's presence is discouraged outside spatial-os itself.
+  </description>
+
+  <interface name="zxr_workspace_manager_v1" version="1">
+    <description summary="spatial workspace extension entry point">
+      The entry point for spatial workspace state. It extends workspaces
+      obtained from ext_workspace_manager_v1 and reports continuous
+      transitions between places.
     </description>
+
+    <enum name="error">
+      <entry name="already_extended" value="0"
+             summary="the workspace already has a zxr_place_v1 object"/>
+    </enum>
+
     <request name="destroy" type="destructor">
-      <description summary="destroy the object"/>
+      <description summary="destroy the manager">
+        Destroy the manager. Existing zxr_place_v1 objects are not affected.
+      </description>
     </request>
+
+    <request name="get_place">
+      <description summary="extend a workspace with spatial state">
+        Create a zxr_place_v1 object extending the given workspace. A
+        workspace may be extended at most once per client; a second request
+        for the same workspace raises the already_extended error.
+      </description>
+      <arg name="id" type="new_id" interface="zxr_place_v1"/>
+      <arg name="workspace" type="object" interface="ext_workspace_handle_v1"/>
+    </request>
+
+    <event name="transition">
+      <description summary="progress of a continuous place switch">
+        Reports the progress of a switch between two places when the switch
+        is continuous — a physical walk or an animated move — as a value
+        from 0 at the source to 1 at the destination. Discrete switches send
+        no transition events. The final state of a switch is conveyed by
+        ext-workspace-v1 activation, not by this event reaching 1.
+      </description>
+      <arg name="source" type="object" interface="ext_workspace_handle_v1"/>
+      <arg name="destination" type="object" interface="ext_workspace_handle_v1"/>
+      <arg name="progress" type="fixed" summary="progress in [0, 1]"/>
+    </event>
+  </interface>
+
+  <interface name="zxr_place_v1" version="1">
+    <description summary="spatial state of one workspace">
+      The spatial state of one workspace. State events are followed by a
+      done event; this allows changes to the place state to be seen as
+      atomic, even if they happen via multiple events.
+
+      Poses are given in the compositor's local reference space: metres,
+      y up, right-handed. Matrices are column-major arrays of 16 IEEE 754
+      binary32 values in native endianness.
+    </description>
+
+    <enum name="error">
+      <entry name="not_pinnable" value="0"
+             summary="pin requested on an overlay place"/>
+    </enum>
+
+    <enum name="kind">
+      <description summary="place kinds">
+        The lifecycle kind of the place. A transient place exists only while
+        it has members; a pinned place is a persistent named object that may
+        be empty; an overlay place is attached to a body-relative frame and
+        never competes for location-derived currency.
+      </description>
+      <entry name="transient" value="0" summary="implicit, evaporates when empty"/>
+      <entry name="pinned" value="1" summary="persistent, may be empty"/>
+      <entry name="overlay" value="2" summary="body-relative, always present"/>
+    </enum>
+
+    <enum name="anchor_state">
+      <description summary="spatial anchoring states">
+        Whether the place's pose is bound to a persistent spatial anchor and
+        whether that anchor is currently resolved. An unanchored place is
+        positioned relative to its group's frame only. A pending anchor is
+        persisted but not yet relocalized; its pose is the last known one
+        and may change once, without animation, upon resolution.
+      </description>
+      <entry name="unanchored" value="0" summary="no persistent anchor"/>
+      <entry name="pending" value="1" summary="anchor persisted, not yet resolved"/>
+      <entry name="resolved" value="2" summary="anchor resolved in this session"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the place object">
+        Destroy the extension object. The underlying workspace is not
+        affected.
+      </description>
+    </request>
+
+    <request name="pin">
+      <description summary="request pinning the place">
+        Ask the compositor to make the place persistent under the given
+        name. There is no guarantee that the place will be pinned; the
+        result is conveyed through the kind event. Pinning an overlay place
+        raises the not_pinnable error.
+      </description>
+      <arg name="name" type="string" summary="requested place name"/>
+    </request>
+
+    <request name="get_preview">
+      <description summary="create a preview capture source">
+        Create an image capture source whose content is a
+        compositor-rendered preview of the place, suitable for pagers and
+        overviews. The source behaves as an
+        ext_image_capture_source_v1 for use with
+        ext_image_copy_capture_manager_v1.
+      </description>
+      <arg name="id" type="new_id" interface="ext_image_capture_source_v1"/>
+    </request>
+
+    <event name="kind">
+      <description summary="the place's lifecycle kind"/>
+      <arg name="kind" type="uint" enum="kind"/>
+    </event>
+
+    <event name="anchor_state">
+      <description summary="the place's anchoring state"/>
+      <arg name="state" type="uint" enum="anchor_state"/>
+    </event>
+
+    <event name="pose">
+      <description summary="the place's pose">
+        The transform from the place's local space to the compositor's local
+        reference space.
+      </description>
+      <arg name="matrix" type="array"
+           summary="16 binary32 values, column-major, native endianness"/>
+    </event>
+
+    <event name="bounds">
+      <description summary="the place's bounding volume">
+        The place's bounding volume, as half-extents from its origin along
+        its local axes, in metres.
+      </description>
+      <arg name="half_width" type="fixed" summary="half extent, local x"/>
+      <arg name="half_height" type="fixed" summary="half extent, local y"/>
+      <arg name="half_depth" type="fixed" summary="half extent, local z"/>
+    </event>
+
+    <event name="entry_policy">
+      <description summary="whether the place has an entry policy">
+        Whether an entry policy is configured for the place. The policy's
+        contents are configuration, not protocol.
+      </description>
+      <arg name="present" type="uint" summary="1 if a policy is configured, 0 otherwise"/>
+    </event>
+
+    <event name="done">
+      <description summary="all pending place state has been sent">
+        Sent after the state events on creation and after any later change.
+        This allows changes to the place state to be seen as atomic, even if
+        they happen via multiple events.
+      </description>
+    </event>
   </interface>
 </protocol>

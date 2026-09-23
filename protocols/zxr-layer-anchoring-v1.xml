@@ -1,18 +1,114 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="zxr_layer_anchoring_v1">
   <copyright>
-    Copyright © 2026 the spatial-os authors
+    Copyright © 2026 spatial-os contributors.
 
     SPDX-License-Identifier: MIT
   </copyright>
 
+  <description summary="spatial anchoring for layer surfaces">
+    This protocol assigns layer surfaces a spatial reference frame and a
+    spatial exclusive zone. On a head-mounted display there is no physical
+    output edge; a layer surface's anchor edges are interpreted within the
+    field of view of its assigned frame, and exclusive zones reserve solid
+    angle rather than pixels.
+
+    The key words "must", "must not", "required", "shall", "shall not",
+    "should", "should not", "recommended", "may", and "optional" in this
+    document are to be interpreted as described in IETF RFC 2119.
+
+    Warning! The protocol described in this file is currently in the
+    experimental phase. Backward incompatible changes may be added without
+    bumping the major version of the extension. As such, gating usage on the
+    protocol's presence is discouraged outside spatial-os itself.
+  </description>
+
   <interface name="zxr_layer_anchoring_v1" version="1">
-    <description summary="stub: claimed by the specification workstream">
-      STUB — claimed by the specification workstream (wave 4). Defines no real
-      interface yet; fields are enumerated in the owning design docs.
-    </description>
+    <description summary="layer surface anchoring entry point"/>
+
+    <enum name="error">
+      <entry name="already_anchored" value="0"
+             summary="the layer surface already has an anchoring object"/>
+    </enum>
+
     <request name="destroy" type="destructor">
-      <description summary="destroy the object"/>
+      <description summary="destroy the manager">
+        Destroy the manager. Existing anchoring objects are not affected.
+      </description>
+    </request>
+
+    <request name="get_anchoring">
+      <description summary="extend a layer surface with spatial anchoring">
+        Create an anchoring object for the given layer surface. A layer
+        surface may be extended at most once; a second request raises the
+        already_anchored error.
+      </description>
+      <arg name="id" type="new_id" interface="zxr_anchored_layer_v1"/>
+      <arg name="layer_surface" type="object" interface="zwlr_layer_surface_v1"/>
+    </request>
+  </interface>
+
+  <interface name="zxr_anchored_layer_v1" version="1">
+    <description summary="spatial anchoring state of a layer surface">
+      Spatial anchoring state for one layer surface. All state set through
+      this interface is double-buffered; it is applied on the next
+      wl_surface.commit of the layer surface.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_size" value="0"
+             summary="angular size or distance out of range"/>
+    </enum>
+
+    <enum name="frame">
+      <description summary="reference frames for layer surfaces">
+        The frame the layer surface is positioned in. Head-framed surfaces
+        follow the view; body-framed surfaces follow the user's body
+        orientation without following head rotation; world-framed surfaces
+        hold a pose in the local reference space.
+      </description>
+      <entry name="head" value="0" summary="follows the view"/>
+      <entry name="body" value="1" summary="follows the body, not the head"/>
+      <entry name="world" value="2" summary="fixed in the local space"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="remove the anchoring">
+        Remove the spatial anchoring. The layer surface falls back to the
+        compositor's default presentation for its layer.
+      </description>
+    </request>
+
+    <request name="set_frame">
+      <description summary="set the reference frame">
+        Set the reference frame the surface's layer-shell anchor edges are
+        interpreted in. Values set in this way are double-buffered, see
+        wl_surface.commit.
+      </description>
+      <arg name="frame" type="uint" enum="frame"/>
+    </request>
+
+    <request name="set_angular_size">
+      <description summary="set the surface's angular size">
+        Set the horizontal angular size the surface subtends, in degrees;
+        the compositor derives the presentation distance and height from the
+        surface's aspect ratio. The size must be greater than zero and at
+        most 180, otherwise the invalid_size error is raised. Values set in
+        this way are double-buffered, see wl_surface.commit.
+      </description>
+      <arg name="degrees" type="fixed" summary="horizontal angular size in degrees"/>
+    </request>
+
+    <request name="set_exclusive_angle">
+      <description summary="reserve solid angle at the anchor">
+        Reserve an angular band along the surface's layer-shell anchor
+        edges, in degrees, that the compositor keeps free of other
+        exclusive-zone-respecting content in the same frame — the spatial
+        analog of zwlr_layer_surface_v1.set_exclusive_zone. A value of zero
+        reserves nothing. Values set in this way are double-buffered, see
+        wl_surface.commit.
+      </description>
+      <arg name="degrees" type="fixed" summary="reserved angular band in degrees"/>
     </request>
   </interface>
 </protocol>
