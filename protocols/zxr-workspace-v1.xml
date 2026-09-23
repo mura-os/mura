@@ -7,16 +7,16 @@
   </copyright>
 
   <description summary="spatial extensions to ext-workspace">
-    This protocol extends ext-workspace-v1 workspaces with the spatial
-    properties of a place: its kind, its anchoring state, its pose and bounds
-    in space, a compositor-rendered preview source, and continuous switch
+    This protocol extends ext-workspace-v1 with the spatial properties of
+    places and their reference frames: place kind, anchoring, pose and
+    bounds, previews, per-consumer currency, and continuous switch
     transitions. It adds no workspace lifecycle of its own; grouping,
     activation, and enumeration remain ext-workspace-v1's.
 
-    A workspace group in this compositor corresponds to a reference frame;
-    ext_workspace_handle_v1.assign moves a place between frames. Workspace
-    coordinates remain opaque sort keys; spatial poses travel only through
-    this extension.
+    A workspace group corresponds to a reference frame; the frame extension
+    names its type and identity. ext_workspace_handle_v1.assign moves a
+    place between frames. Workspace coordinates remain opaque sort keys;
+    spatial poses travel only through this extension.
 
     The key words "must", "must not", "required", "shall", "shall not",
     "should", "should not", "recommended", "may", and "optional" in this
@@ -30,19 +30,36 @@
 
   <interface name="zxr_workspace_manager_v1" version="1">
     <description summary="spatial workspace extension entry point">
-      The entry point for spatial workspace state. It extends workspaces
-      obtained from ext_workspace_manager_v1 and reports continuous
+      The entry point for spatial workspace state. It extends workspaces and
+      workspace groups obtained from ext_workspace_manager_v1, advertises
+      the compositor's optional capabilities, and reports continuous
       transitions between places.
+
+      Transition events form their own batch: a sequence of transition
+      events for one switch is opened by transition_started and closed by
+      transition_ended; the events reference zxr_place_v1 objects, which
+      remain valid for the duration of the batch (the compositor ends a
+      transition batch before the referenced place becomes inert).
     </description>
 
     <enum name="error">
       <entry name="already_extended" value="0"
-             summary="the workspace already has a zxr_place_v1 object"/>
+             summary="the workspace or group already has an extension object"/>
+    </enum>
+
+    <enum name="capability" bitfield="true">
+      <description summary="optional manager capabilities">
+        Optional capabilities of the compositor. Requests that require an
+        absent capability are ignored; clients should hide or disable the UI
+        elements that depend on them.
+      </description>
+      <entry name="rename" value="1" summary="zxr_place_v1.rename is honored"/>
+      <entry name="pin" value="2" summary="zxr_place_v1.pin is honored"/>
     </enum>
 
     <request name="destroy" type="destructor">
       <description summary="destroy the manager">
-        Destroy the manager. Existing zxr_place_v1 objects are not affected.
+        Destroy the manager. Existing extension objects are not affected.
       </description>
     </request>
 
@@ -50,23 +67,108 @@
       <description summary="extend a workspace with spatial state">
         Create a zxr_place_v1 object extending the given workspace. A
         workspace may be extended at most once per client; a second request
-        for the same workspace raises the already_extended error.
+        raises the already_extended error. If the workspace has already been
+        removed upstream, the returned object is immediately inert (see
+        zxr_place_v1).
       </description>
       <arg name="id" type="new_id" interface="zxr_place_v1"/>
       <arg name="workspace" type="object" interface="ext_workspace_handle_v1"/>
     </request>
 
-    <event name="transition">
-      <description summary="progress of a continuous place switch">
-        Reports the progress of a switch between two places when the switch
-        is continuous — a physical walk or an animated move — as a value
-        from 0 at the source to 1 at the destination. Discrete switches send
-        no transition events. The final state of a switch is conveyed by
-        ext-workspace-v1 activation, not by this event reaching 1.
+    <request name="get_frame">
+      <description summary="extend a workspace group with frame identity">
+        Create a zxr_frame_v1 object extending the given workspace group. A
+        group may be extended at most once per client; a second request
+        raises the already_extended error. If the group has already been
+        removed upstream, the returned object is immediately inert (see
+        zxr_frame_v1).
       </description>
-      <arg name="source" type="object" interface="ext_workspace_handle_v1"/>
-      <arg name="destination" type="object" interface="ext_workspace_handle_v1"/>
+      <arg name="id" type="new_id" interface="zxr_frame_v1"/>
+      <arg name="group" type="object" interface="ext_workspace_group_handle_v1"/>
+    </request>
+
+    <event name="capabilities">
+      <description summary="compositor capabilities">
+        The manager's capabilities. Sent on bind and whenever they change.
+        The compositor will ignore requests it doesn't support.
+      </description>
+      <arg name="capabilities" type="uint" enum="capability"/>
+    </event>
+
+    <event name="transition_started">
+      <description summary="a continuous place switch began">
+        A continuous switch — a physical walk or an animated move — began
+        between two places. Discrete switches send no transition events.
+      </description>
+      <arg name="source" type="object" interface="zxr_place_v1"/>
+      <arg name="destination" type="object" interface="zxr_place_v1"/>
+    </event>
+
+    <event name="transition">
+      <description summary="progress of the open transition">
+        Progress of the transition opened by the last transition_started
+        event, from 0 at the source to 1 at the destination. Progress may
+        move backwards.
+      </description>
       <arg name="progress" type="fixed" summary="progress in [0, 1]"/>
+    </event>
+
+    <event name="transition_ended">
+      <description summary="the open transition ended">
+        The open transition ended, whether completed or abandoned. The final
+        activation state is conveyed by ext-workspace-v1, not by this event;
+        this batch is ordered before the upstream
+        ext_workspace_manager_v1.done event that reports the resulting
+        activation.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="zxr_frame_v1" version="1">
+    <description summary="frame identity of a workspace group">
+      The reference-frame identity of one workspace group. State events are
+      followed by done; this allows changes to the frame state to be seen as
+      atomic, even if they happen via multiple events.
+
+      When the underlying workspace group is removed upstream, the
+      compositor will immediately consider this object inert. Any requests
+      will be ignored except the destroy request; there won't be any more
+      events referencing this object.
+    </description>
+
+    <enum name="frame_type">
+      <entry name="world" value="0" summary="the local reference space"/>
+      <entry name="head" value="1" summary="follows the view"/>
+      <entry name="hand_left" value="2" summary="follows the left hand"/>
+      <entry name="hand_right" value="3" summary="follows the right hand"/>
+      <entry name="docked" value="4" summary="the docked output's presentation plane"/>
+      <entry name="shared" value="5" summary="a joined remote place's frame"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the frame object">
+        Destroy the extension object. The underlying group is not affected.
+      </description>
+    </request>
+
+    <event name="frame_type">
+      <description summary="the group's frame type"/>
+      <arg name="type" type="uint" enum="frame_type"/>
+    </event>
+
+    <event name="label">
+      <description summary="the frame's human-readable label">
+        A human-readable label for the frame ("Kitchen", "Left wrist").
+        Labels are informational and may change; they carry no identity.
+      </description>
+      <arg name="label" type="string" summary="frame label"/>
+    </event>
+
+    <event name="done">
+      <description summary="the frame state batch is complete">
+        Ends a frame state batch. This allows changes to the frame state to
+        be seen as atomic, even if they happen via multiple events.
+      </description>
     </event>
   </interface>
 
@@ -77,13 +179,20 @@
       atomic, even if they happen via multiple events.
 
       Poses are given in the compositor's local reference space: metres,
-      y up, right-handed. Matrices are column-major arrays of 16 IEEE 754
+      y up, right-handed; matrices are column-major arrays of 16 IEEE 754
       binary32 values in native endianness.
+
+      When the underlying workspace is removed upstream, the compositor will
+      immediately consider this object inert. Any requests will be ignored
+      except the destroy request; there won't be any more events referencing
+      this object. A preview capture source obtained from this object
+      remains a valid protocol object; capture sessions on it fail with the
+      capture protocol's stopped/failure semantics once the place is gone.
     </description>
 
     <enum name="error">
       <entry name="not_pinnable" value="0"
-             summary="pin requested on an overlay place"/>
+             summary="pin or rename requested on an overlay place"/>
     </enum>
 
     <enum name="kind">
@@ -101,8 +210,7 @@
     <enum name="anchor_state">
       <description summary="spatial anchoring states">
         Whether the place's pose is bound to a persistent spatial anchor and
-        whether that anchor is currently resolved. An unanchored place is
-        positioned relative to its group's frame only. A pending anchor is
+        whether that anchor is currently resolved. A pending anchor is
         persisted but not yet relocalized; its pose is the last known one
         and may change once, without animation, upon resolution.
       </description>
@@ -111,9 +219,27 @@
       <entry name="resolved" value="2" summary="anchor resolved in this session"/>
     </enum>
 
+    <enum name="currency" bitfield="true">
+      <description summary="per-consumer currency states">
+        The decomposed currency of the place. located: the user's position
+        is inside the place's volume. presented: the place is currently
+        presented away from its home pose (summoned). The pager-active
+        state remains ext-workspace-v1's active state and is not repeated
+        here.
+      </description>
+      <entry name="located" value="1" summary="the user is inside the place"/>
+      <entry name="presented" value="2" summary="the place is summoned"/>
+    </enum>
+
+    <enum name="presence">
+      <entry name="absent" value="0" summary="no entry policy configured"/>
+      <entry name="present" value="1" summary="an entry policy is configured"/>
+    </enum>
+
     <request name="destroy" type="destructor">
       <description summary="destroy the place object">
         Destroy the extension object. The underlying workspace is not
+        affected. Preview sources created from this object are not
         affected.
       </description>
     </request>
@@ -121,9 +247,22 @@
     <request name="pin">
       <description summary="request pinning the place">
         Ask the compositor to make the place persistent under the given
-        name. There is no guarantee that the place will be pinned; the
+        name. Requires the pin capability; without it the request is
+        ignored. There is no guarantee that the place will be pinned; the
         result is conveyed through the kind event. Pinning an overlay place
         raises the not_pinnable error.
+      </description>
+      <arg name="name" type="string" summary="requested place name"/>
+    </request>
+
+    <request name="rename">
+      <description summary="request renaming the place">
+        Ask the compositor to rename a pinned place. Requires the rename
+        capability; without it the request is ignored. There is no
+        guarantee that the place will be renamed; the result is conveyed
+        through ext_workspace_handle_v1.name. Renaming an overlay place
+        raises the not_pinnable error; renaming a transient place is
+        ignored.
       </description>
       <arg name="name" type="string" summary="requested place name"/>
     </request>
@@ -131,10 +270,10 @@
     <request name="get_preview">
       <description summary="create a preview capture source">
         Create an image capture source whose content is a
-        compositor-rendered preview of the place, suitable for pagers and
-        overviews. The source behaves as an
-        ext_image_capture_source_v1 for use with
-        ext_image_copy_capture_manager_v1.
+        compositor-rendered preview of the place, for pagers and overviews.
+        The source behaves as an ext_image_capture_source_v1 for use with
+        ext_image_copy_capture_manager_v1, and remains valid independently
+        of this object's lifetime.
       </description>
       <arg name="id" type="new_id" interface="ext_image_capture_source_v1"/>
     </request>
@@ -149,10 +288,21 @@
       <arg name="state" type="uint" enum="anchor_state"/>
     </event>
 
+    <event name="anchor_id">
+      <description summary="the place's persistent anchor identity">
+        The opaque identifier of the place's persistent anchor, stable
+        across sessions for as long as the anchor exists. Sent only for
+        anchored places; an empty string reports anchor removal.
+      </description>
+      <arg name="id" type="string" summary="opaque anchor identifier"/>
+    </event>
+
     <event name="pose">
       <description summary="the place's pose">
-        The transform from the place's local space to the compositor's local
-        reference space.
+        The transform from the place's local space to the compositor's
+        local reference space, at the place's home pose. While the place is
+        summoned (currency presented), the presentation pose differs; this
+        event continues to carry the home pose.
       </description>
       <arg name="matrix" type="array"
            summary="16 binary32 values, column-major, native endianness"/>
@@ -160,27 +310,30 @@
 
     <event name="bounds">
       <description summary="the place's bounding volume">
-        The place's bounding volume, as half-extents from its origin along
-        its local axes, in metres.
+        Half-extents from the place origin along its local axes, in metres.
       </description>
       <arg name="half_width" type="fixed" summary="half extent, local x"/>
       <arg name="half_height" type="fixed" summary="half extent, local y"/>
       <arg name="half_depth" type="fixed" summary="half extent, local z"/>
     </event>
 
+    <event name="currency">
+      <description summary="the place's decomposed currency"/>
+      <arg name="currency" type="uint" enum="currency"/>
+    </event>
+
     <event name="entry_policy">
       <description summary="whether the place has an entry policy">
-        Whether an entry policy is configured for the place. The policy's
-        contents are configuration, not protocol.
+        Whether an entry policy is configured. The policy's contents are
+        configuration, not protocol.
       </description>
-      <arg name="present" type="uint" summary="1 if a policy is configured, 0 otherwise"/>
+      <arg name="presence" type="uint" enum="presence"/>
     </event>
 
     <event name="done">
       <description summary="all pending place state has been sent">
-        Sent after the state events on creation and after any later change.
-        This allows changes to the place state to be seen as atomic, even if
-        they happen via multiple events.
+        Ends a place state batch. This allows changes to the place state to
+        be seen as atomic, even if they happen via multiple events.
       </description>
     </event>
   </interface>
