@@ -283,6 +283,35 @@ device; the fork's preflight once crashed the compositor and dual-GPU mismatch w
 failure — doc 31 §2.7), and **dmabuf feedback advertises only formats the XR render path can
 import** (the fork's eglbackend format filter).
 
+**Interaction-policy constraints (same evidence base — the fork's *gaps* rather than its
+patches; [31 §2.10–2.12](../research/31-kwin-vr.md)).** Where constraints 1–5 record what the
+fork had to patch into a 2D WM, these record what it shipped without and users demonstrably
+missed. zxr treats them as normative from the first interaction milestone:
+
+6. **No uncapped autonomous motion.** Any policy that moves content without a direct user grab
+   (follow mode, summon, restore-to-place, docked re-layout) runs under authority-owned comfort
+   caps — maximum angular velocity/acceleration relative to the head — and is interruptible by
+   any user input. Evidence: the fork's follow mode rotates the entire window group with an
+   exponential slerp and *no velocity cap* (31 §2.10); the caps live in the effects/animation
+   module's authority tier (ADR 0012 §2), where no policy or plugin can exceed them.
+7. **Gaze/ray input is stabilized before it is arbitrated.** A stabilization stage (deadzone +
+   smoothing + dwell, with target magnetism as a policy option) sits between the pose source and
+   hit arbitration; and arbitration is *class-aware* (interaction affordances vs. content vs.
+   presentation surfaces), not purely distance-ordered. Evidence: the fork ships raw
+   distance-ordered picking with zero stabilization in code, against three independent user
+   requests for smoothing, magnetism, and culling margin (31 §2.11).
+8. **Interacting spatial policies share one arbitration state machine.** Follow/grab/recenter/
+   summon/docked-presentation are states of one explicit machine with defined precedence, not
+   ad-hoc mutual-suppression flags. Evidence: the fork's author acknowledges follow mode
+   "somewhat starts to conflict with Grab All and Recenter" (31 §2.10) — the flag-pile failure
+   mode.
+9. **One source of truth for defaults and sizing.** Runtime defaults and the settings schema are
+   generated from a single declaration (for spatial-os: the Nix module/contract emits both), and
+   a presentation surface's physical size derives from one declared mapping (angular size or
+   px/cm), never double-booked against pixel dimensions. Evidence: the fork's compiled-in follow
+   defaults diverge from the kcfg defaults that actually apply, and virtual-screen size is
+   double-booked between output pixels×scale and the ppu knob (31 §2.10, §2.12).
+
 ### 7.4 OpenXR-outward loop and composition pass
 
 ```text

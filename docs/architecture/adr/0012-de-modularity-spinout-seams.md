@@ -72,7 +72,9 @@ where latency, lock, or capture invariants forbid delegation.
   protocol objects), under **authority-owned comfort caps**: in XR, sudden motion or scaling of
   large surfaces is a vestibular-safety property, so maximum angular velocity/scale-rate limits
   are compositor policy an effect cannot exceed. Never an external client (it runs inside the
-  frame loop).
+  frame loop). The caps are normative for *all* autonomous motion, including window-management
+  policies like follow mode — [composition §7.3](../zxr-shell-v2-composition.md) interaction
+  constraint 6, mined from KWin VR's uncapped follow-mode slerp ([31 §2.10](../../research/31-kwin-vr.md)).
 
 ### 3. Authority-only (never delegated)
 
