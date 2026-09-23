@@ -314,7 +314,9 @@ construction, and the graph deliberately does not choose a build order: flatteni
 into a sequence is a prioritization decision (what ships first, what a milestone means) that is
 **not made here or anywhere in this document**. The per-component status (specified / partial /
 missing) stays in [component-registry.md](component-registry.md); this graph adds structure, not
-status.
+status. The prioritization this section refuses to make now exists as its own document:
+[implementation-path.md](implementation-path.md) flattens this graph into the boot-forward rung
+ladder (greeter-first), citing back to the hard edges here.
 
 Conventions:
 

@@ -150,6 +150,7 @@ seams versus stay compositor-internal is decided in
 | What a device must declare (typed options) | [device-contract.md](device-contract.md) |
 | The desktop-environment plane model + dependency graph | [desktop-environment.md](desktop-environment.md) |
 | Component inventory: what exists / what's missing | [component-registry.md](component-registry.md) |
+| Build order: the boot-forward rung ladder to the XR greeter and session | [implementation-path.md](implementation-path.md) |
 | Turning donor firmware into pinned artifacts | [donor-pipeline.md](donor-pipeline.md) |
 | Building flashable images and shipping updates | [images-and-updates.md](images-and-updates.md) |
 | Monorepo layout and patch management | [repo-structure.md](repo-structure.md) |

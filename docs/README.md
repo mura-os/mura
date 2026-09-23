@@ -56,6 +56,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [36-vr-shell-interaction-patterns.md](research/36-vr-shell-interaction-patterns.md) — comparative VR-shell patterns (placement, launcher, notifications, consent, boundary, keyboard, recenter) across six OSS shells + three commercial platforms, scored against composition constraints 6–9
 - [37-accessibility-atspi.md](research/37-accessibility-atspi.md) — AT-SPI2 anatomy, Newton/AccessKit 2026 status, the XR mapping (compositor a11y duties, dwell/motor overlap, reduced-motion caps, the spatial-semantics gap)
 - [38-desktop-linux-security-landscape.md](research/38-desktop-linux-security-landscape.md) — how desktop Linux security composes (PAM/polkit/portals/sandboxing/MAC/NixOS) + the consolidated index of every decided spatial-os security control
+- [39-compositor-base-landscape.md](research/39-compositor-base-landscape.md) — the compositor-base ratification evidence: smithay coverage audit (frontend/renderer split, syncobj, dmabuf feedback, lease, Xwayland), WayVR's OpenXR-Vulkan anatomy, the wlroots fallback record, weston/Louvre/Mir/waynest dispositions, the R0 bring-up gates
 
 ## Architecture (`architecture/`)
 
@@ -75,6 +76,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [places-model.md](architecture/places-model.md) — the places model: typed reference-frame graph (XrSpace-grounded), attachment constraints, per-place layout, decomposed currency with the C1–C7 reconciliation rules, entry policies, protocol/restore/docked/mode-5 bindings
 - [spatial-a11y.md](architecture/spatial-a11y.md) — spatial accessibility design note: AT-SPI2 baseline, zxr's compositor duties, the `zext-a11y` spatial-semantics reservation, allow-list posture
 - [component-registry.md](architecture/component-registry.md) — the master component inventory: 6 planes, evidence-based status (specified/partial/missing), the gap list
+- [implementation-path.md](architecture/implementation-path.md) — the boot-forward plan of record: greeter-first rationale, the B1–B8 boot chain, the R0/G1–G3 + M1–M4 rung ladder, parallel tracks, deferrals
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
   - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace
