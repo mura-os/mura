@@ -36,10 +36,11 @@ blocking.
    `security.pam.services.spatial-lock` only; greetd's login stack stays standard
    account-password, with owner-password-is-PIN (doc 12 option (a)) recorded as the appliance
    bridge until `pam_spatial_pin` ships. Both stacks are declared through NixOS modules, never
-   hand-edited. This closes ADR 0007's open question. *Amended by
-   [ADR 0018](0018-multi-user-accounts.md) decision 8: on the multi-user profile,
-   `pam_spatial_pin` additionally joins greetd's login stack (members authenticate by PIN),
-   under the multi-user.md §3 input contract.*
+   hand-edited. This closes ADR 0007's open question. *Refined by
+   [ADR 0018](0018-multi-user-accounts.md) rev 3: everywhere `pam_spatial_pin` appears it is an
+   **optional per-user convenience stacked beside the Unix password** (the fprintd model) —
+   passwords remain the login credential on every surface; the multi-user.md §3 input contract
+   governs the module.*
 3. **OOBE placement: dispatcher-gated `zxr --oobe`, split from its authority.** greetd's
    `default_session` (multi-user) / `initial_session` (appliance) runs a dispatcher that selects
    `zxr --oobe` while provisioning is incomplete, `zxr --greeter` otherwise (greetd cannot

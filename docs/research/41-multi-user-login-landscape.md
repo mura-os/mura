@@ -198,25 +198,29 @@ last-session) can live in spatial's own state classes instead of a second daemon
 
 ---
 
-## 4. Recommendation (input to ADR 0018)
+## 4. Recommendation (input to ADR 0018 — as revised for rev 3)
 
-1. **Substrate: real Unix accounts** (per the project owner's prior, and AOSP's proof that
-   appliances do real uid separation) — the Steam Deck shared-home failure is the counter-model.
-2. **Durability mechanism: userborn with `passwordFilesLocation` on persist-backed state.** The
-   smallest delta from today's `mutableUsers = false` design; ordinary PAM/greeter semantics;
-   provisiond-created accounts and PIN credentials survive A/B by construction. homed is the
-   watched candidate, revisited when its NixOS declarative story matures (condition-shaped, not
-   scheduled).
-3. **Creation authority: `spatial-provisiond`** (already the enrollment authority) grows an
-   owner-authorized add-account conversation that performs the account write — never the OOBE
-   UI, never AccountsService's polkit path (the daemon isn't shipped).
-4. **Picker: zxr's greeter scene enumerates via NSS with a UID range** (SDDM/tuigreet pattern)
-   + spatial's own per-account metadata store; last-user memory as a state-class file (regreet/
-   SDDM precedent). `create_session(username)` needs no greetd changes (§1.4).
-5. **Account cap: small and fixed** (Quest ships 4) — bounds home-partition budgeting,
-   enrollment storage, and picker UX.
-6. **Guest: the LightDM lifecycle contract + the Vision Pro session semantics** — an ephemeral
-   account created at session start and destroyed at session end (add/remove authority in
-   provisiond), autologin-class PAM service (real PAM session, no credential), transient
-   calibration, owner-grantable, conservative capture/sharing defaults; view-mirroring as the
-   supervision option (mode-2 sharing already exists for it).
+**Reading rule** (AGENTS.md / overview invariant 10, added after the rev-2 correction): §1 and
+§3 — the Linux mechanics — are the *authorities* here. §2's closed platforms are context and
+anti-patterns; their only admissible residue is mechanism-level (per-person calibration is real;
+an ephemeral guest *session* is a good shape — whose actual Linux precedent is LightDM anyway).
+Rev 2 of the design mistakenly promoted §2 to policy (an account cap, PIN-as-credential, an
+"owner" role); ADR 0018 rev 3 rescinds all of it.
+
+1. **Substrate: standard Linux accounts** — passwd/shadow, PAM, NSS, wheel + polkit. No cap
+   (nothing in §1 caps accounts). The Steam Deck shared-home failure is the counter-model.
+2. **Durability: userborn with `passwordFilesLocation` on persist-backed state** — ordinary
+   PAM/greeter semantics; any account, however created (`useradd` over SSH included), survives
+   A/B by construction. homed condition-watched (§3.3).
+3. **Account admin is standard admin**: wheel + polkit per-action escalation; the in-headset UI
+   is one convenience path (provisiond executes it); standard tools always work.
+4. **Picker: NSS enumeration over the login.defs window** (SDDM/tuigreet pattern; fidelity
+   note — SDDM's compiled-in fallback is 1000/65000 when login.defs is unparseable, tuigreet
+   hardcodes 1000/60000) + free-text entry always available (gtkgreet) + spatial metadata/
+   last-user state. `create_session(username)` needs no greetd changes (§1.4).
+5. **Credentials: the Unix password, everywhere**; a PIN module is an optional stacked
+   convenience (the fprintd model) because ray-keyboards are slow — never a replacement. GDM's
+   `PAM_USER_UNKNOWN`-collapse is the uniform-failure precedent.
+6. **Guest: the LightDM lifecycle** (ephemeral add/remove around the session; real PAM
+   session) under a greetd-translated gated branch; optional, off by default; transient
+   calibration is the one Vision Pro residue worth keeping, as mechanism.
