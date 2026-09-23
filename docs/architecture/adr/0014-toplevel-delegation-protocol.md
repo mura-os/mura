@@ -63,13 +63,15 @@ upstreaming and deliberate.
 - **M-B — the KWin producer MR series.** The political demonstration: a seam-shaped patch series
   addressed directly to the §Context positions, showing a live Plasma session's windows floating
   in spatial-os. *Concretized (2026-09-23, producer-spec workstream):* the plan is now
-  [producers/kwin.md](../producers/kwin.md) — ten small MRs (five zero-behavior-change core
-  seams, three of them resubmissions of fork commits the author triaged as clean-interface
-  material, plus five plugin-only MRs), with code-verified sizing from
-  [research/40 §1](../../research/40-toplevel-export-producers.md): **core ≈ 250–450 LOC +
-  ~500 LOC standalone ext-foreign-toplevel-list; plugin ≈ 3.5–5.5 kLOC** (doc 32's 5–8 k envelope
-  held; core surface halved because `bufferReleasePoint()`/`SyncObjReleasePoint::addReleaseFence`
-  turn out to implement the release join already). Behavioral bar:
+  [producers/kwin.md](../producers/kwin.md) — nine MRs, sequenced so every core seam lands with
+  its consumer (two standalone, then the plugin series incl. resubmissions of fork commits the
+  author triaged as clean-interface material, plus the **delegated-window-state MR** the
+  red-team surfaced as the hardest piece), with review-corrected code-verified sizing from
+  [research/40 §1](../../research/40-toplevel-export-producers.md): **core ≈ 450–800 LOC +
+  ~500 LOC standalone ext-foreign-toplevel-list; plugin ≈ 4.2–6.2 kLOC** (doc 32's 5–8 k
+  envelope held; the release join costs nothing because
+  `bufferReleasePoint()`/`SyncObjReleasePoint::addReleaseFence` implement it already, while the
+  parked-window state adds the honest core cost the original estimate missed). Behavioral bar:
   [specs/toplevel-export-producer.md](../../../specs/toplevel-export-producer.md) §8. Engage Vlad
   Zahorodnii and David Edmundson with the working consumer in hand; Stanislav Aleksandrov is the
   natural third ally (his fork proves demand and he has asked for exactly such core seams).

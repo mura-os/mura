@@ -39,9 +39,11 @@ This document and the draft XML do.
 behavioral conformance spec —
 [specs/toplevel-export-producer.md](../../specs/toplevel-export-producer.md) — and per-compositor
 integration briefs answering these positions with verified patch plans:
-[producers/kwin.md](producers/kwin.md) (the 10-MR series; core ≈ 250–450 LOC) and
-[producers/mutter.md](producers/mutter.md) (third-producer sequencing), on the code evidence of
-[research/40](../research/40-toplevel-export-producers.md).
+[producers/kwin.md](producers/kwin.md) (the 9-MR series; core ≈ 450–800 LOC incl. the
+delegated-window state) and [producers/mutter.md](producers/mutter.md) (third-producer
+sequencing), on the code evidence of
+[research/40](../research/40-toplevel-export-producers.md); both red-teamed in
+KWin-maintainer/Mutter-maintainer persona and revised.
 
 ## 2. The client-integration taxonomy
 
