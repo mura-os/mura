@@ -68,7 +68,18 @@ let
   };
 
   # A device with an XR shell + a valid multi-user greeter profile.
+  # ADR 0017: a greeter requires onboarding placement (greeter-gated dispatcher).
   greeterSession = {
+    imports = [ validDevice ];
+    config = {
+      spatial.xr.shell = "zxr";
+      spatial.xr.session.greeter = "zxr-greeter";
+      spatial.xr.session.provisioning.mode = "greeter-gated";
+    };
+  };
+
+  # ADR 0017: a greeter WITHOUT onboarding placement must fail.
+  greeterNoProvisioning = {
     imports = [ validDevice ];
     config = {
       spatial.xr.shell = "zxr";
@@ -131,6 +142,13 @@ let
     # ADR 0007: neither / both profiles must fail the exactly-one assertion.
     noProfileFails = !assertsPass (evalContract noProfile);
     bothProfilesFail = !assertsPass (evalContract bothProfiles);
+    # ADR 0017: greeter without onboarding placement fails; provisioning defaults off;
+    # the marker default lives in the enrollment state class.
+    greeterNoProvisioningFails = !assertsPass (evalContract greeterNoProvisioning);
+    provisioningDefaultNone = eval.config.spatial.xr.session.provisioning.mode == "none";
+    provisioningMarkerInEnrollment =
+      eval.config.spatial.xr.session.provisioning.markerPath
+      == "/var/lib/spatial/enrollment/provisioned";
     # Lock triggers default sensibly.
     lockDefaultsOn = eval.config.spatial.xr.session.lock.enable == true;
     # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.

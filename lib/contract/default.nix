@@ -454,6 +454,34 @@ in
             '';
           };
         };
+        provisioning = {
+          mode = mkOption {
+            type = types.enum [ "greeter-gated" "in-session" "none" ];
+            default = "none";
+            description = ''
+              First-run onboarding placement (ADR 0017, first-run-onboarding.md).
+              - greeter-gated: greetd's default_session runs the root-owned dispatcher,
+                which execs `zxr --oobe` while the provisioning marker is absent and
+                `zxr --greeter` once it exists (multi-user profile).
+              - in-session: the wizard runs as first session content after autologin
+                (appliance MVP, Steam Deck model). Same wizard, same spatial-provisiond
+                authority, same marker.
+              - none: no onboarding (bring-up/headless images; enrollment must be
+                seeded out of band, e.g. the VM test fixture).
+              The marker is runtime state on /persist consumed at dispatch time — never
+              a Nix option; this option selects only the *placement* of the wizard.
+            '';
+          };
+          markerPath = mkOption {
+            type = types.str;
+            default = "/var/lib/spatial/enrollment/provisioned";
+            description = ''
+              The root-owned, transactionally written provisioning marker
+              (first-run-onboarding.md §4.2; enrollment state class — wiped by factory
+              reset, which re-opens onboarding).
+            '';
+          };
+        };
       };
     };
 
@@ -534,6 +562,14 @@ in
       assertion = cfg.xr.shell == "none"
         || ((cfg.xr.session.autoLogin != null) != (cfg.xr.session.greeter != "none"));
       message = "spatial.xr.session must select exactly one profile when spatial.xr.shell is set: session.autoLogin (appliance) OR session.greeter != \"none\" (multi-user), not both and not neither (ADR 0007).";
+    }
+    {
+      # ADR 0017: a multi-user greeter needs a credential to verify, so onboarding must
+      # be placed somewhere. Test images that seed enrollment out of band still use
+      # "greeter-gated": the dispatcher sees the marker present and never runs the OOBE.
+      assertion = cfg.xr.session.greeter == "none"
+        || cfg.xr.session.provisioning.mode != "none";
+      message = "spatial.xr.session.greeter requires spatial.xr.session.provisioning.mode != \"none\" (multi-user login needs enrolled credentials; ADR 0017 / first-run-onboarding.md). Use mode = \"greeter-gated\", or an appliance profile.";
     }
     {
       # A lockable session needs a runtime to compose the lock scene over.
