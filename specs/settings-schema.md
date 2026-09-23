@@ -1,136 +1,173 @@
 # specs/settings-schema: the generated schema artifact, strata, and reconciliation
 
-**Status:** draft normative spec (specification workstream, wave 3).
-**Design sources:** composition §7.3 **constraint 9** (one source of truth for defaults),
-[research/35](../docs/research/35-settings-config-models.md) §7–§8 (the NixOS-interplay evidence
-this spec makes normative). Decides the artifact format, strata, ownership semantics, and
-reconciliation rules; the settings *daemon* itself remains a registry gap (this is its contract).
-**Grounding:** storage paths use the XDG **Base Directory** spec (CDG sense) for per-user state;
-schema semantics follow GSettings' capability set (type/range/default/writability) without its
-compiled-blob mechanism.
-**Budget impact** (inv. 9): schema generation is build-time; runtime reads are startup +
-per-key-change notifications (D-Bus rate); zero frame-path cost. Watchers must be
-event-driven — no polling (budgets.md §4.4 idle rule).
+**Status:** draft rev 2 (specification workstream; rev 1 findings from the GSettings/NixOS-persona
+review absorbed — preference/state storage split, relocatable instance schemas, typed migrations,
+apply transactions).
+**Design sources:** composition §7.3 **constraint 9**,
+[research/35](../docs/research/35-settings-config-models.md) §7–§8.
+**Grounding:** XDG **Base Directory** spec (CDG sense): *preferences* live under
+`$XDG_CONFIG_HOME`, *remembered operational state* under `$XDG_STATE_HOME` — the distinction is
+load-bearing (§2). Schema semantics follow GSettings' capability set, including its relocatable
+schemas, without the compiled-blob mechanism.
+**Budget impact** (inv. 9): build-time generation; runtime reads at startup + per-key D-Bus
+notifications; watchers event-driven, no polling.
 
-## 1. The schema artifact (build-time, generated — never hand-written)
+## 1. The schema artifact
 
-Emitted by the NixOS module system from evaluated options (`nixosOptionsDoc`-shaped projection;
-doc 35 §7.1) as `system.build.spatialSettingsSchema` → installed at
-`/etc/spatial/settings-schema.json`. Constraint 9 rule: **no consumer may compile in an
-independent default**; a missing/corrupt artifact is an explicit failure mode, not a fallback to
-built-in values.
+Emitted from evaluated NixOS options (`nixosOptionsDoc`-shaped projection) as
+`system.build.spatialSettingsSchema` → `/etc/spatial/settings-schema.json`. Constraint 9: no
+consumer compiles in an independent default; a missing/corrupt artifact is an explicit failure
+mode.
 
-Per-key record (all fields mandatory unless marked):
+Per-key record:
 
 ```text
-id            stable dotted key ("shell.follow.startFovDeg") — never renamed in place (§5)
-type          bool | int | double | string | enum | list<...>  (Nix option type projection)
+id            dotted key within its schema ("shell.follow.startFovDeg")
+type          bool | int | double | string | enum | list<...>
 constraints   enum values / numeric range (optional)
-default       the evaluated build default (post Nix priority resolution: module < device
-              < profile — a single value by generation time; doc 35 §7.2)
-stratum       build-fact | per-unit | per-user | session   (§2)
-ownership     declarative | runtime   (§3 — the Home-Manager lesson, doc 35 §7.3)
-locked        bool (appliance-profile lockdown; locked ⇒ writes rejected, UI shows enforced)
-apply         live | reload:<unit> | restart:<unit> | reboot   (activation semantics, §4)
-description   from the option declaration (one docs source)
-schemaVersion integer, per-namespace (§5)
+default       the evaluated build default (post Nix priority resolution)
+class         preference | state          (§2 — chooses the storage root)
+stratum       build-fact | per-unit | per-user | session
+ownership     declarative | runtime       (§3)
+locked        bool (appliance lockdown; locked ⇒ writes rejected)
+apply         live | reload:<unit> | restart:<unit> | reboot   (§6)
+description   from the option declaration
+schemaVersion integer, per schema (§5)
 ```
 
-`spatial.*` contract options are *not* automatically keys: the module marks options for
-projection (`spatial.settings.export`-style internal flag); build facts (panel geometry, SoC)
-are **never** exported as writable keys — they appear, if at all, as `stratum=build-fact,
-locked=true` for introspection.
+Build facts are never writable keys; they appear at most as `stratum=build-fact, locked=true`.
 
-## 2. Strata and storage layout
+### 1.1 Relocatable (instance) schemas
 
-| Stratum | Store | Written by | Survives |
+Dynamic namespaces are first-class, GSettings-relocatable-style: a **schema template** (e.g.
+`places.entry`, keys `enabled`, `launch`, `summon`, …) is declared once in Nix and **instantiated
+at runtime paths**: `places.entry:<place_id>` where `<place_id>` is the stable id from
+[places-model.md](../docs/architecture/places-model.md), percent-escaped. Instance lifecycle:
+instances are created by the owning component (the places model, via the daemon) — a `Set` on a
+non-existent instance of a declared template creates it; a `Set` on a key of no declared schema
+or template is `ERR_UNKNOWN_KEY`. Instance deletion is explicit (`DeleteInstance`); orphaned
+instances (referent place gone) are retained until a GC policy owned by the referent's component
+removes them, and are enumerable (`ListInstances(template)`) so migrations cover them.
+
+## 2. Classes, strata, and storage layout
+
+| class / stratum | Store | Written by | Survives |
 |---|---|---|---|
-| build-fact | the schema artifact itself | nixos-rebuild only | generations |
-| per-unit | `/var/lib/spatial/settings/` (system state, ADR 0007's calibration precedent) | settings daemon (polkit-gated for privileged keys) | reboots + rebuilds + users |
-| per-user | `$XDG_STATE_HOME/spatial/settings/` | settings daemon on behalf of the session | reboots + rebuilds, per user |
-| session | daemon memory only | anyone with the key's write grant | nothing |
+| build-fact | the artifact | nixos-rebuild | generations |
+| preference, per-unit | `/var/lib/spatial/settings/config/` | daemon (polkit-gated for privileged keys) | reboots, rebuilds, users |
+| preference, per-user | `$XDG_CONFIG_HOME/spatial/settings/` | daemon for the session | reboots, rebuilds |
+| state, per-unit | `/var/lib/spatial/settings/state/` | daemon | reboots, rebuilds |
+| state, per-user | `$XDG_STATE_HOME/spatial/settings/` | daemon | reboots, rebuilds |
+| session | daemon memory | grant holders | nothing |
 
-Value stores are **sparse key–value files** (cosmic-config-shaped: one file per namespace,
-atomic rename writes, versioned header): a key absent from every stratum resolves to the
-generated default — *copying defaults into user storage at first login is forbidden* (doc 35
-§7.2: it breaks default-advancement on rebuild).
+Render scale, follow-mode knobs, passthrough policy, entry grants are **preferences**
+(config-home). Remembered operational values (last dock layout position, transient tallies) are
+**state** (state-home). Every exported key declares its class in Nix; the review's rule stands:
+intent lives in config, memory lives in state.
 
-Resolution order per key: `session > per-user > per-unit > generated default` (build-facts skip
-the ladder). Locked keys resolve to the generated value regardless of stores.
+Stores are sparse per-(schema, instance) files: versioned header
+`{schema, instance?, schemaVersion, generation}` + explicit key-value entries only; atomic
+rename writes. Absent key ⇒ generated default (copying defaults into stores is forbidden).
+Resolution: `session > per-user > per-unit > default`; locked keys resolve to the generated value.
 
-## 3. Ownership: the two legitimate modes (normative)
+## 3. Ownership (unchanged from rev 1, sharpened)
 
-Every key is marked at generation time:
+- **`declarative`**: Nix owns the value; runtime writes rejected (`ERR_DECLARATIVE`).
+- **`runtime`**: Nix owns the default; explicit values survive rebuilds; `Reset` reveals the
+  current default.
 
-- **`declarative`** — Nix owns the value; rebuild/switch *reasserts* it (any runtime write is
-  rejected with `ERR_DECLARATIVE`; the UI shows it as system-managed). For appliance-profile
-  policy keys.
-- **`runtime`** — Nix owns only the *default*; an explicit user/unit value survives rebuilds;
-  reset re-reveals the current generation's default.
+**`Set` always creates the stratum override, even when equal to the resolved lower-layer value**
+— equality is not absence of intent (pinning an equal value protects against future default
+changes). `Changed` is emitted when the *effective value or its provenance* changes; a `Set`
+that changes neither (same stratum, same value) emits nothing. `Reset` is the only way back to
+following defaults.
 
-This mark is what prevents "Nix emits defaults" from silently becoming "Nix overwrites
-preferences" (doc 35 §7.3).
+## 4. Reconciliation at generation switch
 
-## 4. Reconciliation at generation switch (doc 35 §7.5, made normative)
+For key `k` (`D_old/D_new` defaults, optional explicit `U`):
 
-For key `k` with old/new defaults `D_old/D_new` and optional explicit value `U`:
+1. `U` absent ⇒ effective value advances silently.
+2. `U` present, valid ⇒ survives (`runtime` keys).
+3. `Reset` ⇒ reveal `D_new`.
+4. Newly `locked`/`declarative` ⇒ `U` quarantined (§4.1), enforced value applies, one `Changed`.
+5. `U` invalid under the new schema ⇒ run declared migrations (§5); if none apply, quarantine +
+   default. Never silent coercion; never boot failure.
+6. Consumers receive `GenerationChanged` and re-resolve; `apply` actions run per §6.
 
-1. `U` absent ⇒ effective value advances `D_old → D_new` silently.
-2. `U` present, valid under the new schema ⇒ `U` stays effective (`runtime` keys).
-3. Reset(`k`) ⇒ delete `U`, reveal `D_new`.
-4. Newly `locked` or `declarative` ⇒ `U` is quarantined (retained on disk under
-   `quarantine/`, inert), enforced value applies, one notification emitted.
-5. `U` invalid under the new schema (type/range/rename) ⇒ **migrate if a migration is declared
-   (§5), else quarantine + default** — never silent coercion, never boot failure.
-6. Consumers holding cached values receive `GenerationChanged` and must re-resolve; units with
-   `apply=reload/restart` are handled by the activation script (standard NixOS switch flow).
+### 4.1 Quarantine (per-record, non-destructive)
 
-## 5. Versioning and migration
+A quarantine record is `(schema, instance, key, sourceGeneration, reason, serializedValue)`,
+stored beside the live file; the live file is atomically rewritten **without only the rejected
+keys** — sibling keys stay writable. Operations: `ListQuarantine`, `RestoreQuarantined`
+(re-validated against the current schema), `DropQuarantined`. **Downgrade rule:** stores and
+quarantine records are generation-tagged; rolling back to a generation whose schema accepts a
+quarantined record automatically remounts it — the only copy of a user value is never destroyed
+by a version move in either direction.
 
-`schemaVersion` is per-namespace, bumped on any incompatible key change (rename/split/merge/type
-change). Migrations are declared *in the Nix module* (`from`, `to`, pure value-mapping function
-serialized into the artifact as a description of the mapping; executable migration logic ships
-in the settings daemon, keyed by `(namespace, fromVersion)`). Unknown future versions on disk ⇒
-read-only quarantine (never destructive).
+## 5. Versioning and migration (typed, executable, auditable)
 
-## 6. The notification and access interface
+`schemaVersion` per schema; bumped on incompatible change. Migrations are declared in Nix as
+**typed operations** serialized into the artifact — `rename(from,to)`, `delete(key)`,
+`enum-map(key, {old:new})`, `scale(key, factor, clamp)`, `split(key, {targets})`,
+`merge({sources}, key, fn ∈ fixed set)` — with explicit version edges `(from,to)`. The daemon
+executes only artifact-declared operations (no out-of-band migration code), selects the unique
+shortest edge chain deterministically, and refuses ambiguous graphs at generation *build* time
+(a Nix assertion — bad migration graphs never ship). Instance schemas migrate per instance,
+enumerated via §1.1. Golden tests (upgrade and downgrade fixtures) are emitted beside the
+artifact and run in CI. Old schema + migration artifacts referenced by existing stores are GC
+roots until no store references their generation.
 
-`org.spatialos.Settings1` on the session bus (system-scoped keys proxied with polkit
-authorization; the polkit-agent gap is noted):
+## 6. Apply transactions
 
-- `Get(s key) → (v value, s provenance)` — provenance ∈ {default, per-unit, per-user, session,
-  locked, declarative}.
-- `Set(s key, v value)` — validated against the schema record; errors: `ERR_LOCKED`,
-  `ERR_DECLARATIVE`, `ERR_TYPE`, `ERR_RANGE`, `ERR_UNKNOWN_KEY`.
-- `Reset(s key)`; `List(s namespacePrefix)`.
-- Signal `Changed(s key, v value, s provenance)` — per-key, emitted only on effective-value
-  change (a `Set` that equals the current effective value is a no-op).
-- Signal `GenerationChanged(u generation)` — after nixos-rebuild activation (§4.6).
+`Set`/`Reset` on a key with `apply ≠ live` opens an **apply transaction**: the write lands
+(durable) with status `pending`; the privileged apply agent (the daemon's system half — the only
+actor allowed to reload/restart units at runtime) executes the action and reports
+`applied` or `failed{message}` (value stays, effect pending until retry/boot — never silently
+rolled back). Status is queryable (`GetApplyStatus`) and signalled (`ApplyChanged`).
+Rebuild-time application remains the activation script's (standard NixOS switch).
 
-Wayland-side consumers (the zxr HMD settings API, ADR 0012 §4.5) do **not** speak this bus from
-clients: zxr consumes the daemon (or the files directly, watch-based) and exposes only its own
-narrow protocol; shell components use the bus. Entry-policy grants
-([places-model.md §5](../docs/architecture/places-model.md)) are ordinary per-user keys under
-`places.<place_id>.entry.*` with `runtime` ownership.
+## 7. Lockdown
 
-## 7. Appliance lockdown
+Locks are schema facts generated from the profile module. **Consumers of security-relevant keys
+resolve the effective value from the authenticated artifact themselves** (path-pinned,
+root-owned `/etc/spatial/settings-schema.json`, its store hash listed in the system closure):
+a compromised daemon can lie on the bus but cannot alter locked effective values for consumers
+that follow this rule; the daemon is convenience, not authority, for locked keys.
 
-The appliance profile (`spatial.xr.session.autoLogin`) may mark namespaces locked wholesale
-(dconf-lockdown analog, generated from the profile module) — the guest/kiosk story. Locks are
-schema facts, not daemon configuration, so a compromised daemon cannot unlock them (consumers
-verify `locked` against the artifact).
+## 8. The bus interface
 
-## 8. Conformance checklist
+`org.spatialos.Settings1` (session bus; system-scoped writes brokered to the daemon's system half
+with polkit):
 
-1. Rebuild with changed default, no user value ⇒ new default effective without any store write.
-2. Rebuild with changed default, user value present ⇒ user value survives (runtime key).
-3. Write to declarative key ⇒ `ERR_DECLARATIVE`; value unchanged; no store write.
-4. Kill daemon mid-write ⇒ no torn file (atomic rename); restart resolves identically.
-5. Downgrade to older generation with newer-version user files ⇒ quarantine, not corruption.
-6. `Changed` storm test: N rapid `Set`s coalesce per key; no unbounded signal amplification.
+- `Get(s key) → (v value, s provenance)`; `Set(s key, v value)`; `Reset(s key)`;
+  `List(s prefix)`; `ListInstances(s template)`; `DeleteInstance(s instance)`;
+  `ListQuarantine()`, `RestoreQuarantined(...)`, `DropQuarantined(...)`; `GetApplyStatus(s key)`.
+- Errors: `ERR_LOCKED`, `ERR_DECLARATIVE`, `ERR_TYPE`, `ERR_RANGE`, `ERR_UNKNOWN_KEY`,
+  `ERR_UNKNOWN_INSTANCE`.
+- Signals: `Changed(s key, v value, s provenance)` — every accepted effective-value-or-provenance
+  change is durable; *notifications* may coalesce per event-loop turn per key, and the final
+  signal of a turn carries the final value and provenance. `GenerationChanged(u generation)`;
+  `ApplyChanged(s key, s status)`.
 
-## 9. Open items
+zxr consumes the daemon (or watches files) and exposes only its own narrow HMD protocol
+(ADR 0012 §4.5); shell components use the bus; entry-policy grants are `places.entry:<place_id>`
+instances (§1.1) with `runtime` ownership and `class=preference`.
 
-The daemon's process/activation design (registry gap #9 — this spec is its contract); polkit
-routing for per-unit keys pending the polkit-agent design; whether `session` stratum is needed
-at v1 or deferred; the quarantine UX.
+## 9. Conformance checklist
+
+1. Rebuild default-change with/without user value (advance vs survive).
+2. `Set` equal to default ⇒ override created, provenance `Changed` emitted; `Reset` returns to
+   default-following.
+3. Declarative write ⇒ `ERR_DECLARATIVE`, no store write.
+4. Kill daemon mid-write ⇒ no torn file; identical resolution on restart.
+5. Downgrade with newer-version stores ⇒ quarantine; roll forward again ⇒ automatic remount.
+6. Template instance: `Set` on new `places.entry:<id>` creates it; migration enumerates all
+   instances; orphan GC only via the owning component.
+7. `reload:<unit>` key: write lands durable, `pending` → `applied`/`failed` observable; failure
+   never reverts the value.
+8. Locked-key consumer resolves from the artifact even when the daemon lies (fault-injection).
+
+## 10. Open items
+
+The daemon's process design (this spec is its contract); polkit action inventory (with the
+polkit-agent design); session-stratum need at v1; quarantine UX surfaces.
