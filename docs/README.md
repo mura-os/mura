@@ -103,6 +103,14 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [mapping-design-backlog.md](architecture/mapping-design-backlog.md) — disposition of the mapping
   review (fixed now vs. the M0 foundations gate vs. design-before-milestone)
 
+## Normative artifacts (`../protocols/`, `../specs/`)
+
+Wire and format contracts live outside `docs/`: [protocols/](../protocols/README.md) (Wayland
+XMLs — zxr-shell-v2, zxr-workspace, zxr-layer-anchoring, zext-toplevel-export — house style in
+[CONVENTIONS.md](../protocols/CONVENTIONS.md), CI-validated by wayland-scanner) and
+[specs/](../specs/README.md) (perception intake, session/auth, settings schema, SpatialCast
+portal). Design docs here say *why*; those say *exactly what*.
+
 ## Reference clones (`../references/`)
 
 Git-ignored study clones, reproducible from `references/clone.sh` + the pinned

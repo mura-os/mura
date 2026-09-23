@@ -166,6 +166,11 @@ protocol is finished, and it directly closes the open 2D-app question in
   first-class 2D windows, and the MVP milestones) is worked out in
   [zxr-shell-v2-composition.md](../zxr-shell-v2-composition.md), which also records the verification
   of the 2026 OpenXR spatial-container / depth-test-layer claims that bear on this decision.
+- **The protocol itself is drafted**: [`protocols/zxr-shell-v2.xml`](../../../protocols/zxr-shell-v2.xml)
+  (specification workstream; drafting brief in [08 Part 3](../../research/08-wxrc.md) — v1's
+  folded `mvp_matrix` and `get_wl_buffer` wrapper dropped, motorcar's matrix split and clipping
+  resurrected, atomic frame snapshots per the composition doc's contract), validated by the
+  `checks.protocols` scanner gate.
 - Sharing (spectate / 2D window / per-observer 3D / protocol-proxied remote+VM apps / workspace
   join) is designed in [spatial-sharing.md](../spatial-sharing.md), grounded in research docs
   [17](../../research/17-sharing-capture-stack.md)–[19](../../research/19-wayland-proxying.md); it

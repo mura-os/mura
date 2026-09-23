@@ -7,10 +7,11 @@ Home of spatial-os's Wayland protocol XMLs — the `zxr` / `zext` families. Decl
 
 | File | What | Status |
 |---|---|---|
-| `zext-toplevel-export-v1.xml` | Per-toplevel zero-copy export/delegation between compositors (foreign 2D sessions → floating windows in zxr) | experimental draft — design in [foreign-session-integration.md](../docs/architecture/foreign-session-integration.md), requirements R1–R22 in [research/32](../docs/research/32-toplevel-export-prior-art.md), strategy in [ADR 0014](../docs/architecture/adr/0014-toplevel-delegation-protocol.md) |
-| `zxr-shell-v2.xml` | The 3D-client shell protocol (views, colour+depth, input) | not yet drafted — design lives in [zxr-shell-v2-composition.md](../docs/architecture/zxr-shell-v2-composition.md) and [ADR 0006](../docs/architecture/adr/0006-compositor-strategy.md) |
+| `zext-toplevel-export-v1.xml` | Per-toplevel zero-copy export/delegation between compositors (foreign 2D sessions → floating windows in zxr) | experimental draft — design in [foreign-session-integration.md](../docs/architecture/foreign-session-integration.md), requirements R1–R24 in [research/32](../docs/research/32-toplevel-export-prior-art.md), strategy in [ADR 0014](../docs/architecture/adr/0014-toplevel-delegation-protocol.md); 10 recorded [CONVENTIONS](CONVENTIONS.md) deviations to fix at next revision |
+| `zxr-shell-v2.xml` | The 3D-client shell protocol: N views, typed colour+depth slots with explicit sync, atomic frame snapshots, ray/6DoF input | **drafted** (red-team in progress) — design in [zxr-shell-v2-composition.md](../docs/architecture/zxr-shell-v2-composition.md) §7, drafting brief in [research/08 Part 3](../docs/research/08-wxrc.md), ADR 0006 |
+| `zxr-workspace-v1.xml` | Place kind/anchor/pose/bounds/preview/entry-presence + continuous transitions beside `ext-workspace-v1` | **drafted** (review in progress) — fields from [places-model.md §6](../docs/architecture/places-model.md) / ADR 0016 |
+| `zxr-layer-anchoring-v1.xml` | Head/body/world frames + angular size + exclusive solid angle for layer surfaces | **drafted** (review in progress) — ADR 0012 §4.3 |
 | `zext-a11y` (name reserved) | Spatial accessibility semantics for assistive clients (window poses/relations, place membership + currency, gaze/ray context, boundary state, privileged navigation verbs) | design-note stage — surface fixed in [spatial-a11y.md](../docs/architecture/spatial-a11y.md); carrier (zxr protocol vs AccessKit payload) deferred to Newton/AccessKit maturity |
-| zxr workspace extension (name reserved) | Place kind/anchor/transform/preview/entry-policy-presence beside `ext-workspace-v1` | design stage — fields enumerated in [places-model.md §6](../docs/architecture/places-model.md); drafted after `zxr-shell-v2.xml` |
 
 ## Namespace and governance posture
 

@@ -215,6 +215,10 @@ everything be developed without a headset.
 
 ### 7.2 The client contract (renderer-agnostic)
 
+*(Now normative as [`protocols/zxr-shell-v2.xml`](../../protocols/zxr-shell-v2.xml) — the
+interfaces named below map to `zxr_frame_timing_v2` snapshots, `zxr_frame_slot_v2` typed
+colour+depth slots with syncobj acquire points, and `zxr_surface_v2.submit`.)*
+
 A 3D client does *not* use our engine; it renders into compositor-described targets for a
 compositor-described frame:
 
