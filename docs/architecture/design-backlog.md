@@ -82,6 +82,17 @@ with evidence in
 [adr/0012-de-modularity-spinout-seams.md](adr/0012-de-modularity-spinout-seams.md). They are not
 duplicated here.
 
+## Scope decisions
+
+- **App distribution/installation is out of scope** (2026-09-23). spatial-os installs NixOS onto
+  the device; after that the user owns a PC and brings whatever medium they want (nix profiles,
+  Flatpak, plain binaries) — the OS does not ship an app store or bless a distribution channel.
+  What *is* in scope is the launcher (desktop-entry + icon-theme consumption; registry §5) and
+  the portal/security seams any medium plugs into. Future exploration preserved: a small local
+  LLM (llama.cpp-class) that edits the user's Nix configuration conversationally — an
+  installation *interface*, not a distribution channel; revisit after the settings model
+  (research/35) lands.
+
 ## Standing rule from the review
 
 > Do not build the generic donor/update/backend machinery before a Lynx boot/display/tracking spike

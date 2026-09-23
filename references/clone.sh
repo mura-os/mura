@@ -167,6 +167,10 @@ repos=(
   'kwin-vr-patches|https://invent.kde.org/lightofmysoul/vr-patches.git|'
   'monado-galaxyxr|https://gitlab.freedesktop.org/lightofmysoul/monado.git|galaxyxr'
   'xrinfo|https://gitlab.freedesktop.org/lightofmysoul/xrinfo.git|'
+  # --- VR shell interaction-pattern study (docs/research/36) ---
+  'simula|https://github.com/SimulaVR/Simula.git|'
+  'breezy-desktop|https://github.com/wheaney/breezy-desktop.git|'
+  'xr-linux-driver|https://github.com/wheaney/XRLinuxDriver.git|'
 )
 
 mkdir -p .logs

@@ -3,6 +3,12 @@
 A Nix-built, NixOS-based, Wayland-based Linux XR distribution targeting many standalone VR headsets,
 producing reproducible flashable images from pinned vendor firmware ("donor") inputs.
 
+**Grounding rule:** every design grounds its vocabulary in the applicable freedesktop/XDG
+specification before inventing terms — and states *which* "XDG" it means (the CDG spec family,
+the `xdg_*` Wayland protocol namespace, or xdg-desktop-portal; the three-way trap is
+[desktop-environment.md §2](architecture/desktop-environment.md)). Protocol surveys sweep whole
+directories, never named lists (doc 30's scope rule).
+
 ## Research (`research/`)
 
 Study of the reference multi-device OS projects, done as parallel deep-dives. Each doc follows the
