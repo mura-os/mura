@@ -16,6 +16,7 @@
 , xrgears
 , coreutils
 , gnugrep
+, procps
 }:
 let
   swayConfig = writeText "dev-session-sway.cfg" ''
@@ -33,7 +34,7 @@ let
 in
 writeShellApplication {
   name = "dev-session";
-  runtimeInputs = [ monado sway foot xrgears coreutils gnugrep ];
+  runtimeInputs = [ monado sway foot xrgears coreutils gnugrep procps ];
   text = ''
     usage() {
       cat <<USAGE
@@ -80,8 +81,12 @@ writeShellApplication {
 
     if [ "$monado_on" = 1 ]; then
       sock="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/monado_comp_ipc"
+      if [ -S "$sock" ] && ! pgrep -x monado-service >/dev/null; then
+        echo "dev-session: removing stale Monado socket (no live service) at $sock" >&2
+        rm -f "$sock"
+      fi
       if [ -S "$sock" ]; then
-        echo "dev-session: a Monado socket already exists at $sock — reusing that instance." >&2
+        echo "dev-session: a live Monado is already running at $sock — reusing it." >&2
       else
         export SIMULATED_ENABLE=true
         # We manage lifetime; monado's stdin-watching mainloop must not (it
