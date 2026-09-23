@@ -46,6 +46,9 @@ repos=(
   'zen|https://github.com/zwin-project/zen.git|'
   'wayvr|https://github.com/wayvr-org/wayvr.git|'
   # --- session / greeter / lock stack (XR login research) ---
+  # accountsservice = the freedesktop user-enumeration D-Bus daemon GDM/SDDM
+  # pickers consume (docs/research/41, multi-user design).
+  'accountsservice|https://gitlab.freedesktop.org/accountsservice/accountsservice.git|'
   'greetd|https://git.sr.ht/~kennylevinsen/greetd|'
   'gtkgreet|https://git.sr.ht/~kennylevinsen/gtkgreet|'
   'seatd|https://git.sr.ht/~kennylevinsen/seatd|'
