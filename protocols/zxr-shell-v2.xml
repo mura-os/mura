@@ -1,22 +1,715 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="zxr_shell_v2">
   <copyright>
-    Copyright © 2019 Drew DeVault, Simon Ser (zxr-shell-unstable-v1)
-    Copyright © 2026 the spatial-os authors
+    Copyright © 2019 Status Research &amp; Development GmbH.
+    Copyright © 2026 spatial-os contributors.
 
     SPDX-License-Identifier: MIT
   </copyright>
 
+  <description summary="composite 3D content from multiple clients">
+    This protocol allows clients to render three-dimensional content that the
+    compositor composites, together with content from other clients, into one
+    shared, depth-tested space presented on a head-mounted display.
+
+    A client renders its content from compositor-supplied view and projection
+    matrices and submits, for every view, a colour image and a depth image as
+    one atomic frame. The compositor resolves visibility between clients using
+    the submitted depth. Geometry never crosses the wire; the compositor never
+    re-renders client content, and clients never learn the composed result.
+
+    This protocol continues the zxr_shell_unstable_v1 protocol of the wxrc
+    compositor, which itself descended from the Motorcar research compositor.
+    The per-view model, the surface role, and the typed colour/depth buffer
+    distinction survive from version 1; the folded model-view-projection
+    matrix event and the composite wl_buffer wrapper do not.
+
+    The key words "must", "must not", "required", "shall", "shall not",
+    "should", "should not", "recommended", "may", and "optional" in this
+    document are to be interpreted as described in IETF RFC 2119.
+
+    Warning! The protocol described in this file is currently in the
+    experimental phase. Backward incompatible changes may be added without
+    bumping the major version of the extension. As such, gating usage on the
+    protocol's presence is discouraged outside spatial-os itself.
+  </description>
+
   <interface name="zxr_shell_v2" version="1">
-    <description summary="stub: claimed by the specification workstream">
-      STUB — claimed by the specification workstream (wave 1). The credited
-      continuation of zxr-shell-unstable-v1 (wxrc) and Motorcar; design in
-      docs/architecture/zxr-shell-v2-composition.md and ADR 0006. This stub
-      exists to claim the filename and keep the protocols CI check green; it
-      defines no real interface yet.
+    <description summary="entry point for 3D compositing">
+      The global entry point. It advertises the compositor's transport and
+      format capabilities, assigns the XR surface role, and creates the
+      per-client timing and input objects.
+
+      Capability, format, and transport events are sent when the client binds
+      the global and whenever the supported set changes, always terminated by
+      a done event.
     </description>
+
+    <enum name="error">
+      <entry name="role" value="0"
+             summary="given wl_surface already has another role"/>
+      <entry name="defunct_surfaces" value="1"
+             summary="shell destroyed before its child objects"/>
+      <entry name="missing_capability" value="2"
+             summary="request requires a capability that was not advertised"/>
+    </enum>
+
+    <enum name="capability" bitfield="true">
+      <description summary="optional shell capabilities">
+        Optional capabilities of the compositor. Requests that require a
+        capability the compositor has not advertised raise the
+        missing_capability error, since a client able to inspect the
+        capabilities event has no reason to issue them.
+      </description>
+      <entry name="ray" value="1" summary="zxr_ray_v2 input is available"/>
+      <entry name="pointer_6dof" value="2"
+             summary="zxr_pointer_6dof_v2 input is available"/>
+      <entry name="layout_layered" value="4"
+             summary="all-views-in-one-image layered buffer layout"/>
+    </enum>
+
+    <enum name="transport">
+      <description summary="buffer transport tiers">
+        How image contents reach the compositor. Every compositor must accept
+        shm; dmabuf is the intended production transport. The meaning of the
+        submitted images is identical on every transport.
+      </description>
+      <entry name="shm" value="0" summary="wl_shm buffers"/>
+      <entry name="dmabuf" value="1"
+             summary="zwp_linux_dmabuf_v1 buffers with explicit sync"/>
+    </enum>
+
     <request name="destroy" type="destructor">
-      <description summary="destroy the shell object"/>
+      <description summary="destroy the shell object">
+        Destroy the shell object. This request must be sent after destroying
+        all objects created through it; otherwise the defunct_surfaces error
+        is raised. Objects created through other globals are not affected.
+      </description>
     </request>
+
+    <request name="get_xr_surface">
+      <description summary="assign the XR surface role">
+        Create a zxr_surface_v2 role object for the given surface. If the
+        surface already has a role or a role object of any kind, the role
+        error is raised.
+
+        The wl_surface is put into the XR role: attaching a wl_buffer to it
+        with wl_surface.attach raises the zxr_surface_v2.buffer_forbidden
+        error, since image content is carried exclusively by frame slots.
+      </description>
+      <arg name="id" type="new_id" interface="zxr_surface_v2"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <request name="get_frame_timing">
+      <description summary="create the frame timing object">
+        Create the per-client frame timing object delivering frame snapshots
+        and presentation feedback. At most one timing object may exist per
+        client shell binding; a second request raises the role error.
+      </description>
+      <arg name="id" type="new_id" interface="zxr_frame_timing_v2"/>
+    </request>
+
+    <request name="get_ray">
+      <description summary="create a ray input object">
+        Create a zxr_ray_v2 object for the given seat. Requires the ray
+        capability.
+      </description>
+      <arg name="id" type="new_id" interface="zxr_ray_v2"/>
+      <arg name="seat" type="object" interface="wl_seat"/>
+    </request>
+
+    <request name="get_pointer_6dof">
+      <description summary="create a 6DoF pointer input object">
+        Create a zxr_pointer_6dof_v2 object for the given seat. Requires the
+        pointer_6dof capability.
+      </description>
+      <arg name="id" type="new_id" interface="zxr_pointer_6dof_v2"/>
+      <arg name="seat" type="object" interface="wl_seat"/>
+    </request>
+
+    <event name="capabilities">
+      <description summary="compositor capabilities">
+        The capabilities of the compositor, as a bitfield of capability
+        entries. Clients should hide or disable the UI elements that depend
+        on absent capabilities.
+      </description>
+      <arg name="capabilities" type="uint" enum="capability"/>
+    </event>
+
+    <event name="depth_format">
+      <description summary="advertise one supported depth format">
+        One supported depth image format, as a DRM FOURCC format code. Sent
+        once per supported format. Colour formats are negotiated through the
+        transport's own mechanism (wl_shm.format, zwp_linux_dmabuf_v1
+        feedback); depth formats are advertised here because neither
+        transport distinguishes depth from colour.
+      </description>
+      <arg name="format" type="uint" summary="DRM FOURCC code"/>
+    </event>
+
+    <event name="transport">
+      <description summary="advertise one supported transport">
+        One supported transport tier. Sent once per supported tier.
+      </description>
+      <arg name="transport" type="uint" enum="transport"/>
+    </event>
+
+    <event name="done">
+      <description summary="all pending shell state has been sent">
+        Sent after the capability, depth_format, and transport events on bind
+        and after any later change. This allows changes to the shell state to
+        be seen as atomic, even if they happen via multiple events.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="zxr_view_v2" version="1">
+    <description summary="one compositor view">
+      A view is one perspective the compositor composes — typically one eye
+      of a head-mounted display. Each view is advertised as one global. A
+      client renders one colour and one depth image per view it binds.
+
+      The view's slowly-changing properties (resolution, field of view)
+      arrive through events on this object, terminated by done. Per-frame
+      view and projection matrices never arrive here; they are part of the
+      atomic frame snapshot on zxr_frame_timing_v2, so that matrices and
+      images can never pair across frames.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="release the view object">
+        Release the client's binding. Frame slots holding attachments for
+        this view are not affected; their images for this view are ignored
+        at submission.
+      </description>
+    </request>
+
+    <event name="resolution">
+      <description summary="recommended image size">
+        The recommended pixel size for images rendered for this view. A
+        client may submit other sizes; the compositor scales, at a quality
+        cost. Values set in this way take effect for slots submitted after
+        the following done event.
+      </description>
+      <arg name="width" type="int" summary="width in pixels"/>
+      <arg name="height" type="int" summary="height in pixels"/>
+    </event>
+
+    <event name="fov">
+      <description summary="field of view">
+        The field of view of this view, expressed as the tangents of the
+        four half-angles from the view's optical axis. Informational: the
+        authoritative projection arrives in each frame snapshot.
+      </description>
+      <arg name="tan_left" type="fixed" summary="tangent of the left half-angle"/>
+      <arg name="tan_right" type="fixed" summary="tangent of the right half-angle"/>
+      <arg name="tan_up" type="fixed" summary="tangent of the up half-angle"/>
+      <arg name="tan_down" type="fixed" summary="tangent of the down half-angle"/>
+    </event>
+
+    <event name="done">
+      <description summary="all pending view state has been sent">
+        Sent after resolution and fov on bind and after any later change.
+        This allows changes to the view state to be seen as atomic, even if
+        they happen via multiple events.
+      </description>
+    </event>
+
+    <event name="finished">
+      <description summary="the view will no longer be composed">
+        Sent when the compositor removes the view (for example, the display
+        configuration changed). The compositor will immediately consider the
+        object inert. Any requests will be ignored except the destroy
+        request; there won't be any more events referencing this object.
+        Frame slots referencing the view remain valid; their attachments for
+        this view are ignored at submission.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="zxr_surface_v2" version="1">
+    <description summary="a 3D content surface">
+      The XR role object for a wl_surface. The surface's content is defined
+      exclusively by submitted frame slots; wl_surface.attach is forbidden on
+      surfaces with this role.
+
+      The compositor assigns the surface a bounding volume and a world
+      transform. The client must render its content inside the configured
+      bounds, in its own model space; the compositor clips content that
+      escapes the bounds according to the clipping mode. Bounds changes
+      follow the configure/ack pattern: the configured state should not be
+      applied immediately, but only when the client is ready to render
+      within it.
+    </description>
+
+    <enum name="error">
+      <entry name="buffer_forbidden" value="0"
+             summary="wl_surface.attach on an XR surface"/>
+      <entry name="unconfigured" value="1"
+             summary="frame submitted before the first ack_configure"/>
+      <entry name="incomplete_slot" value="2"
+             summary="submitted slot lacks a required image"/>
+      <entry name="stale_frame" value="3"
+             summary="submitted frame id was never announced or already presented"/>
+      <entry name="invalid_ack" value="4"
+             summary="ack_configure with an unknown serial"/>
+    </enum>
+
+    <enum name="clipping_mode">
+      <description summary="how escaping content is treated">
+        How the compositor treats fragments whose position falls outside the
+        configured bounds. In cuboid mode the bounds behave as a solid box:
+        escaping fragments are discarded. In portal mode the bounds behave
+        as a window into a volume behind its front face; fragments are
+        discarded only outside the portal frustum. The compositor enforces
+        clipping regardless of client cooperation.
+      </description>
+      <entry name="cuboid" value="0" summary="clip to the bounding box"/>
+      <entry name="portal" value="1" summary="clip to the portal frustum"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="remove the XR role">
+        Destroy the role object. The wl_surface loses the XR role and may be
+        given another. Frame slots created from this surface become inert.
+      </description>
+    </request>
+
+    <request name="set_clipping_mode">
+      <description summary="set the clipping mode">
+        Set the clipping mode. Values set in this way are double-buffered
+        relative to frame submission: the mode applies to slots submitted
+        after this request.
+      </description>
+      <arg name="mode" type="uint" enum="clipping_mode"/>
+    </request>
+
+    <request name="ack_configure">
+      <description summary="acknowledge a configure event">
+        Acknowledge the configure event with the given serial. The client
+        must acknowledge the latest received configure before its next
+        submit; submitting against an unacknowledged bounds change is not an
+        error, but the compositor clips against the configured bounds it
+        last acknowledged. Acknowledging a serial the compositor never sent
+        raises the invalid_ack error.
+      </description>
+      <arg name="serial" type="uint" summary="serial from the configure event"/>
+    </request>
+
+    <request name="create_slot">
+      <description summary="create a frame slot">
+        Create a frame slot: a reusable container for the per-view colour
+        and depth images of one frame. Clients typically create two or three
+        slots and cycle them as the compositor releases them.
+      </description>
+      <arg name="id" type="new_id" interface="zxr_frame_slot_v2"/>
+    </request>
+
+    <request name="submit">
+      <description summary="atomically submit one frame">
+        Atomically submit the slot's images as this surface's content for
+        the announced frame with the given id. The slot must contain a
+        colour and a depth image for every view the client has bound that is
+        not finished; otherwise the incomplete_slot error is raised. The
+        frame id must be one announced on zxr_frame_timing_v2 and not yet
+        presented; otherwise the stale_frame error is raised. Submitting
+        before the first ack_configure raises the unconfigured error.
+
+        The images, the depth metadata, the acquire points, and the frame id
+        form one atomic unit. A slot that has been submitted must not be
+        written to until its released event; the effect of such writes on
+        composed output is undefined unless the transport's acquire points
+        order them.
+
+        If the compositor's composition deadline for the named frame has
+        passed, the submission is not an error: the compositor presents the
+        surface's previously presented content for that frame and reports
+        the outcome through frame feedback.
+      </description>
+      <arg name="slot" type="object" interface="zxr_frame_slot_v2"/>
+      <arg name="frame_hi" type="uint" summary="upper 32 bits of the frame id"/>
+      <arg name="frame_lo" type="uint" summary="lower 32 bits of the frame id"/>
+    </request>
+
+    <event name="configure">
+      <description summary="suggest a bounding volume">
+        Suggest a new bounding volume for the surface, as half-extents from
+        the surface origin along its local axes. The configured state should
+        not be applied immediately; the client acknowledges with
+        ack_configure and renders within the new bounds from its next
+        submission.
+      </description>
+      <arg name="serial" type="uint" summary="serial to pass to ack_configure"/>
+      <arg name="half_width" type="fixed" summary="half extent in metres, local x"/>
+      <arg name="half_height" type="fixed" summary="half extent in metres, local y"/>
+      <arg name="half_depth" type="fixed" summary="half extent in metres, local z"/>
+    </event>
+  </interface>
+
+  <interface name="zxr_frame_slot_v2" version="1">
+    <description summary="per-view images of one frame">
+      A reusable container holding, per view, one colour image, one depth
+      image, their explicit-sync acquire points, and the depth encoding
+      metadata. Attachments accumulate in the slot and become the surface's
+      content only through zxr_surface_v2.submit; there is no per-image
+      visibility on screen.
+
+      Depth images carry window-space depth as produced by the client's
+      projection; the metadata request maps stored values to view-space
+      distances so that depth from different clients is comparable.
+    </description>
+
+    <enum name="error">
+      <entry name="unknown_view" value="0"
+             summary="view object not created from this client's binding"/>
+      <entry name="busy" value="1"
+             summary="slot written to between submit and released"/>
+      <entry name="invalid_metadata" value="2"
+             summary="depth metadata values out of range"/>
+    </enum>
+
+    <enum name="image_type">
+      <entry name="colour" value="0" summary="colour image"/>
+      <entry name="depth" value="1" summary="depth image"/>
+    </enum>
+
+    <enum name="depth_flags" bitfield="true">
+      <entry name="reversed" value="1"
+             summary="stored depth decreases with distance"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the slot">
+        Destroy the slot. Attached wl_buffers are not affected and remain
+        valid. If the slot is submitted and not yet released, the
+        compositor's use of the images continues until its internal release;
+        the released event is not sent.
+      </description>
+    </request>
+
+    <request name="attach">
+      <description summary="attach one image">
+        Attach a wl_buffer as the image of the given type for the given
+        view, replacing any previous attachment of that (view, type) pair. A
+        null buffer removes the attachment. Attaching to a slot that is
+        submitted and not yet released raises the busy error. Attaching for
+        a view not bound by this client raises the unknown_view error.
+
+        Depth buffers must use a format advertised through
+        zxr_shell_v2.depth_format.
+      </description>
+      <arg name="view" type="object" interface="zxr_view_v2"/>
+      <arg name="type" type="uint" enum="image_type"/>
+      <arg name="buffer" type="object" interface="wl_buffer" allow-null="true"/>
+    </request>
+
+    <request name="set_acquire_point">
+      <description summary="set the acquire timeline point for one image">
+        Set the timeline point that must be signalled before the compositor
+        may sample from the image attached for the given (view, type) pair.
+        The timeline is a DRM syncobj; the 64-bit point is combined from
+        point_hi and point_lo. Acquire points are consumed by the next
+        submit and must be set again for the next use of the slot.
+
+        On the shm transport this request is ignored.
+      </description>
+      <arg name="view" type="object" interface="zxr_view_v2"/>
+      <arg name="type" type="uint" enum="image_type"/>
+      <arg name="timeline" type="fd" summary="DRM syncobj fd"/>
+      <arg name="point_hi" type="uint" summary="upper 32 bits of the point"/>
+      <arg name="point_lo" type="uint" summary="lower 32 bits of the point"/>
+    </request>
+
+    <request name="set_depth_range">
+      <description summary="set the depth encoding for one view">
+        Define how stored depth values for the given view map to view-space
+        distance: the stored value range [min_depth, max_depth] maps to the
+        distance range [near, far] metres, linearly in reciprocal distance.
+        If the reversed flag is set, min_depth corresponds to far. min_depth
+        and max_depth must lie in [0, 1] and near must be positive and less
+        than far; otherwise the invalid_metadata error is raised.
+
+        This state is consumed by the next submit, together with the
+        attachments it describes.
+      </description>
+      <arg name="view" type="object" interface="zxr_view_v2"/>
+      <arg name="near" type="fixed" summary="near distance in metres"/>
+      <arg name="far" type="fixed" summary="far distance in metres"/>
+      <arg name="min_depth" type="fixed" summary="minimum stored depth value"/>
+      <arg name="max_depth" type="fixed" summary="maximum stored depth value"/>
+      <arg name="flags" type="uint" enum="depth_flags"/>
+    </request>
+
+    <event name="released">
+      <description summary="the compositor is done with the slot">
+        Sent when the compositor has finished all sampling from the slot's
+        images for the last submission. The client may reuse or rewrite the
+        images. Release points on the images' timelines, where the transport
+        provides them, are signalled no later than this event; the event may
+        arrive out of submission order across different slots.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="zxr_frame_timing_v2" version="1">
+    <description summary="atomic frame snapshots and feedback">
+      Delivers, once per compositor frame, the atomic snapshot a client
+      needs to render that frame: the frame id, the predicted display time,
+      the submission cutoff, the per-view view and projection matrices, and
+      the world transform of each of the client's XR surfaces. The snapshot
+      is terminated by a done event; all state between frame and done
+      belongs to the named frame. This allows the matrices, transforms, and
+      timing of a frame to be seen as atomic, even if they happen via
+      multiple events.
+
+      Matrices are column-major arrays of 16 IEEE 754 binary32 values in
+      native endianness. Positions and axes follow the compositor's
+      convention: metres, y up, right-handed.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the timing object">
+        Destroy the timing object. Pending feedback objects are not
+        affected.
+      </description>
+    </request>
+
+    <request name="feedback">
+      <description summary="request feedback for the next submission">
+        Request presentation feedback for the given surface's next submit.
+        The feedback object delivers exactly one presented or discarded
+        event and is then destroyed by the compositor.
+      </description>
+      <arg name="surface" type="object" interface="zxr_surface_v2"/>
+      <arg name="id" type="new_id" interface="zxr_frame_feedback_v2"/>
+    </request>
+
+    <event name="clock">
+      <description summary="the frame clock domain">
+        Tells the client in which clock domain the compositor interprets and
+        produces the timestamps of this interface, as a POSIX clockid_t.
+        Sent once, immediately after creating the object. The compositor
+        should prefer a clock which does not jump and is not slewed.
+      </description>
+      <arg name="clock_id" type="uint" summary="POSIX clockid_t"/>
+    </event>
+
+    <event name="frame">
+      <description summary="a new frame begins">
+        Announces a frame. The display time is the predicted time the
+        frame's light reaches the user's eyes, as seconds combined from
+        tv_sec_hi and tv_sec_lo plus tv_nsec nanoseconds; tv_nsec must be in
+        [0, 999999999]. The cutoff is the duration before the display time
+        by which submissions for this frame must arrive to be composed;
+        later submissions are treated as described in zxr_surface_v2.submit.
+        The period is the compositor's current frame period.
+      </description>
+      <arg name="frame_hi" type="uint" summary="upper 32 bits of the frame id"/>
+      <arg name="frame_lo" type="uint" summary="lower 32 bits of the frame id"/>
+      <arg name="tv_sec_hi" type="uint" summary="upper 32 bits of the display time seconds"/>
+      <arg name="tv_sec_lo" type="uint" summary="lower 32 bits of the display time seconds"/>
+      <arg name="tv_nsec" type="uint" summary="display time nanoseconds"/>
+      <arg name="period_ns" type="uint" summary="frame period in nanoseconds"/>
+      <arg name="cutoff_ns" type="uint" summary="submission cutoff before display time, nanoseconds"/>
+    </event>
+
+    <event name="view_state">
+      <description summary="per-view matrices for the announced frame">
+        The view and projection matrices of one view, valid exactly for the
+        frame announced by the preceding frame event. Rendering with
+        matrices from any other frame produces misaligned composition;
+        clients must pair these matrices with the frame id at submit.
+      </description>
+      <arg name="view" type="object" interface="zxr_view_v2"/>
+      <arg name="view_matrix" type="array"
+           summary="16 binary32 values, column-major, native endianness"/>
+      <arg name="projection_matrix" type="array"
+           summary="16 binary32 values, column-major, native endianness"/>
+    </event>
+
+    <event name="transform">
+      <description summary="a surface's world transform for the frame">
+        The model-to-world transform of one of the client's XR surfaces for
+        the announced frame. The client renders in its model space; the
+        compositor composes using this transform, so a client need not — and
+        must not — bake it into its projection.
+      </description>
+      <arg name="surface" type="object" interface="zxr_surface_v2"/>
+      <arg name="matrix" type="array"
+           summary="16 binary32 values, column-major, native endianness"/>
+    </event>
+
+    <event name="done">
+      <description summary="the frame snapshot is complete">
+        Ends the snapshot of the frame announced by the preceding frame
+        event.
+      </description>
+      <arg name="frame_hi" type="uint" summary="upper 32 bits of the frame id"/>
+      <arg name="frame_lo" type="uint" summary="lower 32 bits of the frame id"/>
+    </event>
+  </interface>
+
+  <interface name="zxr_frame_feedback_v2" version="1">
+    <description summary="one-shot presentation feedback">
+      Delivers the outcome of one submission. Exactly one of presented or
+      discarded is sent, after which the compositor destroys the object.
+    </description>
+
+    <event name="presented" type="destructor">
+      <description summary="the submission reached the display">
+        The submission was composed into the frame with the given id and
+        reached the display at the given time, in the clock domain of
+        zxr_frame_timing_v2.clock. tv_nsec must be in [0, 999999999].
+      </description>
+      <arg name="frame_hi" type="uint" summary="upper 32 bits of the frame id"/>
+      <arg name="frame_lo" type="uint" summary="lower 32 bits of the frame id"/>
+      <arg name="tv_sec_hi" type="uint" summary="upper 32 bits of the presentation time seconds"/>
+      <arg name="tv_sec_lo" type="uint" summary="lower 32 bits of the presentation time seconds"/>
+      <arg name="tv_nsec" type="uint" summary="presentation time nanoseconds"/>
+    </event>
+
+    <event name="discarded" type="destructor">
+      <description summary="the submission was never displayed">
+        The submission missed its frame and its content was never displayed.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="zxr_ray_v2" version="1">
+    <description summary="ray input device">
+      A pointing ray, following the wl_pointer model: focus is conveyed by
+      enter and leave, motion is delivered in surface-local terms, and
+      logically grouped events are terminated by a frame event.
+
+      Ray origins and directions are arrays of 3 IEEE 754 binary32 values in
+      native endianness, in the focused surface's model space, in metres;
+      directions are unit length.
+    </description>
+
+    <enum name="button_state">
+      <entry name="released" value="0" summary="button released"/>
+      <entry name="pressed" value="1" summary="button pressed"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the ray object"/>
+    </request>
+
+    <event name="enter">
+      <description summary="the ray focuses a surface">
+        The ray has entered the surface's bounds and the surface gains ray
+        focus.
+      </description>
+      <arg name="serial" type="uint" summary="serial of the enter event"/>
+      <arg name="surface" type="object" interface="zxr_surface_v2"/>
+      <arg name="origin" type="array"
+           summary="3 binary32 values, native endianness, metres"/>
+      <arg name="direction" type="array"
+           summary="3 binary32 values, native endianness, unit length"/>
+    </event>
+
+    <event name="leave">
+      <description summary="the ray leaves a surface">
+        Ray focus left the surface. The leave event is sent before the enter
+        event for any new focus.
+      </description>
+      <arg name="serial" type="uint" summary="serial of the leave event"/>
+      <arg name="surface" type="object" interface="zxr_surface_v2"/>
+    </event>
+
+    <event name="motion">
+      <description summary="the ray moved">
+        The ray moved within the focused surface. The timestamp is in the
+        domain of zxr_frame_timing_v2.clock, in milliseconds.
+      </description>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="origin" type="array"
+           summary="3 binary32 values, native endianness, metres"/>
+      <arg name="direction" type="array"
+           summary="3 binary32 values, native endianness, unit length"/>
+    </event>
+
+    <event name="button">
+      <description summary="a ray button changed state">
+        A button on the ray's device changed state. The button code is a
+        linux/input-event-codes.h code.
+      </description>
+      <arg name="serial" type="uint" summary="serial of the button event"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="button" type="uint" summary="input-event-codes button code"/>
+      <arg name="state" type="uint" enum="button_state"/>
+    </event>
+
+    <event name="frame">
+      <description summary="end of a logical event group">
+        Groups the preceding events into one logical hardware event.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="zxr_pointer_6dof_v2" version="1">
+    <description summary="six degree of freedom pointer device">
+      A tracked pointer with position and orientation, following the same
+      focus and frame model as zxr_ray_v2. Positions are arrays of 3
+      IEEE 754 binary32 values in native endianness, surface-local, metres;
+      orientations are arrays of 4 binary32 values forming a unit quaternion
+      in x, y, z, w order.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the pointer object"/>
+    </request>
+
+    <event name="enter">
+      <description summary="the pointer enters a surface">
+        The pointer entered the surface's bounds and the surface gains
+        pointer focus.
+      </description>
+      <arg name="serial" type="uint" summary="serial of the enter event"/>
+      <arg name="surface" type="object" interface="zxr_surface_v2"/>
+      <arg name="position" type="array"
+           summary="3 binary32 values, native endianness, metres"/>
+      <arg name="orientation" type="array"
+           summary="4 binary32 values, unit quaternion, x y z w"/>
+    </event>
+
+    <event name="leave">
+      <description summary="the pointer leaves a surface">
+        Pointer focus left the surface. The leave event is sent before the
+        enter event for any new focus.
+      </description>
+      <arg name="serial" type="uint" summary="serial of the leave event"/>
+      <arg name="surface" type="object" interface="zxr_surface_v2"/>
+    </event>
+
+    <event name="motion">
+      <description summary="the pointer moved">
+        The pointer moved within the focused surface. The timestamp is in
+        the domain of zxr_frame_timing_v2.clock, in milliseconds.
+      </description>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="position" type="array"
+           summary="3 binary32 values, native endianness, metres"/>
+      <arg name="orientation" type="array"
+           summary="4 binary32 values, unit quaternion, x y z w"/>
+    </event>
+
+    <event name="button">
+      <description summary="a pointer button changed state">
+        A button on the pointer's device changed state. The button code is a
+        linux/input-event-codes.h code.
+      </description>
+      <arg name="serial" type="uint" summary="serial of the button event"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="button" type="uint" summary="input-event-codes button code"/>
+      <arg name="state" type="uint" enum="zxr_ray_v2.button_state"/>
+    </event>
+
+    <event name="frame">
+      <description summary="end of a logical event group">
+        Groups the preceding events into one logical hardware event.
+      </description>
+    </event>
   </interface>
 </protocol>
