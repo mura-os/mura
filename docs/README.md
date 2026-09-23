@@ -40,6 +40,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [28-eye-tracking-stack.md](research/28-eye-tracking-stack.md) — pupil detection lineage, pye3d rotation-center IPD, Monado ET surface, placement + motor policy
 - [29-eye-hardware-ipd-per-target.md](research/29-eye-hardware-ipd-per-target.md) — per-target eye cameras, IPD mechanisms, access classes, iris auth, gaze privacy
 - [30-wayland-de-anatomy-protocol-seams.md](research/30-wayland-de-anatomy-protocol-seams.md) — privileged Wayland protocol inventory (ext-workspace, foreign-toplevel, layer-shell, capture…), KWin/COSMIC mechanism-vs-policy factoring, per-spin-out verdicts
+- [31-kwin-vr.md](research/31-kwin-vr.md) — code study of the KWin VR fork (MR !8671): plugin architecture, the WM-core patch seams, the Qt/XWayland patch-carry surface, the Monado galaxyxr Galaxy XR bring-up, maintainer objections mapped
 
 ## Architecture (`architecture/`)
 
@@ -68,6 +69,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0010](architecture/adr/0010-avatar-control-space-and-driver.md) Persona avatar control space + driver (semantic v1, versioned latent hook, Monado-side driver)
   - [0011](architecture/adr/0011-eye-tracking-ipd.md) eye tracking and IPD (Monado-side eye-frame service, rotation-center IPD, event-gated motors)
   - [0012](architecture/adr/0012-de-modularity-spinout-seams.md) DE modularity and spin-out seams (standard-protocol clients vs in-process plugins vs authority-only; the zxr-private extension surface)
+  - [0013](architecture/adr/0013-kwin-vr-disposition.md) KWin VR disposition (not the backbone; design donor for the 2D tier; `kwin-vr` reserved as optional session; galaxyxr fork into Galaxy XR evidence)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the base architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the base review (fixed now vs.
   deferred to the Lynx spike / pre-release design)

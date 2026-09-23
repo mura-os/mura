@@ -139,7 +139,18 @@ Status terms above are deliberately narrow: “root” means control after the v
 - The package should be treated as the Android vendor/GKI source for its matching build, not evidence that Android XR userspace or proprietary XR drivers are open.
 - The exact XR2+ Gen 2 Linux platform identifier is unverified. If it is close to SM8550/QCS8550, generic support is strong: core clocks, pinctrl, UFS, USB, PCIe, GPU, and reference boards appear in the [SM8550 mainline status](https://linux-msm.github.io/mainline-status/soc/sm8550).
 - No public Galaxy XR DTS, boot log, or reproducible mainline tree was located. The FreeXR community status supplied for this research says “mainline Linux in progress,” but a public implementation could not be independently verified.
-- XR-specific gaps will include both display pipelines, multi-camera synchronization, iris/eye tracking, depth sensing, calibration, audio, and power/thermal policy.
+- **Update (2026-09-23): a working Linux bring-up now exists in public code.** The
+  [lightofmysoul Monado fork, branch `galaxyxr`](https://gitlab.freedesktop.org/lightofmysoul/monado/-/tree/galaxyxr)
+  (pinned at `references/monado-galaxyxr`, studied in [31-kwin-vr §5](31-kwin-vr.md)) runs
+  Kubuntu 26.04 + KDE VR + native Steam on the device and implements: a dual-DRM-lease
+  direct-mode display backend (two SDE devices, plane-sliced Sony ECX344A micro-OLED panels,
+  UBWC scanout, 90/72 Hz), blob-free 3DoF via Qualcomm SSC QMI-over-QIPCRTR with per-unit `efs`
+  factory calibration decoding and live motorized-IPD readout, titan-server stereo NV12
+  passthrough fused into the distortion pass, `XR_EXT_eye_gaze_interaction` eye tracking via the
+  OEM QNN library, and gaze-driven `VK_KHR_fragment_shading_rate` foveation. 6DoF/SLAM is not
+  implemented. It presupposes launch firmware (or root): per the unlock notes below, current
+  retail units cannot reach it. Disposition for spatial-os: [ADR 0013](../architecture/adr/0013-kwin-vr-disposition.md) §4.
+- XR-specific gaps will include both display pipelines, multi-camera synchronization, iris/eye tracking, depth sensing, calibration, audio, and power/thermal policy — the fork above now provides working reference code for the display, IMU-tier sensor, passthrough, and eye-tracking slices of that list.
 
 ### 4. Boot chain
 

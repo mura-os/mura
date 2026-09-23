@@ -444,7 +444,11 @@ applied post-login exactly as ADR 0007 already specifies for per-user IPD prefer
    (05 §9.2)?
 7. **Foveated-rendering latency budget**: gaze-to-photon for foveation is stricter than for
    interaction; whether the PuRe+pye3d path at 120 Hz meets it on target hardware is a
-   measurement, not a design, question.
+   measurement, not a design, question. *Update (2026-09-23):* a working reference now exists —
+   the `monado-galaxyxr` fork implements gaze-driven two-level `VK_KHR_fragment_shading_rate`
+   foveation on Galaxy XR (12° full-rate disc; 68% vs 77% GPU busy measured), using the OEM QNN
+   eye tracker ([31-kwin-vr §5](31-kwin-vr.md), [ADR 0013 §4](../architecture/adr/0013-kwin-vr-disposition.md));
+   where foveation *policy* lives in spatial-os remains undecided.
 
 ### Recommended baseline (marked as ADR 0011 input, not a decision)
 

@@ -184,3 +184,11 @@ protocol is finished, and it directly closes the open 2D-app question in
   philosophy and delegates 2D to a second compositor; kept as a packaged optional session.
 - **WayVR only:** rejected as the *backbone* — an overlay with no shared 3D space or 3D apps; but
   adopted as the model for the first (2D) tier and packaged as-is.
+- **Adapt an existing DE (KWin VR fork):** not evaluated when this ADR was written; evaluated
+  post-decision in [ADR 0013](0013-kwin-vr-disposition.md) on a code-level study
+  ([31-kwin-vr](../../research/31-kwin-vr.md)) — rejected as the backbone (the Qt Quick 3D XR
+  substrate forecloses the client-depth 3D tier; five-upstream patch carry; desktop-first session
+  model), but adopted as a **design donor** for this ADR's 2D tier (the five WM-core seams, the
+  XR-preflight and dmabuf-format-filter patterns) and reserved as an optional session
+  (`spatial.xr.shell = kwin-vr`). Its topology — one process, one projection layer, ray→plane
+  input, zero-copy dmabuf — independently validates this ADR's shape at daily-driver quality.
