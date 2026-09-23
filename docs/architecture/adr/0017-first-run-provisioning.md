@@ -35,10 +35,13 @@ blocking.
    bridge until `pam_spatial_pin` ships. Both stacks are declared through NixOS modules, never
    hand-edited. This closes ADR 0007's open question.
 3. **OOBE placement: dispatcher-gated `zxr --oobe`, split from its authority.** greetd's
-   `default_session` (multi-user) / `initial_session` (appliance) runs a root-owned dispatcher
-   that execs `zxr --oobe` while the provisioning marker is absent, `zxr --greeter` otherwise
-   (greetd cannot select sessions from runtime state; a NixOS option cannot change
-   post-evaluation). The OOBE is an **unprivileged UI**; every privileged write goes through
+   `default_session` (multi-user) / `initial_session` (appliance) runs a dispatcher that selects
+   `zxr --oobe` while provisioning is incomplete, `zxr --greeter` otherwise (greetd cannot
+   select sessions from runtime state; a NixOS option cannot change post-evaluation). The
+   dispatcher *executes as greetd's session user* and therefore reads the **non-secret
+   `/run/spatial/provisioned` flag** a boot-time root unit publishes — never the root-0700
+   marker itself; continuation is re-dispatch on multi-user and launch-wait-exec on the
+   appliance (first-run-onboarding §4.1 records both semantics). The OOBE is an **unprivileged UI**; every privileged write goes through
    **`spatial-provisiond`** (root, private socket, spatial-authd shape), which owns PIN-hash
    writes, device keys, and the root-owned **transactionally committed marker**. Appliance MVP:
    autologin + the same wizard as first session content.

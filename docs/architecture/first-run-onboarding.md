@@ -73,10 +73,28 @@ dependencies are on markers, not on unit start order.
 ### 4.1 Dispatch
 
 greetd cannot select a session from runtime state by itself. Its `default_session` command is a
-small root-owned **dispatcher wrapper**: if the provisioning marker is absent it execs
-`zxr --oobe`, otherwise `zxr --greeter` (implementation-path B3). The marker is runtime state
-consumed at dispatch time — never a NixOS option, which cannot change after evaluation. On the
-appliance profile the dispatcher sits in `initial_session` the same way (§7).
+small **dispatcher wrapper**: if provisioning is incomplete it launches `zxr --oobe`, otherwise
+it execs `zxr --greeter` (implementation-path B3). The decision input is runtime state consumed
+at dispatch time — never a NixOS option, which cannot change after evaluation. On the appliance
+profile the dispatcher sits in `initial_session` the same way (§7).
+
+**Marker-access semantics (recorded for implementation):** the dispatcher *executes as greetd's
+configured session user* (a root-owned file does not run as root), and the authoritative marker
+sits inside `enrollment/` (0700 root) — so the dispatcher cannot read it directly. A boot-time
+root unit (ordered after `spatial-persist-setup.service`) publishes a **non-secret mirror flag**
+`/run/spatial/provisioned` reflecting the marker's presence; the dispatcher reads only that flag.
+The alternatives — querying provisiond at dispatch time, or a privileged dispatcher that drops
+credentials before exec — are recorded and rejected for v1 (a socket round-trip or a setuid-ish
+step at every boot, versus one tmpfs stat). The authoritative marker never leaves root
+ownership; the flag carries one bit and no secret.
+
+**Continuation semantics (recorded for implementation):** `exec` cannot return, so the two
+profiles differ. *Multi-user:* the dispatcher execs the OOBE; when the wizard exits after the
+marker commit, greetd restarts the session command, the dispatcher runs again, sees the flag,
+and execs the greeter. *Appliance:* the dispatcher **launches the OOBE and waits**, verifies the
+marker committed (flag refreshed via the root unit's re-check or a provisiond acknowledgment),
+and only then `exec`s the real session — the wizard-to-session continuation never depends on a
+returned `exec`.
 
 ### 4.2 The UI/authority split
 
@@ -147,7 +165,9 @@ is reset — on an appliance the final fallback is recovery/wipe, not a root she
 
 Steam Deck model: `spatial.xr.session.autoLogin = "owner"`, no greeter, and F2 runs as the
 *first session content* instead of pre-login — same wizard, same provisiond authority, same
-marker; the dispatcher's decision simply happens inside the session start. This is the **first
+marker; the dispatcher's decision happens inside the session start using the §4.1 continuation
+semantics (launch the wizard and wait, verify the marker committed, then exec the session —
+never an `exec` that is expected to return). This is the **first
 shipped profile** and requires none of the multi-user machinery. It is *not* what the G-track
 verifies first: G2 deliberately exercises the multi-user greeter chain in the rung-2 VM with
 fixture-seeded enrollment, because that path holds the hard ordering problems — the two "firsts"

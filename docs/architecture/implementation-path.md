@@ -66,7 +66,7 @@ stages marked ▲ are forced decisions this path surfaces.
 | B1b | XR preflight + recovery ladder | registry names the XR-init preflight probe (**partial**; pattern from KWin VR's `kwinvr-xrtest`, [ADR 0013 §2](adr/0013-kwin-vr-disposition.md); composition §7.3 makes it normative) | the probe as a gate before greeter/session start: runtime-created Vulkan device, GPU/device match, factory-calibration validity, required DRM/IMU nodes present, Monado reaches first frame. Plus the distro obligation: a **crash-loop threshold and recovery path** — N consecutive greeter/session failures → flat-output fallback on a docked/dev connector where present, SSH/serial always reachable on the dev profile, a diagnostic target otherwise. A runtime or driver failure must never leave a permanently dark headset |
 | F1 | First-boot machine provisioning | uefi-rauc state skeleton (§B1a) | silent provisioning per [first-run-onboarding.md §3](first-run-onboarding.md): per-unit keys, settings-store seeding, partition growth. Gated on the **durable `/persist` marker, not `ConditionFirstBoot`** (a fresh A/B root slot looks like first boot to the latter); idempotent units + atomic marker = interrupted-first-boot recovery |
 | B2 | ▲ Seat broker | ADR 0007 names logind/seatd as the DRM-master/hidraw broker and leaves "logind vs seatd on the appliance image" open | **the decision is forced at G2**: greetd's session worker needs a seat. Default: logind (NixOS default, zero work, `SetLockedHint` needs it anyway per ADR 0007, and B1a's ACL model assumes it); seatd remains an appliance-minimization option to revisit with image-size work |
-| B3 | greetd + session dispatch | contract options `spatial.xr.session.{autoLogin,greeter}` + profile-exclusivity assertion ([lib/contract](../../lib/contract/default.nix)); research [11](../research/11-display-managers-greeters.md); the VM currently bypasses this (getty autologin → `exec sway` in [devices/virtual-headset](../../devices/virtual-headset/default.nix)) | the NixOS module consuming the contract: `services.greetd` for both profiles, where `default_session` is a root-owned **dispatcher wrapper** (greetd cannot select a session from runtime state itself) that reads the enrollment marker and execs `zxr --oobe` (F2) or `zxr --greeter`; appliance → `initial_session`. Replaces the VM's getty hack at G2 |
+| B3 | greetd + session dispatch | contract options `spatial.xr.session.{autoLogin,greeter}` + profile-exclusivity assertion ([lib/contract](../../lib/contract/default.nix)); research [11](../research/11-display-managers-greeters.md); the VM currently bypasses this (getty autologin → `exec sway` in [devices/virtual-headset](../../devices/virtual-headset/default.nix)) | the NixOS module consuming the contract: `services.greetd` for both profiles, where `default_session` is the **dispatcher wrapper** (greetd cannot select a session from runtime state itself). It runs as greetd's configured session user, so it reads the **non-secret `/run/spatial/provisioned` flag** published by a boot-time root unit — never the root-0700 marker itself — and launches `zxr --oobe` (F2) or execs `zxr --greeter`; continuation semantics (multi-user re-dispatch vs appliance launch-wait-exec) in [first-run-onboarding §4.1](first-run-onboarding.md); appliance → `initial_session`. Replaces the VM's getty hack at G2 |
 | F2 | Onboarding (OOBE) | design in [first-run-onboarding.md §4](first-run-onboarding.md); ADR 0017 (account model, UI/authority split) | `zxr --oobe` (unprivileged wizard UI on the G1 scene machinery) + **`spatial-provisiond`** (the privileged authority owning PIN-hash writes, key generation, and the root-owned transactional marker); wizard = locale → Wi-Fi → identity → PIN → **user** calibration (IPD/floor/boundary/pairing) → privacy defaults |
 | B4 | `zxr --greeter` | the mode's restrictions and exit contract are normative ([session-auth §5](../../specs/session-auth.md)); per-unit calibration paths in the contract; safe default IPD pre-auth | the binary itself: G1's deliverable (§3), running on R0's core |
 | B5 | Login authority | greetd's session worker is the **sole** login PAM authority; the greeter is an unprivileged greetd IPC client (session-auth §1, review-hardened) | the greeter's greetd client half (`create_session` → `post_auth_message_response` → `start_session`), rendering `auth_message`s in the auth scene. PAM stacks declared via NixOS modules: `pam_spatial_pin` in `spatial-lock` only; greetd login stays standard account-password (ADR 0017) |
@@ -84,7 +84,8 @@ flowchart TD
     R0 --> M1["M1 spatial 2D desktop in a window\nxdg-shell, ray-to-pointer, move/rotate/resize\n(composition s7.5 acceptance)"]
     G1 --> G2["G2 XR greeter in the rung-2 VM\nreal greetd module + dispatcher, start_session into sway\nzero manual steps"]
     G1 --> F2["F2 onboarding (OOBE)\nzxr --oobe wizard UI + spatial-provisiond\n(first-run-onboarding.md)"]
-    F2 --> G2
+    F2 --> ENR["enrollment present\n(F2 has run, or fixture-seeded)"]
+    ENR --> G2
     M1 --> M2["M2 mixed 2D/3D composition\nzxr-shell-v2 protocol goes live"]
     G2 --> G3["G3 greeter hands off to the zxr session\nsession wrapper (B6a) + spatial-session.target"]
     M1 --> G3
@@ -177,6 +178,14 @@ the previous slot's entry when exhausted; the readiness unit is a prerequisite o
 `boot-complete.target`; `systemd-bless-boot` performs the entry rename (the systemd-boot
 blessing); RAUC slot-status marking via the custom bootconf backend is the third, separate step.
 Three distinct transitions — readiness, boot blessing, RAUC state — each observable on its own.
+
+**Implementation status (explicit):** none of this §3a machinery exists yet. The family's
+bootconf backend today selects plain `a.conf`/`b.conf` and stores slot state in a flat file
+([families/uefi-rauc](../../families/uefi-rauc/default.nix)); it does not arm `+N`-tries
+entries, and nothing connects readiness, `systemd-bless-boot`, and RAUC state. Boot-attempt
+counting and automatic fallback are **operational follow-up scope** for the session-bootstrap
+and update implementation plan — specified here, unimplemented by design of the current
+(docs + contract) phase.
 
 ### M2–M4 — widening the session (composition §7.5, unchanged)
 
