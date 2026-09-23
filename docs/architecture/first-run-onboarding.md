@@ -192,8 +192,10 @@ it).
 
 ## 9. Open items
 
-Recovery-environment design (where factory reset executes — ties to the family's recovery
-story); the companion-tool enrollment alternative; account-layering (store accounts, cloud
-identity) — explicitly out of OS scope today; guest mode (with the multi-user profile);
-whether boundary drawing at F2 step 5 can be deferred to first passthrough use on devices
-without controllers.
+Each names its decider: recovery-environment design (where factory reset executes — owner: each
+family's recovery story; the Frame workstream shapes the first one); the companion-tool
+enrollment alternative (decider: a post-MVP UX round; the provisiond socket is the reserved
+seam); account-layering (store accounts, cloud identity) — a non-goal, explicitly out of OS
+scope; ~~guest mode~~ **RESOLVED** by [multi-user.md](multi-user.md) / ADR 0018; whether
+boundary drawing at F2 step 5 can move to first passthrough use on controller-less devices
+(decider: the F2 wizard UX design at G1 implementation).

@@ -175,7 +175,10 @@ desktop when the XR stack is off.
 - [component-registry.md](../component-registry.md) gains the docked output path (authority) and
   docked-mode policy/quiescence ladder (system+authority) rows; the power/thermal row gains this
   ADR as a customer.
-- New open questions carried: dock-detect debounce and multi-monitor docks; audio routing while
-  docked (Meta's mirror ships no audio; ours should route to dock outputs — audio-policy row);
-  whether the docked output participates in capture as an ordinary `MONITOR` source (it should —
-  one taxonomy); per-output fractional scaling on the monitor vs metric sizing in-space.
+- New open questions carried, each with its decider: dock-detect debounce and multi-monitor
+  docks (decider: docked-mode implementation measurement on real dock hardware); audio routing
+  while docked (Meta's mirror ships no audio; ours should route to dock outputs — decider: the
+  audio-policy design round, registry gap 16); whether the docked output participates in capture
+  as an ordinary `MONITOR` source (it should — one taxonomy; decider: the capture-tool design
+  confirms no exception is needed); per-output fractional scaling on the monitor vs metric
+  sizing in-space (decider: M1's sizing model applied to the docked presentation).

@@ -151,8 +151,12 @@ only `contract` requires human action.
 
 ## Open questions carried forward
 
-From [06](../research/06-donor-pipeline.md) §8, the ones that need a hardware spike or a policy call:
-Quest/Meta acquisition posture (private archival store?), chunk-store snapshot hashing strategy, AVB
-re-signing scope per device, whether SELinux/capability metadata ever becomes boot-critical (a future
-containerized-Android layer), GPL corresponding-source verification, and what controls the Steam
-Frame boot/firmware partitions (the RAUC bundle updates only `rootfs`).
+From [06](../research/06-donor-pipeline.md) §8, each with its decider: Quest/Meta acquisition
+posture — private archival store? (decider: a policy call at the first Quest-family target,
+with legal review); chunk-store snapshot hashing strategy (decider: the first casync/desync
+delta implementation, Frame workstream); AVB re-signing scope per device (decider: the Lynx
+spike — the first AVB device through the pipeline); whether SELinux/capability metadata ever
+becomes boot-critical (condition-shaped: only if a containerized-Android layer is adopted,
+ADR 0003); GPL corresponding-source verification (decider: the pre-release legal review,
+M-18-class); and what controls the Steam Frame boot/firmware partitions — the RAUC bundle
+updates only `rootfs` (owner: the Frame workstream's hardware bring-up).

@@ -45,7 +45,8 @@ via `unpack_bootimg`, recorded in the device contract, never hard-coded.
 Bare filesystem payloads (a `system.img`-style ext4/erofs for fastboot into a dynamic partition) use
 nixpkgs `make-ext4-fs` / `erofs-store-image` as leaf tools. Dynamic `super` handling (regenerate LP
 metadata vs. overwrite whole `super`) is an open question carried from
-[02](../research/02-postmarketos.md) §11 item 1.
+[02](../research/02-postmarketos.md) §11 item 1 — decider: the Lynx spike (the first
+dynamic-partition device through the pipeline; design-backlog gate).
 
 ## The reference-free flashing bundle
 
@@ -118,7 +119,9 @@ For development, ordinary NixOS generations (`nixos-rebuild`, Jovian's model) ar
 including the `virtual-headset` VM smoke target. For a consumer headset release, the default is an
 immutable A/B image with a boot-integrated update transaction. One device may offer both channels
 from one module tree; keeping them from diverging is an open question
-([04](../research/04-nix-imaging.md) §11 item 2).
+([04](../research/04-nix-imaging.md) §11 item 2) — decider: a CI check that evaluates both
+channels from one device config and diffs the resulting module closures (added when the second
+channel first ships for a device).
 
 ## Reproducibility of images
 

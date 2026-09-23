@@ -64,6 +64,9 @@ stage; no new frame-path cost.
 
 ## 5. Open items
 
-Screen-reader TTS localization in spatial audio (doc 37 §7); magnification model (world-zoom vs
-window-zoom vs move-closer — visionOS precedent); the bus-filtering gap (with doc 38); Newton
-re-evaluation cadence.
+Each names its decider: screen-reader TTS localization in spatial audio (decider: the
+audio-policy design round, with doc 37 §7 as its brief); magnification model (world-zoom vs
+window-zoom vs move-closer — decider: a visionOS-precedent study in the shell-plane design round);
+the bus-filtering gap (owner: the service-plane security design round with doc 38); Newton/
+AccessKit re-evaluation (decider: a standing six-month cadence check against upstream Newton
+status — next check 2027-03).
