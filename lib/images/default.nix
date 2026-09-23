@@ -15,4 +15,11 @@
   # A device's system.build.vm is the dev-vm "image". The flake exposes it directly;
   # once nixpkgs image.modules wiring lands, this becomes an image.modules entry.
   devVm = nixosConfig: nixosConfig.config.system.build.vm;
+
+  # uefi-rauc family (families/uefi-rauc, first implemented for the Steam Frame):
+  # a systemd-repart GPT disk (esp + rootfs_a/b + syspersist + home) and a
+  # test-signed RAUC bundle. See docs/research/33-steam-frame-donor.md for the
+  # donor layout these mirror.
+  uefiRauc = nixosConfig: nixosConfig.config.system.build.image;
+  raucBundle = nixosConfig: nixosConfig.config.system.build.raucBundle;
 }

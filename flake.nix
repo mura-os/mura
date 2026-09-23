@@ -50,11 +50,30 @@
         extraModules = [{ nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }];
       };
 
+      # Valve Steam Frame (deckard): the first real device target. aarch64 artifacts
+      # build on remote aarch64 builders (ADR 0004; nixbuild.net) and are excluded
+      # from `nix flake check`.
+      nixosConfigurations.valve-steam-frame = spatialSystem {
+        device = ./devices/valve-steam-frame;
+        system = "aarch64-linux";
+        extraModules = [{ nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }];
+      };
+
       # Named, discoverable outputs (no untyped grab-bag).
       packages = forAll (system:
-        nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
-          # The dev-vm smoke target: a bootable NixOS VM running the common userspace.
-          virtual-headset-vm = self.nixosConfigurations.virtual-headset.config.system.build.vm;
+        nixpkgs.lib.optionalAttrs (system == "x86_64-linux")
+          {
+            # The dev-vm smoke target: a bootable NixOS VM running the common userspace.
+            virtual-headset-vm = self.nixosConfigurations.virtual-headset.config.system.build.vm;
+
+            # QEMU runner + smoke checks for the Frame image (runs the aarch64 disk
+            # image via qemu-system-aarch64 full-system emulation on the dev host).
+            frame-vm-run = (pkgsFor system).callPackage ./pkgs/frame-vm-run { };
+          }
+        // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
+          # Steam Frame uefi-rauc artifacts (build via remote aarch64 builder).
+          frame-image = self.nixosConfigurations.valve-steam-frame.config.system.build.image;
+          frame-bundle = self.nixosConfigurations.valve-steam-frame.config.system.build.raucBundle;
         });
 
       formatter = forAll (system: treefmtEval.${system}.config.build.wrapper);
