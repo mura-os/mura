@@ -143,5 +143,72 @@ Galaxy-class DTS" caveat does not apply here: **the Frame's production DTS is in
    slots, `rauc.slot=` cmdline, and the RAUC compatible-string convention.
 3. Donor-kernel-in-QEMU: **infeasible** (no virtio blk/net). VM proof runs on a Nix-built kernel;
    the device-kernel path waits on the `linux-618-deckard` source (watch/GPL-request).
-4. First-donor lessons for the pipeline are collected in §7 and the lessons section added at
-   Phase D.
+4. First-donor lessons for the pipeline are collected in §7 and §10.
+
+## 9. The VM proof (executed 2026-09-23) — acceptance evidence
+
+Built via nixbuild.net remote aarch64 builders (ADR 0004), run in `qemu-system-aarch64` (TCG,
+edk2 firmware) on the x86_64 dev host via `nix run .#frame-vm-run`:
+
+| Check | Result |
+|---|---|
+| Image | `packages.aarch64-linux.frame-image`: 33 GiB sparse GPT (zstd artifact 1.9 GiB); remote build ~23 min end-to-end |
+| Boot | UEFI → systemd-boot → slot A; `multi-user.target` + `graphical.target` active; autologin session; sshd up |
+| Layout | `lsblk` partlabels exactly `esp / rootfs_a / rootfs_b / syspersist / home`; cmdline `root=PARTLABEL=rootfs_a rauc.slot=A` (the donor's slot-cmdline contract, §3) |
+| RAUC | `compatible=spatial-os-deckard`, booted `rootfs.0 (A)`, custom backend (`spatial-bootconf`) reporting primary correctly |
+| XR wiring | `monado.socket` active (user unit); `/etc/spatial-device.json` correct |
+| Update round-trip | test-signed 2.1 GiB `.raucb` → `rauc install` into slot B (**4 m 42 s** with the VM disk on fast local SSD; effectively unbounded on slow storage — see lessons), backend flipped primary to B, reboot → **booted `rootfs.1 (B)`** with `root=PARTLABEL=rootfs_b rauc.slot=B`, `rauc status mark-good` → both slots good |
+| Donor-kernel boot mode | **not executed — infeasible by evidence** (§4: no `VIRTIO_BLK/NET` in Valve's kernel) |
+
+Precise scope of the "technically flashable" claim: the artifact reproduces the donor's GPT
+partlabel scheme, A/B raw-slot RAUC semantics, and slot-cmdline contract, and demonstrably
+updates A→B. On-device flash additionally requires the U-Boot boot payload (§3), the device
+kernel (§4), and the not-yet-obtained flash/recovery procedure — the hardware-only residual.
+
+## 10. Lessons learnt (what the first device port teaches the next five)
+
+**Pipeline (donor stages):**
+- *Reconstruction verification is two distinct facts*: payload-hash-vs-manifest (achieved,
+  load-bearing) and bundle-signature-chain (open; single-cert keyrings + `rauc info` were not
+  enough — budget time for CMS chain archaeology per vendor, and don't block on it).
+- *Root-free inspection works end-to-end*: `libguestfs-with-appliance` (guestfish batches) +
+  IKCONFIG extraction + `dtc` decompile covered everything; no sudo, no loop mounts. One sharp
+  edge: guestfish aborts the whole batch on a failed glob — keep batches small, transcripts
+  persisted (`extracted/batch*.txt`).
+- *Deployed images may carry no package DB* (no `/var/lib/pacman`): plan SBOMs from vendor
+  package repos per-release, not from the image.
+- *The maximal-inference checklist generalizes*: system.conf/fstab (layout) → boot scripts
+  (chain + cmdline contract) → `pkgbase`+IKCONFIG (kernel identity/config) → DTBs (`dtc`; the
+  model string alone encoded camera counts) → unit graph + firmware tree. For Android-family
+  donors (Lynx/Quest/Galaxy XR) the equivalents are `boot.img`/`vendor_boot` headers, fstab +
+  `by-name` partitions, DTBO, and the vendor manifest — same questions, different containers.
+**Image family:**
+- nixos-unstable's `image/repart.nix` is **not** in the default module list (docs-only
+  `extraModules`) and is gated on `image.repart.enable` — both bit us.
+- Closure size is the slot-size driver: the VM-proof userspace closed at **12.1 GiB** (16 GiB
+  slots as a result). Before any real update channel, closure slimming is mandatory
+  (docs/man pages, firmware pruning, sway-vs-zxr) — follow-up, not blocking.
+- Sparse rawness does not survive NAR copies from remote builders: enable
+  `image.repart.compression` (zstd) or pay a 33 GiB transfer for a 1.9 GiB image.
+- `rauc bundle` needs `squashfsTools` explicitly; heredocs inside `runCommand` strings are a
+  trap (indented terminators) — use `writeText`.
+**Update flow:**
+- RAUC health-gating needs a *mark-good service* on boot (we ran `rauc status mark-good`
+  manually); wire it to the `spatial.qualification.readinessCheck` per
+  [images-and-updates.md](../architecture/images-and-updates.md) — now a concrete TODO with a
+  proven substrate.
+- RAUC refuses block devices as bundles ("not a regular file") and qemu pads attached raw files
+  to block size — copy the exact byte count out before installing when sideloading via a disk.
+- Slot-write speed is storage-bound under TCG: the same install was >60 min on slow media and
+  4m42s on local NVMe — keep VM working copies on fast disk (`FRAME_VM_DIR`).
+**Build workflow:**
+- nixbuild.net remote-builder mode works as designed for this (outputs needed locally); 100
+  parallel SSH connections hit drops — 16 is stable; `builders-use-substitutes` is essential so
+  the builder pulls aarch64 closures from cache.nixos.org directly.
+- nixbuild caches *failures* per drv-hash (a rebuilt-unchanged failing drv returns the cached
+  failure instantly — good for cost, surprising the first time), and build logs need the
+  build-key's permissions (plan key permissions accordingly).
+**Justified generalization (the standing-rule gate, satisfied for this family):** the uefi-rauc
+family is now spike-proven; extracting shared pieces (mark-good service, bundle builder, the
+bootconf backend) into reusable modules is licensed *for this family*. The Android-family
+machinery remains gated on the Lynx spike as before.

@@ -93,6 +93,15 @@ duplicated here.
   installation *interface*, not a distribution channel; revisit after the settings model
   (research/35) lands.
 
+## Standing rule from the review — status update (2026-09-23)
+
+The **uefi-rauc family's spike is done**: the Steam Frame donor was reconstructed, byte-verified,
+and inventoried, and a spatial-os image mirroring its slot architecture boots and A/B-updates in a
+VM ([33 §9–§10](../research/33-steam-frame-donor.md)). Generalizing uefi-rauc machinery
+(mark-good service, bundle builder, bootconf backend) is therefore now licensed *for that family*.
+The Android-family machinery (`lib/donor` automation, android-bootimg) remains gated on the Lynx
+spike exactly as below.
+
 ## Standing rule from the review
 
 > Do not build the generic donor/update/backend machinery before a Lynx boot/display/tracking spike

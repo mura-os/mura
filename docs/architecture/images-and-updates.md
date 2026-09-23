@@ -79,6 +79,12 @@ The release transaction covers the compatible set of **boot artifacts + kernel/m
 hardware adaptation + state-schema expectations** — not just the rootfs. Two backends implement it:
 
 ### RAUC + casync (uefi-rauc devices)
+**Status: implemented Frame-scoped and VM-boot-proven** ([families/uefi-rauc](../../families/uefi-rauc/default.nix);
+evidence [33 §9](../research/33-steam-frame-donor.md)): repart GPT with donor-mirroring partlabels,
+systemd-boot A/B entries carrying the `rauc.slot=` contract, custom bootloader backend, test-signed
+`format=plain` bundle, and a demonstrated A→B install/reboot/mark-good round-trip in QEMU. Still
+ahead: casync/desync-seeded deltas, a boot-time mark-good service wired to the readiness check, and
+closure slimming ([33 §10](../research/33-steam-frame-donor.md)).
 Steam Frame already uses this ([07](../research/07-device-landscape.md),
 [06](../research/06-donor-pipeline.md) §2.2), all tooling is in nixpkgs, and the bundle format is
 simple to generate from a Nix-built rootfs derivation. A/B slots via RAUC; `format=plain` bundles

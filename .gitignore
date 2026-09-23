@@ -4,3 +4,6 @@ references/.logs/
 result
 result-*
 .direnv/
+
+# frame-vm-run scratch disks
+.frame-vm*/
