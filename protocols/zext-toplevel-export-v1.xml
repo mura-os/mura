@@ -7,386 +7,768 @@
   </copyright>
 
   <description summary="per-toplevel zero-copy delegation between compositors">
-    EXPERIMENTAL DRAFT — spatial-os `zext` namespace. Interfaces will be renamed
-    (xx_*, then ext_*) if and when proposed to wayland-protocols; see
-    protocols/README.md for the governance posture and
-    docs/architecture/foreign-session-integration.md for the design rationale.
-    Requirement numbers (R1..R22) refer to
-    docs/research/32-toplevel-export-prior-art.md §8.
-
-    This protocol lets a "producer" compositor delegate individual toplevel
+    This protocol lets a producer compositor delegate individual toplevel
     windows — the client's own buffer stream, the full surface tree, and an
-    input back-path — to a "consumer" compositor (e.g. an XR compositor that
-    composes the windows as floating quads). It is presentation-grade
-    delegation, not screen capture: buffers are the client's original dmabuf
-    allocations (R5), presentation is paced by the consumer (R11-R14), and the
-    producer retains all shell authority over its clients (serials, grabs,
-    popup placement, activation tokens — R15, R17, R18).
+    input back-path — to a consumer compositor, which presents them as
+    first-class windows of its own scene. It is presentation-grade delegation,
+    not screen capture: buffers are the client's original allocations,
+    presentation is paced by the consumer, and the producer retains all shell
+    authority over its clients (serials, grabs, popup placement, activation).
 
-    Privilege model (R2, R21): the manager global must only be exposed to
-    authorized consumer connections (compositor policy, e.g. security-context
-    based filtering). Toplevel enumeration (ext-foreign-toplevel-list) grants
-    neither export nor input authority. The producer may deny or redact any
-    surface (lock screens, protected content, internal surfaces).
+    The consumer is an ordinary, privileged Wayland client of the producer.
+    The zext_toplevel_export_manager_v1 global must only be exposed to
+    authorized connections (compositor policy, for example security-context
+    based filtering). Toplevel enumeration through ext-foreign-toplevel-list
+    grants neither export nor input authority, and the producer may deny or
+    revoke the delegation of any surface at any time.
+
+    Unless otherwise specified, timestamps are in the producer's
+    CLOCK_MONOTONIC domain, with millisecond timestamps following wl_pointer
+    semantics. Where 64-bit values are carried as two arguments, the value is
+    'hi' * 0x100000000 + 'lo'. Colour-management and colour-representation
+    state is not carried in version 1 of this protocol.
+
+    The key words "must", "must not", "required", "shall", "shall not",
+    "should", "should not", "recommended", "may", and "optional" in this
+    document are to be interpreted as described in IETF RFC 2119.
+
+    Warning! The protocol described in this file is currently in the
+    experimental phase. Backward incompatible changes may be added without
+    bumping the major version of the extension. As such, gating usage on the
+    protocol's presence is discouraged outside spatial-os itself.
   </description>
 
   <interface name="zext_toplevel_export_manager_v1" version="1">
     <description summary="export factory and capability negotiation">
-      The privileged entry point advertised by the producer.
+      The privileged entry point advertised by the producer. The capabilities
+      event tells the consumer which optional protocol features this producer
+      implements; requests that depend on an absent capability are ignored,
+      and clients should hide or disable the corresponding functionality.
     </description>
+
+    <enum name="error">
+      <entry name="already_exported" value="0"
+             summary="the toplevel already has an exported tree on this connection"/>
+    </enum>
+
+    <enum name="capability" bitfield="true">
+      <description summary="optional producer capabilities">
+        Optional features of this producer. dmabuf: nodes deliver the
+        client's own dmabuf allocations. input: get_input is honored.
+        pacing: get_pacing is honored. detach_drag: mid-move handoff is
+        honored. dnd: cross-export drag-and-drop (no producer is expected to
+        set this in version 1).
+      </description>
+      <entry name="dmabuf" value="1" summary="zero-copy dmabuf delivery"/>
+      <entry name="input" value="2" summary="per-export input channel"/>
+      <entry name="pacing" value="4" summary="consumer-driven pacing"/>
+      <entry name="detach_drag" value="8" summary="mid-move detach handoff"/>
+      <entry name="dnd" value="16" summary="cross-export drag-and-drop"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager object. Existing exported trees and their child
+        objects are not affected.
+      </description>
+    </request>
 
     <request name="export_toplevel">
       <description summary="request delegation of one toplevel">
-        Requests export of the toplevel identified by the given
-        ext_foreign_toplevel_handle_v1 (R1 — identity is the handle, never
-        title/app-id matching). The producer answers on the returned
-        zext_exported_tree_v1 with either a full node tree or a typed
-        denied/fallback event (R6, R21).
+        Request export of the toplevel identified by the given
+        ext_foreign_toplevel_handle_v1; identity is always the handle, never
+        title or app-id matching. The producer answers on the returned tree
+        with either node announcements or a denied event. Requesting a second
+        tree for the same toplevel on the same connection raises the
+        already_exported error. If the handle is inert, the returned tree
+        receives denied with the gone reason.
       </description>
       <arg name="id" type="new_id" interface="zext_exported_tree_v1"/>
-      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"
+           summary="the toplevel to delegate"/>
     </request>
 
     <request name="detach_drag">
-      <description summary="mid-move detach handoff (R23)">
-        Requests delegation of the toplevel currently held in the producer's
-        interactive move on the given seat (identified by the producer's
-        active move-grab — never by handle guessing). The producer ends its
-        move with no placement side-effects (no electric borders, tiling, or
-        output snap) and announces the export on the returned tree, beginning
-        with an anchor event carrying the surface-local cursor-anchor point so
-        the consumer's spatial grab keeps the same content pixel under the
-        ray. Fails (denied: no_active_move) if no interactive move is active.
-        Semantic precedent: xdg-toplevel-drag-v1's attach-toplevel-to-drag.
+      <description summary="mid-move detach handoff">
+        Request delegation of the toplevel currently held in the producer's
+        interactive move on the given seat, identified by the producer's
+        active move-grab. The producer ends its move with no placement
+        side-effects (no electric borders, tiling, or output snap) and
+        announces the export on the returned tree, beginning with an anchor
+        event carrying the surface-local cursor-anchor point, so that the
+        consumer's grab can keep the same content pixel under its cursor or
+        ray. If no interactive move is active on the seat when the request is
+        processed — including the race where the move ended in flight — the
+        tree receives denied with the no_active_move reason. Requires the
+        detach_drag capability; without it the request is ignored and the
+        tree is immediately inert.
       </description>
       <arg name="id" type="new_id" interface="zext_exported_tree_v1"/>
-      <arg name="seat_name" type="string" summary="producer seat identifier"/>
-    </request>
-
-    <request name="destroy" type="destructor">
-      <description summary="destroy the manager"/>
+      <arg name="seat" type="object" interface="wl_seat"
+           summary="the producer seat whose move-grab is taken over"/>
     </request>
 
     <event name="capabilities">
       <description summary="producer capabilities">
-        Bitmask: dmabuf_zero_copy, shm_fallback, input, consumer_pacing,
-        dnd (R19 — initially unset by every known producer).
+        The producer's capabilities. Sent once on bind, before any other
+        event on this object.
       </description>
-      <arg name="capabilities" type="uint"/>
+      <arg name="capabilities" type="uint" enum="capability"/>
     </event>
 
     <event name="main_device">
-      <description summary="producer's DRM device identity">
-        The dev_t of the device client buffers are expected to be allocated
-        on, so the consumer can verify import compatibility before exporting
-        (R5, R6; hybrid-GPU honesty per doc 32 §2.2).
+      <description summary="producer's main DRM device">
+        The DRM device (dev_t, native endianness) client buffers are expected
+        to be allocated on, so the consumer can verify import compatibility
+        before requesting an export. Sent once on bind, after capabilities,
+        and again if the device changes; a change invalidates no existing
+        tree, but subsequent buffers may arrive with a different device.
       </description>
-      <arg name="device" type="array"/>
+      <arg name="device" type="array" summary="dev_t of the producer's main device"/>
     </event>
   </interface>
 
   <interface name="zext_exported_tree_v1" version="1">
     <description summary="one delegated toplevel and its surface tree">
-      Represents the exported toplevel: the root node, its subsurfaces, and
-      its popups/transients as separate nodes (R3 — no forced flattening).
-      All state changes across the tree are applied atomically at commit
-      boundaries (R4).
+      One exported toplevel: the root node, its subsurfaces, and its popups
+      and transients as separate nodes. All node state delivered since the
+      previous done event applies atomically at the next done event.
+
+      After a denied event the tree and all its child objects are inert: all
+      requests on them are ignored except the destructors, and no further
+      events referencing them will be sent.
     </description>
+
+    <enum name="error">
+      <entry name="pacing_exists" value="0"
+             summary="the tree already has a pacing object"/>
+      <entry name="input_exists" value="1"
+             summary="the tree already has an input object"/>
+      <entry name="invalid_bounds" value="2"
+             summary="bounds width or height not positive"/>
+    </enum>
+
+    <enum name="denied_reason">
+      <description summary="why an export was refused or revoked">
+        The typed reason an export was refused, or a live delegation revoked.
+        policy: producer policy (never detailed further, to avoid oracle
+        probing). protected_content: the content is protected.
+        device_mismatch: the consumer cannot import from the buffer device.
+        session_locked: the producer session locked. no_active_move: a
+        detach_drag found no interactive move. gone: the toplevel was closed
+        or the handle was already inert. gpu_reset: the producer lost the
+        device.
+      </description>
+      <entry name="policy" value="0"/>
+      <entry name="protected_content" value="1"/>
+      <entry name="device_mismatch" value="2"/>
+      <entry name="session_locked" value="3"/>
+      <entry name="no_active_move" value="4"/>
+      <entry name="gone" value="5"/>
+      <entry name="gpu_reset" value="6"/>
+    </enum>
+
+    <enum name="node_role">
+      <entry name="toplevel" value="0" summary="the root node"/>
+      <entry name="subsurface" value="1" summary="a wl_subsurface of its parent"/>
+      <entry name="popup" value="2" summary="an xdg_popup or transient"/>
+    </enum>
+
+    <enum name="adopt_flags" bitfield="true">
+      <entry name="resume_move" value="1"
+             summary="continue the producer's interactive move at the landing point"/>
+    </enum>
 
     <request name="destroy" type="destructor">
       <description summary="stop the delegation">
-        All node objects become inert; the producer releases consumer leases
-        per the R20 lifecycle rules.
+        Stop the delegation. All node, pacing, and input objects become
+        inert. The producer must cancel outstanding input state it created on
+        behalf of this consumer and must release client buffers only after
+        all outstanding consumer release points have signalled or the
+        consumer connection is gone.
       </description>
     </request>
 
     <request name="adopt" type="destructor">
-      <description summary="end delegation with landing placement (R24)">
-        Ends the delegation, handing the toplevel back to the producer's WM
-        authority with a landing hint: producer output (by name), global 2D
-        coordinates (typically derived from the consumer's pick UV on the
-        session surface), and whether to resume an interactive move at that
-        position (producer warps its pointer accordingly; "final position as
-        if xdg_toplevel.move ended", per xdg-toplevel-drag-v1). Only delegated
-        toplevels can be adopted — a consumer-native client can never enter
-        the producer's session (its connection belongs to the consumer).
-        Buffer/lifecycle teardown follows the R20 rules after the producer
-        acknowledges via denied(gone) semantics on outstanding nodes.
+      <description summary="end delegation with landing placement">
+        End the delegation, handing the toplevel back to the producer's
+        window-management authority with a landing hint: a producer output
+        (by wl_output reference), coordinates in that output's logical
+        coordinate space, and optionally the resume_move flag, upon which the
+        producer warps its pointer to the landing point and continues its
+        interactive move there, with the final position determined as if an
+        xdg_toplevel move ended at that point. Without resume_move the
+        producer places the toplevel at the hint as a normal placement.
+
+        Only delegated toplevels can be adopted; a consumer-native client can
+        never enter the producer's session, since its connection belongs to
+        the consumer. Object lifetime follows destroy: all child objects
+        become inert and buffer teardown follows the destroy rules.
       </description>
-      <arg name="output_name" type="string"/>
-      <arg name="x" type="int"/>
-      <arg name="y" type="int"/>
-      <arg name="resume_move" type="uint" summary="0 or 1"/>
+      <arg name="output" type="object" interface="wl_output"
+           summary="the producer output to land on"/>
+      <arg name="x" type="int" summary="landing x in the output's logical space"/>
+      <arg name="y" type="int" summary="landing y in the output's logical space"/>
+      <arg name="flags" type="uint" enum="adopt_flags"/>
+    </request>
+
+    <request name="set_bounds">
+      <description summary="consumer-owned placement bounds">
+        Communicate the rectangle, in the root node's surface-local
+        coordinate space, available for popup and transient placement. The
+        producer runs its positioner logic (including reconstraint) against
+        these bounds in place of any output-derived work area: the consumer
+        owns the available volume, the producer owns shell placement. The
+        serial is echoed in the configure_bounds event of placements that
+        used it. Width and height must be positive, otherwise the
+        invalid_bounds error is raised.
+      </description>
+      <arg name="serial" type="uint" summary="consumer serial for this bounds update"/>
+      <arg name="x" type="int" summary="bounds x in root surface-local space"/>
+      <arg name="y" type="int" summary="bounds y in root surface-local space"/>
+      <arg name="width" type="int" summary="bounds width"/>
+      <arg name="height" type="int" summary="bounds height"/>
+    </request>
+
+    <request name="get_pacing">
+      <description summary="create the pacing object">
+        Create the pacing object for this tree. A tree has at most one; a
+        second request raises the pacing_exists error. Requires the pacing
+        capability; without it the request is ignored and the returned object
+        is inert.
+      </description>
+      <arg name="id" type="new_id" interface="zext_export_pacing_v1"/>
+    </request>
+
+    <request name="get_input">
+      <description summary="create the input object">
+        Create the input back-path object for this tree. A tree has at most
+        one; a second request raises the input_exists error. Requires the
+        input capability; without it the request is ignored and the returned
+        object is inert.
+      </description>
+      <arg name="id" type="new_id" interface="zext_export_input_v1"/>
     </request>
 
     <event name="anchor">
-      <description summary="cursor-anchor point at detach handoff (R23)">
-        Sent once, before the first commit, on trees created by detach_drag:
-        the surface-local position that was under the cursor at handoff, for
-        grab continuity on the consumer side.
+      <description summary="cursor-anchor point at detach handoff">
+        Sent once, before the first done event, on trees created by
+        detach_drag: the root-surface-local position that was under the
+        producer's cursor at handoff, for grab continuity on the consumer
+        side. Never sent on trees created by export_toplevel.
       </description>
-      <arg name="x" type="fixed"/>
-      <arg name="y" type="fixed"/>
+      <arg name="x" type="fixed" summary="anchor x, root surface-local"/>
+      <arg name="y" type="fixed" summary="anchor y, root surface-local"/>
     </event>
-
-    <request name="set_bounds">
-      <description summary="consumer-owned placement bounds (R15)">
-        Communicates the plane-local rectangle (in the root node's coordinate
-        space) available for popup/transient placement, with a serial the
-        producer echoes in resulting configures. The producer runs its
-        xdg-positioner against these bounds — consumer owns the volume,
-        producer owns shell placement.
-      </description>
-      <arg name="serial" type="uint"/>
-      <arg name="x" type="int"/>
-      <arg name="y" type="int"/>
-      <arg name="width" type="int"/>
-      <arg name="height" type="int"/>
-    </request>
 
     <event name="node">
       <description summary="a surface node exists">
-        Announces a node (root, subsurface, or popup) and its parent/stacking
-        relation. Ordering events follow for z-order within the tree.
+        Announces a node of the exported tree and its parent relation. Nodes
+        are announced parent-first; stacking order within a parent follows
+        the placed_above argument (null means bottom-most among current
+        siblings). Restacking is conveyed by a new node event for an existing
+        node id — consumers must treat it as a stacking update. The node's
+        state arrives through events on the node object and applies at the
+        next done event.
       </description>
       <arg name="id" type="new_id" interface="zext_exported_node_v1"/>
-      <arg name="parent" type="object" interface="zext_exported_node_v1" allow-null="true"/>
-      <arg name="role" type="uint" summary="toplevel | subsurface | popup"/>
+      <arg name="parent" type="object" interface="zext_exported_node_v1" allow-null="true"
+           summary="parent node, null for the root"/>
+      <arg name="placed_above" type="object" interface="zext_exported_node_v1" allow-null="true"
+           summary="sibling this node stacks directly above, null for bottom-most"/>
+      <arg name="role" type="uint" enum="node_role"/>
+    </event>
+
+    <event name="configure_bounds">
+      <description summary="a placement consumed a bounds update">
+        The producer placed or reconstrained a popup against the bounds
+        identified by the echoed serial. Lets the consumer correlate popup
+        geometry changes with its own bounds updates.
+      </description>
+      <arg name="serial" type="uint" summary="the set_bounds serial that was used"/>
     </event>
 
     <event name="denied">
-      <description summary="export refused or revoked (R6, R20, R21)">
-        Typed reason: policy, protected_content, shm_only, device_mismatch,
-        session_locked, gone, gpu_reset. After revocation the producer has
-        already cancelled input and will release buffers only once fenced GPU
-        work completes.
+      <description summary="export refused or revoked">
+        The export was refused, or a live delegation revoked. The tree and
+        all child objects are inert from this event on. The producer has
+        already cancelled consumer-originated input state and will release
+        client buffers only once outstanding fenced GPU work completes.
       </description>
-      <arg name="reason" type="uint"/>
+      <arg name="reason" type="uint" enum="denied_reason"/>
     </event>
 
-    <event name="commit">
-      <description summary="atomic tree commit boundary (R4)">
+    <event name="done">
+      <description summary="atomic tree state boundary">
         All node state (buffers, damage, geometry, regions) delivered since
-        the previous commit event applies atomically now. Carries the commit
-        id referenced by pacing feedback (R13).
+        the previous done event applies atomically now. This allows changes
+        to the tree to be seen as atomic, even if they happen via multiple
+        events. The commit id identifies this state for presentation
+        feedback; ids increase monotonically per tree.
       </description>
-      <arg name="commit_id" type="uint"/>
+      <arg name="commit_id" type="uint" summary="identifies this atomic state"/>
     </event>
   </interface>
 
   <interface name="zext_exported_node_v1" version="1">
     <description summary="one surface in the exported tree">
-      Carries the per-surface buffer stream and surface state, mirroring the
-      client's commits (R4, R5). TODO(doc 32 open): color-management /
-      color-representation state forwarding is enumerated in R4 but its
-      encoding is deferred until the colour-pipeline design
-      (component-registry colour row) settles.
+      One surface of the exported tree, mirroring the client's commits.
+      Buffers are announced as zext_exported_buffer_v1 objects and attached
+      by reference; all state applies at the tree's next done event.
+
+      When the underlying surface is unmapped or the tree becomes inert, the
+      node is inert: requests other than the destructor are ignored and no
+      further events reference it.
     </description>
 
-    <request name="destroy" type="destructor"/>
-
-    <request name="release_buffer">
-      <description summary="consumer GPU-complete release (R7-R9)">
-        Returns the named buffer with a syncobj release point (or sync_file)
-        signalled at consumer GPU completion. Per-buffer, out-of-order
-        permitted (R9). The producer joins this with its own completion before
-        signalling the client's release (R8 — producer-owned join; the
-        consumer never touches the client's release timeline).
+    <enum name="fallback_kind">
+      <description summary="why zero-copy delivery is unavailable">
+        Delegated zero-copy delivery is unavailable for this node. shm_only:
+        the client commits wl_shm buffers. device_mismatch: the consumer
+        cannot import from this buffer's device. protected_content: the
+        buffer is protected. Consumers are expected to present such nodes
+        through a capture-based profile instead; this protocol never falls
+        back to silent copies.
       </description>
-      <arg name="buffer_id" type="uint"/>
-      <arg name="release_timeline" type="fd" summary="drm syncobj fd"/>
-      <arg name="point_hi" type="uint"/>
-      <arg name="point_lo" type="uint"/>
+      <entry name="shm_only" value="0"/>
+      <entry name="device_mismatch" value="1"/>
+      <entry name="protected_content" value="2"/>
+    </enum>
+
+    <enum name="region_kind">
+      <entry name="input" value="0" summary="the surface input region"/>
+      <entry name="opaque" value="1" summary="the surface opaque region"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the node object">
+        Destroy the node object. Buffer objects announced through it are not
+        affected; their leases end through their own release and retired
+        semantics.
+      </description>
     </request>
 
-    <event name="dmabuf_buffer">
-      <description summary="the client's own allocation, leased (R5)">
-        Plane fds follow in plane events. Format/modifier/dimensions identify
-        the client's original allocation; acquire point per R7 accompanies
-        each attach. Flow control: the producer enforces negotiated in-flight
-        caps and revokes rather than blocks (R10).
+    <event name="buffer">
+      <description summary="the client's own allocation, leased">
+        A buffer entered the node's active set: the client's original
+        allocation, leased to the consumer for sampling. Format is a DRM
+        fourcc; the modifier is hi/lo combined. Plane events follow on the
+        buffer object, one per plane. The producer enforces its negotiated
+        in-flight cap by revoking (denied on the tree) rather than by
+        blocking its client.
       </description>
-      <arg name="buffer_id" type="uint"/>
-      <arg name="width" type="int"/>
-      <arg name="height" type="int"/>
-      <arg name="format" type="uint" summary="drm fourcc"/>
-      <arg name="modifier_hi" type="uint"/>
-      <arg name="modifier_lo" type="uint"/>
-      <arg name="num_planes" type="uint"/>
-    </event>
-
-    <event name="plane">
-      <arg name="buffer_id" type="uint"/>
-      <arg name="plane_idx" type="uint"/>
-      <arg name="fd" type="fd"/>
-      <arg name="offset" type="uint"/>
-      <arg name="stride" type="uint"/>
+      <arg name="id" type="new_id" interface="zext_exported_buffer_v1"/>
+      <arg name="width" type="int" summary="buffer width in pixels"/>
+      <arg name="height" type="int" summary="buffer height in pixels"/>
+      <arg name="format" type="uint" summary="DRM fourcc"/>
+      <arg name="modifier_hi" type="uint" summary="upper 32 bits of the format modifier"/>
+      <arg name="modifier_lo" type="uint" summary="lower 32 bits of the format modifier"/>
+      <arg name="num_planes" type="uint" summary="number of following plane events"/>
     </event>
 
     <event name="attach">
-      <description summary="buffer attached for the next commit, with acquire (R7)"/>
-      <arg name="buffer_id" type="uint"/>
-      <arg name="acquire_timeline" type="fd" summary="drm syncobj fd"/>
-      <arg name="point_hi" type="uint"/>
-      <arg name="point_lo" type="uint"/>
+      <description summary="buffer attached for the next done, with acquire point">
+        The named buffer is the node's content from the next done event on.
+        The acquire argument carries a DRM syncobj timeline fd; the consumer
+        must not sample the buffer before the acquire point signals. Each
+        attach obligates the consumer to exactly one release on the buffer
+        object once its reads complete.
+      </description>
+      <arg name="buffer" type="object" interface="zext_exported_buffer_v1"
+           summary="the attached buffer"/>
+      <arg name="acquire" type="fd" summary="DRM syncobj timeline fd"/>
+      <arg name="point_hi" type="uint" summary="upper 32 bits of the acquire point"/>
+      <arg name="point_lo" type="uint" summary="lower 32 bits of the acquire point"/>
     </event>
 
     <event name="damage">
-      <arg name="x" type="int"/>
-      <arg name="y" type="int"/>
-      <arg name="width" type="int"/>
-      <arg name="height" type="int"/>
+      <description summary="damage since the previous attach of this buffer">
+        One damage rectangle in buffer coordinates; sent zero or more times
+        before the done event that applies the attach.
+      </description>
+      <arg name="x" type="int" summary="damage x in buffer coordinates"/>
+      <arg name="y" type="int" summary="damage y in buffer coordinates"/>
+      <arg name="width" type="int" summary="damage width"/>
+      <arg name="height" type="int" summary="damage height"/>
+    </event>
+
+    <event name="position">
+      <description summary="position within the parent node">
+        The node's offset in its parent's surface-local coordinate space.
+        For the root node this event is never sent; the consumer owns the
+        root's placement.
+      </description>
+      <arg name="x" type="int" summary="offset x, parent surface-local"/>
+      <arg name="y" type="int" summary="offset y, parent surface-local"/>
+    </event>
+
+    <event name="scale">
+      <description summary="buffer scale and transform">
+        The client's buffer scale and output transform for this surface,
+        with transform values as in wl_output.transform.
+      </description>
+      <arg name="scale" type="int" summary="buffer scale"/>
+      <arg name="transform" type="uint" summary="buffer transform (wl_output.transform)"/>
+    </event>
+
+    <event name="viewport">
+      <description summary="viewport source and destination">
+        The surface's wp_viewport state: source rectangle in buffer
+        coordinates (all -1 if unset) and destination size in surface-local
+        coordinates (both -1 if unset).
+      </description>
+      <arg name="src_x" type="fixed" summary="source x, or -1"/>
+      <arg name="src_y" type="fixed" summary="source y, or -1"/>
+      <arg name="src_width" type="fixed" summary="source width, or -1"/>
+      <arg name="src_height" type="fixed" summary="source height, or -1"/>
+      <arg name="dst_width" type="int" summary="destination width, or -1"/>
+      <arg name="dst_height" type="int" summary="destination height, or -1"/>
     </event>
 
     <event name="geometry">
-      <description summary="surface state (R4)">
-        Position within parent, buffer scale/transform, viewport source/dest,
-        and window-geometry insets. Applied at the next tree commit.
+      <description summary="window geometry insets">
+        The xdg-surface window geometry of this node in surface-local
+        coordinates: the part of the surface the consumer should treat as
+        the window, excluding client-side shadows.
       </description>
-      <arg name="x" type="int"/>
-      <arg name="y" type="int"/>
-      <arg name="scale" type="int"/>
-      <arg name="transform" type="uint"/>
+      <arg name="x" type="int" summary="window geometry x"/>
+      <arg name="y" type="int" summary="window geometry y"/>
+      <arg name="width" type="int" summary="window geometry width"/>
+      <arg name="height" type="int" summary="window geometry height"/>
     </event>
 
-    <event name="regions">
-      <description summary="input and opaque regions (R4), rectangle stream"/>
-      <arg name="kind" type="uint" summary="input | opaque"/>
-      <arg name="x" type="int"/>
-      <arg name="y" type="int"/>
-      <arg name="width" type="int"/>
-      <arg name="height" type="int"/>
+    <event name="region_rect">
+      <description summary="one rectangle of a pending region">
+        One rectangle, surface-local, of the region being replaced; the
+        rectangles accumulate until region_done and replace the previous
+        region of that kind at the next done event.
+      </description>
+      <arg name="kind" type="uint" enum="region_kind"/>
+      <arg name="x" type="int" summary="rectangle x, surface-local"/>
+      <arg name="y" type="int" summary="rectangle y, surface-local"/>
+      <arg name="width" type="int" summary="rectangle width"/>
+      <arg name="height" type="int" summary="rectangle height"/>
+    </event>
+
+    <event name="region_done">
+      <description summary="the pending region of this kind is complete"/>
+      <arg name="kind" type="uint" enum="region_kind"/>
     </event>
 
     <event name="fallback">
-      <description summary="typed non-zero-copy path (R6)">
-        shm follows as a copied stream, or the node is unavailable
-        (device_mismatch, protected). Never a silent copy.
+      <description summary="zero-copy delivery unavailable">
+        Zero-copy delivery is not available for this node, for the given
+        typed reason. No buffer or attach events will be sent for it.
       </description>
-      <arg name="kind" type="uint"/>
+      <arg name="kind" type="uint" enum="fallback_kind"/>
     </event>
 
     <event name="unmapped">
-      <description summary="node unmapped (R20)"/>
+      <description summary="the surface was unmapped">
+        The underlying surface was unmapped. The node is inert; outstanding
+        buffer leases still require their releases.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="zext_exported_buffer_v1" version="1">
+    <description summary="a leased client buffer">
+      One client buffer leased to the consumer. Plane events describe the
+      dmabuf; each attach on the owning node obligates exactly one release.
+      The producer joins the consumer's release point with its own completion
+      before releasing the buffer to its client; the consumer never touches
+      the client's release timeline. Releases may complete out of order
+      across buffers.
+    </description>
+
+    <enum name="error">
+      <entry name="excess_release" value="0"
+             summary="release sent without a matching outstanding attach"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the buffer object">
+        Destroy the buffer object. If attaches are outstanding, the producer
+        must treat the lease as ended only when the consumer connection's
+        outstanding release points signal or the connection is gone; a
+        consumer should send its releases before destroying the object.
+      </description>
+    </request>
+
+    <request name="release">
+      <description summary="consumer GPU-complete release">
+        Return one outstanding attach of this buffer: the release argument
+        carries a DRM syncobj timeline fd whose given point the consumer
+        signals when its reads of the buffer complete. Sending more releases
+        than there are outstanding attaches raises the excess_release error.
+      </description>
+      <arg name="release" type="fd" summary="DRM syncobj timeline fd"/>
+      <arg name="point_hi" type="uint" summary="upper 32 bits of the release point"/>
+      <arg name="point_lo" type="uint" summary="lower 32 bits of the release point"/>
+    </request>
+
+    <event name="plane">
+      <description summary="one dmabuf plane">
+        One plane of the buffer, in plane-index order; num_planes such events
+        follow the announcing buffer event.
+      </description>
+      <arg name="plane_idx" type="uint" summary="plane index"/>
+      <arg name="fd" type="fd" summary="dmabuf fd for this plane"/>
+      <arg name="offset" type="uint" summary="plane byte offset"/>
+      <arg name="stride" type="uint" summary="plane stride in bytes"/>
+    </event>
+
+    <event name="retired">
+      <description summary="the producer withdrew the buffer">
+        The client freed or replaced this buffer; it will not be attached
+        again. The object is inert once all outstanding attaches are
+        released; the consumer should then destroy it.
+      </description>
     </event>
   </interface>
 
   <interface name="zext_export_pacing_v1" version="1">
-    <description summary="consumer-driven presentation (R11-R14)">
-      Obtained from a zext_exported_tree_v1; exactly one pacing mode owns the
-      tree at a time and mode switches are atomic (R12).
+    <description summary="consumer-driven presentation pacing">
+      Consumer-driven pacing for one exported tree. While this object exists
+      and a clock has been set, the producer dispatches the tree's client
+      frame callbacks against the consumer's cadence instead of its own
+      outputs'; destroying the object atomically returns the tree to
+      producer-paced mode. Exactly one pacing mode owns a tree at any time.
     </description>
 
-    <request name="set_consumer_clock">
-      <description summary="enter consumer-paced mode (R11)">
-        Supplies clock correlation (producer CLOCK_MONOTONIC ↔ consumer
-        presentation clock) so the producer dispatches client frame callbacks
-        against the consumer's cadence.
+    <enum name="error">
+      <entry name="no_clock" value="0"
+             summary="frame sent before set_consumer_clock"/>
+    </enum>
+
+    <enum name="presented_flags" bitfield="true">
+      <description summary="presentation outcome flags">
+        zero_copy means the consumer scanned out or sampled the client's
+        buffer directly in its final presentation path. It must never be set
+        merely because no intermediate allocation existed on the wire.
       </description>
-      <arg name="clock_id" type="uint"/>
+      <entry name="zero_copy" value="1"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="return the tree to producer pacing">
+        Destroy the pacing object. The tree atomically returns to
+        producer-paced frame callback dispatch; no presented or discarded
+        events follow.
+      </description>
+    </request>
+
+    <request name="set_consumer_clock">
+      <description summary="enter consumer-paced mode">
+        Supply the consumer's presentation clock (a CLOCK_* id valid for
+        clock_gettime) and correlation to the producer's CLOCK_MONOTONIC: a
+        pair of timestamps sampled together, so the producer can convert
+        frame arguments into its own domain. May be sent again to refine the
+        correlation.
+      </description>
+      <arg name="clock_id" type="uint" summary="consumer presentation clock id"/>
+      <arg name="consumer_time_hi" type="uint" summary="upper 32 bits, consumer sample ns"/>
+      <arg name="consumer_time_lo" type="uint" summary="lower 32 bits, consumer sample ns"/>
+      <arg name="producer_time_hi" type="uint" summary="upper 32 bits, producer CLOCK_MONOTONIC ns"/>
+      <arg name="producer_time_lo" type="uint" summary="lower 32 bits, producer CLOCK_MONOTONIC ns"/>
     </request>
 
     <request name="frame">
-      <description summary="one consumer frame slot (R11)">
-        Predicted display time, period, and the commit cutoff derived from the
-        consumer's xrWaitFrame. The producer schedules client frame callbacks
-        so commits land before the cutoff.
+      <description summary="one consumer frame slot">
+        One upcoming consumer frame: predicted display time (consumer clock,
+        nanoseconds, hi/lo), the frame period, and the commit cutoff before
+        display time by which tree state must be done to be sampled. The
+        producer schedules the tree's client frame callbacks so commits land
+        before the cutoff. Sending frame before set_consumer_clock raises
+        the no_clock error.
       </description>
-      <arg name="display_time_hi" type="uint"/>
-      <arg name="display_time_lo" type="uint"/>
-      <arg name="period_ns" type="uint"/>
-      <arg name="cutoff_ns" type="uint"/>
+      <arg name="display_time_hi" type="uint" summary="upper 32 bits of predicted display ns"/>
+      <arg name="display_time_lo" type="uint" summary="lower 32 bits of predicted display ns"/>
+      <arg name="period_ns" type="uint" summary="frame period in nanoseconds"/>
+      <arg name="cutoff_ns" type="uint" summary="commit cutoff before display time, ns"/>
     </request>
 
     <event name="presented">
-      <description summary="commit first sampled by the consumer (R13, R22)">
-        zero_copy flag reflects true scanout/sampling semantics only — never
-        set merely because no intermediate allocation exists.
+      <description summary="a commit was first sampled">
+        The consumer first sampled the tree state identified by commit_id at
+        the given time (consumer clock, nanoseconds, hi/lo). Sent by the
+        producer on the consumer's report; exactly one of presented or
+        discarded is sent per commit id while consumer-paced.
       </description>
-      <arg name="commit_id" type="uint"/>
-      <arg name="time_hi" type="uint"/>
-      <arg name="time_lo" type="uint"/>
-      <arg name="flags" type="uint"/>
+      <arg name="commit_id" type="uint" summary="the done event's commit id"/>
+      <arg name="time_hi" type="uint" summary="upper 32 bits of sample time ns"/>
+      <arg name="time_lo" type="uint" summary="lower 32 bits of sample time ns"/>
+      <arg name="flags" type="uint" enum="presented_flags"/>
     </event>
 
     <event name="discarded">
-      <description summary="commit never sampled (R13); consumer reused last-ready (R14)"/>
-      <arg name="commit_id" type="uint"/>
+      <description summary="a commit was never sampled">
+        The tree state identified by commit_id was never sampled — a newer
+        state replaced it first, or it missed its cutoff and the consumer
+        reused the last ready state.
+      </description>
+      <arg name="commit_id" type="uint" summary="the done event's commit id"/>
     </event>
   </interface>
 
   <interface name="zext_export_input_v1" version="1">
-    <description summary="per-export input back-path (R16-R19)">
-      Obtained from a zext_exported_tree_v1. Events are addressed to tree
-      nodes in surface-local coordinates; the PRODUCER generates wire serials
-      for its clients and owns implicit grabs, popup dismissal, and focus
-      (R17). Implementations may internally route through libei / InputDevice
-      machinery — the wire contract here is what libei alone cannot express
-      (doc 32 §5.3). DnD is absent pending the R19 capability.
+    <description summary="per-export input back-path">
+      The input back-path for one exported tree. Requests address tree nodes
+      in surface-local coordinates; the producer translates them into its
+      own protocol streams towards its client, generating its own wire
+      serials and owning implicit grabs, popup dismissal, and focus.
+      Requests naming an inert node are ignored. Drag-and-drop is absent in
+      version 1; producers advertise it with the dnd capability when a
+      future version adds it.
+
+      Pointer and touch requests accumulate and are delivered to the
+      producer's client at the frame requests, following wl_pointer and
+      wl_touch frame semantics. Timestamps are milliseconds in the
+      producer's CLOCK_MONOTONIC domain; the consumer converts using the
+      pacing clock correlation, or sends its own monotonic milliseconds if
+      no pacing object exists.
     </description>
 
+    <request name="destroy" type="destructor">
+      <description summary="destroy the input object">
+        Destroy the input object. The producer cancels consumer-originated
+        pointer, keyboard, and touch state towards its client (leave events,
+        key releases, touch cancel).
+      </description>
+    </request>
+
     <request name="pointer_motion">
+      <description summary="pointer moved over a node"/>
       <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint"/>
-      <arg name="x" type="fixed"/>
-      <arg name="y" type="fixed"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="x" type="fixed" summary="x, node surface-local"/>
+      <arg name="y" type="fixed" summary="y, node surface-local"/>
     </request>
+
     <request name="pointer_button">
+      <description summary="pointer button state changed">
+        Button codes and state values follow wl_pointer.button semantics.
+      </description>
       <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint"/>
-      <arg name="button" type="uint"/>
-      <arg name="state" type="uint"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="button" type="uint" summary="button code, as in wl_pointer.button"/>
+      <arg name="state" type="uint" summary="button state, as in wl_pointer.button_state"/>
     </request>
+
     <request name="pointer_axis">
+      <description summary="continuous axis motion">
+        Axis values follow wl_pointer.axis semantics; high-resolution
+        discrete steps accompany as pointer_axis_value120 within the same
+        frame.
+      </description>
       <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint"/>
-      <arg name="axis" type="uint"/>
-      <arg name="value" type="fixed"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="axis" type="uint" summary="axis, as in wl_pointer.axis"/>
+      <arg name="value" type="fixed" summary="axis displacement"/>
     </request>
+
+    <request name="pointer_axis_value120">
+      <description summary="high-resolution discrete axis steps">
+        Discrete axis movement in fractions of 120, following
+        wl_pointer.axis_value120 semantics.
+      </description>
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="axis" type="uint" summary="axis, as in wl_pointer.axis"/>
+      <arg name="value120" type="int" summary="movement in fractions of 120"/>
+    </request>
+
+    <request name="pointer_frame">
+      <description summary="end of a logical pointer event group"/>
+    </request>
+
     <request name="keyboard_key">
-      <description summary="key event; keymap negotiation TODO (doc 32 §5 open: keymap ownership)"/>
+      <description summary="key state changed">
+        Key codes are in the keymap announced by the keymap event; the
+        producer computes and delivers modifier state to its client itself.
+      </description>
       <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint"/>
-      <arg name="key" type="uint"/>
-      <arg name="state" type="uint"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="key" type="uint" summary="key code in the announced keymap"/>
+      <arg name="state" type="uint" summary="key state, as in wl_keyboard.key_state"/>
     </request>
+
     <request name="touch_down">
+      <description summary="touch point down on a node"/>
       <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint"/>
-      <arg name="id" type="int"/>
-      <arg name="x" type="fixed"/>
-      <arg name="y" type="fixed"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="id" type="int" summary="touch point id"/>
+      <arg name="x" type="fixed" summary="x, node surface-local"/>
+      <arg name="y" type="fixed" summary="y, node surface-local"/>
     </request>
+
     <request name="touch_motion">
+      <description summary="touch point moved"/>
       <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint"/>
-      <arg name="id" type="int"/>
-      <arg name="x" type="fixed"/>
-      <arg name="y" type="fixed"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="id" type="int" summary="touch point id"/>
+      <arg name="x" type="fixed" summary="x, node surface-local"/>
+      <arg name="y" type="fixed" summary="y, node surface-local"/>
     </request>
+
     <request name="touch_up">
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint"/>
-      <arg name="id" type="int"/>
+      <description summary="touch point up"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="id" type="int" summary="touch point id"/>
+    </request>
+
+    <request name="touch_frame">
+      <description summary="end of a logical touch event group"/>
     </request>
 
     <request name="activate">
-      <description summary="gesture-derived activation intent (R18)">
-        Never a foreign xdg-activation token: the producer mints and validates
-        its own token from this intent.
+      <description summary="gesture-derived activation intent">
+        The consumer's user performed an activating gesture on the node.
+        This never carries a foreign xdg-activation token: the producer
+        mints and validates its own token from this intent, subject to its
+        focus-stealing policy.
       </description>
       <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint"/>
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
     </request>
 
+    <enum name="keymap_format">
+      <entry name="xkb_v1" value="1"
+             summary="libxkbcommon-compatible, memory-mappable keymap"/>
+    </enum>
+
+    <enum name="focus_kind">
+      <entry name="keyboard" value="0" summary="keyboard focus"/>
+      <entry name="pointer_grab" value="1" summary="an implicit or popup pointer grab"/>
+      <entry name="touch_grab" value="2" summary="an implicit touch grab"/>
+    </enum>
+
+    <event name="keymap">
+      <description summary="the keymap key codes are interpreted in">
+        The keymap the producer's client receives; keyboard_key codes must
+        be valid in it. Sent before the first keyboard_key may be sent, and
+        again whenever the producer's keymap changes.
+      </description>
+      <arg name="format" type="uint" enum="keymap_format"/>
+      <arg name="fd" type="fd" summary="keymap file descriptor"/>
+      <arg name="size" type="uint" summary="keymap size in bytes"/>
+    </event>
+
     <event name="focus">
-      <description summary="producer-side focus/grab state (R17)"/>
+      <description summary="producer-side focus and grab state">
+        Reports where the producer's focus or an active grab of the given
+        kind sits within this tree, or null when it left the tree. Purely
+        informational: the producer owns the state.
+      </description>
       <arg name="node" type="object" interface="zext_exported_node_v1" allow-null="true"/>
-      <arg name="kind" type="uint" summary="keyboard | pointer_grab | touch_grab"/>
+      <arg name="kind" type="uint" enum="focus_kind"/>
     </event>
 
     <event name="popup_dismissed">
-      <description summary="producer dismissed a popup (grab break) (R17)"/>
+      <description summary="the producer dismissed a popup">
+        The producer broke a popup grab (for example on an outside click it
+        synthesized, or its own policy). The consumer should stop presenting
+        the node; the unmapped event on the node follows.
+      </description>
       <arg name="node" type="object" interface="zext_exported_node_v1"/>
     </event>
   </interface>

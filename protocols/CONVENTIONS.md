@@ -227,26 +227,17 @@ v2 does not inherit their era's shortcuts, not to diminish them.
 - **Budget-impact notes** belong in the protocol's *design document* under `docs/`, not in the
   XML: every design doc for a protocol here must state its frame-loop/latency budget impact.
   The XML stays a pure wire contract (§3 register rule).
-- **Deviations in `zext-toplevel-export-v1.xml` as written** (recorded, deliberately not yet
-  fixed while the draft iterates):
-  1. ~~Attribution is "the spatial-os authors" (:4) — not a real name (§2).~~ *Fixed 2026-09-23:
-     all zxr/zext files attribute Jarrad Hope (sole author), stacked over lineage lines where
-     prior work is continued.*
-  2. No RFC 2119 boilerplate (§2).
-  3. Symbolic uints without `<enum>`s throughout: `node.role` "toplevel | subsurface | popup"
-     (:154), `denied.reason` (:157-165), `fallback.kind` (:266), `regions.kind` (:254),
-     `focus.kind` (:385), the manager `capabilities` bitmask in prose (:70-76), and
-     `resume_move` as "0 or 1" (:119) (§4).
-  4. No `error` enum on any interface, although prose implies protocol errors ("Fails
-     (denied: no_active_move)", :59) (§4).
-  5. Descriptions cite R-numbers and repo paths (:9-31, :41, :93) and contain a TODO
-     (:180-184) (§3 register).
-  6. Missing descriptions/summaries: `plane` (:218-224), `damage` (:234-239), all seven input
-     requests (:328-371), and most args file-wide (§3/§4).
-  7. Manager `destroy` description states no effect on child objects (:67) (§4 destructor rule).
-  8. The atomic-batch boundary is an event named `commit` (:167) where upstream convention is
-     `done` (§5).
-  9. Seat identified by string `seat_name` (:63) rather than an object reference (§4).
-  10. Buffers are uint `buffer_id` handles (:209, :228) rather than protocol objects — a design
-      choice a wayland-protocols reviewer would challenge against the params-object pattern
-      (linux-dmabuf-v1.xml:100-109).
+- **Deviations in `zext-toplevel-export-v1.xml`** — *all ten fixed at rev 2 (2026-09-23,
+  producer-spec workstream)*: real-name attribution (Jarrad Hope); RFC 2119 boilerplate +
+  experimental warning added; every symbolic uint is now an `<enum>` (node_role, denied_reason,
+  fallback_kind, region_kind, focus_kind, keymap_format, capability/adopt/presented bitfields);
+  per-interface `error` enums (already_exported, pacing_exists/input_exists/invalid_bounds,
+  excess_release, no_clock) with race-safe cases kept as `denied` reasons instead; R-numbers,
+  repo paths, and TODOs removed from descriptions (colour forwarding stated as "not carried in
+  version 1"; keymap ownership resolved by a producer keymap event); descriptions/summaries on
+  every message and arg; destructor descriptions state child-object effects; the atomic batch
+  boundary is a `done` event; the detach seat is a `wl_seat` object; buffers are
+  `zext_exported_buffer_v1` protocol objects with per-object release (params-object pattern).
+  Rev 2 also closed two structural holes the list missed: `get_pacing`/`get_input` factory
+  requests now exist (rev 1 had orphan interfaces), and stacking/restack, viewport, window
+  geometry, pointer/touch frame grouping, and clock correlation gained explicit wire shape.
