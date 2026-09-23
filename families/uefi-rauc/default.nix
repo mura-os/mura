@@ -78,6 +78,12 @@ in
     enable = true;
     name = "spatial-${cfg.device.codename}";
     split = true; # emit per-partition files too; the rootfs one feeds the RAUC bundle
+    # zstd both artifacts: raw disk sparseness does not survive NAR transfer from
+    # the remote builder; compressed, the mostly-empty 33G image moves as ~a few GB.
+    compression = {
+      enable = true;
+      algorithm = "zstd";
+    };
     partitions = {
       "10-esp" = {
         repartConfig = {
@@ -107,8 +113,8 @@ in
           Type = "root";
           Label = "rootfs_a";
           Format = "btrfs"; # matches the donor payload filesystem
-          SizeMinBytes = "6G";
-          SizeMaxBytes = "6G";
+          SizeMinBytes = "16G";
+          SizeMaxBytes = "16G";
           SplitName = "rootfs_a"; # emitted as <image>.rootfs_a.raw; feeds the bundle
         };
         storePaths = [ toplevel ];
@@ -119,8 +125,8 @@ in
           Type = "root";
           Label = "rootfs_b";
           Format = "btrfs";
-          SizeMinBytes = "6G";
-          SizeMaxBytes = "6G";
+          SizeMinBytes = "16G";
+          SizeMaxBytes = "16G";
           SplitName = "-";
         };
       };
@@ -215,23 +221,28 @@ in
   ###### The update bundle (test-signed) ######
   system.build.raucBundle =
     let
-      splitRoot = "${config.system.build.image}/${config.image.baseName}.rootfs_a.raw";
+      bundleManifest = pkgs.writeText "manifest.raucm" ''
+        [update]
+        compatible=${compatible}
+        version=${config.system.nixos.version}
+
+        [bundle]
+        format=plain
+
+        [image.rootfs]
+        filename=rootfs.img
+      '';
     in
     pkgs.runCommand "spatial-${cfg.device.codename}-bundle"
-      { nativeBuildInputs = [ pkgs.rauc ]; } ''
+      { nativeBuildInputs = [ pkgs.rauc pkgs.zstd pkgs.squashfsTools ]; } ''
       mkdir -p bundle $out
-      cp ${splitRoot} bundle/rootfs.img
-      cat > bundle/manifest.raucm <<EOF
-      [update]
-      compatible=${compatible}
-      version=${config.system.nixos.version}
-
-      [bundle]
-      format=plain
-
-      [image.rootfs]
-      filename=rootfs.img
-      EOF
+      split="${config.system.build.image}/${config.image.baseName}.rootfs_a.raw"
+      if [ -e "$split.zst" ]; then
+        zstd -d --sparse "$split.zst" -o bundle/rootfs.img
+      else
+        cp "$split" bundle/rootfs.img
+      fi
+      install -m 0644 ${bundleManifest} bundle/manifest.raucm
       rauc bundle --cert=${testCert}/cert.pem --key=${testCert}/key.pem \
         bundle $out/spatial-${cfg.device.codename}.raucb
     '';
