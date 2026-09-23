@@ -1,5 +1,31 @@
 # protocols/
 
-**Status: STUB — claimed by the foreign-session workstream (in progress).**
+Home of spatial-os's Wayland protocol XMLs — the `zxr` / `zext` families. Declared in
+[repo-structure.md](../docs/architecture/repo-structure.md).
 
-Home of spatial-os Wayland protocol XMLs (zxr-shell-v2 and the zext shell-integration family will live here).
+## Contents
+
+| File | What | Status |
+|---|---|---|
+| `zext-toplevel-export-v1.xml` | Per-toplevel zero-copy export/delegation between compositors (foreign 2D sessions → floating windows in zxr) | experimental draft — design in [foreign-session-integration.md](../docs/architecture/foreign-session-integration.md), requirements R1–R22 in [research/32](../docs/research/32-toplevel-export-prior-art.md), strategy in [ADR 0014](../docs/architecture/adr/0014-toplevel-delegation-protocol.md) |
+| `zxr-shell-v2.xml` | The 3D-client shell protocol (views, colour+depth, input) | not yet drafted — design lives in [zxr-shell-v2-composition.md](../docs/architecture/zxr-shell-v2-composition.md) and [ADR 0006](../docs/architecture/adr/0006-compositor-strategy.md) |
+
+## Namespace and governance posture
+
+Per [research/32 §7](../docs/research/32-toplevel-export-prior-art.md) (wayland-protocols
+GOVERNANCE.md verified):
+
+- **`zext_`/`zxr_`** — spatial-os experimental namespaces, local to this tree. Nothing here is an
+  upstream protocol, and 2D-protocol words are never silently given new wire meanings
+  (ADR 0012 §4 rule).
+- On upstream proposal, interfaces are renamed to the upstream experimental **`xx_`** prefix and
+  submitted to `wayland-protocols`; promotion to **`ext_`** requires two member ACKs, an
+  open-source client + server, and review (members include KWin, GTK/Mutter, Smithay/COSMIC,
+  wlroots/Sway).
+- The precedent is COSMIC's workspace protocol (private namespaced copy 2022 →
+  `ext-workspace-v1` 2024-12-20 → COSMIC adoption 2025-02): a multi-year migration, planned for.
+
+For `zext-toplevel-export-v1`, the upstreaming bar we set ourselves (ADR 0014): the zxr consumer +
+a smithay reference producer + a KWin producer MR, with published interop tests (modifier
+negotiation, out-of-order release, disconnect, popup reconstraint, late-frame reuse, grabs)
+before proposing `xx_toplevel_export`.

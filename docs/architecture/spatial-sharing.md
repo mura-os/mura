@@ -187,6 +187,13 @@ flag on the device profile, not in the tool.
 
 ## 3. Mode 4: share-the-app (protocol proxying) — the default for remote 2D apps
 
+Mode 4 covers *remote/VM apps*. The adjacent local case — a foreign 2D compositor's **session**
+(e.g. a live KWin/Plasma) appearing as per-toplevel floating windows — is **not** a sharing mode
+and not capture: it is the delegation seam specified in
+[foreign-session-integration.md](foreign-session-integration.md) (client-integration taxonomy
+there; protocol `zext-toplevel-export-v1`, [ADR 0014](adr/0014-toplevel-delegation-protocol.md)).
+Nothing in this document's consent/portal machinery governs delegation.
+
 Per [19](../research/19-wayland-proxying.md), **waypipe, unmodified from nixpkgs, is the shipped
 mechanism** for remote application windows: it alone covers dmabuf (Vulkan-first, damage-segment
 GPU copies — not full-frame readback), `wp_linux_drm_syncobj_v1` timelines, presentation-time with

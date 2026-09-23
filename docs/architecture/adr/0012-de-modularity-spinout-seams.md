@@ -101,6 +101,11 @@ spatial semantics ([30 §6](../../research/30-wayland-de-anatomy-protocol-seams.
    Completeness checklist: KWin VR's KCM taxonomy (general / input / headgaze / follow-mode /
    advanced pages, [31 §2.7](../../research/31-kwin-vr.md)) — the empirically user-tested set of
    knobs a 2D-in-XR tier needed (ADR 0013 §2).
+6. toplevel export/delegation (`zext-toplevel-export-v1`, added by
+   [ADR 0014](0014-toplevel-delegation-protocol.md)) — unlike items 1–5 this one is
+   deliberately **XR-agnostic** and carries explicit upstream intent (`xx_`/`ext_` path); zxr is
+   its consumer, foreign 2D compositors its producers
+   ([foreign-session-integration.md](../foreign-session-integration.md)).
 
 Rule: upstream base object + zxr extension; never silently give a 2D protocol's words new wire
 meanings. Candidates for upstreaming follow COSMIC's path (their workspace protocol became

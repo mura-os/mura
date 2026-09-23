@@ -41,6 +41,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [29-eye-hardware-ipd-per-target.md](research/29-eye-hardware-ipd-per-target.md) — per-target eye cameras, IPD mechanisms, access classes, iris auth, gaze privacy
 - [30-wayland-de-anatomy-protocol-seams.md](research/30-wayland-de-anatomy-protocol-seams.md) — privileged Wayland protocol inventory (ext-workspace, foreign-toplevel, layer-shell, capture…), KWin/COSMIC mechanism-vs-policy factoring, per-spin-out verdicts
 - [31-kwin-vr.md](research/31-kwin-vr.md) — code study of the KWin VR fork (MR !8671): plugin architecture, the WM-core patch seams, the Qt/XWayland patch-carry surface, the Monado galaxyxr Galaxy XR bring-up, maintainer objections mapped
+- [32-toplevel-export-prior-art.md](research/32-toplevel-export-prior-art.md) — prior art for per-toplevel zero-copy delegation: buffer lifetime/sync (waypipe, syncobj), consumer pacing, popup/input contracts, per-DE producer feasibility, governance path, R1–R22 requirements
 
 ## Architecture (`architecture/`)
 
@@ -55,6 +56,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [spatial-mapping.md](architecture/spatial-mapping.md) — anchors, persistence, relocalization, planes/mesh/boundary (Tier 4 world understanding)
 - [avatar-persona.md](architecture/avatar-persona.md) — Persona avatars: enrollment/asset/driver/runtime decomposition, control-interface + asset-format specs, kill-gates
 - [desktop-environment.md](architecture/desktop-environment.md) — the DE plane model (system/authority/perception/shell/service), mechanism/policy/presentation rule, XR redefinitions, component dependency graph
+- [foreign-session-integration.md](architecture/foreign-session-integration.md) — foreign 2D sessions as per-toplevel floating windows: the client-integration taxonomy, the toplevel export/delegation seam (maintainer provenance, buffers/pacing/popups/input), `protocols/zext-toplevel-export-v1.xml`
 - [component-registry.md](architecture/component-registry.md) — the master component inventory: 6 planes, evidence-based status (specified/partial/missing), the gap list
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
@@ -70,6 +72,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0011](architecture/adr/0011-eye-tracking-ipd.md) eye tracking and IPD (Monado-side eye-frame service, rotation-center IPD, event-gated motors)
   - [0012](architecture/adr/0012-de-modularity-spinout-seams.md) DE modularity and spin-out seams (standard-protocol clients vs in-process plugins vs authority-only; the zxr-private extension surface)
   - [0013](architecture/adr/0013-kwin-vr-disposition.md) KWin VR disposition (not the backbone; design donor for the 2D tier; `kwin-vr` reserved as optional session; galaxyxr fork into Galaxy XR evidence)
+  - [0014](architecture/adr/0014-toplevel-delegation-protocol.md) toplevel delegation protocol (specify upstream-shaped `zext-toplevel-export-v1` now; consumer-first, smithay → KWin MR → wayland-protocols; GNOME post-standardization)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the base architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the base review (fixed now vs.
   deferred to the Lynx spike / pre-release design)

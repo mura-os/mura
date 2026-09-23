@@ -1,0 +1,348 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="zext_toplevel_export_v1">
+  <copyright>
+    Copyright © 2026 the spatial-os authors
+
+    SPDX-License-Identifier: MIT
+  </copyright>
+
+  <description summary="per-toplevel zero-copy delegation between compositors">
+    EXPERIMENTAL DRAFT — spatial-os `zext` namespace. Interfaces will be renamed
+    (xx_*, then ext_*) if and when proposed to wayland-protocols; see
+    protocols/README.md for the governance posture and
+    docs/architecture/foreign-session-integration.md for the design rationale.
+    Requirement numbers (R1..R22) refer to
+    docs/research/32-toplevel-export-prior-art.md §8.
+
+    This protocol lets a "producer" compositor delegate individual toplevel
+    windows — the client's own buffer stream, the full surface tree, and an
+    input back-path — to a "consumer" compositor (e.g. an XR compositor that
+    composes the windows as floating quads). It is presentation-grade
+    delegation, not screen capture: buffers are the client's original dmabuf
+    allocations (R5), presentation is paced by the consumer (R11-R14), and the
+    producer retains all shell authority over its clients (serials, grabs,
+    popup placement, activation tokens — R15, R17, R18).
+
+    Privilege model (R2, R21): the manager global must only be exposed to
+    authorized consumer connections (compositor policy, e.g. security-context
+    based filtering). Toplevel enumeration (ext-foreign-toplevel-list) grants
+    neither export nor input authority. The producer may deny or redact any
+    surface (lock screens, protected content, internal surfaces).
+  </description>
+
+  <interface name="zext_toplevel_export_manager_v1" version="1">
+    <description summary="export factory and capability negotiation">
+      The privileged entry point advertised by the producer.
+    </description>
+
+    <request name="export_toplevel">
+      <description summary="request delegation of one toplevel">
+        Requests export of the toplevel identified by the given
+        ext_foreign_toplevel_handle_v1 (R1 — identity is the handle, never
+        title/app-id matching). The producer answers on the returned
+        zext_exported_tree_v1 with either a full node tree or a typed
+        denied/fallback event (R6, R21).
+      </description>
+      <arg name="id" type="new_id" interface="zext_exported_tree_v1"/>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+    </request>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager"/>
+    </request>
+
+    <event name="capabilities">
+      <description summary="producer capabilities">
+        Bitmask: dmabuf_zero_copy, shm_fallback, input, consumer_pacing,
+        dnd (R19 — initially unset by every known producer).
+      </description>
+      <arg name="capabilities" type="uint"/>
+    </event>
+
+    <event name="main_device">
+      <description summary="producer's DRM device identity">
+        The dev_t of the device client buffers are expected to be allocated
+        on, so the consumer can verify import compatibility before exporting
+        (R5, R6; hybrid-GPU honesty per doc 32 §2.2).
+      </description>
+      <arg name="device" type="array"/>
+    </event>
+  </interface>
+
+  <interface name="zext_exported_tree_v1" version="1">
+    <description summary="one delegated toplevel and its surface tree">
+      Represents the exported toplevel: the root node, its subsurfaces, and
+      its popups/transients as separate nodes (R3 — no forced flattening).
+      All state changes across the tree are applied atomically at commit
+      boundaries (R4).
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop the delegation">
+        All node objects become inert; the producer releases consumer leases
+        per the R20 lifecycle rules.
+      </description>
+    </request>
+
+    <request name="set_bounds">
+      <description summary="consumer-owned placement bounds (R15)">
+        Communicates the plane-local rectangle (in the root node's coordinate
+        space) available for popup/transient placement, with a serial the
+        producer echoes in resulting configures. The producer runs its
+        xdg-positioner against these bounds — consumer owns the volume,
+        producer owns shell placement.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </request>
+
+    <event name="node">
+      <description summary="a surface node exists">
+        Announces a node (root, subsurface, or popup) and its parent/stacking
+        relation. Ordering events follow for z-order within the tree.
+      </description>
+      <arg name="id" type="new_id" interface="zext_exported_node_v1"/>
+      <arg name="parent" type="object" interface="zext_exported_node_v1" allow-null="true"/>
+      <arg name="role" type="uint" summary="toplevel | subsurface | popup"/>
+    </event>
+
+    <event name="denied">
+      <description summary="export refused or revoked (R6, R20, R21)">
+        Typed reason: policy, protected_content, shm_only, device_mismatch,
+        session_locked, gone, gpu_reset. After revocation the producer has
+        already cancelled input and will release buffers only once fenced GPU
+        work completes.
+      </description>
+      <arg name="reason" type="uint"/>
+    </event>
+
+    <event name="commit">
+      <description summary="atomic tree commit boundary (R4)">
+        All node state (buffers, damage, geometry, regions) delivered since
+        the previous commit event applies atomically now. Carries the commit
+        id referenced by pacing feedback (R13).
+      </description>
+      <arg name="commit_id" type="uint"/>
+    </event>
+  </interface>
+
+  <interface name="zext_exported_node_v1" version="1">
+    <description summary="one surface in the exported tree">
+      Carries the per-surface buffer stream and surface state, mirroring the
+      client's commits (R4, R5). TODO(doc 32 open): color-management /
+      color-representation state forwarding is enumerated in R4 but its
+      encoding is deferred until the colour-pipeline design
+      (component-registry colour row) settles.
+    </description>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="release_buffer">
+      <description summary="consumer GPU-complete release (R7-R9)">
+        Returns the named buffer with a syncobj release point (or sync_file)
+        signalled at consumer GPU completion. Per-buffer, out-of-order
+        permitted (R9). The producer joins this with its own completion before
+        signalling the client's release (R8 — producer-owned join; the
+        consumer never touches the client's release timeline).
+      </description>
+      <arg name="buffer_id" type="uint"/>
+      <arg name="release_timeline" type="fd" summary="drm syncobj fd"/>
+      <arg name="point_hi" type="uint"/>
+      <arg name="point_lo" type="uint"/>
+    </request>
+
+    <event name="dmabuf_buffer">
+      <description summary="the client's own allocation, leased (R5)">
+        Plane fds follow in plane events. Format/modifier/dimensions identify
+        the client's original allocation; acquire point per R7 accompanies
+        each attach. Flow control: the producer enforces negotiated in-flight
+        caps and revokes rather than blocks (R10).
+      </description>
+      <arg name="buffer_id" type="uint"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="format" type="uint" summary="drm fourcc"/>
+      <arg name="modifier_hi" type="uint"/>
+      <arg name="modifier_lo" type="uint"/>
+      <arg name="num_planes" type="uint"/>
+    </event>
+
+    <event name="plane">
+      <arg name="buffer_id" type="uint"/>
+      <arg name="plane_idx" type="uint"/>
+      <arg name="fd" type="fd"/>
+      <arg name="offset" type="uint"/>
+      <arg name="stride" type="uint"/>
+    </event>
+
+    <event name="attach">
+      <description summary="buffer attached for the next commit, with acquire (R7)"/>
+      <arg name="buffer_id" type="uint"/>
+      <arg name="acquire_timeline" type="fd" summary="drm syncobj fd"/>
+      <arg name="point_hi" type="uint"/>
+      <arg name="point_lo" type="uint"/>
+    </event>
+
+    <event name="damage">
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </event>
+
+    <event name="geometry">
+      <description summary="surface state (R4)">
+        Position within parent, buffer scale/transform, viewport source/dest,
+        and window-geometry insets. Applied at the next tree commit.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="scale" type="int"/>
+      <arg name="transform" type="uint"/>
+    </event>
+
+    <event name="regions">
+      <description summary="input and opaque regions (R4), rectangle stream"/>
+      <arg name="kind" type="uint" summary="input | opaque"/>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </event>
+
+    <event name="fallback">
+      <description summary="typed non-zero-copy path (R6)">
+        shm follows as a copied stream, or the node is unavailable
+        (device_mismatch, protected). Never a silent copy.
+      </description>
+      <arg name="kind" type="uint"/>
+    </event>
+
+    <event name="unmapped">
+      <description summary="node unmapped (R20)"/>
+    </event>
+  </interface>
+
+  <interface name="zext_export_pacing_v1" version="1">
+    <description summary="consumer-driven presentation (R11-R14)">
+      Obtained from a zext_exported_tree_v1; exactly one pacing mode owns the
+      tree at a time and mode switches are atomic (R12).
+    </description>
+
+    <request name="set_consumer_clock">
+      <description summary="enter consumer-paced mode (R11)">
+        Supplies clock correlation (producer CLOCK_MONOTONIC ↔ consumer
+        presentation clock) so the producer dispatches client frame callbacks
+        against the consumer's cadence.
+      </description>
+      <arg name="clock_id" type="uint"/>
+    </request>
+
+    <request name="frame">
+      <description summary="one consumer frame slot (R11)">
+        Predicted display time, period, and the commit cutoff derived from the
+        consumer's xrWaitFrame. The producer schedules client frame callbacks
+        so commits land before the cutoff.
+      </description>
+      <arg name="display_time_hi" type="uint"/>
+      <arg name="display_time_lo" type="uint"/>
+      <arg name="period_ns" type="uint"/>
+      <arg name="cutoff_ns" type="uint"/>
+    </request>
+
+    <event name="presented">
+      <description summary="commit first sampled by the consumer (R13, R22)">
+        zero_copy flag reflects true scanout/sampling semantics only — never
+        set merely because no intermediate allocation exists.
+      </description>
+      <arg name="commit_id" type="uint"/>
+      <arg name="time_hi" type="uint"/>
+      <arg name="time_lo" type="uint"/>
+      <arg name="flags" type="uint"/>
+    </event>
+
+    <event name="discarded">
+      <description summary="commit never sampled (R13); consumer reused last-ready (R14)"/>
+      <arg name="commit_id" type="uint"/>
+    </event>
+  </interface>
+
+  <interface name="zext_export_input_v1" version="1">
+    <description summary="per-export input back-path (R16-R19)">
+      Obtained from a zext_exported_tree_v1. Events are addressed to tree
+      nodes in surface-local coordinates; the PRODUCER generates wire serials
+      for its clients and owns implicit grabs, popup dismissal, and focus
+      (R17). Implementations may internally route through libei / InputDevice
+      machinery — the wire contract here is what libei alone cannot express
+      (doc 32 §5.3). DnD is absent pending the R19 capability.
+    </description>
+
+    <request name="pointer_motion">
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="time" type="uint"/>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+    </request>
+    <request name="pointer_button">
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="time" type="uint"/>
+      <arg name="button" type="uint"/>
+      <arg name="state" type="uint"/>
+    </request>
+    <request name="pointer_axis">
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="time" type="uint"/>
+      <arg name="axis" type="uint"/>
+      <arg name="value" type="fixed"/>
+    </request>
+    <request name="keyboard_key">
+      <description summary="key event; keymap negotiation TODO (doc 32 §5 open: keymap ownership)"/>
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="time" type="uint"/>
+      <arg name="key" type="uint"/>
+      <arg name="state" type="uint"/>
+    </request>
+    <request name="touch_down">
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="time" type="uint"/>
+      <arg name="id" type="int"/>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+    </request>
+    <request name="touch_motion">
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="time" type="uint"/>
+      <arg name="id" type="int"/>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+    </request>
+    <request name="touch_up">
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="time" type="uint"/>
+      <arg name="id" type="int"/>
+    </request>
+
+    <request name="activate">
+      <description summary="gesture-derived activation intent (R18)">
+        Never a foreign xdg-activation token: the producer mints and validates
+        its own token from this intent.
+      </description>
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="time" type="uint"/>
+    </request>
+
+    <event name="focus">
+      <description summary="producer-side focus/grab state (R17)"/>
+      <arg name="node" type="object" interface="zext_exported_node_v1" allow-null="true"/>
+      <arg name="kind" type="uint" summary="keyboard | pointer_grab | touch_grab"/>
+    </event>
+
+    <event name="popup_dismissed">
+      <description summary="producer dismissed a popup (grab break) (R17)"/>
+      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+    </event>
+  </interface>
+</protocol>

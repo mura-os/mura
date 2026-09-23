@@ -93,6 +93,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Observer-view authorization/budget objects | mech+policy | in-compositor | zxr-private (reserved hook) | **specified** | spatial-sharing §8.1 (origin, budget, revocation, decline capability) |
 | Per-app capture groups (mode-3 egress endpoints) | mech | in-compositor | zxr-private (reserved hook) | **specified** | spatial-sharing §8.2 (wolf pattern) |
 | Mode-3 RGBD bridge (egress/ingress, pacer, encoder abstraction, depth codec, validity masks, per-observer budgets) | mech | in-compositor (bridge component) | private typed two-channel network protocol (WiVRn-shaped) | **specified** | spatial-sharing §4 (vendored WiVRn modules + the four genuinely new pieces); codec bake-off open ([research/18](../research/18-xr-streaming.md) §9) |
+| Toplevel-delegation consumer (foreign 2D sessions as per-toplevel floating windows) | mech | in-compositor | `zext-toplevel-export-v1` (XR-agnostic, upstream-intent — [protocols/](../../protocols/README.md)) | **specified** | [foreign-session-integration.md](foreign-session-integration.md) + draft XML against R1–R22 ([research/32 §8](../research/32-toplevel-export-prior-art.md)); implementation staged behind composition M1 (ADR 0014 M-A); producers (smithay reference, KWin MR) are ADR 0014 milestones, not registry components |
 | Workspace-join replication (mode-5 placement-graph sync, rights, control leases) | mech+policy | in-compositor + sharing service | small reliable control protocol | **partial** | spatial-sharing §5 defines the state and rights split; no protocol spec, no service placement; "sharing service" named only in §6 invariant 4 |
 | Perception-layer intake (environment + hand-top layers; latest-complete, never awaited) | mech | in-compositor | dmabuf + `wp_linux_drm_syncobj_v1`-class IPC from Monado-side services | **partial** | ADR 0008 §Decision decides placement and transport class; the actual frame/pose IPC is explicitly unspecified — "a Monado frame sink is not a Wayland surface" ([perception-design-backlog.md](perception-design-backlog.md) #5/#8) |
 | Boundary breach response (forced passthrough, no client cooperation) + boundary overlay rendering | mech | in-compositor | internal; IMU-rate probe queries from geometry service | **specified** | spatial-mapping §7 (compositor-owned overlay + composition-policy breach response; threshold semantics part of the contract) |
@@ -376,12 +377,12 @@ Counts by status (rows in §2–§7 tables):
 | Plane | specified | partial | missing | total |
 |---|---|---|---|---|
 | System | 7 | 4 | 0 | 11 |
-| Authority | 19 | 6 | 5 | 30 |
+| Authority | 20 | 6 | 5 | 31 |
 | Perception | 17 | 6 | 0 | 23 |
 | Shell | 3 | 8 | 8 | 19 |
 | Service | 1 | 3 | 16 | 20 |
 | Build | 7 | 8 | 0 | 15 |
-| **Total** | **54** | **35** | **29** | **118** |
+| **Total** | **55** | **35** | **29** | **119** |
 
 The shape is stark and expected: the authority and perception planes are deeply specified (the
 ADR work to date), the build plane is specified-but-stubbed by deliberate policy (the Lynx-spike
