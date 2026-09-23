@@ -280,7 +280,7 @@ still speak of outputs and surfaces), but the semantics shift:
 | Notification | Spec-compliant D-Bus service (service plane) + spatial presentation policy (shell): head-locked toast vs. world-anchored near its app vs. wrist summary; do-not-disturb tied to presence and app immersion state. While spectating/sharing, notification suppression is a *capture-policy* duty (doc 17's consent language). |
 | Alt-tab | The spatial switcher (§4). |
 | Wallpaper | The environment: passthrough (ADR 0008) or a skybox/scene client — selected by the same policy switch as the passthrough toggle. |
-| Screenshot / screencast | The five sharing modes ([spatial-sharing.md](spatial-sharing.md)); authorization always via the portal + compositor, with XR-specific consent language (observer-controlled viewpoint, gaze warnings). |
+| Screenshot / screencast | Points in the capture taxonomy (scope × projection × temporality, [spatial-sharing.md §2.2](spatial-sharing.md)) under the five sharing modes; authorization always via the portal + compositor, with XR-specific consent language (observer-controlled viewpoint, gaze warnings) and passthrough excluded from captures by default. |
 | Session lock | ADR 0007's compositor state machine; "screen off" = panels blanked + doff grace timer. |
 | Login screen | The zxr `--greeter` scene (multi-user profile) or nothing (appliance autologin). |
 | Desktop icons | None. The environment is not an icon surface; app icons live in the launcher — a phone-style grid / "start menu" scene (ADR 0012's desktop-icons non-goal). |

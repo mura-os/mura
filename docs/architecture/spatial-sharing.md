@@ -7,7 +7,9 @@ and extends [zxr-shell-v2-composition.md](zxr-shell-v2-composition.md) / [adr/00
 
 "Screen sharing" in a spatial compositor is not one feature. It decomposes by **capture point in our
 pipeline** — and one mode captures nothing at all. This note fixes the taxonomy, the per-mode
-mechanism, the security invariants, and the protocol hooks zxr-shell-v2 must reserve.
+mechanism, the security invariants, and the protocol hooks zxr-shell-v2 must reserve. §2.2
+additionally fixes the **stills/capture taxonomy** (scope × projection × temporality) that
+screenshots and every capture session are points in.
 
 ## 1. The five modes (normative taxonomy)
 
@@ -85,6 +87,103 @@ crop-blit tee cannot *strip* content (notifications, other users' private window
 policy-filtered spectate is a second composition pass over a policy-selected subset of the scene —
 architecturally the same as a compositor-owned observer view. v0 ships the tee; the re-compose
 variant rides the observer-view mechanism when policy demands it.
+
+### 2.2 Stills, scope, and projection: the capture taxonomy (normative)
+
+The five modes of §1 classify *sharing relationships*. Underneath them, every act of capture —
+one-shot screenshot or ongoing stream — is a point in a three-axis space. This section fixes that
+space, because "screenshot" is not one feature either, and the desktop tools' assumptions
+(rectangular screens, screen-space regions) break in specific, enumerable ways. Field evidence:
+in the KWin VR thread ([31 §1](../research/31-kwin-vr.md)), a user rejected Breezy Desktop
+*solely* because Spectacle screenshots didn't work, and adopted the KWin fork because they did —
+capture compatibility is an adoption deal-breaker for the desktop-replacement audience.
+
+**Axis 1 — Scope** (*what content*):
+
+| Scope | Definition |
+|---|---|
+| `window` | One toplevel's content (its surface tree: subsurfaces, popups per policy) |
+| `window-set` | Several toplevels chosen ad hoc (superset case: a "virtual screen" is a persistent, named window-set) |
+| `plane-region` | A sub-rectangle of one plane's texture (window or virtual screen) |
+| `full-scene` | Everything the user perceives: environment layer, all windows, chrome, hands, cursor/ray |
+| `world-volume` | A bounded region of space and the apps inside it, 2D and 3D |
+
+**Axis 2 — Projection** (*how it is imaged*):
+
+| Projection | Definition | View-dependence |
+|---|---|---|
+| `texture-space` | The window-local texture, as-submitted (composition §7.3) | None — pixel-perfect, no head pose |
+| `flat-composition` | A compositor-composed rectangle arranging a window-set as if a monitor existed | None |
+| `head-view` | Rectilinear render from the user's head pose, pre-distortion (§2.1 tap); `mono` (symmetric-FOV crop) or `stereo-pair` (both eyes) | Full |
+| `observer-view` | Rectilinear render from an arbitrary authorized camera pose (§8.1 machinery) | Observer's, not user's |
+| `post-distortion` | The barrel-distorted panel image. **Debug/device-qualification artifact only** — never a user-facing capture | Full + lens |
+| `+depth` modifier | Any of `head-view`/`observer-view`/`world-volume` carrying depth per the `APP_VOLUME` framing (§2, §4) | (as base) |
+
+**Axis 3 — Temporality**: `still` or `stream`. Orthogonal to both axes. Consent scales with it:
+a stream carries the in-space active-share badge for its whole life (invariant §6.2); a still needs
+a shutter-moment consent (the portal's interactive flow) and no persistent badge. Mechanically the
+two are one path: an `ext-image-copy-capture` session that captures one frame or many, and on the
+portal side `org.freedesktop.impl.portal.Screenshot` vs `ScreenCast` — both served by xdpw on day
+one ([17 §1.1](../research/17-sharing-capture-stack.md)).
+
+**The validity matrix.** Not all cells exist; the invalid ones are load-bearing design facts:
+
+| Scope \ Projection | texture-space | flat-composition | head-view | observer-view | +depth |
+|---|---|---|---|---|---|
+| window | **preferred** (the M1 window screenshot) | degenerate (set of one) | invalid† | mode 2 alt | mode 3 (3D client) |
+| window-set | — | **preferred** (ad-hoc or virtual screen) | invalid† | valid | deferred |
+| plane-region | **preferred** (region UX below) | valid | invalid† | — | — |
+| full-scene | undefined (no single buffer) | undefined | **preferred** (spectate/screenshot of "what I see") | valid (3rd-person spectator, §2.1) | valid |
+| world-volume | undefined | undefined | (is just full-scene cropped) | valid | **preferred** (spatial snapshot; single-frame `APP_VOLUME` group) |
+
+† *invalid-by-design*: capturing a window or region through the head-view projection is strictly
+worse than its view-independent cell (head pose baked in, perspective distortion, resolution loss)
+— the compositor keeps view-independent sources for exactly this reason, and tools must be routed
+to them. This is why the window screenshot is the *easy* case here and an afterthought on other
+XR desktops.
+
+**Realization rules** (how cells map onto machinery already specified):
+
+- Scope maps onto the portal source-type bitmask: `MONITOR` ≙ window-set via
+  flat-composition (a persistent virtual screen, **or an ephemeral one created for an ad-hoc
+  window-set capture** — existing consumers see an ordinary monitor source and need no new code),
+  `WINDOW` ≙ window/texture-space, `XR_VIEW` ≙ full-scene/head-view, `APP_VOLUME` ≙ +depth cells,
+  `WORKSPACE` ≙ not pixels (§2). Projection variants are stream/session properties
+  (`view_config` mono/stereo, depth encoding), not new source types.
+- **Region capture is ray-swept on a picked plane, never screen-space.** A Spectacle/slurp-style
+  rectangle dragged across the *stereo head-view* selects nothing coherent (the two eyes disagree,
+  and depth makes a screen rectangle a frustum). The UX is: ray-pick a plane (window or virtual
+  screen) → sweep a rectangle **in that plane's texture space** → capture the sub-rectangle from
+  the view-independent source. A true "region of the world" is not a region — it is
+  `world-volume` scope. Volume-selection UX is deferred with the spatial-snapshot tier.
+- **Privacy attaches to cells, not tools.** Passthrough camera pixels can appear *only* in
+  `head-view`/`observer-view`/`world-volume` projections — never in texture-space or
+  flat-composition cells, which are safe by construction. **Normative default: stills and streams
+  exclude the passthrough layer unless the consent dialog explicitly includes it** ("include your
+  room's camera view?") — the ADR 0008 privacy boundary extended to capture; mechanism is the
+  passthrough-redaction hook (ADR 0012 §4 item 4). Gaze-target and notification leakage exist only
+  in `full-scene` scope (the §6.2 gaze warning); hands/cursor embedding follows doc 17 §9's
+  `presence_mode`. Eye-camera imagery appears in no cell, ever (ADR 0011).
+
+**The capture tool.** One shell-plane client — the same in-space consent picker/share chooser §2
+already requires — owns the whole axis space: pick scope (ray-pick a window; multi-select a
+window-set; sweep a plane region; "what I see"; a volume later), pick temporality
+(screenshot / start share), pick destination (gallery file, clipboard, stream to portal consumer).
+The appliance capture gesture (hardware chord / controller long-press → `full-scene` still →
+gallery, Quest-style) is a preset into the same path: global-shortcut interception is authority
+plane; the capture itself is an ordinary portal-mediated session; the passthrough-exclusion
+default applies. This tool is a registry component
+([component-registry.md](component-registry.md) §5), missing today.
+
+**Compatibility verdicts.** Portal-speaking tools (Flatpak apps, browsers, GNOME-style
+screenshooters) work on day one via xdpw's `Screenshot` + `ScreenCast` against `MONITOR`/`WINDOW`
+sources. **Spectacle as shipped will not run**: on Plasma Wayland its primary path is KWin's
+private `org.kde.KWin.ScreenShot2` D-Bus interface (which is also exactly why it *does* work under
+the KWin VR fork and broke under Breezy — [31 §1](../research/31-kwin-vr.md)); we do not implement
+KDE-private capture APIs, and Spectacle is treated as compatibility evidence, not a target.
+Legacy `wlr-screencopy` tools (`grim`) stay per [17 §8.5](../research/17-sharing-capture-stack.md):
+add only on demonstrated need. `post-distortion` capture, if ever exposed, lives behind a debug
+flag on the device profile, not in the tool.
 
 ## 3. Mode 4: share-the-app (protocol proxying) — the default for remote 2D apps
 
@@ -234,3 +333,10 @@ security-context-gated registry filtering end-to-end; waypipe mirror memory on t
 dmabuf feedback surviving waypipe's modifier intersection on mobile GPUs; frame-callback pacing for
 remote apps at 90 Hz; presentation time of stale planes; the input-latency threshold where a proxied
 window stops feeling attached to the hand ray.
+
+From §2.2 (stills taxonomy): the world-volume *selection* UX (deferred with the spatial-snapshot
+tier); the on-disk format for `+depth` stills (a gallery-viewable RGBD container does not
+meaningfully exist); lifecycle of ephemeral flat-composition outputs for ad-hoc window-set
+captures (creation/teardown vs portal session lifetime, and keeping them invisible to
+`wlr-output-management` consumers); whether the appliance capture chord needs a
+consent-free owner-only carve-out or always runs the shutter consent.

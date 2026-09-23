@@ -154,6 +154,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Avatar runtime renderer | pres | separate client (ordinary zxr client, opaque-cutout profile) | zxr-shell-v2; asset container | **specified** | avatar-persona §runtime; ADR 0010 (no privileged access); gated R-0/Z-1/R-1 |
 | Window placement/manipulation UI (grab, rotate, resize handles) | pres | in-compositor | zxr/xdg-shell interactions | **partial** | M1 acceptance test requires it (composition §7.5); interaction-design evidence adopted from KWin VR's daily-driven headgaze/headscroll/follow-mode/grab-all/recenter vocabulary ([31 §2.5–2.6](../research/31-kwin-vr.md), ADR 0013 §2); no zxr-specific design yet |
 | SNI watcher + host (items as typed panel badges) | pres | watcher: separate supervised daemon; host: panel applet/component | StatusNotifierItem D-Bus (de-facto spec, draft 0.1) | **missing** | no doc found; hosting decided by ADR 0012 (vs dropping tray compatibility); COSMIC `cosmic-applet-status-area` / Plasma systemtray are the precedent (doc 30 §A3); no design |
+| Spatial capture tool (scope picker: window/window-set/plane-region/view/volume; still-vs-stream; region-on-plane sweep; gallery/clipboard destinations; appliance capture-chord preset) | policy+pres | separate client (doubles as the in-space consent picker / share chooser row above) | portal Screenshot/ScreenCast + capture seams; taxonomy normative in [spatial-sharing.md §2.2](spatial-sharing.md) | **partial** | taxonomy, validity matrix, privacy defaults (passthrough excluded from captures unless explicitly consented), and compat verdicts (Spectacle: KWin-private, not a target) specified in spatial-sharing §2.2; the tool's UI/UX itself has no design |
 
 ## 6. Service plane
 
@@ -377,10 +378,10 @@ Counts by status (rows in §2–§7 tables):
 | System | 7 | 4 | 0 | 11 |
 | Authority | 19 | 6 | 5 | 30 |
 | Perception | 17 | 6 | 0 | 23 |
-| Shell | 3 | 7 | 8 | 18 |
+| Shell | 3 | 8 | 8 | 19 |
 | Service | 1 | 3 | 16 | 20 |
 | Build | 7 | 8 | 0 | 15 |
-| **Total** | **54** | **34** | **29** | **117** |
+| **Total** | **54** | **35** | **29** | **118** |
 
 The shape is stark and expected: the authority and perception planes are deeply specified (the
 ADR work to date), the build plane is specified-but-stubbed by deliberate policy (the Lynx-spike
