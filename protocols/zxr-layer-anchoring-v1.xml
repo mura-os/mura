@@ -9,9 +9,30 @@
   <description summary="spatial anchoring for layer surfaces">
     This protocol assigns layer surfaces a spatial reference frame and a
     spatial exclusive zone. On a head-mounted display there is no physical
-    output edge; a layer surface's anchor edges are interpreted within the
-    field of view of its assigned frame, and exclusive zones reserve solid
-    angle rather than pixels.
+    output edge; a layer surface's anchor edges and margins are interpreted
+    on the angular rectangle of its assigned frame, and exclusive zones
+    reserve angular bands rather than pixels.
+
+    The mapping from layer-shell terms is fixed as follows. Each frame
+    defines an angular rectangle: a horizontal and a vertical angular
+    extent, centred on the frame's forward axis, advertised by the
+    frame_extent event. The layer-shell anchor bitfield selects edges of
+    that rectangle exactly as it selects output edges: a surface anchored
+    to the top edge is placed with its top at the rectangle's top edge; a
+    surface anchored to two opposite edges is stretched between them in
+    angle; a surface anchored to no edge on an axis is centred on that
+    axis. Margins are expressed in surface pixels by layer-shell; the
+    compositor converts them to angle at the surface's presentation
+    distance (angle = 2·atan(px / (2·d·ppm)), where d is the presentation
+    distance in metres and ppm the surface's pixels-per-metre at that
+    distance, derived from the angular size). Keyboard interactivity and
+    layer ordering keep their layer-shell meaning unchanged.
+
+    For example: a status bar anchored top | left | right with an angular
+    size of 40 degrees and an exclusive angle of 3 degrees on a head frame
+    with a 90×70 degree rectangle is presented as a band across the top of
+    the view, spanning 40 degrees horizontally, and content in the head
+    frame that respects exclusive zones avoids the top 3 degrees.
 
     The key words "must", "must not", "required", "shall", "shall not",
     "should", "should not", "recommended", "may", and "optional" in this
@@ -24,11 +45,33 @@
   </description>
 
   <interface name="zxr_layer_anchoring_v1" version="1">
-    <description summary="layer surface anchoring entry point"/>
+    <description summary="layer surface anchoring entry point">
+      The entry point for spatial layer anchoring. It advertises the frames
+      the compositor can currently anchor to and creates anchoring
+      extension objects for layer surfaces.
+    </description>
 
     <enum name="error">
       <entry name="already_anchored" value="0"
              summary="the layer surface already has an anchoring object"/>
+    </enum>
+
+    <enum name="frame">
+      <description summary="reference frames for layer surfaces">
+        The frame a layer surface is positioned in. Head-framed surfaces
+        follow the view; body-framed surfaces follow the user's body
+        position and yaw without following head pitch or roll; hand-framed
+        surfaces follow a tracked hand or its held controller; world-framed
+        surfaces hold a pose in the local reference space; docked-framed
+        surfaces are presented on the docked output's plane (and only exist
+        while docked).
+      </description>
+      <entry name="head" value="0" summary="follows the view"/>
+      <entry name="body" value="1" summary="follows the body, not the head"/>
+      <entry name="hand_left" value="2" summary="follows the left hand"/>
+      <entry name="hand_right" value="3" summary="follows the right hand"/>
+      <entry name="world" value="4" summary="fixed in the local space"/>
+      <entry name="docked" value="5" summary="the docked output's plane"/>
     </enum>
 
     <request name="destroy" type="destructor">
@@ -42,73 +85,120 @@
         Create an anchoring object for the given layer surface. A layer
         surface may be extended at most once; a second request raises the
         already_anchored error.
+
+        Anchoring state lives and dies with the layer surface role: when
+        the layer surface is destroyed, the anchoring object becomes inert.
+        Any requests on an inert object will be ignored except the destroy
+        request; there won't be any more events referencing it.
       </description>
       <arg name="id" type="new_id" interface="zxr_anchored_layer_v1"/>
       <arg name="layer_surface" type="object" interface="zwlr_layer_surface_v1"/>
     </request>
+
+    <event name="frames">
+      <description summary="anchorable frames">
+        The set of frames surfaces can currently anchor to, as a bitfield
+        of (1 &lt;&lt; frame) bits. Sent on bind and whenever the set
+        changes (a hand losing tracking, the dock connecting). Requesting
+        an absent frame is not an error: the surface is presented in its
+        fallback frame (see zxr_anchored_layer_v1.set_frame) until the
+        requested frame becomes available.
+      </description>
+      <arg name="frames" type="uint" summary="bitfield of available frames"/>
+    </event>
   </interface>
 
   <interface name="zxr_anchored_layer_v1" version="1">
     <description summary="spatial anchoring state of a layer surface">
       Spatial anchoring state for one layer surface. All state set through
       this interface is double-buffered; it is applied on the next
-      wl_surface.commit of the layer surface.
+      wl_surface.commit of the layer surface, atomically with the
+      layer-shell state committed there.
+
+      If a client never sets a frame, the compositor presents the surface
+      in the head frame with a compositor-chosen angular size; layer-shell
+      clients unaware of this protocol therefore remain usable unmodified.
     </description>
 
     <enum name="error">
-      <entry name="invalid_size" value="0"
-             summary="angular size or distance out of range"/>
-    </enum>
-
-    <enum name="frame">
-      <description summary="reference frames for layer surfaces">
-        The frame the layer surface is positioned in. Head-framed surfaces
-        follow the view; body-framed surfaces follow the user's body
-        orientation without following head rotation; world-framed surfaces
-        hold a pose in the local reference space.
-      </description>
-      <entry name="head" value="0" summary="follows the view"/>
-      <entry name="body" value="1" summary="follows the body, not the head"/>
-      <entry name="world" value="2" summary="fixed in the local space"/>
+      <entry name="invalid_angular_size" value="0"
+             summary="angular size not in (0, 180]"/>
+      <entry name="invalid_exclusive_angle" value="1"
+             summary="exclusive angle negative or not smaller than the frame extent"/>
+      <entry name="invalid_pose" value="2"
+             summary="pose set for a frame other than world, or not a rigid transform"/>
     </enum>
 
     <request name="destroy" type="destructor">
       <description summary="remove the anchoring">
         Remove the spatial anchoring. The layer surface falls back to the
-        compositor's default presentation for its layer.
+        compositor's default presentation for its layer, as if the
+        anchoring object had never existed.
       </description>
     </request>
 
     <request name="set_frame">
       <description summary="set the reference frame">
         Set the reference frame the surface's layer-shell anchor edges are
-        interpreted in. Values set in this way are double-buffered, see
-        wl_surface.commit.
+        interpreted in. If the frame is currently unavailable (see
+        zxr_layer_anchoring_v1.frames), the compositor presents the surface
+        in that frame's fallback until it becomes available: hand frames
+        fall back to the body frame, the docked frame to the head frame.
+        Values set in this way are double-buffered, see wl_surface.commit.
       </description>
       <arg name="frame" type="uint" enum="frame"/>
     </request>
 
+    <request name="set_pose">
+      <description summary="set the world-frame pose">
+        Set the transform from the surface's local space to the local
+        reference space, for surfaces in the world frame: a rigid transform
+        as 16 IEEE 754 binary32 values, column-major, native endianness.
+        Setting a pose while the pending frame is not world raises the
+        invalid_pose error, as does a non-rigid matrix. Values set in this
+        way are double-buffered, see wl_surface.commit.
+      </description>
+      <arg name="matrix" type="array"
+           summary="16 binary32 values, column-major, native endianness"/>
+    </request>
+
     <request name="set_angular_size">
       <description summary="set the surface's angular size">
-        Set the horizontal angular size the surface subtends, in degrees;
-        the compositor derives the presentation distance and height from the
-        surface's aspect ratio. The size must be greater than zero and at
-        most 180, otherwise the invalid_size error is raised. Values set in
+        Set the horizontal angle the surface subtends, in degrees; the
+        vertical angle follows from the surface's aspect ratio, and the
+        presentation distance from the frame's canonical distance. The size
+        must be greater than zero and at most 180, otherwise the
+        invalid_angular_size error is raised. If never set, the compositor
+        chooses a size appropriate to the surface's layer. Values set in
         this way are double-buffered, see wl_surface.commit.
       </description>
       <arg name="degrees" type="fixed" summary="horizontal angular size in degrees"/>
     </request>
 
     <request name="set_exclusive_angle">
-      <description summary="reserve solid angle at the anchor">
+      <description summary="reserve an angular band at the anchor">
         Reserve an angular band along the surface's layer-shell anchor
-        edges, in degrees, that the compositor keeps free of other
-        exclusive-zone-respecting content in the same frame — the spatial
-        analog of zwlr_layer_surface_v1.set_exclusive_zone. A value of zero
-        reserves nothing. Values set in this way are double-buffered, see
-        wl_surface.commit.
+        edges, in degrees measured from the frame rectangle's edge inward,
+        that the compositor keeps free of other exclusive-zone-respecting
+        content in the same frame — the spatial analog of
+        zwlr_layer_surface_v1.set_exclusive_zone. A value of zero, the
+        default, reserves nothing. A negative value or a value not smaller
+        than the frame's extent on that axis raises the
+        invalid_exclusive_angle error. Values set in this way are
+        double-buffered, see wl_surface.commit.
       </description>
       <arg name="degrees" type="fixed" summary="reserved angular band in degrees"/>
     </request>
+
+    <event name="frame_extent">
+      <description summary="the current frame's angular rectangle">
+        The angular rectangle of the surface's current frame: the extents
+        within which anchor edges and exclusive angles are resolved. Sent
+        after the frame first applies and whenever the extents change
+        (including on fallback, when they are the fallback frame's).
+      </description>
+      <arg name="horizontal" type="fixed" summary="horizontal extent in degrees"/>
+      <arg name="vertical" type="fixed" summary="vertical extent in degrees"/>
+    </event>
   </interface>
 </protocol>
