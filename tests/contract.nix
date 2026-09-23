@@ -202,7 +202,10 @@ let
     multiUserOnApplianceFails = !assertsPass (evalContract multiUserOnAppliance);
     guestWithoutMultiUserFails = !assertsPass (evalContract guestWithoutMultiUser);
     multiUserDefaultOff = eval.config.spatial.xr.session.multiUser.enable == false;
-    multiUserCapDefaultFour = eval.config.spatial.xr.session.multiUser.maxAccounts == 4;
+    # ADR 0018 rev 3: no account cap exists anywhere in the contract.
+    multiUserNoCapOption = !(eval.options.spatial.xr.session.multiUser ? maxAccounts);
+    multiUserWindowLoginDefs =
+      eval.config.spatial.xr.session.multiUser.uidRange.max == 60000;
     multiUserBadUidRangeFails = !assertsPass (evalContract multiUserBadUidRange);
     # Lock triggers default sensibly.
     lockDefaultsOn = eval.config.spatial.xr.session.lock.enable == true;

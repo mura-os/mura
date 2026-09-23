@@ -1,226 +1,195 @@
-# Multi-user: real accounts, the greeter picker, and guest mode
+# Multi-user: standard Linux accounts, the XR greeter picker, and the guest session
 
-**Status:** accepted design, rev 2 (2026-09-23; the greetd/PAM + NixOS red-team absorbed — 8
-blockers: userborn boot ordering, the `mutableUsers` mode inversion, the userdb permission
-wall, the guest PAM invocation/enforcement/sweep gaps, and the two cross-artifact
-contradictions on PAM wiring and the greeter's privileged surface).
+**Status:** accepted design, rev 3 (2026-09-23). Rev 3 is the **Linux-native reframe**: rev 2
+imported policy from closed consumer platforms (an account cap, PIN-as-the-credential, an
+"owner" role); all of it is removed per [AGENTS.md](../../AGENTS.md) / overview invariant 10.
+Rev 2's engineering corrections (userborn boot ordering, guest PAM gating, sweep ordering, PAM
+input hardening) survive — they were correctness, not policy.
 **Decision record:** [ADR 0018](adr/0018-multi-user-accounts.md).
-**Evidence base:** [research/41](../research/41-multi-user-login-landscape.md).
-**Scope:** multiple human accounts on one headset — substrate and A/B durability, the greeter
-picker, per-account enrollment and calibration, add/remove, guest mode, places/settings/lock
-fit. The single-owner appliance profile (ADR 0017) is unchanged.
-**Grounding:** "XDG" = the Base Directory spec (settings-schema §2). Enumeration grounds in
-NSS/passwd semantics; no new identity system.
-**Budget impact** (overview invariant 9): login/enrollment-time work; per-account storage
-bounded by the cap + quotas (§8); guest teardown is a logout-path cost. Nothing on the frame
-path.
+**Evidence base:** [research/41](../research/41-multi-user-login-landscape.md) — its Linux
+mechanics sections (§1, §3); the closed-platform sections are context and anti-patterns.
+**The frame:** multi-user on spatial-os **is standard Linux multi-user** — passwd/shadow, PAM,
+NSS, wheel + polkit. The XR layer adds exactly four things: per-user calibration, the spatial
+greeter scene, an *optional* PIN input method, and the A/B durability wiring. Nothing else is
+special.
+**Budget impact** (overview invariant 9): login/enrollment-time work; nothing on the frame path.
 
-## 1. The account model
+## 1. Accounts
 
-**Accounts are real Unix accounts** (doc 41 §2.3/§2.4: AOSP's uid separation is the right
-substrate; Steam Deck's shared home is the failure mode). One explicit non-goal up front:
-**per-account data-at-rest protection is not provided in v1** — AOSP pairs uid separation with
-per-user credential-unlocked encryption keys, and we adopt only the uid half; member data is
-DAC-protected, so root, physical disk access, and the owner (§5, PIN reset) can read it. The
-systemd-homed condition (ADR 0018 alternatives) is the designated carrier for the crypto half.
+Ordinary Unix accounts. **No cap** — no Linux system limits how many accounts its administrator
+creates, and neither does this one. Practical notes are notes, not limits: the picker scrolls
+past a handful of entries, and `/home` sizing/quotas are the administrator's business (§8).
 
-- **A small fixed cap** (default 4, Quest precedent; contract-tunable): one **owner** plus
-  members. Bounds userdb size, enrollment storage, picker UX — and, with §8's quotas, bytes.
-- **Durability: userborn with `passwordFilesLocation` on the persisted userdb** (doc 41 §3.2).
-  The account database lives at **`/persist/userdb/`** — its own top-level directory and state
-  class, *not* under `spatial/` (see the permission rule below) — and `/etc`'s
-  `passwd`/`shadow`/`group` are **static image symlinks** into it (they dangle until the mount
-  is up; hence the ordering rules).
-- **Creation authority: `spatial-provisiond`** — owner-authorized add-account conversations;
-  the wizard/greeter scenes stay unprivileged clients. AccountsService is not shipped (doc 41
-  §3.4).
+- **Creation is standard.** `useradd`/`userdel`/`passwd` over SSH or a TTY work, period —
+  because the persisted userdb (below) *is* `/etc`'s backing store, standard tools operate on
+  it natively. The in-headset settings UI is a convenience path for the same operation: a
+  polkit-gated admin action that `spatial-provisiond` executes (it is *a* path, not an
+  authority — the only place provisiond remains load-bearing is the guest token gate, §4).
+- **Admin is wheel + polkit.** No "owner" role exists. The first account created at setup is a
+  normal user in `wheel`, like every desktop installer's first account. Privilege is per-action
+  escalation (sudo in a terminal, polkit prompts in UI, authenticated requests to root
+  daemons); **no session — autologin, greeter, or logged-in — ever carries ambient root**, on
+  any profile. The appliance profile's `autoLogin = "owner"` names an ordinary unprivileged
+  account; "owner" there means "the human this single-person device belongs to," nothing more.
+  Resetting another user's forgotten credential is `sudo passwd <user>`-class standard admin —
+  not a designed feature of this OS.
+- **Durability across A/B (the one genuinely novel problem):** on an image-based A/B system,
+  `/etc/passwd` is slot-local, so conventionally-created accounts would vanish at the next OTA
+  (doc 41 §3.1 — this bites a Linux PC exactly as hard as anything else). The fix: **userborn**
+  with `passwordFilesLocation = /persist/userdb/` — the entire passwd/shadow/group database
+  lives on the persistent partition and `/etc` symlinks into it. Accounts survive slot switches
+  by construction, whoever created them and however.
 
-### 1.1 The userborn wiring (normative — each rule closes a boot-breaking defect)
+### 1.1 The userborn wiring (normative; each rule closes a boot-breaking defect)
 
-1. **Mode:** the multi-user profile sets `services.userborn.enable = true` **and
-   `users.mutableUsers = true`**. Under userborn, hybrid mode is what *protects*
-   provisiond-created rows: immutable mode drains any user absent from the declared config
-   (shell → `nologin`, password locked) and then **remounts the password files read-only**, so
-   provisiond could neither keep nor write accounts. The corpus's "`mutableUsers = true` is a
-   trap" rhetoric (doc 41 §3.1, ADR 0017) refers to the *Perl regeneration semantics without
-   userborn*; with userborn + persisted files the option value is required and safe. The
-   appliance profile keeps `mutableUsers = false` and no userborn.
+1. **Mode:** multi-user profile ⇒ `services.userborn.enable = true` **and
+   `users.mutableUsers = true`**. Under userborn, hybrid mode is what *preserves*
+   administrator-created rows; immutable mode drains any user absent from the declared config
+   (shell → `nologin`, password locked) and remounts the files read-only. The "`mutableUsers =
+   true` is a trap" line elsewhere in the corpus refers to the Perl regeneration path *without*
+   userborn; here the value is required and safe. The appliance profile keeps
+   `mutableUsers = false`, no userborn.
 2. **Mount ordering:** `userborn.service` runs `Before=sysinit.target` with
-   `DefaultDependencies=false` and will happily `mkdir -p` its location — on the wrong
-   filesystem — if the mount isn't up. Therefore: the `syspersist` partition and the
-   `/persist/userdb` path are mounted **in the initrd** (the same early treatment machine-id
-   already requires), the mount units for this path carry **no `nofail`** (a system without its
-   account database must not boot to a greeter), and the profile ships a drop-in on
-   `userborn.service` with `RequiresMountsFor=/persist/userdb` so the decoy-directory failure
-   mode is structurally impossible. Conformance check 1 asserts early-boot NSS resolves against
-   the persisted files on the first boot after a slot switch.
-3. **Permissions:** `/persist/userdb/` is `0755 root`, `passwd`/`group` `0644`, `shadow`
-   `0000 root` — world-traversable because `getpwuid` is universal (greeter NSS, logind, D-Bus
-   policy all need it). This is why the userdb cannot live under the `0750` `spatial/` tree,
-   and why `shadow` — credential material — gets its own class row (§6) rather than the
-   `state/` bookkeeping class.
-4. **Uid discipline:** the persisted files are the **single allocation ledger** both slots
-   share — that, not userborn, is the cross-generation collision guard. provisiond allocates
-   strictly inside the contract `uidRange` by reading them; it **rejects usernames colliding
-   with declared users** (userborn owns declared names destructively); guest uids come from a
-   **dedicated sub-range above `uidRange`** (never <1000: system-uid heuristics in
-   logind/polkit bite) with a monotonic counter in `state/` and no reuse before sweep
-   completion (§4). Accepted consequence, recorded: userborn's own diff state
-   (`/var/lib/userborn/`) is slot-local, so a *declared*-user removal between generations may
-   not drain on the other slot — harmless here (declared users are system components), noted
-   in doc 41 §3.2.
+   `DefaultDependencies=false` and will `mkdir -p` its location on the wrong filesystem if the
+   mount isn't up. Therefore: `syspersist` + `/persist/userdb` mount in the **initrd**, no
+   `nofail` on this path (a machine without its account database must not boot to a greeter),
+   and a drop-in adds `RequiresMountsFor=/persist/userdb` to `userborn.service`.
+3. **Permissions:** `/persist/userdb/` is `0755 root`; `passwd`/`group` `0644`; `shadow`
+   `0000 root` — world-traversable because `getpwuid` is universal. This is why the userdb
+   lives beside, not under, the `0750` `spatial/` tree.
+4. **Uid discipline:** the persisted files are the single allocation ledger both slots share.
+   The picker's enumeration window (§2) follows login.defs (`UID_MIN`/`UID_MAX`, typically
+   1000–60000 — the SDDM/tuigreet pattern, fidelity-checked against both trees); guest
+   accounts allocate from a dedicated sub-range with a monotonic counter and no reuse before
+   sweep completion (§4). Accepted and recorded: userborn's own diff state is slot-local
+   (doc 41 §3.2 caveats) — harmless, since declared users are system components.
 
 ## 2. The greeter account picker
 
-Extends the G1 auth scene; greetd needs zero changes **for the picker** because
-`create_session(username)` precedes authentication (doc 41 §1.4 — the guest path is different,
-§4):
+Extends the G1 auth scene; greetd needs zero changes for the picker because
+`create_session(username)` precedes authentication (doc 41 §1.4):
 
-- **Enumeration:** NSS iteration filtered by the contract `uidRange` (SDDM/tuigreet pattern).
-  **Posture, recorded as an accepted disclosure:** the picker shows names/avatars/last-user to
-  anyone holding the device (the Quest model) — the *lock* remains non-enumerating
-  (session-auth §2.2's no-account-existence-leak rule is untouched), the greeter enumerates
-  only inside `uidRange`, and PAM failures at the greeter are uniform (§3) so the IPC confirms
-  nothing outside the picker's own display.
-- **Metadata** (display name, avatar, last session): `state/accounts/<user>/`; last-user
-  memory in `state/accounts/last-user`. Picker hidden with one account and guest disabled.
-- **Calibration:** the picker (like every greeter scene) renders on **factory calibration +
-  the device-default IPD** — identity precedes calibration by construction; per-account
-  calibration applies only at session start, post-auth (§3).
-- **Flow:** pick → `create_session(name)` → PAM per session-auth §2.3 → `start_session`.
-  `cancel_session` returns to the picker. **TOCTOU:** an account removed between pick and
-  `create_session` produces the same uniform failure and a picker refresh; the greeter
-  subscribes to provisiond change events for live refresh.
-- **Switch user** = logout → greeter (one HMD, one seat; no concurrent sessions). greetd
-  restarting the dispatcher *is* the switch.
+- **Enumeration:** NSS iteration over the login.defs-shaped UID window (contract default
+  `1000–60000`). Free-text username entry is **always available** beside the picker (the
+  gtkgreet fallback — an administrator may hide accounts from the list; hiding is not a lock).
+- **Metadata** (display name, avatar, last session) in `state/accounts/<user>/`; last-user
+  preselection (`state/accounts/last-user` — the SDDM/regreet pattern). Picker appears at ≥2
+  entries or when guest is enabled; recorded as an accepted, Quest-independent disclosure that
+  a login screen shows account names (GDM and SDDM do too) — the *lock* remains
+  non-enumerating (session-auth §2.2), and greeter PAM failures are uniform (§3, the GDM
+  precedent: `PAM_USER_UNKNOWN` collapses into generic failure).
+- **Calibration:** greeter scenes render on factory calibration + the device-default IPD;
+  per-user calibration applies at session start, post-auth.
+- **Flow:** pick (or type) a name → `create_session(name)` → the PAM conversation renders per
+  session-auth §2.3 → `start_session`. TOCTOU (account removed between pick and PAM) produces
+  the uniform failure + a list refresh. **Switch user** = logout → greeter (one HMD, one seat).
 
-## 3. Per-account enrollment, PIN, calibration
+## 3. Credentials: passwords primary, PIN optional
 
-- `enrollment/<user>/` splits by confidentiality: **`secret/`** (PIN hash — argon2) stays
-  `0700 root`; **`calibration/`** (IPD preference, floor, boundary prefs, privacy defaults) is
-  **owned by that uid** (`0700 <user>`), because the user's own session (Monado/zxr as that
-  uid) must read it at session start without a privileged hand-off. The device-level
-  `provisioned` marker is unchanged; each account has `enrollment/<user>/enrolled`.
-- **`pam_spatial_pin` input contract (normative):** the username arrives attacker-controlled
-  over greetd IPC. The module validates charset/length, resolves through NSS, and requires
-  `uid ∈ uidRange` **before any path construction** (no traversal, no probing of system
-  accounts); for nonexistent/out-of-range users it verifies against a **dummy argon2 hash** so
-  timing and failure shape are uniform. Because the hash is root-`0700` and the verifying
-  context may be unprivileged, verification goes through a `unix_chkpwd`-style helper (root
-  socket or setuid, decided at implementation) — named here so it cannot be improvised.
-- **Rate limiting:** per-account `pam_faillock` counters **persisted on `/persist`** (tmpfs
-  counters reset on the reboot a boot-locked device forces — pointless otherwise), plus a
-  **device-level ladder** above them so four accounts do not quadruple the physical attempt
-  budget; the terminal fallback stays doc 12's (reset).
-- **Forgotten member PIN (decided):** an **owner-authorized provisiond conversation resets a
-  member's PIN**, re-entering the member wizard's PIN step at next login — factory-resetting
-  the whole device for one member's PIN is disproportionate. Recorded honestly: this means the
-  owner can enter a member's account; with §1's no-crypto non-goal, the owner-as-threat model
-  is already accepted, and this makes it explicit.
-- **Member onboarding:** reduced F2 on first login (PIN, user calibration, privacy defaults) —
-  device-level steps never repeat; launch-wait-exec continuation (first-run-onboarding §4.1).
-  Boundary stays device-level; per-account boundary *preferences* are enrollment-class.
+**The Unix account password is the login credential.** SSH, TTY, `su`, the greeter — one
+credential system, PAM all the way down, like every Linux machine.
 
-## 4. Guest mode
+- **`pam_spatial_pin` is an optional per-user convenience**, stacked *beside* the password in
+  the greeter/lock stacks — the fprintd model — because typing a strong password on a ray-cast
+  keyboard is miserable, not because the password goes away. A user enrolls a PIN (or doesn't)
+  from their own session; a user who wants PIN-only may lock their own password — their
+  choice, never the design's. The lock scene's PIN pad appears only for users with a PIN
+  enrolled; everyone always has the full virtual-keyboard password path.
+- **Module input contract (normative, unchanged from rev 2):** the username arrives
+  attacker-controlled over greetd IPC; the module validates charset/length, resolves via NSS,
+  and requires `uid` in the enumeration window **before any path construction**; nonexistent/
+  out-of-range users verify against a dummy argon2 hash so timing and failure shape are
+  uniform. The hash lives in `enrollment/<user>/secret/` (root); verification crosses via a
+  `unix_chkpwd`-style helper.
+- **Rate limiting:** `pam_faillock` with counters persisted on `/persist` (tmpfs counters
+  reset on the reboot a locked device forces), scoped per-account with a device-level ladder
+  above. The terminal fallback for a forgotten credential is standard admin (`sudo passwd`) —
+  recovery-environment reset exists for the machine, not per-user.
 
-LightDM's **lifecycle** contract + Vision Pro's **session** semantics — with the mechanism
-translated to greetd, because the LightDM evidence covers the lifecycle only: LightDM's guest
-auth lives *in its daemon*, a seam greetd deliberately lacks (doc 41 §1.6; the "zero greetd
-changes" claim in §2 is scoped to the picker).
+## 4. The guest session (optional, off by default)
 
-- **Invocation (the greetd translation):** guest login goes through the **normal greetd PAM
-  service** with a guest-scoped branch: a `pam_succeed_if`-guarded sufficient block for uids
-  in the guest sub-range, gated by a **root-owned check module** that verifies (a) the owner
-  grant flag is present and (b) a **provisiond-minted single-use token** exists for exactly
-  this fresh guest account. No separate PAM service selection is needed from greetd.
-- **Enforcement lives privileged, twice:** (a) **provisiond** refuses the create-guest
-  conversation unless the root-owned grant flag (an owner settings action) is present — an
-  account that doesn't exist cannot be logged into; (b) the **PAM gate** independently
-  re-verifies grant + token as root, so a stale row fails closed. Tile visibility is scene
-  furniture, never enforcement. A hostile greetd client calling `create_session("guest-…")`
-  with guest disabled hits (a)+(b) and gets the uniform failure.
-- **The greeter's privileged surface (session-auth §5 amendment):** the greeter gains exactly
-  **one** narrowly-scoped provisiond conversation — *create-guest* — gated as above; nothing
-  else (no add-account, no PIN operations from the greeter).
-- **Lifecycle:** provisiond mints `guest-<n>` (monotonic counter, §1.4) at session start with
-  a tmpfs home (or wiped directory on memory-constrained devices); **teardown is a root-side
-  unit bound to the session scope** (the B6a wrapper runs as the guest uid and cannot delete
-  accounts). Teardown order is normative: kill session → wipe home/transient places/tmp/spool
-  → remove the userdb row **last**. After power cut, the **sweep is a hard prerequisite of
-  greetd** (`Before=greetd.service`, `RequiredBy=`), so a half-torn-down guest row is never
-  loginable and its uid is never reused before the sweep completes.
-- **Session semantics** (deliberate deltas from Vision Pro, recorded): per-session grants
-  carry a **don window with auto-cancel** (Vision Pro's 5-minute shape); the standing
-  "enabled" toggle — a standing passwordless greeter tile — remains available but is the
-  *weaker* mode, and the doc says so; guest doff uses the ordinary grace window (a returning
-  guest resumes; acceptable for a guest, recorded as a choice); supervision (owner view via
-  mode-2 sharing, consent rules unchanged) is **optional here, mandatory in the precedent** —
-  a recorded delta, not an oversight.
-- **Restrictions (defaults):** conservative capture/sharing (no persistent consent grants;
-  passthrough-excluded); transient place set only (ADR 0016's transient kind); no settings
-  writes above session stratum; **no provisiond conversations from inside the session** (the
-  bracketing create/teardown calls happen outside it — the greeter's gated call before, the
-  root teardown unit after). Calibration transient: default IPD + quick adjust in the
-  ephemeral home, erased at teardown. A MAC-targetable session wrapper is reserved (doc 38).
+A **Linux feature with a decade of LightDM precedent** (doc 41 §1.6): an ephemeral account
+created at session start, destroyed at session end. Off by default; enabled by the
+administrator (`spatial.xr.session.guest.enable` or at runtime via the polkit-gated setting).
 
-## 5. Places, settings, lock
+- **Mechanism (the greetd translation — LightDM's lifecycle transfers, its daemon-resident
+  auth does not):** guest login rides the normal greetd PAM service through a sufficient
+  branch scoped to the guest uid sub-range, gated by a root-owned check module verifying (a)
+  the admin's enable flag and (b) a provisiond-minted single-use token for exactly this fresh
+  account. Enforcement is privileged twice (provisiond won't mint without the flag; the PAM
+  gate re-verifies) — tile visibility is never enforcement, and a raw-socket
+  `create_session("guest-…")` with guest disabled fails uniformly at both points.
+- **Lifecycle:** tmpfs (or wiped-directory) home; transient calibration (default IPD + quick
+  adjust, erased at teardown); teardown by a root-side unit bound to the session scope,
+  row-removed-last; after power loss the **sweep runs `Before=greetd.service`** so a
+  half-torn-down guest is never loginable and its uid is never reused early.
+- **Defaults** (all administrator-tunable — defaults, not locks): no persistent place writes
+  (a transient place set, ADR 0016), session-stratum settings only, conservative
+  capture/sharing consent. An optional per-session don-window/auto-cancel knob exists for the
+  hand-the-headset-to-a-visitor case. The greeter's provisiond surface remains exactly one
+  conversation (create-guest, gated) — session-auth §5 as amended.
+- A MAC-targetable session wrapper is reserved (the LightDM AppArmor pattern; no policy
+  shipped by default).
 
-- **Places** (resolves places-model §9 ownership): place sets **partition by account** over a
-  **device-level anchor substrate** (the room is shared; relocalization is not per-person).
-  Shared household places: condition-shaped — added on MVP usage evidence, on the mode-5
-  rights vocabulary (spatial-sharing §5).
-- **Settings:** per-user preferences/state are already per-account via XDG strata
-  (settings-schema §2); per-unit strata shared.
-- **Lock:** per-session PIN auth, no cross-account unlock. **The lock-hostage consequence is
-  accepted and recorded:** a locked member session holds the device — reboot *is* the switch
-  (boot-locked lands in the picker; the locked session's unsaved state is lost). A destructive
-  owner-confirmed "log out other user" lock tile is an open item (§8). Guest doff past grace
-  tears down instead of locking. Boot with ≥1 enrolled account lands in the greeter.
-- **Factory reset:** the recovery environment removes **all `uidRange` rows including the
-  owner** from the persisted userdb (surgical, transactional, alongside the marker/enrollment
-  wipe — userborn's hybrid mode tolerates the external edit, a load-bearing assumption stated
-  here), wipes `enrollment/*` and homes, rotates machine-id; OOBE recreates the owner. A power
-  cut mid-reset leaving a userdb row without enrollment is safe by construction: a missing
-  `enrolled` marker re-enters the wizard.
+## 5. Encryption: the user's choice, supported — never adjudicated
 
-## 6. State classes (amends the first-run-onboarding §2 table)
+The design *offers* the standard Linux choices and wires none of them shut:
 
-| Path | Class | Perms | A/B | Factory reset |
-|---|---|---|---|---|
-| `/persist/userdb/` (userborn passwd/group/shadow) | **userdb** (its own class) | dir 0755; passwd/group 0644; shadow 0000 | survives | all `uidRange` rows removed; owner recreated by OOBE |
-| `enrollment/<user>/secret/` | enrollment | 0700 root | survives | wiped |
-| `enrollment/<user>/calibration/` | enrollment | 0700 `<user>` | survives | wiped |
-| `state/accounts/<user>/`, `state/accounts/last-user`, guest uid counter | state | 0750 | survives | wiped |
-| guest home + account | none (tmpfs/wiped) | — | n/a | never persists |
+| Layer | Mechanism | Who chooses |
+|---|---|---|
+| Full disk / partitions | LUKS on `home`/`syspersist` (family/image configuration) | the administrator building or configuring the image |
+| Per-home | systemd-homed (LUKS/fscrypt homes) or plain fscrypt | each user / the administrator |
+| None | supported | the administrator |
+
+Engineering guidance recorded, not enforced: a short numeric PIN is a weak LUKS passphrase
+unless TPM-bound — a user coupling PIN-unlock to home encryption should do it through
+TPM-backed enrollment or accept the tradeoff (their call). homed's NixOS integration is still
+imperative-only (doc 41 §3.3); the condition-shaped rule stands: first-class homed support is
+added when NixOS grows declarative homed users. Family wiring for LUKS options lands with the
+family's own options (uefi-rauc owns its partition scheme).
+
+## 6. Places, settings, lock, per-user state
+
+- **Places partition by account** over a device-level anchor substrate (the room is shared;
+  relocalization is not per-person) — resolves places-model §9. Shared places between users:
+  condition-shaped on the mode-5 rights vocabulary, added when someone wants it.
+- **Settings:** per-user preferences/state are already per-account via XDG strata; nothing new.
+- **Per-user XR state:** `enrollment/<user>/secret/` (0700 root: PIN hash if enrolled) and
+  `enrollment/<user>/calibration/` (0700 `<user>`: IPD, floor, boundary prefs). First login of
+  a new account offers the per-user setup (calibration, optional PIN) as session content —
+  skippable, re-runnable from settings; **never a wall between a user and their machine**.
+- **Lock:** per-session, ADR 0007 unchanged; a locked session holds the seat (reboot lands in
+  the greeter — recorded consequence; a destructive owner-confirmed "log out other session"
+  lock affordance is an open item, §8). Boot with any credentialed account lands in the
+  greeter.
+- **Factory reset** (recovery environment): removes human-window rows from the persisted
+  userdb, wipes `enrollment/*` and homes, rotates machine-id; the next boot runs first-time
+  setup again. userborn's hybrid mode tolerates the external edit (load-bearing, stated).
 
 ## 7. Conformance checks
 
-1. Add account → A/B slot switch → **early-boot NSS on the new slot resolves the persisted
-   files** (no root-slot decoy) and the account logs in.
-2. Guest teardown on logout, doff-past-grace, and power cut: no uid, home bytes, journal-side
-   state, or place entries remain; **the boot-time sweep completes before greetd starts**; a
-   crafted stale guest row without a valid token fails login uniformly.
-3. `create_session` with: nonexistent user, out-of-range user, declared system user, removed-
-   after-pick user, and path-hostile username — all produce the uniform failure with
-   dummy-hash timing; none touches `enrollment/` paths.
-4. Guest disabled: `create_session("guest-…")` from a raw socket fails at both enforcement
-   points independently (grant absent; token absent).
-5. Per-account PIN isolation; member PIN reset by owner re-enters the member PIN wizard step.
-6. Faillock: counters survive reboot; the device ladder trips across accounts.
-7. Account cap and quota (§8) enforced by provisiond with typed errors; picker
-   presence/absence per §2.
-8. Factory reset: userdb surgery + wipe is transactional; interrupted reset re-enters
-   consistently; owner-only OOBE re-runs.
-9. `mutableUsers` mode assertion: the multi-user profile fails evaluation if
-   `users.mutableUsers = false` while `multiUser.enable = true` (the drain-and-remount trap).
+1. `useradd` over SSH → A/B slot switch → the account logs in on the new slot (userdb
+   persisted; early-boot NSS resolves the persisted files, no root-slot decoy).
+2. Passwords work everywhere always: greeter, lock, SSH, TTY, `su` — with and without a PIN
+   enrolled; PIN pad appears only for enrolled users.
+3. Guest disabled: raw-socket guest `create_session` fails at both privileged points; guest
+   teardown on logout/doff/power-cut leaves no uid, bytes, or places; sweep completes before
+   greetd starts.
+4. `create_session` with nonexistent/out-of-window/system/removed-after-pick/path-hostile
+   usernames: uniform failure, dummy-hash timing, no `enrollment/` path touched.
+5. No account cap exists: creating account #41 works; the picker scrolls.
+6. Admin actions (create account, reset another's password) require escalation and succeed
+   from an unprivileged session via polkit/sudo; no session has ambient root (audit of
+   /proc/*/status capabilities across greeter/autologin/user sessions).
+7. Faillock counters survive reboot; device ladder trips across accounts.
+8. Factory reset: surgical userdb wipe is transactional; interrupted reset re-enters
+   consistently.
 
 ## 8. Open items
 
-Each names its decider: **per-account home quotas + `/home` sizing** (ext4 project quotas are
-the candidate; decider: the multi-user implementation round — cap=4 bounds count, not bytes,
-and 512M/4 is plainly small); shared household places (condition-shaped; decider: MVP usage
-evidence); per-session guest approval UX vs standing toggle default (decider: the guest UX
-pass); the "log out other user" lock tile (decider: the same UX pass, with the destructive-
-confirm design); homed adoption (condition-shaped, doc 41 §3.3 — also the carrier for the §1
-data-at-rest non-goal); whether members may own device settings like Wi-Fi (decider: the
-settings polkit action inventory, settings-schema §10).
+Each names its decider: `/home` sizing + optional per-account quotas (administrator tooling,
+not policy — decider: multi-user implementation round; ext4 project quotas are the candidate
+*offered* mechanism); the "log out other session" lock affordance (decider: lock UX pass,
+destructive-confirm design); shared places (condition-shaped, mode-5 vocabulary); homed
+first-class support (condition-shaped on NixOS declarative homed); LUKS family options
+(decider: uefi-rauc family options round, with the Frame workstream).

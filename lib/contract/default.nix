@@ -487,19 +487,11 @@ in
             type = types.bool;
             default = false;
             description = ''
-              Multi-account support (ADR 0018, multi-user.md): real Unix accounts persisted
-              via userborn passwordFilesLocation on /var/lib/spatial state, created only
-              through spatial-provisiond (owner-authorized), picked in the greeter scene.
-              Requires the multi-user session profile (session.greeter != "none").
-            '';
-          };
-          maxAccounts = mkOption {
-            type = types.ints.positive;
-            default = 4;
-            description = ''
-              Account cap incl. the owner (ADR 0018; Quest precedent). Bounds
-              home-partition budgeting, enrollment storage, and picker UX. provisiond
-              rejects add-account beyond it.
+              Standard Linux multi-user on the greeter profile (ADR 0018 rev 3,
+              multi-user.md): selects the userborn wiring that persists the account
+              database across A/B slots (/persist/userdb). Accounts are ordinary Unix
+              accounts managed by standard tools (useradd over SSH works); the in-headset
+              settings UI is a polkit-gated convenience path. No account cap exists.
             '';
           };
           uidRange = mkOption {
@@ -508,22 +500,21 @@ in
                 min = mkOption {
                   type = types.ints.unsigned;
                   default = 1000;
-                  description = "Lowest human-account UID the greeter picker enumerates.";
+                  description = "Lowest UID the greeter picker enumerates (login.defs UID_MIN convention).";
                 };
                 max = mkOption {
                   type = types.ints.unsigned;
-                  default = 1099;
-                  description = "Highest human-account UID the greeter picker enumerates.";
+                  default = 60000;
+                  description = "Highest UID the greeter picker enumerates (login.defs UID_MAX convention).";
                 };
               };
             };
             default = { };
             description = ''
-              The UID window the greeter picker enumerates (NSS iteration, SDDM/tuigreet
-              pattern — multi-user.md §2). Guest uids come from a dedicated sub-range
-              above it (multi-user.md §1.1) and the greeter system user sits outside it
-              by construction. Must fit inside userborn's normal-user band and hold at
-              least maxAccounts uids (assertions below).
+              The UID window the greeter picker enumerates (NSS iteration; the SDDM/
+              tuigreet login.defs-shaped pattern — multi-user.md §2). Enumeration only:
+              free-text username entry is always available beside the picker, and the
+              window never limits how many accounts exist.
             '';
           };
         };
@@ -648,18 +639,15 @@ in
       message = "spatial.xr.session.multiUser.enable requires spatial.xr.session.provisioning.mode != \"none\" (accounts are created only through spatial-provisiond; ADR 0018).";
     }
     {
-      # multi-user.md §1.1: the uid window must be well-formed, hold the account cap,
-      # and sit inside userborn's normal-user band (1000-29999).
+      # multi-user.md §2: the picker enumeration window must be well-formed and start at
+      # or above the human-account floor. It bounds enumeration only — never account count.
       assertion =
         !cfg.xr.session.multiUser.enable
         || (
           cfg.xr.session.multiUser.uidRange.min <= cfg.xr.session.multiUser.uidRange.max
-          && (cfg.xr.session.multiUser.uidRange.max - cfg.xr.session.multiUser.uidRange.min + 1)
-          >= cfg.xr.session.multiUser.maxAccounts
           && cfg.xr.session.multiUser.uidRange.min >= 1000
-          && cfg.xr.session.multiUser.uidRange.max <= 29999
         );
-      message = "spatial.xr.session.multiUser.uidRange must satisfy min <= max, hold at least maxAccounts uids, and sit within 1000-29999 (userborn's normal-user band; multi-user.md §1.1).";
+      message = "spatial.xr.session.multiUser.uidRange must satisfy min <= max with min >= 1000 (the login.defs human-account floor; multi-user.md §2).";
     }
     {
       # A lockable session needs a runtime to compose the lock scene over.
