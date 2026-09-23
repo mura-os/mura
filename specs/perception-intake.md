@@ -1,150 +1,168 @@
 # specs/perception-intake: the perception→compositor layer contract
 
-**Status:** draft normative spec (specification workstream, wave 2).
+**Status:** draft rev 2 (specification workstream; rev 1 findings from the Monado-persona review
+absorbed — dual-rate packet restored, GPU-safe pool model, registration-based fd transfer).
 **Design sources:** [ADR 0008](../docs/architecture/adr/0008-perception-services-placement.md)
-(recast form: ownership decided, execution bound to exactly one of two admissible boundaries),
-[perception-passthrough-hands.md](../docs/architecture/perception-passthrough-hands.md)
-(the DepthFrame/matte contracts and shared invariants),
-[perception-design-backlog.md](../docs/architecture/perception-design-backlog.md) #5/#8 (which
-this spec discharges), release/sync semantics per
-[research/32 §2](../docs/research/32-toplevel-export-prior-art.md). This is the boundary the zxr
-compositor consumes perception through; the services' internals are out of scope.
-**Grounding:** buffer identity uses DRM FOURCC + modifier (the linux-dmabuf vocabulary);
-timestamps use the Monado monotonic clock domain (`CLOCK_MONOTONIC` unless the device layer
-declares otherwise); no XDG sense applies.
-**Budget impact** (inv. 9): producers publish at camera/service rate on the perception plane's
-existing budget lines; the consumer's per-frame cost is one atomic pointer/fence read per layer
-(the latest-complete rule); zero added frame-path blocking by construction (§4).
+(recast), [perception-passthrough-hands.md](../docs/architecture/perception-passthrough-hands.md)
+(the two-clock DepthFrame contract this spec now carries in full),
+[perception-design-backlog.md](../docs/architecture/perception-design-backlog.md) #5/#8
+(dispositions in §9), sync semantics per
+[research/32 §2](../docs/research/32-toplevel-export-prior-art.md).
+**Grounding:** DRM FOURCC + modifier for images; Monado monotonic clock for all timestamps; no
+XDG sense applies.
+**Budget impact** (inv. 9): producers publish at camera/service rate on existing perception
+lines; the consumer performs one bounded, non-retrying register read per composition pass; pool
+sizes are negotiated and fixed (§4). No frame-path blocking by construction (§5, conformance 4).
 
-## 1. Scope and parties
+## 1. Scope, parties, and the settled domain question
 
-Two producer services (passthrough/environment; hand-cutout/top layer — ADR 0008), one consumer
-(zxr's composition intake). The same contract serves both admissible execution placements:
+Producers: the passthrough/environment service and the hand-cutout service (ADR 0008). Consumer:
+zxr's composition intake. **The source-vs-final fork (backlog #5) is settled here: producers
+export source-domain artifacts; the compositor owns the single display-time warp.** The
+environment producer publishes camera-domain colour and geometry with their own clocks and poses;
+zxr warps each to display time in its composition pass (the "compositor owns only the
+display-rate warp" rule of the ADR 0008 recast). Consequently the compositor submits its own
+depth policy to the OpenXR runtime and runtime-side depth reprojection of these layers is
+disabled — double-reprojection cannot occur.
 
-- **in-process sink** (an `xrt_frame` sink inside Monado): the "wire" is a C ABI struct + fence
-  handles; §2–§5 field and ordering semantics apply unchanged.
-- **adjacent process**: the wire is a SOCK_SEQPACKET control channel carrying the §2 packet as
-  flat structs with dmabuf/syncobj fds via SCM_RIGHTS.
+The two admissible execution placements (ADR 0008) share every rule below:
 
-A producer declares its placement at registration; mixing semantics is non-conformant (the
-ADR 0008 recast's "never both ambiguously").
+- **in-process sink**: the wire is a C ABI over the §4 register; handles are `xrt_fence`-class.
+- **adjacent process**: a SOCK_SEQPACKET control channel (§7) plus a producer-owned memfd
+  register mapped read-only by the consumer; dmabufs and syncobj timelines are transferred
+  **once, at registration**, never per generation.
 
-## 2. The layer packet
+## 2. The generation record (dual-rate, per the DepthFrame contract)
 
-One packet describes one publishable unit ("layer generation"). All integers little-endian in
-the adjacent-process encoding; all fields mandatory unless marked.
+One record describes one publishable generation of one layer kind. The environment layer is
+explicitly **dual-rate**: colour and geometry age independently and each carries its own
+timestamp, pose, and calibration reference.
 
 ```text
 header:
-  layer_kind        u32   environment | hand_top            (enum, §2.1)
-  generation        u64   monotonically increasing per producer
-  t_capture_ns      u64   mid-exposure timestamp, Monado clock (never publish time)
-  calibration_ver   u32   bumps atomically on IPD/thermal recalibration; consumer drops
-                          cross-version pairings whole
-  flags             u32   bitfield: complete | degraded | fabricated_confidence
-per view (view_count × ):
-  view_id           u32   stable id matching the runtime's view enumeration
-  image[]:                one entry per plane_kind present (§2.1 table)
-    plane_kind      u32   color | alpha_premul | depth | confidence | guide_luma
-    fourcc          u32   DRM FOURCC (FLOAT/FIXED_16(frac)/HILBERT8(order) depth encodings
-                          are declared via fourcc+params per research/14 §5)
-    modifier        u64
-    width, height   u32
-    n_planes        u32   dmabuf planes; fds attached out-of-band (SCM_RIGHTS / ABI handles)
-    offset,stride[] u32   per dmabuf plane
-    params          u64   encoding parameter word (frac bits / Hilbert order / unused = 0)
-  depth_range:            present when plane_kind depth present
-    near_m, far_m   f32
-    reversed        u32
-  pose:                   T_world←view at t_capture (the producer's own pose query — in-process
-                          by construction; the consumer never re-queries for these pixels)
-    position        f32[3]
-    orientation     f32[4] unit quaternion x y z w
-  intrinsics        f32[4] fx fy cx cy (rectified)
-sync (per view, per image):
-  acquire_syncobj   fd + u64 point   must signal before the consumer samples
-  release_syncobj   fd + u64 point   the consumer signals at GPU-complete; per-image, may
-                                     complete out of generation order (never one shared
-                                     monotonic timeline across reusable images — research/32 §2)
+  layer_kind          u32   environment | hand_top
+  generation          u64   monotonic per producer epoch
+  producer_epoch      u64   from registration; bumps on device loss / producer restart (§6)
+  flags               u32   complete | degraded | fabricated_confidence
+colour group (environment: required; hand_top: the αF/α images):
+  t_colour_ns         u64   mid-exposure, Monado clock (never publish time)
+  pose_colour         f32[7]  T_world←camera at t_colour (pos xyz + quat xyzw)
+  calibration_ver_c   u32
+  colour_space        u32   enum (sRGB-nonlinear | BT.601 | BT.709 ...)
+  exposure_us, gain   u32, f32
+  distortion_ref      u32   index into registered distortion maps (§3)
+  images[]                  slot indices into the registered image table (§3)
+geometry group (environment: required; hand_top: the hand-depth image):
+  t_geometry_ns       u64   may differ from t_colour (dual rate)
+  pose_geometry       f32[7] T_world←rig at t_geometry
+  calibration_ver_g   u32
+  T_geom_to_colour    f32[16] alignment transform, column-major
+  depth encoding:     fourcc + params u64 (FLOAT | FIXED_16(frac) | HILBERT8(order))
+  depth_range:        near_m f32, far_m f32, min_stored f32, max_stored f32, reversed u32
+                      — the canonical mapping of zxr_frame_slot_v2.set_depth_range: stored
+                      s∈[min,max] → window depth → reciprocal-linear distance in [near,far]
+  intrinsics          f32[4] fx fy cx cy (rectified) + baseline_m f32
+  images[]                  depth, confidence (REQUIRED; classes measured/propagated/
+                            completed/hole), guide_luma (REQUIRED for environment, full-res)
+per image reference:
+  slot_index          u32   into the registered image table
+  acquire_point       u64   on the image's registered acquire timeline
+  release_point       u64   on the image's registered release timeline (per-image timelines;
+                            never one shared monotonic release timeline — research/32 §2)
 ```
 
-### 2.1 Layer kinds and required planes
+Producer device identity, image formats/modifiers/strides, distortion maps, and timelines are
+**registration-time** data (§3), not per-generation fields.
 
-| layer_kind | Required planes | Optional |
-|---|---|---|
-| environment | color, depth, confidence | guide_luma |
-| hand_top | alpha_premul (αF), alpha (in FOURCC channel layout), depth | confidence |
+## 3. Registration
 
-Confidence is **always present** for environment (measured / temporally-propagated / completed /
-hole classes per the perception doc); a backend unable to produce it must set
-`fabricated_confidence` and publish a fabricated plane — absent confidence is non-conformant.
+At attach, the producer registers once: its identity (name, device id, `producer_epoch`), the
+image table (every dmabuf it will ever publish: fd, fourcc, modifier, planes/offsets/strides,
+dimensions, usage class), per-image acquire/release syncobj timelines, distortion maps, and the
+negotiated **`max_in_flight`** (§4). Adding images requires a re-registration message; the
+consumer acks before first use. This bounds fd transfer to registration and makes generation
+records small and fixed-layout.
 
-## 3. Publication: the latest-complete register
+## 4. Publication: the GPU-safe latest-signalled register
 
-Producers publish into a **per-layer-kind triple-buffered register** (three generations: one
-being written, one latest-complete, one possibly in consumer use):
+- The register holds `pool = 2 + max_in_flight` generation slots per layer kind (one being
+  written, one latest-complete, `max_in_flight` potentially referenced by consumer GPU work).
+  `max_in_flight` is negotiated at registration (consumer declares; minimum 1, typical 2).
+- Visibility: a generation becomes visible only when fully written and flagged complete
+  (packet-level stereo atomicity — both views' groups or nothing). Publication uses fixed
+  pre-registered slots and a single atomic latest-index store with release ordering; **the
+  consumer performs one acquire-ordered read of the latest index and its slot header per pass —
+  no retry loop, no lock** (a torn write is impossible by construction: slots are only rewritten
+  after reclamation, §4.3).
+- Selection: the consumer takes the newest visible generation **whose acquire points have
+  signalled**; otherwise it keeps its current generation. It never waits.
+- **Reclamation (the GPU-safety rule): a slot is reusable only when every release point of every
+  submitted consumer use of its images has signalled.** The consumer moving its snapshot forward
+  is *never* a release condition. If no slot is reclaimable, the producer drops the new
+  generation (a counted overrun, §7) rather than overwriting — producers never block, and
+  memory is bounded by the pool.
 
-- A generation becomes *visible* only when fully written and its packet's `complete` flag set —
-  partial generations are never visible (stereo atomicity is packet-level: both views or
-  nothing).
-- The consumer, once per composition pass, atomically takes a reference to the **latest complete
-  generation whose acquire points have signalled** ("latest-signalled snapshot") — it must not
-  wait on an unsignalled acquire; if none newer is signalled, it reuses its current reference.
-- Consumer references pin at most one generation per layer kind; producers may therefore need at
-  most three buffers per image slot (write / latest / pinned).
+## 5. Never-block rules (normative)
 
-## 4. Ordering and never-block rules (normative)
+1. The consumer never blocks on a producer: one non-retrying register read per pass; no fence
+   waits on the composition thread; unsignalled acquire ⇒ reuse current.
+2. The producer never blocks on the consumer: overrun-drop per §4; registration acks are
+   asynchronous.
+3. Staleness is the consumer's: warp each group from its own pose/time to display time; drop
+   layers older than the layer policy's max age. Producers never republish identical
+   generations.
 
-1. The consumer never blocks on a producer: no waits on acquire points, no reads of
-   partially-written generations, no IPC round-trips on the composition path.
-2. Producers never block on the consumer: publication overwrites the oldest non-pinned
-   generation; a stalled consumer pins at most one.
-3. Release points are signalled at consumer GPU-complete per image; a producer must not reuse an
-   image before its release point signals **or** the consumer's pin moves on and the register
-   slot is reclaimed (whichever the placement's memory model requires — stated per placement in
-   §6).
-4. Staleness handling is the consumer's (warp from the packet pose to display time, drop if
-   older than the layer policy's max age); producers never re-publish identical generations to
-   look fresh.
+## 6. Failure semantics
 
-## 5. Failure semantics
+- **Producer death** (socket EOF / sink deregistration): the consumer stops selecting new
+  generations immediately, composes without the layer from its next pass, **but retires nothing
+  early**: registered images and timelines are retained until every submitted GPU use completes
+  (or device loss makes completion impossible), then unmapped and closed. Abandoned release
+  points are closed unsignalled only after that retirement — the same rule as
+  `zxr_frame_slot_v2.destroy`.
+- **Device loss / producer restart**: a new registration with a higher `producer_epoch`
+  supersedes the old identity; the old epoch's teardown follows the death rule. Epochs are
+  independent of `calibration_ver_*`, which count calibration changes only.
+- **Degraded** generations (flag) are composed; policy may badge.
 
-- **Producer death** (process exit / sink deregistration): the register is torn down; the
-  consumer drops its pinned reference at the next composition pass and composes without the
-  layer (policy decides passthrough-missing behavior, not this spec). Outstanding release
-  points are considered abandoned; consumers must not signal fds after teardown notice.
-- **Timeline reset / device loss**: producer bumps `calibration_ver`'s high bit as an epoch
-  marker and re-creates its register; consumers treat unknown epochs as producer death +
-  re-registration.
-- **Degraded mode**: `degraded` flag marks reduced-quality generations (e.g. mono fallback);
-  consumers compose them; policy may badge.
+## 7. Adjacent-process encoding
 
-## 6. Placement bindings
+Versioned, fixed-layout little-endian records over SOCK_SEQPACKET: `magic ("SPIN") | version u32
+| byte_length u32 | type u32 | body`. Message types: `REGISTER` (identity + tables; fds via
+SCM_RIGHTS, at most 16 per datagram, continued across `REGISTER_MORE` datagrams with explicit
+`fd_base` indices), `REGISTER_ACK`, `GENERATION` (the §2 record — fixed maxima: ≤ 4 views, ≤ 6
+images per group, so ≤ 1 KiB, no fds), `OVERRUN` (count report), `GOODBYE`. Unknown types with
+`version` ≤ negotiated are ignored; higher versions are a registration failure. The memfd ring
+carries the §2 records at the slot granularity of §4; datagrams are notifications and control
+only, so SEQPACKET buffer limits never carry image data.
 
-- **In-process sink**: the register is a shared struct owned by the producer; visibility uses a
-  seqlock (generation counter, acquire/release atomics); fence handles are `xrt_fence`-class
-  objects; teardown is sink deregistration. Crash containment: a crashing in-process producer is
-  a Monado crash — accepted only for producers meeting the ADR 0008 licensing/stability bar (the
-  GPL cutout net is always adjacent).
-- **Adjacent process**: registration + packets over SOCK_SEQPACKET (one datagram per packet,
-  64 KiB cap, fds via SCM_RIGHTS); the register lives in a memfd-backed ring the producer owns;
-  consumer maps read-only. Producer death = socket EOF.
+## 8. Conformance checklist
 
-## 7. Conformance checklist
+1. Kill the producer mid-generation: next pass composes without the layer; no torn read; images
+   unmapped only after GPU completion (validated by fence introspection); no fd leaks.
+2. Stall the consumer 1 s: producer drops with OVERRUN counts, memory bounded to the pool; on
+   resume the consumer reads the latest generation, not a queue.
+3. Recalibration: no composed frame pairs pixels and pose across `calibration_ver` values within
+   a group; dual-rate pairing across groups uses `T_geom_to_colour` of the geometry group only.
+4. **Structural never-block test**: with the acquire point held unsignalled and the producer
+   writing continuously, the composition thread is traced (syscall + fence-wait deny-list) for N
+   frames: zero blocking syscalls/fence waits, previous-generation reuse observed via the
+   fallback counter — not inferred from elapsed time.
+5. Out-of-order release across two in-flight generations: reclamation respects per-image
+   release points (never the shared-timeline shortcut).
 
-1. Kill the producer mid-generation: consumer's next pass composes without the layer; no torn
-   sampling; no fd leaks (release fds closed unsignalled).
-2. Stall the consumer 1 s: producer continues at rate, memory bounded to the register size;
-   on resume the consumer sees the latest generation, not a queue.
-3. Recalibration mid-stream: no frame pairs a new-version pose with old-version pixels.
-4. Acquire-not-signalled at pass time: previous generation reused; zero wait measured on the
-   composition thread.
-5. Out-of-order release across two generations: producer reuse ordering correct (per-image
-   points, research/32 §2 rule).
+## 9. Backlog dispositions
 
-## 8. Open items
+- **#5**: field-by-field — dual timestamps/poses/calibrations (§2 colour/geometry groups),
+  alignment transform (§2), colour space/exposure/gain (§2), distortion (registered, §3),
+  producer device id (§3), reuse lifetime (§4 reclamation rule), stereo atomicity (§4
+  visibility), source-domain decision (§1). Discharged.
+- **#8**: transport = registration + fixed-layout records + memfd register + per-image syncobj
+  timelines with acquire/release points, latest-signalled selection (§4), producer-death and
+  epoch reset (§6), backpressure = bounded pool + overrun-drop (§4/§7). Discharged.
 
-The exact `xrt_fence`↔syncobj bridging on the in-process path (Monado internals; with the
-implementation); whether hand_top wants a per-pixel depth or a single representative depth in
-degraded mode (perception backlog #2's per-client policy interacts); register sizing for
-class-B panels (budgets.md bandwidth line).
+## 10. Open items
+
+The `xrt_fence`↔syncobj bridge specifics on the in-process path (Monado internals); hand_top
+degraded-mode depth representation (perception backlog #2 interaction); per-device pool sizing
+for class-B panels (budgets.md bandwidth line).
