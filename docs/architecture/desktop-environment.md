@@ -334,7 +334,9 @@ plane. Everything else in the graph descends from one or more of these:
 - `[A]` **compositor core** — Wayland protocol server + Vulkan renderer + frame scheduler, one
   process (ADR 0006). The root of §6.2 and §6.3.
 - `[P]` **Monado + the device adaptation bundle** — the root of §6.5 and of every HMD-only
-  feature. ◇ gated by the display-path feasibility test and the D1/D2 spikes (ADR 0006).
+  feature. ◇ gated by the display-path feasibility test (the D1/D2 base spikes are closed —
+  [09 Appendix](../research/09-wxrc-ecosystem-gap-2026.md); base ratified Rust+smithay, ADR 0006
+  as amended, evidence [39](../research/39-compositor-base-landscape.md)).
 - `[S]` **seatd/logind, the systemd user session, D-Bus** — the root of greetd, the session
   target, and every service daemon.
 - `[S]` **per-unit calibration state** — device provisioning; required by anything that renders
@@ -504,8 +506,9 @@ above that line.
 
 ### 6.6 Gates and known absences
 
-The four ◇ gates block exactly their subtrees and nothing else: display-path/D1/D2 (the HMD
-output path and everything HMD-only), mapping M0 (anchored places and below), P-1 BSP
+The four ◇ gates block exactly their subtrees and nothing else: the display-path feasibility
+test (the HMD output path and everything HMD-only; the D1/D2 base spikes are closed and the base
+is ratified — ADR 0006 as amended), mapping M0 (anchored places and below), P-1 BSP
 (passthrough/cutout), S-1/R-1 (avatar). The 2D subtree, the seam layer, the session cluster, and
 every near-root service are gate-free.
 

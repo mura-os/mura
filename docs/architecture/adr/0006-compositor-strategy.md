@@ -1,7 +1,8 @@
 # ADR 0006: XR compositor strategy — revive the zxr lineage as `zxr-shell-v2`, Wayland-native, on Monado
 
-**Status:** accepted (draft)
-**Date:** 2026-09-22
+**Status:** accepted (draft); **base library ratified 2026-09-23** (Rust + smithay, see §The
+compositor base; evidence in [39-compositor-base-landscape](../../research/39-compositor-base-landscape.md))
+**Date:** 2026-09-22 (amended 2026-09-23)
 **Context sources:** [08-wxrc](../../research/08-wxrc.md) (Motorcar→wxrc→wxrd lineage + code),
 [09-wxrc-ecosystem-gap-2026](../../research/09-wxrc-ecosystem-gap-2026.md) (2026 patch archaeology),
 [10-xr-wayland-protocol-comparison](../../research/10-xr-wayland-protocol-comparison.md) (five-model
@@ -102,36 +103,51 @@ extension), matches Monado's native Vulkan path and the rest of the spatial-os X
 sync primitives the dmabuf depth path needs. GLES2+MNDX remains available only as a throwaway
 bring-up shortcut, never the production target.
 
-### The compositor base: to be settled by a spike (wlroots 0.19 vs smithay)
+### The compositor base: **ratified — Rust + smithay** (amendment, 2026-09-23)
 
-Because this is a rewrite, the base library is genuinely open:
+The original decision deferred the base to the D2 wxrc-port sizing spike plus a smithay
+evaluation, with four open checks. Both halves now exist: **D2 was run** ([09 Appendix
+D1/D2](../../research/09-wxrc-ecosystem-gap-2026.md)) — wxrc does not even preprocess against
+wlroots 0.19.3, confirming total-rewrite and removing any port-sizing argument for C — and the
+smithay evaluation was done as a code study of pinned clones,
+[39-compositor-base-landscape](../../research/39-compositor-base-landscape.md), where all four
+checks pass:
 
-- **wlroots 0.19 (C):** wxrc's lineage; [09](../../research/09-wxrc-ecosystem-gap-2026.md) §4 maps
-  the exact 0.19 API surface (scene graph, renderer, allocator, output-state, xdg-shell lifecycle);
-  mature DRM-lease and Vulkan-renderer support.
-- **smithay (Rust):** WayVR's base, which already demonstrates the entire 2D tier end-to-end
-  (xdg-shell, popups, dmabuf-with-feedback, Xwayland) on a headset via `XR_EXTX_overlay`
-  ([10 §2.5](../../research/10-xr-wayland-protocol-comparison.md)); matches the Rust of the rest of
-  the XR ecosystem (StardustXR, WayVR, nixpkgs-xr) and gives memory safety for a compositor parsing
-  untrusted client buffers.
+1. **Vulkan renderer integration:** smithay's Wayland frontend contains zero references to its
+   `Renderer` trait (grep-verified); the one bridge worth keeping (`on_commit_buffer_handler`,
+   which owns wl_buffer release *and* syncobj release-point signalling) is renderer-free. zxr's
+   ash renderer plugs in without fighting the library (doc 39 §1.1–§1.2).
+2. **DRM leasing:** implemented lessor-side (`wayland::drm_lease`), with VR named as the use
+   case in the module docs; needed only on the desktop/dev profile (doc 39 §1.5).
+3. **The OpenXR/`ash` boundary:** openxrs wraps `XR_KHR_vulkan_enable2` end-to-end
+   (`create_vulkan_instance`/`vulkan_graphics_device`/`create_vulkan_device`) on the same ash
+   major smithay uses; WayVR proves the runtime-created-device shape on a real headset
+   (doc 39 §1.9, §2).
+4. **Explicit sync:** `wayland::drm_syncobj` is implemented with sync-file import/export APIs
+   whose doc comments explicitly anticipate a Vulkan-driven compositor (doc 39 §1.3).
 
-**Current leaning (documented, NOT ratified): Rust + smithay.** Since this is a rewrite rather than
-a port, the wxrc-lineage argument for C/wlroots is weak, and Rust is preferred: memory safety for a
-compositor parsing untrusted client buffers and cross-process dmabuf/fd handles, and alignment with
-the rest of the XR ecosystem this project already depends on (StardustXR, WayVR, nixpkgs-xr are all
-Rust; WayVR's smithay stack already proves the 2D tier end-to-end on a headset). The expectation is
-**C FFI where it counts** — Monado/OpenXR loader, `libwayland`/protocol scanning where needed, and
-any wlroots-only helper without a mature Rust equivalent — via the usual `-sys` bindings.
+**Decision: Rust + smithay**, pinned to a git rev with `default-features = false` (the niri /
+cosmic-comp convention), features `wayland_frontend`, `backend_drm`, `backend_vulkan`,
+`desktop`, `xwayland`. C FFI where it counts — Monado/OpenXR via openxrs (`openxr`-sys),
+`libwayland` where needed — via the usual `-sys` bindings. Known frictions, accepted and
+recorded (doc 39 §1.11): a render node must be opened even though zxr never touches KMS on the
+headset path; smithay's winit backend is GLES-coupled, so the windowed dev mode drives winit +
+the ash swapchain directly; the documented acquire model is CPU-side blockers (GPU-side
+semaphore waits available via `export_sync_file`).
 
-This is a *leaning to write down*, not a hard decision. It is **not ratified**: the sub-decision is
-still deferred to the **D2 spike** (compile wxrc against modern wlroots to size the port) plus a
-concrete smithay/WayVR evaluation, and will be ratified as a follow-up amendment to this ADR once
-those exist. Open checks before ratifying: smithay's coverage of the pieces we need beyond the 2D
-tier (Vulkan renderer integration, DRM leasing, the OpenXR/`ash` boundary, explicit-sync via
-`wp_linux_drm_syncobj_v1`), and whether any wlroots-only capability forces a larger C surface than
-"FFI where it counts" implies. The protocol and the client-rendered / Monado-client / Vulkan
-decisions above are base-independent (a wire protocol is language-agnostic), so none of this blocks
-protocol work.
+**Fallback (recorded, with trigger):** wlroots 0.21-dev. Its headline advantage dissolved on
+inspection — the built-in Vulkan renderer cannot adopt an externally (OpenXR-) created device
+without patching private ABI, so a fallback recovers protocol/seat/Xwayland plumbing but not the
+render path (doc 39 §3). The fallback triggers only on a **structural** smithay failure during
+bring-up (a protocol-frontend defect unfixable without forking) — never on effort overrun.
+
+**No further base spikes remain**: D1/D2 are closed with recorded results (doc 09 appendix), and
+wxrc stays a design reference. The **R0 bring-up spike** (doc 39 §5) is re-scoped from decision gate to
+**risk-retirement**: it is the first code milestone and must retire the integration risks
+(projection-layer presentation, zero-copy dmabuf + explicit sync end-to-end, window churn,
+Xwayland) against measured gates, but it cannot change the base choice. The protocol and the
+client-rendered / Monado-client / Vulkan decisions above were always base-independent, and the
+ratification does not alter them.
 
 ### Sequencing: ship the 2D tier first
 
@@ -151,10 +167,12 @@ protocol is finished, and it directly closes the open 2D-app question in
 - The reusable assets from the lineage are the **zxr protocol design** and the **thesis philosophy**
   ([08](../../research/08-wxrc.md) Part 1) — not the wxrc or wxrd code, which are design references.
 - The engineering program is the four items from [09](../../research/09-wxrc-ecosystem-gap-2026.md)'s
-  bottom line: (1) the compositor on modern wlroots/smithay, (2) the Vulkan renderer, (3) the
+  bottom line: (1) the compositor on smithay (ratified above), (2) the Vulkan renderer, (3) the
   `zxr-shell-v2` depth/timing/input protocol, (4) hardware qualification across AMD/Intel/NVIDIA and
-  real HMDs — sequenced behind the D1/D2 spikes and the display-path feasibility test that
-  [overview.md](../overview.md) already names as the first XR experiment.
+  real HMDs — sequenced by the boot-forward ladder in
+  [implementation-path.md](../implementation-path.md) (the R0 bring-up spike opens it; the
+  display-path feasibility test that [overview.md](../overview.md) names as the first XR
+  experiment remains the first *hardware* gate).
 - `wp_drm_lease_v1` is consumed by Monado on the desktop/dev profile and bypassed by `VK_KHR_display`
   on the appliance ([10 §1](../../research/10-xr-wayland-protocol-comparison.md)); the new protocol
   needs nothing from it.
