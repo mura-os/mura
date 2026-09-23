@@ -58,7 +58,7 @@ critical path).
 | greetd display manager | mech | separate daemon | greetd JSON IPC (`$GREETD_SOCK`) | **specified** | ADR 0007 §Decision (both profiles use `services.greetd`); [research/11](../research/11-display-managers-greeters.md) §2/§5 |
 | zxr `--greeter` mode | mech+pres | in-compositor (restricted mode, `greeter` user) | `$GREETD_SOCK`; Monado (IMU-only); no client Wayland socket | **specified** | ADR 0007 §Two profiles; contract `spatial.xr.session.greeter` ([lib/contract](../../lib/contract/default.nix)) |
 | Appliance autologin profile | policy | NixOS module | greetd `initial_session` | **specified** | ADR 0007 §Two profiles; contract `spatial.xr.session.autoLogin` + profile-exclusivity assertion (lib/contract) |
-| `spatial-authd` PAM helper | mech | separate daemon (per-conversation helper) | private socketpair; PAM | **specified** | ADR 0007 §PAM out of process; NixOS `security.pam.services.spatial-lock` |
+| `spatial-authd` PAM helper | mech | separate daemon (per-conversation helper) | private socketpair; PAM | **specified** | ADR 0007 §PAM out of process; [specs/session-auth.md](../../specs/session-auth.md) rev 2 (nonced batched conversation, transition table, L1–L3 instrumentation); NixOS `security.pam.services.spatial-lock` |
 | PIN credential (`pam_spatial_pin`) + enrollment | mech | inside PAM stack | PAM | **partial** | ADR 0007: argon2-hashed PIN in per-unit system state, "MVP: owner-password-is-PIN"; storage/enrollment UX an open question (§Open questions) |
 | Session lifecycle (`spatial-session.target`) | mech | systemd user target | systemd | **specified** | ADR 0007 §Two profiles (owns Monado + compositor + shell services; crash/restart is systemd's job; boot-locked restart per invariant I3) |
 | XR-init preflight probe (OpenXR bring-up test + same-GPU check before compositor session init) | mech | separate probe process (under the session target) | exit status / small report | **partial** | pattern adopted from KWin VR's `kwinvr-xrtest` incl. its two proven failure modes ([31 §2.7](../research/31-kwin-vr.md), ADR 0013 §2); composition doc §7.3 makes it normative; no spatial-os design yet |
@@ -75,7 +75,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Component | M/P/P | Placement | Protocol seam | Status | Evidence |
 |---|---|---|---|---|---|
 | Wayland protocol server (core + proxied-client baseline globals) | mech | in-compositor | standard: `wl_compositor` 6, `wl_shm`, `wl_seat`, `wl_output` 4, `xdg_wm_base` 7, `wl_data_device_manager` 3, `zwp_linux_dmabuf_v1` v4+ w/ feedback, `wp_viewporter`, `wp_fractional_scale_v1`, `zxdg_decoration_manager_v1`, `wp_linux_drm_syncobj_v1`, `wp_presentation` | **specified** | ADR 0006 §Decision; [spatial-sharing.md](spatial-sharing.md) §3 must/should list; [research/19](../research/19-wayland-proxying.md) §8 (versions + citations) |
-| `zxr-shell-v2` protocol (3D tier: views, colour+depth buffers, matrix split, clipping, size negotiation, 6DoF/ray input, frame timing) | mech | in-compositor | zxr-private (`zxr-shell-v2.xml`, upstreaming intent) | **specified** | ADR 0006 §The protocol; [zxr-shell-v2-composition.md](zxr-shell-v2-composition.md) §7.2/§8 |
+| `zxr-shell-v2` protocol (3D tier: views, colour+depth buffers, matrix split, clipping, size negotiation, 6DoF/ray input, frame timing) | mech | in-compositor | zxr-private (`zxr-shell-v2.xml`, upstreaming intent) | **specified** | ADR 0006 §The protocol; [zxr-shell-v2-composition.md](zxr-shell-v2-composition.md) §7.2/§8; normative XML drafted at rev 2 ([protocols/zxr-shell-v2.xml](../../protocols/zxr-shell-v2.xml)) |
 | Vulkan renderer + OpenXR client loop | mech | in-compositor | `XR_KHR_vulkan_enable2`; one projection layer to Monado | **specified** | ADR 0006 §The renderer; composition §7.4 |
 | Sort-last depth composition engine (T1; T2/T3/T4 tiers reserved) | mech | in-compositor | internal (negotiated dmabuf/opaque-fd transport, composition §5) | **specified** | composition §2–§5 |
 | Frame scheduling (snapshot distribution, composition cutoff, deadline/placeholder rule) | mech+policy | in-compositor | zxr frame events | **specified** | composition §7.4; pacing policy across heterogeneous clients carried open (§8) |
@@ -96,7 +96,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Mode-3 RGBD bridge (egress/ingress, pacer, encoder abstraction, depth codec, validity masks, per-observer budgets) | mech | in-compositor (bridge component) | private typed two-channel network protocol (WiVRn-shaped) | **specified** | spatial-sharing §4 (vendored WiVRn modules + the four genuinely new pieces); codec bake-off open ([research/18](../research/18-xr-streaming.md) §9) |
 | Toplevel-delegation consumer (foreign 2D sessions as per-toplevel floating windows) | mech | in-compositor | `zext-toplevel-export-v1` (XR-agnostic, upstream-intent — [protocols/](../../protocols/README.md)) | **specified** | [foreign-session-integration.md](foreign-session-integration.md) + draft XML against R1–R22 ([research/32 §8](../research/32-toplevel-export-prior-art.md)); implementation staged behind composition M1 (ADR 0014 M-A); producers (smithay reference, KWin MR) are ADR 0014 milestones, not registry components |
 | Workspace-join replication (mode-5 placement-graph sync, rights, control leases) | mech+policy | in-compositor + sharing service | small reliable control protocol | **partial** | spatial-sharing §5 defines the state and rights split; no protocol spec, no service placement; "sharing service" named only in §6 invariant 4 |
-| Perception-layer intake (environment + hand-top layers; latest-complete, never awaited) | mech | in-compositor | dmabuf + `wp_linux_drm_syncobj_v1`-class IPC from Monado-side services | **partial** | ADR 0008 §Decision decides placement and transport class; the actual frame/pose IPC is explicitly unspecified — "a Monado frame sink is not a Wayland surface" ([perception-design-backlog.md](perception-design-backlog.md) #5/#8) |
+| Perception-layer intake (environment + hand-top layers; latest-complete, never awaited) | mech | in-compositor | dedicated SEQPACKET IPC + dmabuf + syncobj timelines ([specs/perception-intake.md](../../specs/perception-intake.md)) | **specified** | ADR 0008 §Decision (placement) + [specs/perception-intake.md](../../specs/perception-intake.md) rev 2 (dual-rate generation record, registration/image tables, GPU-safe reclamation, snapshot selection, producer-death); backlog #5/#8 dispositions in its §9 |
 | Boundary breach response (forced passthrough, no client cooperation) + boundary overlay rendering | mech | in-compositor | internal; IMU-rate probe queries from geometry service | **specified** | spatial-mapping §7 (compositor-owned overlay + composition-policy breach response; threshold semantics part of the contract) |
 | Desktop windowed output mode (mouse-camera dev mode) | mech | in-compositor | ordinary window (`spatial.xr.compositor.backend = window`) | **specified** | composition §7.1; contract option (lib/contract) |
 | Decoration enforcement (force server-side) | mech | in-compositor | `zxdg_decoration_manager_v1` | **specified** | spatial-sharing §3 / research/19 §8 (force `server_side`); the *chrome renderer* itself is a shell-plane row (§5) |
@@ -164,8 +164,8 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 
 | Component | M/P/P | Placement | Protocol seam | Status | Evidence |
 |---|---|---|---|---|---|
-| Settings daemon + user-facing configuration model | mech+policy | none decided | none-yet | **missing** | evidence base now exists: [research/35](../research/35-settings-config-models.md) (GSettings/KConfig/cosmic-config/image-based-OS survey; recommended shape = NixOS option metadata as the schema source + cosmic-config-style sparse versioned files + per-key D-Bus notification, satisfying composition constraint 9; strata mapping in §8); component design still missing |
-| xdg-desktop-portal backend — capture tier | mech | separate daemon (day-one: `xdg-desktop-portal-wlr` unmodified; then native `xdg-desktop-portal-spatial`) | D-Bus `org.freedesktop.impl.portal.*`; PipeWire | **specified** | spatial-sharing §2; research/17 §1/§8 (xdpw needs only our protocols + `UseIn` name; native backend = 3 D-Bus methods + chooser + PW producer). Yes — the portal backend is already implied by docs 17–19; SpatialCast source types (`XR_VIEW`/`APP_VOLUME`/`WORKSPACE`) sketched in research/17 §9 |
+| Settings daemon + user-facing configuration model | mech+policy | separate daemon (session half + privileged apply agent) | `org.spatialos.Settings1` (session bus) + schema artifact + sparse versioned stores ([specs/settings-schema.md](../../specs/settings-schema.md)) | **partial** | the *contract* is specified: [specs/settings-schema.md](../../specs/settings-schema.md) rev 2 (schema artifact from NixOS options, preference/state XDG split, relocatable instance schemas, quarantine, typed migrations, apply transactions), on the [research/35](../research/35-settings-config-models.md) evidence base; the daemon's process design itself is still missing (the spec's §10) |
+| xdg-desktop-portal backend — capture tier | mech | separate daemon (day-one: `xdg-desktop-portal-wlr` unmodified; then native `xdg-desktop-portal-spatial`) | D-Bus `org.freedesktop.impl.portal.*`; PipeWire | **specified** | spatial-sharing §2; research/17 §1/§8 (xdpw needs only our protocols + `UseIn` name; native backend = 3 D-Bus methods + chooser + PW producer). Yes — the portal backend is already implied by docs 17–19; SpatialCast source types now normative in [specs/spatialcast-portal.md](../../specs/spatialcast-portal.md) rev 2 (`XR_VIEW`/`APP_VOLUME` via a frontend patch; workspace join moved to the sharing service's session API) |
 | xdg-desktop-portal backend — non-capture interfaces (FileChooser, OpenURI, Settings/appearance, Account, Notification portal…) | mech | separate daemon | D-Bus | **missing** | no doc found; docs 17–19 cover only ScreenCast/RemoteDesktop/Clipboard portals |
 | Notification spec service (`org.freedesktop.Notifications`) | mech | separate daemon | D-Bus notification spec | **missing** | no doc found (presentation half also missing, §5) |
 | Polkit authentication agent (spatial presentation of privilege prompts) | mech+pres | separate daemon/client | polkit D-Bus agent API | **missing** | no doc found. `security.polkit.enable = true` is set in [modules/os](../../modules/os/default.nix) with **no agent**, so any privileged action would silently fail in-session; the lock's PAM plumbing (ADR 0007) is adjacent but distinct |
@@ -259,8 +259,9 @@ starts from evidence rather than zero.
 7. **OSD framework** (shell) — no doc found.
 8. **Notifications, both halves** (service + shell) — no spec service, no spatial presentation;
    today notifications exist only as a hypothetical leak in spectate streams (spatial-sharing §6).
-9. **Settings daemon + configuration model** (service) — no runtime settings path at all; the Nix
-   contract is build-time and `spatial.xr.environment` is an env-var channel into one unit.
+9. **Settings daemon + configuration model** (service) — *contract closed
+   ([specs/settings-schema.md](../../specs/settings-schema.md) rev 2)*: schema artifact, storage
+   strata, bus interface, migrations. Remaining gap: the daemon's own process design (spec §10).
 10. **Polkit agent** (service) — polkit is *enabled* (modules/os) with no agent to present
     prompts; privilege escalation in-session is currently a dead end.
 11. **Secrets/keyring** (service) — no doc found.
@@ -380,12 +381,12 @@ Counts by status (rows in §2–§7 tables):
 | Plane | specified | partial | missing | total |
 |---|---|---|---|---|
 | System | 7 | 4 | 1 | 12 |
-| Authority | 21 | 6 | 6 | 33 |
+| Authority | 22 | 5 | 6 | 33 |
 | Perception | 17 | 6 | 0 | 23 |
 | Shell | 3 | 8 | 8 | 19 |
-| Service | 1 | 3 | 16 | 20 |
+| Service | 1 | 4 | 15 | 20 |
 | Build | 7 | 8 | 0 | 15 |
-| **Total** | **56** | **35** | **31** | **122** |
+| **Total** | **57** | **35** | **30** | **122** |
 
 The shape is stark and expected: the authority and perception planes are deeply specified (the
 ADR work to date), the build plane is specified-but-stubbed by deliberate policy (the Lynx-spike

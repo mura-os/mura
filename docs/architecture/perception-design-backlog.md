@@ -45,6 +45,9 @@ accelerators until that path and P-1 exist.
   currently alternates — pick one and specify a versioned IPC protocol + bounded buffer pools
   carrying stereo atomicity, format/planes/modifier, colour space, exposure/gain, distortion map,
   timestamps, calibration version, producer device id, and reuse lifetime.
+  *SPECIFIED (2026-09, specification workstream): [specs/perception-intake.md](../../specs/perception-intake.md)
+  rev 2 — source-domain artifacts (compositor owns display-time warp), dual-rate colour/geometry
+  generation record covering every field above; §9 records the field-by-field disposition.*
 - **#6 Pose-at-exposure API.** A concrete Monado API returning pose + source-clock mapping +
   interpolation status + uncertainty for a capture timestamp; characterized against hardware
   timestamps; a defined degraded mode (fixed-proxy) when unavailable. This is an **enable gate**.
@@ -58,6 +61,10 @@ accelerators until that path and P-1 exist.
   surface; define either a real private Wayland client with surface commits, or an equivalent IPC
   carrying acquire/release timeline points, plus the non-blocking "latest signalled snapshot"
   selection and producer-death/timeline-reset behavior.
+  *SPECIFIED (2026-09, specification workstream): [specs/perception-intake.md](../../specs/perception-intake.md)
+  rev 2 — dedicated SEQPACKET protocol (not a Wayland client), registration-time image tables with
+  per-image acquire/release timelines, GPU-safe reclamation gated on release-point completion,
+  producer_epoch teardown; §9 records the disposition.*
 - **#2 Per-client hand policy after a single resolve.** A global top layer can't honor per-client
   policy from `(C_scene, d_s)` alone (client identity is gone). For opaque T1, resolve an
   owner/policy ID alongside colour+depth, or apply hand policy per client before the final resolve;
