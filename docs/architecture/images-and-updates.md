@@ -105,7 +105,12 @@ the backend is slot-scheme-aware.
 An update is marked successful only after a **hardware-aware readiness check**: the intended kernel
 booted, the adaptation services started, and the XR path passed `spatial.qualification.readinessCheck`
 — not merely "the kernel booted." Rollback must account for mutable-data migrations and AVB
-rollback-protection (arbitrary downgrades cannot be promised).
+rollback-protection (arbitrary downgrades cannot be promised). The full design is
+[implementation-path.md §3a](implementation-path.md): profile-specific blessing tiers (appliance =
+stable locked owner session; multi-user = stable greeter — never waiting for a login), a stability
+interval rather than a first frame, and systemd-boot `+tries` counting / `boot-complete.target` /
+`systemd-bless-boot` / RAUC slot-status as three separately observable transitions, wired
+explicitly in the uefi-rauc family (it manages systemd-boot manually).
 
 ## Development vs. release
 

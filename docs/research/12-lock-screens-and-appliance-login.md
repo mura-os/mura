@@ -553,7 +553,10 @@ viewed through lenses that expect barrel-pre-distorted per-eye content.
    privileged-client policy the XML anticipates, defaulting to internal-only on the appliance.
 2. PIN storage: MVP as owner-password-is-PIN vs `pam_spatial_pin.so` with argon2 hash in
    `/var/lib/spatial/` — §4.4 recommends the module; decide enrollment UX (in-headset OOBE vs
-   companion tool) alongside doc 11's first-boot story.
+   companion tool) alongside doc 11's first-boot story. **RESOLVED (2026-09-23):** option (b)
+   ratified by [ADR 0017](../architecture/adr/0017-first-run-provisioning.md); the first-boot
+   story is [first-run-onboarding.md](../architecture/first-run-onboarding.md) (in-headset OOBE
+   via `zxr --oobe` + `spatial-provisiond`; companion tool recorded as an open alternative).
 3. Monado's actual `XR_EXT_user_presence` coverage per target device (qualification-matrix item);
    fallback path via raw proximity evdev/IIO.
 4. Grace-window default (30 s? 60 s?) and whether "same head re-donned" heuristics may extend it —

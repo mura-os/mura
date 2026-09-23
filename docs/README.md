@@ -76,7 +76,8 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [places-model.md](architecture/places-model.md) — the places model: typed reference-frame graph (XrSpace-grounded), attachment constraints, per-place layout, decomposed currency with the C1–C7 reconciliation rules, entry policies, protocol/restore/docked/mode-5 bindings
 - [spatial-a11y.md](architecture/spatial-a11y.md) — spatial accessibility design note: AT-SPI2 baseline, zxr's compositor duties, the `zspatial-a11y` spatial-semantics reservation, allow-list posture
 - [component-registry.md](architecture/component-registry.md) — the master component inventory: 6 planes, evidence-based status (specified/partial/missing), the gap list
-- [implementation-path.md](architecture/implementation-path.md) — the boot-forward plan of record: greeter-first rationale, the B1–B8 boot chain, the R0/G1–G3 + M1–M4 rung ladder, parallel tracks, deferrals
+- [implementation-path.md](architecture/implementation-path.md) — the boot-forward plan of record: greeter-first rationale, the B1–B9 boot chain (persist/hardware readiness, XR preflight + recovery, session bootstrap contract, readiness/mark-good gate), the R0/G1–G3 + F1/F2 + M1–M4 rung ladder, lifecycle (resume/doff/logout), parallel tracks, deferrals
+- [first-run-onboarding.md](architecture/first-run-onboarding.md) — the F-track: persistent-state classes, F1 silent provisioning (marker-authoritative), F2 onboarding (dispatcher + unprivileged OOBE UI + `spatial-provisiond`), factory-vs-user calibration, factory reset
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
   - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace
@@ -94,6 +95,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0014](architecture/adr/0014-toplevel-delegation-protocol.md) toplevel delegation protocol (specify upstream-shaped `zspatial-toplevel-export-v1` now; consumer-first, smithay → KWin MR → wayland-protocols; GNOME post-standardization)
   - [0015](architecture/adr/0015-docked-desktop-mode.md) docked desktop mode (mirror tier + same-session flat presentation on external displays; quiescence ladder to 2D-compositor power; fact-gated on `spatial.hardware.externalDisplay`)
   - [0016](architecture/adr/0016-places-model.md) places model (typed frame graph; exclusive+overlay membership; decomposed currency — no active bit; groups = frames; transient+pin lifecycle; no second axis)
+  - [0017](architecture/adr/0017-first-run-provisioning.md) first-run provisioning (fixed declared owner account; PIN = `pam_spatial_pin` ratified; dispatcher-gated OOBE split from `spatial-provisiond`; persist marker over `ConditionFirstBoot`; secrets never in the store; factory reset as class-wise inverse)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the base architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the base review (fixed now vs.
   deferred to the Lynx spike / pre-release design)
