@@ -87,6 +87,39 @@ let
     };
   };
 
+  # ADR 0018: multi-account + guest on the multi-user profile passes.
+  multiUserWithGuest = {
+    imports = [ validDevice ];
+    config = {
+      spatial.xr.shell = "zxr";
+      spatial.xr.session.greeter = "zxr-greeter";
+      spatial.xr.session.provisioning.mode = "greeter-gated";
+      spatial.xr.session.multiUser.enable = true;
+      spatial.xr.session.guest.enable = true;
+    };
+  };
+
+  # ADR 0018: multi-account on the appliance profile must fail (single-owner by design).
+  multiUserOnAppliance = {
+    imports = [ validDevice ];
+    config = {
+      spatial.xr.shell = "zxr";
+      spatial.xr.session.autoLogin = "owner";
+      spatial.xr.session.multiUser.enable = true;
+    };
+  };
+
+  # ADR 0018: guest without multiUser must fail (greeter-scene affordance).
+  guestWithoutMultiUser = {
+    imports = [ validDevice ];
+    config = {
+      spatial.xr.shell = "zxr";
+      spatial.xr.session.greeter = "zxr-greeter";
+      spatial.xr.session.provisioning.mode = "greeter-gated";
+      spatial.xr.session.guest.enable = true;
+    };
+  };
+
   # Invalid: shell set but NEITHER session profile chosen.
   noProfile = {
     imports = [ validDevice ];
@@ -149,6 +182,12 @@ let
     provisioningMarkerInEnrollment =
       eval.config.spatial.xr.session.provisioning.markerPath
       == "/var/lib/spatial/enrollment/provisioned";
+    # ADR 0018: multi-account/guest profile coupling + defaults.
+    multiUserWithGuestPasses = assertsPass (evalContract multiUserWithGuest);
+    multiUserOnApplianceFails = !assertsPass (evalContract multiUserOnAppliance);
+    guestWithoutMultiUserFails = !assertsPass (evalContract guestWithoutMultiUser);
+    multiUserDefaultOff = eval.config.spatial.xr.session.multiUser.enable == false;
+    multiUserCapDefaultFour = eval.config.spatial.xr.session.multiUser.maxAccounts == 4;
     # Lock triggers default sensibly.
     lockDefaultsOn = eval.config.spatial.xr.session.lock.enable == true;
     # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.

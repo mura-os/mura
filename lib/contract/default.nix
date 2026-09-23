@@ -482,6 +482,52 @@ in
             '';
           };
         };
+        multiUser = {
+          enable = mkOption {
+            type = types.bool;
+            default = false;
+            description = ''
+              Multi-account support (ADR 0018, multi-user.md): real Unix accounts persisted
+              via userborn passwordFilesLocation on /var/lib/spatial state, created only
+              through spatial-provisiond (owner-authorized), picked in the greeter scene.
+              Requires the multi-user session profile (session.greeter != "none").
+            '';
+          };
+          maxAccounts = mkOption {
+            type = types.ints.positive;
+            default = 4;
+            description = ''
+              Account cap incl. the owner (ADR 0018; Quest precedent). Bounds
+              home-partition budgeting, enrollment storage, and picker UX. provisiond
+              rejects add-account beyond it.
+            '';
+          };
+          uidRange = mkOption {
+            type = types.attrsOf types.int;
+            default = {
+              min = 1000;
+              max = 1099;
+            };
+            description = ''
+              The UID window the greeter picker enumerates (NSS iteration, SDDM/tuigreet
+              pattern — multi-user.md §2). The greeter and guest system users live outside
+              it by construction.
+            '';
+          };
+        };
+        guest = {
+          enable = mkOption {
+            type = types.bool;
+            default = false;
+            description = ''
+              Guest mode (ADR 0018, multi-user.md §4): an ephemeral per-session account
+              (provisiond add/remove around session lifecycle, LightDM contract), tmpfs or
+              wiped home, autologin-class PAM service `spatial-guest`, transient
+              calibration, owner-granted greeter tile. Requires multiUser.enable (the
+              appliance profile has no greeter surface to grant it from).
+            '';
+          };
+        };
       };
     };
 
@@ -570,6 +616,17 @@ in
       assertion = cfg.xr.session.greeter == "none"
         || cfg.xr.session.provisioning.mode != "none";
       message = "spatial.xr.session.greeter requires spatial.xr.session.provisioning.mode != \"none\" (multi-user login needs enrolled credentials; ADR 0017 / first-run-onboarding.md). Use mode = \"greeter-gated\", or an appliance profile.";
+    }
+    {
+      # ADR 0018: multi-account rides the greeter (picker + per-account PIN); the
+      # appliance profile is single-owner by design.
+      assertion = !cfg.xr.session.multiUser.enable || cfg.xr.session.greeter != "none";
+      message = "spatial.xr.session.multiUser.enable requires the multi-user profile (session.greeter != \"none\"); the appliance profile is single-owner (ADR 0017/0018).";
+    }
+    {
+      # ADR 0018: the guest tile lives in the greeter scene and is owner-granted there.
+      assertion = !cfg.xr.session.guest.enable || cfg.xr.session.multiUser.enable;
+      message = "spatial.xr.session.guest.enable requires spatial.xr.session.multiUser.enable (the guest tile is a greeter-scene affordance; ADR 0018 / multi-user.md §4).";
     }
     {
       # A lockable session needs a runtime to compose the lock scene over.

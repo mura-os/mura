@@ -63,7 +63,9 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [36-vr-shell-interaction-patterns.md](research/36-vr-shell-interaction-patterns.md) — comparative VR-shell patterns (placement, launcher, notifications, consent, boundary, keyboard, recenter) across six OSS shells + three commercial platforms, scored against composition constraints 6–9
 - [37-accessibility-atspi.md](research/37-accessibility-atspi.md) — AT-SPI2 anatomy, Newton/AccessKit 2026 status, the XR mapping (compositor a11y duties, dwell/motor overlap, reduced-motion caps, the spatial-semantics gap)
 - [38-desktop-linux-security-landscape.md](research/38-desktop-linux-security-landscape.md) — how desktop Linux security composes (PAM/polkit/portals/sandboxing/MAC/NixOS) + the consolidated index of every decided spatial-os security control
+- [41-multi-user-login-landscape.md](research/41-multi-user-login-landscape.md) — multi-account mechanics: AccountsService/GDM/SDDM/greetd pickers, LightDM guest lifecycle, Quest/Vision Pro/AOSP/Deck precedents, NixOS account durability across A/B slots (the mutableUsers trap; userborn recommendation)
 - [39-compositor-base-landscape.md](research/39-compositor-base-landscape.md) — the compositor-base ratification evidence: smithay coverage audit (frontend/renderer split, syncobj, dmabuf feedback, lease, Xwayland), WayVR's OpenXR-Vulkan anatomy, the wlroots fallback record, weston/Louvre/Mir/waynest dispositions, the R0 bring-up gates
+- [41-multi-user-login-landscape.md](research/41-multi-user-login-landscape.md) — multi-account mechanics: AccountsService/GDM/SDDM/greetd enumeration + picker patterns, LightDM's guest lifecycle contract, Quest/Vision Pro/AOSP/Steam Deck precedents, NixOS account durability on A/B images (the mutableUsers slot-switch trap; userborn recommendation)
 
 ## Architecture (`architecture/`)
 
@@ -85,6 +87,8 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [component-registry.md](architecture/component-registry.md) — the master component inventory: 6 planes, evidence-based status (specified/partial/missing), the gap list
 - [implementation-path.md](architecture/implementation-path.md) — the boot-forward plan of record: restricted-modes-first rationale (greeter + OOBE siblings; appliance = first shipped profile, G2 = first greeter milestone), the B1–B9 boot chain (persist/hardware readiness, XR preflight + recovery, session bootstrap contract, readiness/mark-good gate), the R0/G1–G3 + F1/F2 + M1–M4 rung ladder, lifecycle (resume/doff/logout), parallel tracks, deferrals
 - [first-run-onboarding.md](architecture/first-run-onboarding.md) — the F-track: persistent-state classes, F1 silent provisioning (marker-authoritative), F2 onboarding (dispatcher + unprivileged OOBE UI + `spatial-provisiond`), factory-vs-user calibration, factory reset
+- [multi-user.md](architecture/multi-user.md) — real Unix accounts on the multi-user profile: userborn-persisted account database, greeter picker, per-account enrollment/PIN/calibration, ephemeral guest mode, places-by-account over a device-level anchor substrate
+- [multi-user.md](architecture/multi-user.md) — real multi-account + guest: userborn-persisted accounts, the greeter picker, per-account enrollment/calibration, member wizard, ephemeral guest sessions, places-ownership resolution
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
   - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace
@@ -102,7 +106,8 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0014](architecture/adr/0014-toplevel-delegation-protocol.md) toplevel delegation protocol (specify upstream-shaped `zspatial-toplevel-export-v1` now; consumer-first, smithay → KWin MR → wayland-protocols; GNOME post-standardization)
   - [0015](architecture/adr/0015-docked-desktop-mode.md) docked desktop mode (mirror tier + same-session flat presentation on external displays; quiescence ladder to 2D-compositor power; fact-gated on `spatial.hardware.externalDisplay`)
   - [0016](architecture/adr/0016-places-model.md) places model (typed frame graph; exclusive+overlay membership; decomposed currency — no active bit; groups = frames; transient+pin lifecycle; no second axis)
-  - [0017](architecture/adr/0017-first-run-provisioning.md) first-run provisioning (fixed declared owner account; PIN = `pam_spatial_pin` ratified; dispatcher-gated OOBE split from `spatial-provisiond`; persist marker over `ConditionFirstBoot`; secrets never in the store; factory reset as class-wise inverse)
+  - [0017](architecture/adr/0017-first-run-provisioning.md) first-run provisioning (fixed declared owner account — appliance-scoped per ADR 0018; PIN = `pam_spatial_pin` ratified; dispatcher-gated OOBE split from `spatial-provisiond`; persist marker over `ConditionFirstBoot`; secrets never in the store; factory reset as class-wise inverse)
+  - [0018](architecture/adr/0018-multi-user-accounts.md) multi-user accounts + guest (real Unix accounts, capped; userborn-persisted across A/B; provisiond as sole mutation authority; NSS picker, no AccountsService; ephemeral guest via LightDM contract + Vision Pro semantics; places partition by account)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the base architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the base review (fixed now vs.
   deferred to the Lynx spike / pre-release design)

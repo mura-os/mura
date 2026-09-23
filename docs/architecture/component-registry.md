@@ -62,7 +62,9 @@ critical path).
 | PIN credential (`pam_spatial_pin`) + enrollment | mech | inside PAM stack | PAM | **specified** | [ADR 0017](adr/0017-first-run-provisioning.md) ratifies doc-12 option (b): argon2 hash in the `enrollment/` state class, enrolled via `spatial-provisiond` at OOBE; wired into `security.pam.services.spatial-lock` only (greetd login stays account-password); owner-password-is-PIN recorded as the appliance bridge |
 | First-boot provisioning (F1 units: keys, store seeding, growth; marker-gated) | mech | oneshot system units | filesystem (state classes) | **specified** | [first-run-onboarding.md §3](first-run-onboarding.md): persist marker authoritative over `ConditionFirstBoot`, idempotent units + atomic markers, machine-id class rules; skeleton service implemented in [families/uefi-rauc](../../families/uefi-rauc/default.nix) |
 | Session dispatcher (greetd `default_session` wrapper: provisioned-flag → `--oobe` \| `--greeter`; appliance launch-wait-exec continuation) | mech | wrapper binary run as greetd's session user | greetd exec; non-secret `/run/spatial/provisioned` flag (root-published mirror of the 0700 marker) | **specified** | [first-run-onboarding.md §4.1](first-run-onboarding.md) (marker-access + continuation semantics recorded), ADR 0017 (greetd cannot select sessions from runtime state; contract `spatial.xr.session.provisioning.mode`) |
-| `spatial-provisiond` (privileged enrollment authority: PIN hash, device keys, transactional marker) | mech | separate root daemon (per-conversation, spatial-authd shape) | private SOCK_SEQPACKET socket | **specified** | [first-run-onboarding.md §4.2](first-run-onboarding.md), ADR 0017 (UI/authority split; OOBE UI can never mint credentials or the marker) |
+| `spatial-provisiond` (privileged enrollment authority: PIN hash, device keys, transactional marker; add/remove-account + guest lifecycle conversations) | mech | separate root daemon (per-conversation, spatial-authd shape) | private SOCK_SEQPACKET socket | **specified** | [first-run-onboarding.md §4.2](first-run-onboarding.md), ADR 0017 (UI/authority split); [multi-user.md §1/§4](multi-user.md), ADR 0018 (sole account-mutation authority; guest add/remove around session lifecycle — the LightDM contract) |
+| Multi-account substrate (userborn-persisted userdb on state, greeter picker via NSS uid-window, per-account enrollment + member wizard) | mech+policy | userborn service + in-compositor picker scene + provisiond | persisted `state/userdb/`; `create_session(username)` (no greetd changes) | **specified** | [multi-user.md](multi-user.md) §1–§3 + [ADR 0018](adr/0018-multi-user-accounts.md); evidence [research/41](../research/41-multi-user-login-landscape.md) (mutableUsers slot-switch trap; SDDM/tuigreet enumeration pattern); contract `spatial.xr.session.multiUser.*` + tests |
+| Guest session lifecycle (ephemeral account per session, autologin-class PAM `spatial-guest`, transient calibration, owner-granted tile) | mech+policy | provisiond + dispatcher + in-compositor tile | PAM; tmpfs/wiped home | **specified** | [multi-user.md §4](multi-user.md) + ADR 0018 (LightDM add/remove contract + Vision Pro session semantics; MAC-targetable wrapper reserved); contract `spatial.xr.session.guest.enable` + tests |
 | zxr `--oobe` mode (onboarding wizard UI) | mech+pres | in-compositor (restricted mode, unprivileged) | provisiond socket; NetworkManager D-Bus; settings stores | **specified** | [first-run-onboarding.md §4](first-run-onboarding.md) (wizard ladder, restrictions = greeter mode's); visual/UX design of the wizard scenes still open (shell-plane presentation rule) |
 | Session bootstrap wrapper (B6a: pam_systemd session, three-class environment, readiness-ordered targets, teardown-before-return) | mech | wrapper process (the greetd session) | systemd user manager; sd-notify; `graphical-session(-pre).target` | **specified** | [implementation-path.md §2 B6a](implementation-path.md) (manager-correct lifetimes: no cross-manager BindsTo; wrapper owns coupling and keeps the greetd session alive); normative `specs/session-bootstrap.md` gated on G2 experience |
 | Session lifecycle (`spatial-session.target`) | mech | systemd user target | systemd | **specified** | ADR 0007 §Two profiles (owns Monado + compositor + shell services; crash/restart is systemd's job; boot-locked restart per invariant I3) |
@@ -253,7 +255,8 @@ starts from evidence rather than zero.
 1. **RESOLVED as designed (2026-09-23).** The spatial-workspace/space model is specified:
    [places-model.md](places-model.md) + [ADR 0016](adr/0016-places-model.md) (typed frame graph,
    decomposed currency answering "active when switching is a walk", lifecycle, no second axis).
-   Row moved to **specified** in §3; remaining open items (place volumes, multi-user ownership,
+   Row moved to **specified** in §3; multi-user ownership since resolved by
+   [multi-user.md §5](multi-user.md)/ADR 0018; remaining open items (place volumes,
    vehicle frames, extension XML) tracked in places-model §9. Implementation unbuilt.
 2. **Focus/activation authority + xdg-activation** (authority/service, §3/§6) — composition §7.3
    requires "focus/activation" with no design; launcher and notification flows are blocked on it.
@@ -385,13 +388,13 @@ Counts by status (rows in §2–§7 tables):
 
 | Plane | specified | partial | missing | total |
 |---|---|---|---|---|
-| System | 14 | 2 | 1 | 17 |
+| System | 16 | 2 | 1 | 19 |
 | Authority | 22 | 5 | 6 | 33 |
 | Perception | 17 | 6 | 0 | 23 |
 | Shell | 3 | 8 | 8 | 19 |
 | Service | 2 | 3 | 15 | 20 |
 | Build | 7 | 8 | 0 | 15 |
-| **Total** | **65** | **32** | **30** | **127** |
+| **Total** | **67** | **32** | **30** | **129** |
 
 The shape is stark and expected: the authority and perception planes are deeply specified (the
 ADR work to date), the build plane is specified-but-stubbed by deliberate policy (the Lynx-spike

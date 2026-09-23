@@ -17,12 +17,16 @@ tenant.
 
 ## 1. The account model in one paragraph
 
-There is no runtime user creation. The `owner` account is **declared** in the module system
-(`users.mutableUsers = false`) and exists in every image; "setting up a user" means writing
-per-unit *state* — a PIN hash, calibration, preferences — never mutating the account database.
-This is the Steam Deck model, and it is what makes A/B updates and factory reset trivially safe:
-the mutable surface is exactly the state classes of §2, nothing else. Guest/multi-account is
-deferred with the multi-user profile (ADR 0017). Secrets (PIN hashes, Wi-Fi credentials, device
+On the **appliance profile**, there is no runtime user creation: the `owner` account is
+**declared** in the module system (`users.mutableUsers = false`) and exists in every image;
+"setting up a user" means writing per-unit *state* — a PIN hash, calibration, preferences —
+never mutating the account database. This is the Steam Deck model, and it is what makes A/B
+updates and factory reset trivially safe: the mutable surface is exactly the state classes of
+§2, nothing else. On the **multi-user profile**, real additional accounts and guest mode are
+designed in [multi-user.md](multi-user.md) / [ADR 0018](adr/0018-multi-user-accounts.md): the
+account database becomes mutable through exactly one authority (provisiond over userborn's
+persist-backed files), and member accounts get a reduced per-user wizard on first login
+(multi-user.md §3). Secrets (PIN hashes, Wi-Fi credentials, device
 keys) are **never Nix option values** — the store is world-readable; they exist only as
 runtime state written by `spatial-provisiond` (§4.2) under protected persistent storage.
 

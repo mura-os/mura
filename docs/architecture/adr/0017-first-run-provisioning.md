@@ -21,11 +21,14 @@ blocking.
 
 ## Decision
 
-1. **Fixed declared owner account.** `users.mutableUsers = false`; the `owner` account is
-   declared in the module system and exists in every image. "Setting up a user" writes per-unit
-   state (PIN hash, calibration, preferences) — the account database is never mutated at
-   runtime. Guest/multi-account is deferred with the multi-user profile. The Steam Deck
-   precedent (fixed `deck` user; OOBE never creates an account) is the model.
+1. **Fixed declared owner account — scoped to the appliance profile** (amended by
+   [ADR 0018](0018-multi-user-accounts.md)). On the appliance profile: `users.mutableUsers =
+   false`; the `owner` account is declared in the module system and exists in every image;
+   "setting up a user" writes per-unit state (PIN hash, calibration, preferences) — the account
+   database is never mutated at runtime. The Steam Deck precedent (fixed `deck` user; OOBE never
+   creates an account) is that profile's model. On the **multi-user profile**, ADR 0018 makes
+   the account database mutable through exactly one authority (provisiond → userborn's persisted
+   files); multi-account and guest are designed there, not here.
 2. **PIN = doc 12 option (b), ratified.** A dedicated `pam_spatial_pin` module verifies an
    argon2-hashed PIN stored in the `enrollment/` state class — the device-unlock credential is
    layered above the account password (Android/visionOS layering), and the account password
