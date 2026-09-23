@@ -35,6 +35,14 @@ at the same boundary from opposite directions: the 2D compositor provides window
 narrow privileged interface; the XR compositor composes. Nobody has specified that interface.
 This document and the draft XML do.
 
+*Producer-side specification (2026-09-23, producer-spec workstream):* the interface now has a
+behavioral conformance spec —
+[specs/toplevel-export-producer.md](../../specs/toplevel-export-producer.md) — and per-compositor
+integration briefs answering these positions with verified patch plans:
+[producers/kwin.md](producers/kwin.md) (the 10-MR series; core ≈ 250–450 LOC) and
+[producers/mutter.md](producers/mutter.md) (third-producer sequencing), on the code evidence of
+[research/40](../research/40-toplevel-export-producers.md).
+
 ## 2. The client-integration taxonomy
 
 Four ways a "foreign" application or session appears in spatial-os space. All four land as

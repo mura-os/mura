@@ -60,12 +60,19 @@ upstreaming and deliberate.
   exists. Smithay chosen first: cheapest producer, exercises the Rust side we lean toward, and
   COSMIC's zcosmic toplevel-capture handlers are the closest existing code
   ([32 §6.3](../../research/32-toplevel-export-prior-art.md)).
-- **M-B — the KWin producer MR.** The political demonstration: a seam-shaped patch (doc 32
-  estimates 5–8 kLOC incl. tests, building on `GraphicsBufferRef`, the thumbnail infra, and
-  krdp/EIS plumbing) addressed directly to the §Context positions, showing a live Plasma
-  session's windows floating in spatial-os. Engage Vlad Zahorodnii and David Edmundson with the
-  working consumer in hand; Stanislav Aleksandrov is the natural third ally (his fork proves
-  demand and he has asked for exactly such core seams).
+- **M-B — the KWin producer MR series.** The political demonstration: a seam-shaped patch series
+  addressed directly to the §Context positions, showing a live Plasma session's windows floating
+  in spatial-os. *Concretized (2026-09-23, producer-spec workstream):* the plan is now
+  [producers/kwin.md](../producers/kwin.md) — ten small MRs (five zero-behavior-change core
+  seams, three of them resubmissions of fork commits the author triaged as clean-interface
+  material, plus five plugin-only MRs), with code-verified sizing from
+  [research/40 §1](../../research/40-toplevel-export-producers.md): **core ≈ 250–450 LOC +
+  ~500 LOC standalone ext-foreign-toplevel-list; plugin ≈ 3.5–5.5 kLOC** (doc 32's 5–8 k envelope
+  held; core surface halved because `bufferReleasePoint()`/`SyncObjReleasePoint::addReleaseFence`
+  turn out to implement the release join already). Behavioral bar:
+  [specs/toplevel-export-producer.md](../../../specs/toplevel-export-producer.md) §8. Engage Vlad
+  Zahorodnii and David Edmundson with the working consumer in hand; Stanislav Aleksandrov is the
+  natural third ally (his fork proves demand and he has asked for exactly such core seams).
 - **M-C — wayland-protocols proposal** (`xx_toplevel_export`): after M-A+M-B satisfy the
   two-implementations bar, with the published interop tests (modifiers, out-of-order release,
   disconnect, popup reconstraint, late reuse, grabs) from `protocols/README.md`.
@@ -77,6 +84,14 @@ window screencast is capture-path; portals-only posture; producer needs Mutter C
 then, GNOME sessions integrate as nested-session quads or portal capture (degraded), and GNOME
 *apps* run natively on zxr anyway. The proposal at M-C should invite early Mutter review
 regardless (GTK/Mutter is a wayland-protocols member).
+
+*Superseded in detail (2026-09-23) by [producers/mutter.md](../producers/mutter.md)*: the code
+study ([research/40 §2](../../research/40-toplevel-export-producers.md)) found Mutter technically
+*better*-seamed than assumed (~5–9 kLOC, ~1 k core-touching; the use_count/release_points model
+is the release join; `meta_window_drag_end` is already side-effect-free), while confirming the
+institutional sequencing: third producer, post-standardization, with a named sponsor, privilege
+framed through `MetaWaylandFilterManager` + a ServiceChannel-style trusted connection, and the
+GNOME-relevant wedge being g-r-d per-window remote desktop rather than XR.
 
 ### 5. Scope boundaries
 
