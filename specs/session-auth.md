@@ -1,121 +1,147 @@
-# specs/session-auth: the auth helper framing, lock events, and greeter mode
+# specs/session-auth: the lock auth helper, lock events, and greeter mode
 
-**Status:** draft normative spec (specification workstream, wave 3).
-**Design source:** [ADR 0007](../docs/architecture/adr/0007-session-greeter-lock.md) — this
-document transcribes its ratified semantics into interfaces; it decides nothing new. Where ADR
-0007 is silent, items are marked *open* rather than invented.
-**Grounding:** greetd's IPC is the prior art for the framing style (length-prefixed JSON,
-`$GREETD_SOCK`); PAM message types are POSIX-PAM's four; no "XDG" sense applies beyond
-`$XDG_RUNTIME_DIR` (basedir spec) for socket paths.
-**Budget impact** ([overview.md](../docs/architecture/overview.md) inv. 9): all interfaces here
-are auth-time/event-rate; nothing touches the frame path. Negligible.
+**Status:** draft rev 2 (specification workstream; rev 1 findings from the PAM/greetd-persona
+review absorbed — greetd is the sole login PAM authority, conversation nonces close the grace
+race, batched conversations added).
+**Design source:** [ADR 0007](../docs/architecture/adr/0007-session-greeter-lock.md); the lock
+transition table (§3) maps every row to its ADR invariant.
+**Grounding:** greetd IPC is the login-path authority and prior art; PAM message semantics follow
+Linux-PAM (not only the four POSIX styles); `$XDG_RUNTIME_DIR` (basedir spec) for socket paths.
+**Budget impact** (inv. 9): auth-time and event-rate only; nothing on the frame path.
 
-## 1. `spatial-authd`: the out-of-process PAM conversation
+## 1. Authority split (normative)
 
-One helper process per authentication conversation (the swaylock fork model), spawned by the
-compositor (lock) or the greeter mode, speaking over an inherited **socketpair** (`SOCK_SEQPACKET`;
-fd number passed via `--fd N`). The compositor never links libpam; a hung PAM module can never
-stall `xrWaitFrame` (ADR 0007 §PAM).
+- **Login (multi-user profile): greetd's session worker is the only PAM authority.** The zxr
+  `--greeter` mode is an unprivileged greetd client: it renders greetd `auth_message` prompts and
+  relays responses over `$GREETD_SOCK` (`create_session` → `post_auth_message_response` →
+  `start_session`). It never spawns `spatial-authd`, never links PAM, and performs no account,
+  credential, or session management — greetd owns the entire login lifecycle.
+- **In-session lock: `spatial-authd` is the lock's PAM helper.** One helper process per unlock
+  conversation, for the `spatial-lock` PAM service only (auth stack; no session management —
+  the session already exists).
 
-### 1.1 Framing
+## 2. `spatial-authd`: the lock conversation
 
-Each message is one seqpacket datagram: a 4-byte native-endian length is NOT used (seqpacket
-preserves boundaries); payload is UTF-8 JSON, one object per datagram, `type` field mandatory.
-Maximum payload 64 KiB; larger is a protocol error (connection closed, conversation failed).
+### 2.1 Process and framing
 
-### 1.2 Messages, compositor → authd
+Spawned by the compositor per conversation with an inherited `SOCK_SEQPACKET` socketpair
+(`--fd N`) and a compositor-generated 64-bit **conversation nonce** (`--nonce HEX`). Each
+complete seqpacket record is one UTF-8 JSON object; there is no in-band length prefix. Records
+above 64 KiB, truncated reads (`MSG_TRUNC`), zero-length records, invalid UTF-8/JSON, or unknown
+`type` values terminate the conversation as `failure(internal)`. Every message in both directions
+carries `"nonce"`; a message with a stale nonce is ignored (§2.4).
+
+### 2.2 The PAM call sequence (helper side)
+
+`pam_start("spatial-lock", user, conv, &h)` → `pam_authenticate` (with `PAM_DISALLOW_NULL_AUTHTOK`)
+→ `pam_acct_mgmt` → `pam_end`. No `pam_setcred`, no `pam_open_session`. The helper installs a
+fail-delay callback (`pam_set_item(PAM_FAIL_DELAY, …)`); `delay_ms` reported on failure is the
+maximum delay requested through that callback during the conversation, measured by authd — never
+attributed to a particular module. PAM return codes map to coarse reasons (§2.3) chosen to leak
+no account-existence information.
+
+### 2.3 Messages
+
+authd → compositor:
 
 | `type` | Fields | Semantics |
 |---|---|---|
-| `start` | `service` (e.g. `"spatial-lock"`, `"spatial-greeter"`), `user` (string; empty = PAM decides), `tty`/`seat` context strings | Begin the PAM conversation for the named NixOS-owned service (`security.pam.services.*`). Exactly one per conversation. |
-| `respond` | `id` (int, echoes prompt id), `response` (string), `cancelled` (bool) | Answer to a prompt. `cancelled: true` aborts the conversation (maps to PAM_CONV_ERR). |
+| `prompt_batch` | `nonce`, `conversation` (int), `prompts`: array of `{index, style, text?, data?}` | One PAM conversation callback, delivered whole. `style` ∈ `secret` \| `visible` \| `info` \| `error` \| `radio` \| `binary`. `text` for textual styles; `data` (base64) with `mime` for `binary`. The UI renders **generic** prompts (the PIN-pad fast path keys off `style=secret` + service config, never prompt-text parsing). `info`/`error` entries require empty response slots. If a style is unsupported by the deployment, authd answers PAM with `PAM_CONV_ERR` itself and reports `failure(unsupported_prompt)`. |
+| `success` | `nonce` | Authentication + account checks passed. authd exits 0 after sending. |
+| `failure` | `nonce`, `reason` ∈ `auth` \| `maxtries` \| `abort` \| `unsupported_prompt` \| `internal`, `delay_ms` | Conversation failed; authd exits nonzero. The compositor enforces `delay_ms` before offering retry UI. |
 
-### 1.3 Messages, authd → compositor
+compositor → authd:
 
 | `type` | Fields | Semantics |
 |---|---|---|
-| `prompt` | `id` (int, monotonic per conversation), `style` = `secret` \| `visible` \| `info` \| `error`, `text` | The four POSIX PAM message styles, verbatim; the lock/greeter scene renders **generic** prompts (ADR 0007: PIN pad fast path keys off `style=secret` + service config, never off prompt text parsing). `info`/`error` require no response. |
-| `success` | — | PAM conversation succeeded (account+session stacks included for the greeter service; auth-only for the lock service). authd exits 0 after sending. |
-| `failure` | `reason` = `auth` \| `maxtries` \| `abort` \| `internal`, `delay_ms` (int, from pam_faillock) | Conversation failed. authd exits nonzero after sending. Compositor enforces `delay_ms` before allowing retry UI. |
+| `respond_batch` | `nonce`, `conversation`, `responses`: array of `{index, response?, data?}` (one slot per prompt, empty for info/error) | Completes exactly one `prompt_batch`; authd then returns the response array to PAM. |
+| `cancel` | `nonce` | Abort: authd answers PAM with `PAM_CONV_ERR`, reports `failure(abort)`, exits. |
 
-### 1.4 Lifecycle rules
+### 2.4 Nonce revocation (the grace race, closed)
 
-- One conversation per process; retry = new spawn (fresh PAM state, no reuse).
-- authd death without `success`/`failure` ⇒ treated as `failure(internal)`; the lock stays locked
-  (invariant I3).
-- The compositor may kill authd on doff-timeout/cancel; that is `failure(abort)`.
-- Biometric paths (iris, ADR 0011) are *parallel* PAM-adjacent verifiers: they emit the same
-  `success`/`failure` datagram shape over their own socketpair and never replace the PAM path
-  (ADR 0007). Their spec is deferred with the iris verifier design.
+On doff-grace expiry, explicit cancel, or a newer conversation starting, the compositor
+**atomically**: (1) marks the nonce invalid, (2) stops reading the socketpair, (3) sends
+`cancel` and closes its end, (4) kills the helper after a short grace (SIGTERM→SIGKILL), and
+(5) zeroizes any buffered prompt/response data. A `success` (or any message) bearing an
+invalidated nonce is ignored — the session cannot unlock from a revoked conversation. Helper
+death without a terminal message ⇒ `failure(internal)`. All outcomes leave the lock in `locked`
+(fail closed, invariant I3).
 
-## 2. The lock state machine: externally visible surface
+## 3. The lock state machine
 
-Internal states (ADR 0007 §lock model): `unlocked`, `locked`, `verifying`, plus the boot-locked
-entry. Externally observable contract:
+States: `unlocked`, `locked`, `verifying` (a live conversation), plus the doff-grace overlay.
+Transition table (each row cites its ADR 0007 source):
 
-### 2.1 Ordering invariants (normative, from I1–I3)
+| # | From | Event | To | Source |
+|---|---|---|---|---|
+| T1 | boot | credential enrolled | `locked` | boot-locked rule |
+| T2 | boot | no credential enrolled | `unlocked` | boot rule |
+| T3 | `unlocked` | doff | `unlocked` + panels blanked + grace timer | doff ladder |
+| T4 | grace | don within grace | `unlocked` (resume) | doff ladder |
+| T5 | grace | grace expiry | `locked` (+ §2.4 revocation of any conversation) | doff ladder |
+| T6 | `unlocked` | idle-past-lock / explicit `Lock()` / suspend / lid analog | `locked` | lock triggers |
+| T7 | `locked` | unlock UI engaged | `verifying` (spawn authd, new nonce) | PAM out of process |
+| T8 | `verifying` | authd `success` (valid nonce) | `unlocked` | I3 |
+| T9 | `verifying` | authd `failure`/revocation | `locked` (retry after `delay_ms`) | I3 fail-closed |
+| T10 | any | compositor/runtime crash-restart | `locked` if credential enrolled else T2 | I3 |
 
-- **L1 (= I1):** on entering `locked`, client input delivery ceases *before* the state is
-  reported anywhere; no client buffer is sampled into any subsequent composed frame.
-- **L2 (= I2):** logind `SetLockedHint(true)` and any suspend-sequencer signal are emitted only
-  **after** the first client-free composition has been submitted via `xrEndFrame`.
-- **L3 (= I3):** `unlocked` is entered only from `verifying` on authd `success`, or at boot when
-  no credential is enrolled. Compositor/runtime crash ⇒ restart into `locked`.
+Presence never unlocks (a head ≠ the owner); biometric verifiers (iris, ADR 0011) are parallel
+helpers using the §2 message shape and nonce rules over their own socketpair, gated beside — not
+replacing — PAM. Docked-mode branch: while docked-in-use, T3/T5 are policy-suppressed (ADR 0015).
 
-### 2.2 Event surface (for the session bus / shell components; names normative)
+### 3.1 Ordering invariants and instrumentation (L1–L3)
 
-`org.spatialos.Session1` (system-bus peer or user-bus — *open: bus placement*, tracked with the
-settings daemon design):
+Each lock transition carries a monotonically increasing **lock sequence number** `seq`, and the
+implementation must emit these ordered trace points on one monotonic clock:
+`input_withdrawn(seq)` → `client_free_frame_submitted(seq)` (the first `xrEndFrame` whose
+composition sampled zero client buffers) → `SetLockedHint(true)` / suspend-ready →
+`LockedChanged(seq)`.
 
-- `LockedChanged(b locked)` — emitted per L2 ordering.
-- `PresenceChanged(b present, t since_usec)` — from `XR_EXT_user_presence` in the compositor's
-  OpenXR loop (doff/don).
-- `GraceState(s state)` — `none` | `doff_grace` | `expired` (the ADR 0007 doff ladder; timings
-  from settings, defaults doffGraceSeconds).
-- Method `Lock()` — explicit lock request (shell, idle daemon); always honored.
-- Method `Unlock()` — **does not exist.** Unlock happens only via the authd conversation (L3).
+- **L1 (= I1):** `input_withdrawn(seq)` precedes any external report of `seq`.
+- **L2 (= I2):** `SetLockedHint` and suspend-readiness for `seq` follow
+  `client_free_frame_submitted(seq)`.
+- **L3 (= I3):** `unlocked` is entered only via T2 or T8.
 
-### 2.3 Idle ladder integration
+## 4. The session event surface
 
-The compositor serves `ext-idle-notify-v1` and honors `zwp_idle_inhibit_v1` (ADR 0007);
-idle→lock policy is configuration (`spatial.xr.session.lock.triggers`), evaluated
-compositor-side. Docked-mode branches (no auto-lock while docked-in-use) per ADR 0015.
+`org.spatialos.Session1` on the **session bus** (aligned with
+[settings-schema.md](settings-schema.md); the bus does not exist in greeter mode — greeter-time
+tooling has no Session1 to talk to, by design):
 
-## 3. `--greeter` restricted mode
+- `LockedChanged(u seq, b locked)` — per §3.1 ordering.
+- `PresenceChanged(b present, t since_usec)`.
+- `GraceState(s state)` — `none` | `doff_grace` | `expired`.
+- Method `Lock()` — always honored in-session (T6). No `Unlock()` method exists (L3).
 
-The zxr binary in greeter mode (multi-user profile, ADR 0007 §profiles). The contract:
+## 5. `--greeter` restricted mode
 
-**Disabled** (hard, not configuration): the client Wayland listening socket (no `WAYLAND_DISPLAY`
-export; no client ever connects); all privileged globals; capture/injection subsystems; the
-places/persistence store (no user context exists); perception services beyond the IMU tier
-(cameras remain off pre-auth — the ADR 0007 privacy property).
+**Disabled** (hard): the client Wayland listening socket; all privileged globals;
+capture/injection; the places store; perception beyond the IMU tier (cameras off pre-auth).
+**Enabled**: the OpenXR loop on IMU-only tracking; per-unit calibration from system state; the
+built-in auth scene (internal, not a client); the greetd client conversation of §1, with sessions
+enumerated from the module system (`spatial.xr.shell` values). **Exit**: on `start_session`
+acknowledgment, tear down the Monado session and exit 0 (greetd's exit-then-start sequencing owns
+the DRM handoff). **Docked** (ADR 0015): the auth scene additionally presents flat on the
+external connector; identical conversation.
 
-**Enabled**: the OpenXR loop on IMU-only tracking; per-unit calibration from system state
-(`spatial.xr.calibration.paths`); the built-in auth scene (composed internally — greeter UI is
-not a client); `$GREETD_SOCK` as a greetd client speaking greetd's own IPC
-(`create_session` → `post_auth_message_response` → `start_session`), sessions enumerated from the
-module system (`spatial.xr.shell` values), never `.desktop` scanning.
+## 6. Conformance checklist
 
-**Exit**: on greetd `start_session` acknowledgment, the greeter tears down its Monado session and
-exits 0; greetd's exit-then-start sequencing guarantees no two-compositor DRM contention
-(research/11 §handoff). Nonzero exit ⇒ greetd restarts it (its normal supervision).
+1. authd killed mid-`prompt_batch` ⇒ `locked`, retry allowed with a fresh nonce; zeroization
+   verified (no secrets in the compositor heap dump).
+2. PAM module sleeping 60 s ⇒ compositor frame loop unaffected (reads are event-driven; §3.1
+   trace shows no stalls).
+3. **Race test:** hold a valid `success` datagram, expire grace, then deliver it ⇒ ignored;
+   session stays `locked` (T5 beats T8 by nonce invalidation).
+4. L1–L3: for one `seq`, assert strict trace ordering *and* independently verify the
+   `client_free_frame_submitted` frame contains no client samples (composition introspection).
+5. Crash-restart: T10 both branches.
+6. Greeter mode: no Wayland listening socket (`ss`/`lsof`); camera nodes unopened; **no PAM
+   symbols loaded** in the greeter process (greetd owns login PAM).
+7. Batched conversation: a module issuing two prompts + one info in one callback round-trips as
+   one `prompt_batch`/`respond_batch` pair.
 
-**Docked variant** (ADR 0015): the auth scene additionally presents flat on the external
-connector; same conversation, same framing.
+## 7. Open items
 
-## 4. Conformance checklist (for the implementation milestone)
-
-1. authd killed mid-`secret` prompt ⇒ lock remains locked, retry allowed after spawn (no state
-   leak).
-2. PAM module sleeping 60 s ⇒ compositor frame loop unaffected (L1 path never blocks on the
-   socketpair; reads are event-driven).
-3. `SetLockedHint` ordering verified against a captured `xrEndFrame` trace (L2).
-4. Crash-restart lands in `locked` with a credential enrolled; in `unlocked` without (L3, boot
-   rule).
-5. Greeter mode: `ss`/`lsof` shows no Wayland listening socket; camera device nodes unopened.
-
-## 5. Open items
-
-Bus placement for `org.spatialos.Session1` (with the settings daemon design); the biometric
-verifier framing (with the iris design); whether `GraceState` timings surface as properties
-(settings-schema dependent).
+The biometric helper's verifier-specific fields (with the iris design); `GraceState` timing
+properties (settings-schema keys); whether `radio`/`binary` styles are enabled in the shipped
+PAM stacks or rejected via `unsupported_prompt` (deployment policy).
