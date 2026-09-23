@@ -48,11 +48,12 @@ accelerators until that path and P-1 exist.
 - **#6 Pose-at-exposure API.** A concrete Monado API returning pose + source-clock mapping +
   interpolation status + uncertainty for a capture timestamp; characterized against hardware
   timestamps; a defined degraded mode (fixed-proxy) when unavailable. This is an **enable gate**.
-- **#7 Recast ADR 0008 around invariants** (Monado owns capture + timestamp assignment; services
-  in-process *or* siblings behind one specified frame/pose transport; compositor owns only the
-  display-rate warp) rather than conflating capture ownership / execution / process location. Fix
-  the strawman framing of the rejected alternatives; get legal review on the actual GPL IPC/linkage,
-  not just "separate process".
+- **#7 Recast ADR 0008 around invariants** — *wording recast DONE (2026-09-23, gap-closure
+  workstream): ADR 0008 §Decision now states ownership + the two admissible boundary shapes in
+  the ADR 0010 form (execution placement fixed at implementation against exactly one specified
+  boundary), registry §10.3 resolved.* Still open from this item: the strawman framing of the
+  rejected alternatives, and legal review of the actual GPL IPC/linkage (carried in M-18-style
+  pre-release review).
 - **#8 Transport is not just `wp_linux_drm_syncobj_v1`.** A Monado frame sink is not a Wayland
   surface; define either a real private Wayland client with surface commits, or an equivalent IPC
   carrying acquire/release timeline points, plus the non-blocking "latest signalled snapshot"

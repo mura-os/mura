@@ -137,6 +137,34 @@ in
           gate that lets NixOS be the default runtime safely (ADR 0002).
         '';
       };
+      source = mkOption {
+        type = types.nullOr types.attrs;
+        default = null;
+        description = ''
+          Pinned kernel source (vendor tag or mainline rev + hash), fetcher-args attrs.
+          null = the device uses the default nixpkgs kernel (VM/dev targets).
+          (device-contract.md §kernel; doc-only until now, registry §10.2.)
+        '';
+      };
+      structuredExtraConfig = mkOption {
+        type = types.attrs;
+        default = { };
+        description = ''
+          Structured kconfig overrides with per-option provenance comments (Jovian style).
+          Applied on top of configFile when both are set; the realization-time contract
+          check verifies the merged result (Mobile NixOS validator model).
+        '';
+      };
+      configFile = mkOption {
+        type = types.nullOr types.path;
+        default = null;
+        description = "Literal .config as the source of truth (Mobile NixOS style).";
+      };
+      dtbs = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        description = "DTB name templates, resolved per device.";
+      };
       bootimg = {
         headerVersion = mkOption {
           type = types.nullOr (types.ints.between 0 4);
@@ -196,6 +224,48 @@ in
           Monado compositor windowing backend. vk-display (VK_KHR_display, Monado owns
           DRM directly) is the appliance default and the first feasibility test per device.
           'window' is for the virtual-headset VM.
+        '';
+      };
+      monado = {
+        rev = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = ''
+            Pinned Monado revision for this device's XR driver (monado-rev + patch
+            series, the WiVRn pinning pattern; Monado has no stable out-of-tree
+            driver ABI). null = the default packaged Monado.
+          '';
+        };
+        patches = mkOption {
+          type = types.listOf types.path;
+          default = [ ];
+          description = "Per-device Monado patch series (patches/monado/<device>/...).";
+        };
+        drivers = mkOption {
+          type = types.attrsOf (types.submodule {
+            options.enable = mkOption { type = types.bool; default = false; };
+          });
+          default = { };
+          description = "Per-driver toggles mapped to XRT_BUILD_DRIVER_* for a minimal per-device runtime.";
+        };
+      };
+      tracking.slam.package = mkOption {
+        type = types.nullOr types.package;
+        default = null;
+        description = ''
+          VIT tracker package providing libbasalt.so (or compatible); sets
+          VIT_SYSTEM_LIBRARY_PATH in the Monado unit (ADR 0009 layer A).
+          null = no SLAM (3DoF-only or VM).
+        '';
+      };
+      calibration.paths = mkOption {
+        type = types.attrsOf types.str;
+        default = { };
+        description = ''
+          Per-device calibration data locations (per-unit SYSTEM state, never $HOME —
+          ADR 0007). Keys are calibration kinds (camera, distortion, ipd, imu...),
+          values absolute paths (typically under /var/lib/spatial or a vendor persist
+          mount listed in deployment.protectedPartitions).
         '';
       };
       shell = mkOption {
@@ -418,6 +488,16 @@ in
         default = [ ];
         description = "Names of automated/manual acceptance tests, gated by support tier.";
       };
+      readinessCheck = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          Name of the XR-readiness health check an installed update must pass before
+          being marked successful (images-and-updates.md §health-gated success). The
+          update agent runs it post-boot; failure keeps the previous slot bootable.
+          Required for tiers above 'booting'.
+        '';
+      };
     };
   };
 
@@ -426,6 +506,10 @@ in
     {
       assertion = cfg.device.supportTier == "booting" || cfg.device.maintainers != [ ];
       message = "spatial.device.supportTier '${cfg.device.supportTier}' requires at least one entry in spatial.device.maintainers.";
+    }
+    {
+      assertion = cfg.device.supportTier == "booting" || cfg.qualification.readinessCheck != null;
+      message = "spatial.device.supportTier '${cfg.device.supportTier}' requires spatial.qualification.readinessCheck (the xr-functional tier is defined by a passing readiness check; device-contract.md §tiers, images-and-updates.md §health-gated success).";
     }
     {
       assertion = cfg.deployment.bootScheme != "android-bootimg" || cfg.kernel.bootimg.headerVersion != null;

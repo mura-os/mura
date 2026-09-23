@@ -28,10 +28,21 @@ passthrough needs at exposure time). All three live in Monado today, fed by its 
 
 ## Decision
 
-**Run the passthrough and hand-cutout services Monado-side, as consumers of the same `xrt_frame`
-fan-out that already feeds Mercury and SLAM, and deliver their outputs to the zxr compositor as
-dmabuf layers with `wp_linux_drm_syncobj_v1` explicit-sync — the same transport zxr-shell-v2 already
-uses for client buffers.**
+**Monado owns the cameras, the clock domain, and the calibration; the passthrough and hand-cutout
+services consume the same `xrt_frame` fan-out that already feeds Mercury and SLAM, and deliver
+their outputs to the zxr compositor as dmabuf layers with `wp_linux_drm_syncobj_v1` explicit-sync
+— the same transport zxr-shell-v2 already uses for client buffers.**
+
+*(Recast 2026-09-23 to the ADR 0010 corrected framing, resolving the review's in-process/sibling
+conflation — perception backlog #5/#7/#8, registry §10.3.)* What is decided here is **ownership**
+(Monado owns sensors, clock, calibration; the compositor owns composition) and the **boundary
+shape** (finished per-eye layers as dmabuf + explicit-sync; pose-at-exposure served from the
+tracker's process). Each service's *execution placement* — in-process `xrt_frame` sink vs.
+Monado-adjacent process on a versioned frame+pose relay — is fixed at implementation against
+exactly one of those two specified boundaries: if adjacent, the relay carries frames, exposure
+timestamps, and pose queries with a stated backpressure rule; if in-process, a stated sink ABI
+and a crash-containment story (the GPL cutout net is process-isolated regardless). It is never
+left as "sink or adjacent process" ambiguity per component.
 
 Concretely:
 

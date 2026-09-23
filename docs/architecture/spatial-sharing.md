@@ -41,6 +41,14 @@ Per [17](../research/17-sharing-capture-stack.md), the adoption path is cheap an
   portal-based tools with zero portal code. A native `xdg-desktop-portal-spatial` backend follows
   the xdpw shape (three D-Bus methods + chooser + PipeWire producer) when we need the in-space
   consent picker and SpatialCast source types.
+  **Consent-picker placement (decided, resolving the research/17 §11.4 fork and registry
+  §10.4):** the chooser is *owned by the portal backend* (service plane) and presented as a
+  separate privileged client surface on layer-shell with compositor-granted binding — the
+  xdpw/COSMIC shape, consistent with ADR 0012's seam model. The Mutter-style private
+  compositor-API chooser is rejected: it would move consent *presentation* into the authority
+  plane, which ADR 0012 reserves for consent *enforcement* only (which buffers a session may
+  reach). zxr renders the picker's surfaces like any privileged shell client and enforces the
+  outcome; the picker's UX design remains open (registry consent-picker row stays partial).
 - **SpatialCast** extends the portal bitmask additively: `XR_VIEW = 8` (spectate),
   `APP_VOLUME = 16` (mode-3 transport), `WORKSPACE = 32` (a session handle, not pixels), with
   vendor-scoped restore data and per-type consent language (§6).
@@ -301,7 +309,12 @@ an adopted design; the MVP is single-host-authoritative.
    right for the network case.
 4. **Per-observer views are authorized objects**: added only through the sharing service, budgeted
    (max resolution/rate), and revocable; a peer cannot request unbounded views or views of another
-   app.
+   app. **The sharing service is now named (registry §10.5 resolved): `spatial-sharingd`**, a
+   separate service-plane session daemon (D-Bus; socket-activated) owning share lifecycle, mode-5
+   session authority, and consent state; it authorizes observer views through a privileged
+   compositor API while the *data path* (the mode-3 RGBD bridge, capture publication) stays
+   in-compositor per §4 — authorization and transport deliberately live on opposite sides of the
+   authority boundary. Its API design is still open (registry row stays partial).
 5. **Clock and staleness honesty:** remote content carries its render pose + times in explicit clock
    mappings; validity limits are declared, and stale 3D content degrades to bounding-box/placeholder
    (the composition doc's T3 rule) rather than being silently composed.

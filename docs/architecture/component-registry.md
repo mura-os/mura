@@ -195,7 +195,7 @@ versus stubbed in the tree today.
 |---|---|---|---|
 | Donor pipeline (acquire→identify→parse→extract→qualify) | donor manifest schema; per-stage derivations | **specified** | [donor-pipeline.md](donor-pipeline.md); impl: [lib/donor](../../lib/donor/default.nix) is a deliberate `throw` stub pending the first real donor (design-backlog §standing rule) |
 | Donor contracts (reviewed, hash-bound; null-propagation gating) | `contracts/*.json` | **specified** | donor-pipeline.md §qualify; none authored yet |
-| Device contract option library | `spatial.*` typed options + assertions | **specified** | [device-contract.md](device-contract.md); impl: [lib/contract](../../lib/contract/default.nix) implements the core; doc-listed options not yet implemented: `spatial.kernel.{source,structuredExtraConfig,configFile,dtbs}`, `spatial.xr.monado.*`, `spatial.xr.tracking.slam.package`, `spatial.xr.calibration.paths`, `spatial.deployment.partitions`, `spatial.qualification.readinessCheck`; and the doc says `spatial.soc.*` while the impl uses `spatial.hardware.soc` (divergence — see report) |
+| Device contract option library | `spatial.*` typed options + assertions | **specified** | [device-contract.md](device-contract.md); impl: [lib/contract](../../lib/contract/default.nix) implements the core **and** (2026-09-23 catch-up, §10.2) `spatial.kernel.{source,structuredExtraConfig,configFile,dtbs}`, `spatial.xr.monado.*`, `spatial.xr.tracking.slam.package`, `spatial.xr.calibration.paths`, `spatial.qualification.readinessCheck` + tier assertion, with eval tests; remaining doc-only: `spatial.deployment.partitions` (deferred to the Steam Frame workstream shaping `deployment.*`); soc naming aligned (§10.1) |
 | Kernel build + two-phase kconfig contract check | `buildLinux`; eval-time + realization-time checks | **specified** | device-contract §kernel (IFD forbidden, lazy per-device checks); not implemented |
 | Image assembly (`uefi-rauc` repart, `android-bootimg` packer, dev-vm) | `image.modules` deferred modules | **specified** | [images-and-updates.md](images-and-updates.md); impl: [lib/images](../../lib/images/default.nix) ships only `devVm`; android-bootimg/uefi-rauc/installer-usb declared as stubs |
 | Update bundle generation (RAUC+casync; Android slot images) | RAUC bundle format; slot images | **specified** | images-and-updates §Updates; not implemented |
@@ -223,14 +223,14 @@ Every `spatial.*` namespace and the component whose configuration surface it is:
 | `spatial.adaptation.{display,gpu,camera,sensors,audio,wifiBt,tracking}` | per-subsystem hardware backends (build → runtime services) |
 | `spatial.adaptation.eyes` | eye-camera backend for the ET service (perception) — ADR 0011 |
 | `spatial.xr.runtime`, `spatial.xr.compositor.backend`, `spatial.xr.environment` | Monado runtime wiring (perception) — modules/xr |
-| `spatial.xr.monado.*`, `spatial.xr.tracking.slam.package` (doc-only) | per-device XR driver + VIT tracker packaging (build → perception) |
+| `spatial.xr.monado.*`, `spatial.xr.tracking.slam.package` | per-device XR driver + VIT tracker packaging (build → perception) |
 | `spatial.xr.shell` | compositor/session selection: zxr / stardust / wayvr (authority) — ADR 0006 |
 | `spatial.xr.session.*` | profiles, greeter, lock policy (system + authority) — ADR 0007 |
 | `spatial.xr.passthrough.*` (incl. `handCutout.*`) | passthrough + hand-cutout services (perception) — ADR 0008 |
 | `spatial.xr.mapping.*` (`enable`, `depthAssist`, `persistence`, `boundary`) | mapping/anchor, geometry, boundary services (perception) — ADR 0009 |
 | `spatial.xr.sensing.*` | declared sensing facts feeding the avatar driver's ladder (perception) — ADR 0010 |
 | `spatial.xr.avatar.enable` | avatar driver + runtime (perception + shell) — ADR 0010 |
-| `spatial.xr.calibration.paths` (doc-only) | per-unit calibration state (system) |
+| `spatial.xr.calibration.paths` | per-unit calibration state (system) |
 | `spatial.deployment.*` | image families, flashing, protected partitions (build) |
 | `spatial.qualification.*` | acceptance/readiness checks (build; readiness consumed by the update agent at runtime) |
 
@@ -342,37 +342,31 @@ Places where existing documents disagree (or have drifted) about where a compone
 it is called — recorded here so the registry is honest about its sources; resolving them belongs
 to the owning docs, not this index.
 
-1. **`spatial.soc` vs `spatial.hardware.soc`.** [device-contract.md](device-contract.md) §soc
-   defines a standalone `spatial.soc.*` namespace ("an enum set by the family"); the implemented
-   contract ([lib/contract](../../lib/contract/default.nix)) places it at
-   `spatial.hardware.soc`. One of the two must move.
-2. **Doc-ahead-of-scaffold contract options.** device-contract.md specifies
+1. **RESOLVED (2026-09-23).** `spatial.soc` vs `spatial.hardware.soc`: doc aligned to the
+   implemented contract — [device-contract.md](device-contract.md) now says
+   `spatial.hardware.soc`.
+2. **MOSTLY RESOLVED (2026-09-23).** The doc-only contract options are implemented in
+   [lib/contract](../../lib/contract/default.nix) with eval tests:
    `spatial.kernel.{source,structuredExtraConfig,configFile,dtbs}`, `spatial.xr.monado.*`,
    `spatial.xr.tracking.slam.package`, `spatial.xr.calibration.paths`,
-   `spatial.deployment.partitions`, and `spatial.qualification.readinessCheck`; none exist in
-   lib/contract. Not a contradiction, but the registry's namespace map (§7.1) follows the doc and
-   flags these "doc-only".
-3. **Perception service topology.** [perception-passthrough-hands.md](perception-passthrough-hands.md)
-   describes passthrough/hand-cutout as "compositor-owned layers … never a client …
-   compositor-internal, like 2D-plane rasterization", while [ADR 0008](adr/0008-perception-services-placement.md)
-   places their *execution* Monado-side (frame sinks or Monado-adjacent processes). The intended
-   reconciliation is "compositor-owned layer semantics, Monado-side production", but the review
-   found the ADR itself alternates between exporting source-domain artifacts vs final per-eye
-   layers and conflates capture ownership / execution / process location — the recast is a named
-   deferred item ([perception-design-backlog.md](perception-design-backlog.md) #5/#7/#8).
-   [ADR 0010](adr/0010-avatar-control-space-and-driver.md) already applied the corrected framing
-   for the avatar driver (ownership decided, execution fixed at implementation against one
-   specified boundary); ADR 0008 has not been recast yet.
-4. **Consent-picker placement.** [spatial-sharing.md](spatial-sharing.md) §2 has the native
-   portal backend own the in-space chooser, but [research/17](../research/17-sharing-capture-stack.md)
-   §11.4 leaves open whether the backend runs in-process with the compositor or talks to a
-   Mutter-style private compositor API — two different process placements for the same shell-plane
-   component (§5's consent-picker row stays `partial` until this forks one way).
-5. **The "sharing service".** spatial-sharing §6 invariant 4 makes a "sharing service" the sole
-   authorizer of observer views, but no document defines that service's process, plane, or API;
-   §4 places the mode-3 bridge *inside* the compositor, so the authorization service and the data
-   path are currently implied to live in different places without a stated seam (§6's sharing-
-   service row).
+   `spatial.qualification.readinessCheck` (+ tier assertion). Deliberately deferred:
+   `spatial.deployment.partitions` — the Steam Frame workstream is actively shaping
+   `spatial.deployment.*`; theirs to add.
+3. **RESOLVED (2026-09-23).** [ADR 0008](adr/0008-perception-services-placement.md) recast to the
+   ADR 0010 corrected framing: ownership + boundary decided (Monado owns cameras/clock/
+   calibration; compositor consumes finished per-eye dmabuf layers); per-service *execution*
+   placement fixed at implementation against exactly one specified boundary (in-process sink ABI
+   + crash containment, or adjacent process on a versioned frame+pose relay). Perception backlog
+   #5/#7/#8 phrasing satisfied.
+4. **RESOLVED (2026-09-23).** Consent-picker placement decided in
+   [spatial-sharing.md](spatial-sharing.md) §2: chooser owned by the portal backend, presented as
+   a separate privileged layer-shell client; Mutter-style private compositor-API chooser
+   rejected (presentation never enters the authority plane). Row stays `partial` (UX design open).
+5. **RESOLVED (2026-09-23).** The sharing service is `spatial-sharingd` —
+   [spatial-sharing.md](spatial-sharing.md) §6 invariant 4: separate service-plane session daemon
+   (D-Bus, socket-activated) owning share lifecycle/consent; authorizes observer views via a
+   privileged compositor API; the mode-3 data path stays in-compositor. Row stays `partial`
+   (API design open).
 6. **WiVRn's role** was a genuine contradiction (runtime enum value vs not-a-runtime) and is
    already resolved: `wivrn` models the optional streaming-server role only
    ([design-backlog.md](design-backlog.md) #16, device-contract §xr).

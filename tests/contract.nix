@@ -45,6 +45,19 @@ let
 
   eval = evalContract validDevice;
 
+  # Tier above 'booting' with and without a readiness check (registry §10.2 catch-up).
+  xrFunctionalWithReadiness = {
+    imports = [ validDevice ];
+    config.spatial.device.supportTier = lib.mkForce "xr-functional";
+    config.spatial.device.maintainers = lib.mkForce [ "j" ];
+    config.spatial.qualification.readinessCheck = "xr-smoke";
+  };
+  xrFunctionalNoReadiness = {
+    imports = [ validDevice ];
+    config.spatial.device.supportTier = lib.mkForce "xr-functional";
+    config.spatial.device.maintainers = lib.mkForce [ "j" ];
+  };
+
   # A device with an XR shell + a valid appliance session profile (ADR 0007).
   applianceSession = {
     imports = [ validDevice ];
@@ -126,6 +139,15 @@ let
     # ADR 0011: motorized-auto requires an eyes backend.
     motorizedIpdWithEyesPasses = assertsPass (evalContract motorizedIpdWithEyes);
     motorizedIpdNoEyesFails = !assertsPass (evalContract motorizedIpdNoEyes);
+    # Registry §10.2 catch-up: doc-listed options now exist with sane defaults.
+    kernelDtbsDefaultEmpty = eval.config.spatial.kernel.dtbs == [ ];
+    kernelSourceDefaultNull = eval.config.spatial.kernel.source == null;
+    monadoRevDefaultNull = eval.config.spatial.xr.monado.rev == null;
+    slamPackageDefaultNull = eval.config.spatial.xr.tracking.slam.package == null;
+    calibrationPathsDefaultEmpty = eval.config.spatial.xr.calibration.paths == { };
+    # Tier gate: above 'booting' requires a readiness check.
+    xrFunctionalWithReadinessPasses = assertsPass (evalContract xrFunctionalWithReadiness);
+    xrFunctionalNoReadinessFails = !assertsPass (evalContract xrFunctionalNoReadiness);
   };
 
   failures = lib.filterAttrs (_: v: v != true) results;

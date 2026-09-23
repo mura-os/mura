@@ -51,10 +51,11 @@ revisions"). So a bring-up device sets ~3–5 fields. Everything below has defau
 family, or is derived from the donor. (The minimal example at the end of this document omits
 `skuConstraints` for exactly this reason.)
 
-### `spatial.soc.*` and families
+### `spatial.hardware.soc` and families
 
-`spatial.soc` is an enum (`msm8998`, `sm8250`, `sm8550`, `sm8650`, …) set by the family, not the
-device. The SoC module provides the shared kernel base, firmware search paths, the DSP/sensor
+`spatial.hardware.soc` is an enum (`msm8998`, `sm8250`, `sm8550`, `sm8650`, …) set by the family,
+not the device. (Naming aligned to the implemented contract — registry §10.1 resolved; this doc
+previously said `spatial.soc.*`.) The SoC module provides the shared kernel base, firmware search paths, the DSP/sensor
 userspace stack, A/B slot ack, and default kconfig fragments — mirroring pmOS `soc-qcom-<family>`
 and meta-qcom `qcom-<soc>.inc`. Families (`families/<name>/`) are plain module imports for
 near-identical models; per Mobile NixOS guidance, implement real devices first and extract families
