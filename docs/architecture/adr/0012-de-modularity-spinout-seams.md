@@ -98,6 +98,9 @@ spatial semantics ([30 §6](../../research/30-wayland-de-anatomy-protocol-seams.
 4. spectator/stereo/depth capture source types + passthrough redaction (doc 17's SpatialCast);
 5. HMD/runtime configuration (IPD, render scale, refresh, recentering, passthrough toggle) as a
    narrow settings API backed by Monado capability checks — never `wl_output` mode-setting.
+   Completeness checklist: KWin VR's KCM taxonomy (general / input / headgaze / follow-mode /
+   advanced pages, [31 §2.7](../../research/31-kwin-vr.md)) — the empirically user-tested set of
+   knobs a 2D-in-XR tier needed (ADR 0013 §2).
 
 Rule: upstream base object + zxr extension; never silently give a 2D protocol's words new wire
 meanings. Candidates for upstreaming follow COSMIC's path (their workspace protocol became

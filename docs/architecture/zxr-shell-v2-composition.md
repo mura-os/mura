@@ -252,6 +252,31 @@ alpha UI is composited locally over it *before* entering the shared depth-compos
 UI blending is preserved while inter-app visibility stays opaque (T1). This reuses wlroots/smithay
 plumbing WayVR already demonstrated end-to-end ([10 §2.5](../research/10-xr-wayland-protocol-comparison.md)).
 
+**Normative WM-core constraints (from the KWin VR evidence).** The KWin VR fork's core-patch
+series is a diff-verified enumeration of where a 2D window manager breaks in 3D
+([31 §3](../research/31-kwin-vr.md), adopted by [ADR 0013 §2](adr/0013-kwin-vr-disposition.md));
+zxr's 2D tier satisfies these **by construction**, never by special case:
+
+1. **Hover/focus resolution is a pluggable policy**, not a hardcoded scene walk (KWin needed a
+   settable resolver callback).
+2. **Pointer/cursor space is unbounded** — no coordinate clamping to any output or rectangle
+   (KWin clamps to output layout; the fork lifts it behind a callback).
+3. **Popups place against placement volumes**, not output work-areas — the positioner's
+   constraint region is a property of the window's spatial context.
+4. **2D↔3D window state transitions are designed states** (grab-from-plane, drop-to-space,
+   move/resize in either domain) — KWin paid a 97-line fork of its central interactive
+   move/resize state machine for lacking this.
+5. **No window↔output binding exists** — both of the fork's genuinely invasive patches
+   (move/resize, `outputAt(center)` reassignment across four window classes) are artifacts of
+   output binding; zxr windows have world transforms and (optionally) place membership, never an
+   owning output.
+
+Two operational requirements ride along from the same evidence: **XR-init preflight runs in a
+separate probe process with a same-GPU check** (runtime GPU must match the compositor's render
+device; the fork's preflight once crashed the compositor and dual-GPU mismatch was a real user
+failure — doc 31 §2.7), and **dmabuf feedback advertises only formats the XR render path can
+import** (the fork's eglbackend format filter).
+
 ### 7.4 OpenXR-outward loop and composition pass
 
 ```text

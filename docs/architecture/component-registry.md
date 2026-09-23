@@ -61,6 +61,7 @@ critical path).
 | `spatial-authd` PAM helper | mech | separate daemon (per-conversation helper) | private socketpair; PAM | **specified** | ADR 0007 §PAM out of process; NixOS `security.pam.services.spatial-lock` |
 | PIN credential (`pam_spatial_pin`) + enrollment | mech | inside PAM stack | PAM | **partial** | ADR 0007: argon2-hashed PIN in per-unit system state, "MVP: owner-password-is-PIN"; storage/enrollment UX an open question (§Open questions) |
 | Session lifecycle (`spatial-session.target`) | mech | systemd user target | systemd | **specified** | ADR 0007 §Two profiles (owns Monado + compositor + shell services; crash/restart is systemd's job; boot-locked restart per invariant I3) |
+| XR-init preflight probe (OpenXR bring-up test + same-GPU check before compositor session init) | mech | separate probe process (under the session target) | exit status / small report | **partial** | pattern adopted from KWin VR's `kwinvr-xrtest` incl. its two proven failure modes ([31 §2.7](../research/31-kwin-vr.md), ADR 0013 §2); composition doc §7.3 makes it normative; no spatial-os design yet |
 | Boot splash (per-eye pre-distorted) | pres | separate early-boot component | none-yet (KMS, from system-state calibration) | **partial** | ADR 0007 §Cross-cutting: no Plymouth; dark panels default, pre-distorted logo a stretch goal; no design beyond that ([research/12](../research/12-lock-screens-and-appliance-login.md) §7) |
 | Per-unit calibration state (`/var/lib/spatial/`) | mech | system state (not a process) | filesystem contract | **specified** | ADR 0007 §Cross-cutting; [device-contract.md](device-contract.md) `spatial.xr.calibration.paths`, `protectedPartitions` |
 | Update agent (slot switch, mark-successful, readiness gating) | mech+policy | separate daemon / oneshot units | RAUC D-Bus / `qbootctl`-class slot ioctls | **specified** | [images-and-updates.md](images-and-updates.md) §Updates + §Health-gated success; `spatial.qualification.readinessCheck` (doc; not yet in lib/contract) |
@@ -79,9 +80,9 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Frame scheduling (snapshot distribution, composition cutoff, deadline/placeholder rule) | mech+policy | in-compositor | zxr frame events | **specified** | composition §7.4; pacing policy across heterogeneous clients carried open (§8) |
 | 2D quad tier (xdg-shell surface trees, subsurfaces, popups, shm+dmabuf, plane-depth generation) | mech | in-compositor | `xdg-shell` + core protocols | **specified** | composition §7.3 (first-class from M1) |
 | Rootless Xwayland | mech | separate client (Xwayland) + in-compositor WM glue | X11/xwayland | **partial** | composition §7.3 names it a requirement and M4 tests it; no integration design (no doc on the XWayland WM half) |
-| Window model (toplevel lifecycle, initial 3D placement, move/resize/stacking) | policy | in-compositor | none-yet | **partial** | composition §7.3 holds texture/size/world transform; M1 tests move/rotate/resize; "how 2D toplevels map to initial 3D placement" is an open question (composition §8, [research/10](../research/10-xr-wayland-protocol-comparison.md) §4.5); no window-management policy doc |
+| Window model (toplevel lifecycle, initial 3D placement, move/resize/stacking) | policy | in-compositor | none-yet | **partial** | composition §7.3 holds texture/size/world transform + the five normative WM-core constraints mined from KWin VR (no output binding; designed 2D↔3D transitions; popup placement volumes — [31 §3](../research/31-kwin-vr.md), ADR 0013 §2); M1 tests move/rotate/resize; "how 2D toplevels map to initial 3D placement" is an open question (composition §8, [research/10](../research/10-xr-wayland-protocol-comparison.md) §4.5); no window-management policy doc |
 | Spatial-workspace / space model (rooms, workspaces, placement graph for local use) | policy | in-compositor | none-yet | **missing** | no doc found. Nearest artifact: the mode-5 *sharing* placement graph (spatial-sharing §5) which presumes a local placement graph that no doc defines; anchors give windows persistence ([spatial-mapping.md](spatial-mapping.md) M1 "shell pins windows") but no workspace semantics |
-| Input authority (seat, keyboard focus, ray→plane hit-testing, 6DoF pointer routing) | mech | in-compositor | `wl_seat`; zxr ray/6DoF pointer (ADR 0006 protocol) | **specified** | ADR 0006 §The protocol (ray device, hit-test compositor-derived); composition §7.3 (ray → window-local `wl_pointer`) |
+| Input authority (seat, keyboard focus, ray→plane hit-testing, 6DoF pointer routing) | mech | in-compositor | `wl_seat`; zxr ray/6DoF pointer (ADR 0006 protocol) | **specified** | ADR 0006 §The protocol (ray device, hit-test compositor-derived); composition §7.3 (ray → window-local `wl_pointer`; hover/focus resolution pluggable, pointer space unbounded — KWin VR constraints 1–2, ADR 0013 §2) |
 | Focus/activation authority (`xdg-activation`, focus-stealing policy) | mech+policy | in-compositor | `xdg-activation-v1` | **missing** | no doc found. composition §7.3 says "focus/activation" is required for real 2D support, with no design; research/19 §8 notes xdg-activation merely passes through waypipe |
 | Lock state machine (invariants I1–I3; boot-locked; `SetLockedHint` ordering) | mech | in-compositor | internal; logind D-Bus; `ext-session-lock-v1` served on dev profile only | **specified** | ADR 0007 §The lock model; composition §8 "lock as a composition-policy state"; contract `spatial.xr.session.lock.*` |
 | Idle/presence policy (doff/don grace, idle-to-lock; serve `ext-idle-notify-v1`, honor `zwp_idle_inhibit_v1`) | mech+policy | in-compositor (own OpenXR loop, `XR_EXT_user_presence`) | standard protocols + OpenXR | **specified** | ADR 0007 §Cross-cutting; research/12 §6.2; contract `lock.triggers`/`doffGraceSeconds` |
@@ -151,7 +152,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Boundary setup UX (draw/confirm play area) | pres | none decided | none-yet | **missing** | no doc found; spatial-mapping §7 specifies the boundary *system* but not how a user creates/edits one |
 | IPD wizard (fixation-target measurement UX) | pres | shell/session | ET service | **partial** | ADR 0011 §4 names "a fixation-target 'IPD wizard' at enrollment"; no design; kappa-calibration UX open (research/28 §6) |
 | Avatar runtime renderer | pres | separate client (ordinary zxr client, opaque-cutout profile) | zxr-shell-v2; asset container | **specified** | avatar-persona §runtime; ADR 0010 (no privileged access); gated R-0/Z-1/R-1 |
-| Window placement/manipulation UI (grab, rotate, resize handles) | pres | in-compositor | zxr/xdg-shell interactions | **partial** | M1 acceptance test requires it (composition §7.5); no interaction design |
+| Window placement/manipulation UI (grab, rotate, resize handles) | pres | in-compositor | zxr/xdg-shell interactions | **partial** | M1 acceptance test requires it (composition §7.5); interaction-design evidence adopted from KWin VR's daily-driven headgaze/headscroll/follow-mode/grab-all/recenter vocabulary ([31 §2.5–2.6](../research/31-kwin-vr.md), ADR 0013 §2); no zxr-specific design yet |
 | SNI watcher + host (items as typed panel badges) | pres | watcher: separate supervised daemon; host: panel applet/component | StatusNotifierItem D-Bus (de-facto spec, draft 0.1) | **missing** | no doc found; hosting decided by ADR 0012 (vs dropping tray compatibility); COSMIC `cosmic-applet-status-area` / Plasma systemtray are the precedent (doc 30 §A3); no design |
 
 ## 6. Service plane
@@ -373,13 +374,13 @@ Counts by status (rows in §2–§7 tables):
 
 | Plane | specified | partial | missing | total |
 |---|---|---|---|---|
-| System | 7 | 3 | 0 | 10 |
+| System | 7 | 4 | 0 | 11 |
 | Authority | 19 | 6 | 5 | 30 |
 | Perception | 17 | 6 | 0 | 23 |
 | Shell | 3 | 7 | 8 | 18 |
 | Service | 1 | 3 | 16 | 20 |
 | Build | 7 | 8 | 0 | 15 |
-| **Total** | **54** | **33** | **29** | **116** |
+| **Total** | **54** | **34** | **29** | **117** |
 
 The shape is stark and expected: the authority and perception planes are deeply specified (the
 ADR work to date), the build plane is specified-but-stubbed by deliberate policy (the Lynx-spike
