@@ -69,12 +69,23 @@
             # QEMU runner + smoke checks for the Frame image (runs the aarch64 disk
             # image via qemu-system-aarch64 full-system emulation on the dev host).
             frame-vm-run = (pkgsFor system).callPackage ./pkgs/frame-vm-run { };
+
+            # Rung-1 dev loop: nested session window + simulated-HMD Monado.
+            dev-session = (pkgsFor system).callPackage ./pkgs/dev-session { };
           }
         // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
           # Steam Frame uefi-rauc artifacts (build via remote aarch64 builder).
           frame-image = self.nixosConfigurations.valve-steam-frame.config.system.build.image;
           frame-bundle = self.nixosConfigurations.valve-steam-frame.config.system.build.raucBundle;
         });
+
+      apps = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (system: {
+        dev-session = {
+          type = "app";
+          program = "${self.packages.${system}.dev-session}/bin/dev-session";
+          meta.description = "Rung-1 dev loop: nested spatial session + simulated-HMD Monado";
+        };
+      });
 
       formatter = forAll (system: treefmtEval.${system}.config.build.wrapper);
 
@@ -107,6 +118,8 @@
           protocols = import ./tests/protocols.nix { inherit nixpkgs system; };
           # End-to-end smoke check: the virtual-headset VM builds.
           virtual-headset-vm = self.packages.${system}.virtual-headset-vm;
+          # The rung-1 dev-loop harness builds (script-level shellcheck via writeShellApplication).
+          dev-session = self.packages.${system}.dev-session;
         };
     };
 }

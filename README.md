@@ -31,6 +31,27 @@ nix build .#packages.x86_64-linux.virtual-headset-vm
 nix develop                                      # dev shell with donor-pipeline tooling
 ```
 
+## Development
+
+Three loops, cheapest first — pick by what you're changing:
+
+**Rung 1 — `nix run .#dev-session`** (compositor/shell/XR work; iteration = process relaunch).
+The spatial session as a plain window on your desktop: a nested Wayland compositor (sway until
+zxr M1; Alt+Return = terminal, Alt+Shift+E = quit) plus Monado running the **simulated HMD**
+(`XR_RUNTIME_JSON` exported inside the session). Flags: `--client` (xrgears OpenXR smoke),
+`--rotate` (canned head motion), `--controllers`, `--no-monado`, `--verbose`. No VM, no image.
+
+**Rung 2 — `nix run .#virtual-headset-vm`** (module/system integration; iteration = incremental
+rebuild, no image assembly — the VM shares the host `/nix/store`). Boots in seconds under KVM
+straight into a visible sway session (virgl-accelerated GL, 8 GiB/4 cores); `ssh -p 2221
+spatial@localhost` (password `spatial`). State persists in `./spatial-virtual-headset.qcow2` — delete it
+for a factory-reset boot.
+
+**Rung 3 — `nix run .#frame-vm-run -- <image.raw[.zst]>`** (image/update machinery only): the
+Steam Frame aarch64 image under full-system emulation, including the RAUC A/B update round-trip
+([docs/research/33 §9](docs/research/33-steam-frame-donor.md)). Build the image on an aarch64
+builder: `nix build .#packages.aarch64-linux.frame-image`.
+
 ## Design rule
 
 > Build the distribution independently of the device, but qualify and deploy it together with an

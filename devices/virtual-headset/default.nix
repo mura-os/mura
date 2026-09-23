@@ -41,9 +41,10 @@
     runtime = "monado";
     compositor.backend = "window"; # windowed compositor inside the VM, not vk-display
     environment = {
-      # Monado's in-headless/simulated setup for a VM without real HMD hardware.
-      XRT_COMPOSITOR_FORCE_XCB = "0";
-      P_OVERRIDE_ACTIVE_CONFIG = "1";
+      # Monado's simulated-HMD setup for a VM without real hardware: the simulated
+      # system builder is excluded from auto-discovery unless explicitly enabled
+      # (monado target_builder_simulated.c).
+      SIMULATED_ENABLE = "true";
     };
   };
 
@@ -72,6 +73,37 @@
   # A minimal Wayland compositor so the "common userspace under Wayland" contract
   # is actually exercised in the VM.
   programs.sway.enable = lib.mkDefault true;
+
+  # Rung-2 dev-loop tuning (VM builds only; docs: README §Development). The VM
+  # shares the host /nix/store, so iteration never builds an image: edit modules,
+  # `nix run .#virtual-headset-vm`, and the QEMU window boots straight into sway.
+  virtualisation.vmVariant = {
+    virtualisation = {
+      memorySize = 8192;
+      cores = 4;
+      # virgl: real GL inside the guest (wlroots/Monado want more than llvmpipe).
+      qemu.options = [
+        "-device virtio-gpu-gl-pci"
+        "-display gtk,gl=on,show-cursor=on"
+      ];
+      forwardPorts = [
+        { from = "host"; host.port = 2221; guest.port = 22; }
+      ];
+    };
+
+    services.openssh = {
+      enable = true;
+      settings.PasswordAuthentication = true;
+    };
+
+    # Boot to a visible session with zero manual steps: the autologin getty on
+    # tty1 execs sway. (Guarded so serial/ssh shells stay plain shells.)
+    programs.bash.loginShellInit = ''
+      if [ "$(tty)" = /dev/tty1 ] && [ -z "''${WAYLAND_DISPLAY:-}" ]; then
+        exec sway
+      fi
+    '';
+  };
 
   system.stateVersion = lib.mkDefault "25.05";
 }

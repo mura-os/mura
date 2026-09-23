@@ -7,3 +7,6 @@ result-*
 
 # frame-vm-run scratch disks
 .frame-vm*/
+
+# virtual-headset VM state
+*.qcow2

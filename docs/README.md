@@ -1,5 +1,7 @@
 # spatial-os documentation
 
+Development workflow (the three dev loops, one command each): [README.md §Development](../README.md).
+
 A Nix-built, NixOS-based, Wayland-based Linux XR distribution targeting many standalone VR headsets,
 producing reproducible flashable images from pinned vendor firmware ("donor") inputs.
 
