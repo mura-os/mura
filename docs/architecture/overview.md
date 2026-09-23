@@ -181,3 +181,8 @@ These fall out of the research and hold across every document:
 8. **A kernel meeting the contract is a precondition for the default NixOS userspace** — an old
    vendor kernel does not freeze the whole distribution; see
    [adr/0002-nixos-vs-nix-built-userspace.md](adr/0002-nixos-vs-nix-built-userspace.md).
+9. **Budgets are architecture.** One smartphone-class SoC serves perception, composition,
+   clients, and services under hard frame deadlines and a fanless thermal envelope; the
+   partition is owned by [budgets.md](budgets.md), every new ADR/design doc carries a
+   budget-impact statement (its standing rule), and the frame path is a whitelist — this is
+   near-embedded development and efficiency is an invariant, not a pass.
