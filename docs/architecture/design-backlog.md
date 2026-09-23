@@ -3,8 +3,12 @@
 This triages [REVIEW.md](REVIEW.md) (the cross-model red-team pass). The review's own verdict is
 that a skeletal module tree + simulated VM can start now, but the generic donor/update/backend
 machinery must not be built before a **Lynx R1 boot/display/tracking spike** proves the assumptions
-it would encode. This document records what was fixed immediately and what is deferred to that spike
-or to pre-release design — so nothing is silently dropped.
+it would encode. This document records what was fixed immediately and what is gated on that spike
+or on pre-release design — so nothing is silently dropped.
+
+> **Order authority:** [implementation-path.md §5](implementation-path.md) is the sole deferral
+> register; this document is its satellite — it records *what each gate must prove*, not when
+> work happens.
 
 ## Fixed now (in this pass)
 

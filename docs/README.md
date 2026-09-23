@@ -11,6 +11,13 @@ the `xdg_*` Wayland protocol namespace, or xdg-desktop-portal; the three-way tra
 [desktop-environment.md §2](architecture/desktop-environment.md)). Protocol surveys sweep whole
 directories, never named lists (doc 30's scope rule).
 
+**No-deferral rule:** design docs and ADRs *specify* — a design, a condition-shaped rule ("X
+exists only when Y does"), a non-goal with reserved hooks, or an open question that names its
+decider (a gate, a measurement, or an owner). Scheduling language ("deferred", "later", build
+order) lives only in
+[implementation-path.md §5](architecture/implementation-path.md), the deferral register; the four
+review backlogs are its gate-detail satellites.
+
 ## Research (`research/`)
 
 Study of the reference multi-device OS projects, done as parallel deep-dives. Each doc follows the

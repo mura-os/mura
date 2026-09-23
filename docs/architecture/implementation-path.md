@@ -232,7 +232,14 @@ Each track also exercises its NixOS module wiring (greetd module, authd PAM serv
 settings schema artifact emission) in the VM — the module system grows with the daemons, not in
 a big-bang at the end.
 
-## 5. Explicitly deferred (unchanged verdicts, restated here so the path is complete)
+## 5. The deferral register (the only place scheduling language lives)
+
+**Standing rule** (docs README): design docs and ADRs *specify* — they state designs,
+condition-shaped rules ("X exists only when Y does"), non-goals with reserved hooks, or open
+questions that name their decider. Statements about *when* or *in what order* live here and
+nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into this section.
+
+### 5.1 Deferred by this path
 
 - **Shell-plane presentation** — launcher, panels, pager/overview, OSD, notifications UI: all
   downstream of M1's window model and the places implementation; registry status honest
@@ -241,11 +248,31 @@ a big-bang at the end.
   (ADR 0016) and its protocol drafted (`zxr-workspace-v1`), but residency/currency machinery
   waits for a session that has windows worth organizing.
 - **Delegation consumer** (`zspatial-toplevel-export-v1`): staged behind M1 per ADR 0014 M-A.
+- **kwin-vr packaging** (ADR 0013's reserved optional session): unscheduled; the
+  `spatial.xr.shell = kwin-vr` contract enum change lands with the packaging work.
+- **Multi-account + guest activation on the ladder**: designed in
+  [multi-user.md](multi-user.md) / ADR 0018; implementation joins after G2 (the picker extends
+  the greeter scene; per-account enrollment extends provisiond).
 - **All hardware-gated work**: the Lynx spike rule stands (design-backlog standing rule);
   the Steam Frame donor workstream continues in parallel on its own ladder; nothing in this
   path requires hardware before M4's exit.
 - **Docked mode, sharing bridges, avatar, mapping**: each behind its own recorded gate
   (ADR 0015; spatial-sharing; S-1/R-1; M0), joined to this path only after G3.
+
+### 5.2 Satellite registers (gate detail lives there; order authority lives here)
+
+The four review-disposition backlogs record *what* each gate must prove; this section owns the
+claim that the gated work waits:
+
+- [design-backlog.md](design-backlog.md) — the **Lynx R1 spike** gate (Android-family donor/
+  update/backend machinery) + pre-release design items.
+- [perception-design-backlog.md](perception-design-backlog.md) — the **P-1 BSP kill-test** gate
+  (camera/timestamp/GPU-path reality) + pre-prototype specification items (its #5/#8 are now
+  specs) + pre-release qualification.
+- [mapping-design-backlog.md](mapping-design-backlog.md) — the **M0 foundations spike** gate
+  (keyframe packet, online mapper, reset epochs) + design-before-milestone items.
+- [avatar-design-backlog.md](avatar-design-backlog.md) — the **S-1 sensing / R-1 render**
+  kill-gates + pre-implementation items.
 
 ## 6. Standing references
 

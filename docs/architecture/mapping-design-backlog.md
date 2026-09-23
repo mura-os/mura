@@ -5,6 +5,10 @@
 [ADR 0009](adr/0009-spatial-mapping-architecture.md), following the pattern of
 [perception-design-backlog.md](perception-design-backlog.md).
 
+> **Order authority:** [implementation-path.md §5](implementation-path.md) is the sole deferral
+> register; this document is its satellite — it records *what the M0/M1/M2 gates must prove*,
+> not when work happens.
+
 ## Fixed in the documents now
 
 | Finding | Fix applied |

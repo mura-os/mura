@@ -6,6 +6,10 @@ opaque-only composition contract, not the four depth backends or Tier-2 matting.
 research/design task, so the disposition is: fix genuine doc errors now; promote the review's kill
 criteria to an explicit **P-1 gate**; record the rest as pre-prototype / pre-release design work.
 
+> **Order authority:** [implementation-path.md §5](implementation-path.md) is the sole deferral
+> register; this document is its satellite — it records *what the P-1 gate must prove*, not when
+> work happens.
+
 ## Fixed now (in [perception-passthrough-hands.md](perception-passthrough-hands.md))
 
 | # | Review finding | Fix |

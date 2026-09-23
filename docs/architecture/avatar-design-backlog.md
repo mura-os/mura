@@ -6,6 +6,10 @@ mislabeled as serialization; three direct contradictions; do not freeze schemas 
 spikes.* Disposition: genuine doc errors fixed now; the adapter spike promoted to a named gate;
 the rest recorded as pre-implementation / pre-release design work.
 
+> **Order authority:** [implementation-path.md §5](implementation-path.md) is the sole deferral
+> register; this document is its satellite — it records *what the S-1/R-1 gates must prove*, not
+> when work happens.
+
 ## Fixed now (in [avatar-persona.md](avatar-persona.md) and [adr/0010](adr/0010-avatar-control-space-and-driver.md))
 
 | # | Review finding | Fix |
