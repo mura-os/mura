@@ -1,7 +1,7 @@
 # Avatar Claims Audit
 
 **Audit date:** 2026-09-22  
-**Scope:** external avatar-reconstruction, driving, licensing, and mobile Gaussian-splat rendering claims used by the proposed spatial-os Persona design.  
+**Scope:** external avatar-reconstruction, driving, licensing, and mobile Gaussian-splat rendering claims used by the proposed Mura Persona design.
 **Method:** read-only review of primary papers/project pages, current public repository trees, and the pinned local clones listed in `references/MANIFEST.json`; no code, models, or datasets were executed or downloaded.
 
 ## Verdict definitions
@@ -19,7 +19,7 @@ FlexAvatar's 20 FPS, 1.7 GB, and two-minute figures are genuine appendix claims,
 MATCH really predicts one registered static Gaussian texture in 0.5 seconds, yet its complete MATCH-to-GEM avatar still takes 4.6 hours; these are different pipeline boundaries ([paper](https://arxiv.org/html/2603.15811v1)).
 SqueezeMe is the strongest direct mobile result: three animated 60k-Gaussian full-body avatars at 72 FPS on a standalone Quest 3, with a custom Vulkan renderer and HTP decoder ([paper](https://arxiv.org/html/2412.15171)).
 HRM2Avatar is stronger raw raster evidence on Apple hardware: 533,695 splats at 1920×1824×2 and 90 FPS on Vision Pro M2, and a real Apache-2.0 Metal runtime tree now exists ([runtime](https://github.com/alibaba/Taobao3D/tree/main/HRM2Avatar)).
-Neither result is an open, measured spatial-os path on XR2+ Gen 2.
+Neither result is an open, measured Mura path on XR2+ Gen 2.
 The defensible verdict is therefore: **40–60k animated splats in stereo at 72 Hz are demonstrated on the closely related Quest 3/XR2 Gen 2 class; the exact open Linux/Vulkan XR2+ implementation and 90 Hz target remain speculative until measured.**
 
 # Part 1 — Paper, repository, and headline-claim audit
@@ -152,7 +152,7 @@ SqueezeMe is a real Meta paper, arXiv:2412.15171 and SIGGRAPH 2025, DOI 10.1145/
 - **VERIFIED — renderer and decoder are distinct bottlenecks.** The paper explicitly optimizes each separately.
 - **UNVERIFIED — public code.** No official source repository, runtime package, model, or license was found.
 
-SqueezeMe demonstrates feasibility but does not supply spatial-os with an implementation.
+SqueezeMe demonstrates feasibility but does not supply Mura with an implementation.
 
 ## 9. HRM2Avatar
 
@@ -237,7 +237,7 @@ SqueezeMe demonstrates three simultaneously animated 60k-Gaussian avatars at 72 
 The system divides work: a quantized linear decoder runs on HTP, while custom Vulkan handles projection, sorting, and splat rendering on Adreno.
 The 0.45 ms figure is decoder-only.
 The 72 FPS result is the full animation-plus-render system.
-No public source means spatial-os cannot inspect renderer assumptions, eye-buffer resolution, sustained thermals, compositor load, or exact single-pass stereo implementation.
+No public source means Mura cannot inspect renderer assumptions, eye-buffer resolution, sustained thermals, compositor load, or exact single-pass stereo implementation.
 
 ### HRM2Avatar: high-count mobile stereo evidence
 
@@ -312,7 +312,7 @@ Quoting any one stage as “avatar latency” is misleading unless the endpoints
 SqueezeMe directly demonstrates three 60k avatars at 72 FPS on Quest 3/XR2 Gen 2.
 One avatar with 40–60k splats on the faster XR2+ Gen 2 should be a reasonable engineering target.
 
-**The spatial-os open Linux/Vulkan implementation: NOT YET DEMONSTRATED.**
+**The Mura open Linux/Vulkan implementation: NOT YET DEMONSTRATED.**
 No audited public renderer combines the required Adreno path, stereo/OpenXR integration, animation decoder, compositor coexistence, and headset measurements.
 
 **90 Hz at target eye resolution: SPECULATIVE ON XR2+.**
@@ -377,7 +377,7 @@ Licensing is recorded here for provenance and distro planning; it does not gate 
 | `3dgs-cpp` | **PARTIAL** | Vulkan-compute and Apple support are real; Android/Qualcomm/OpenXR remain TODO in the pinned clone. |
 | `vkgs` | **PARTIAL** | Fast Vulkan desktop renderer; graphics-pipeline splatting, no Adreno/stereo evidence, not actively maintained. |
 | 40–60k stereo at 72 Hz | **VERIFIED class feasibility** | Demonstrated by SqueezeMe on Quest 3/XR2 Gen 2, but only in an unreleased custom stack. |
-| Open spatial-os XR2+ path | **UNVERIFIED** | No public audited stack demonstrates Linux/Vulkan+Adreno+stereo+animation under compositor load. |
+| Open Mura XR2+ path | **UNVERIFIED** | No public audited stack demonstrates Linux/Vulkan+Adreno+stereo+animation under compositor load. |
 | 90 Hz on XR2+ | **UNVERIFIED** | Demonstrated on Apple M2, not on XR2+ Gen 2; requires an on-device prototype. |
 
 # Architecture recommendation

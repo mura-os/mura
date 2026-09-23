@@ -10,7 +10,7 @@
 `docs/research/23-relocalization-multisession.md`;
 `docs/architecture/adr/0008-perception-services-placement.md`;
 `docs/architecture/perception-passthrough-hands.md`; and
-`lib/contract/default.nix` (`spatial.xr.mapping`). Relevant Basalt, Monado,
+`lib/contract/default.nix` (`mura.xr.mapping`). Relevant Basalt, Monado,
 ORB-SLAM3, and OpenXR reference code was checked where claims depended on it.
 
 ## Findings
@@ -228,13 +228,13 @@ retention limits, zero-copy ownership, topic-specific gap rules, and scheduler b
 consumers together before calling the topology settled.
 
 ### M-17 — major — `depthSource = none` has contradictory meanings
-**Claim/design element.** The spec/contract use `spatial.xr.mapping.depthSource`
+**Claim/design element.** The spec/contract use `mura.xr.mapping.depthSource`
 (`spatial-mapping.md` §7; `lib/contract/default.nix:217-246`).
 
 **Evidence.** Research 22 says `none` means no depth capability, landmarks-only planes, no TSDF
 (§6.3). The Nix contract says it means RGB passive stereo (`default.nix:224-233`). Research names
-the option `spatial.perception.geometry.depthSource`, while implementation uses
-`spatial.xr.mapping`.
+the option `mura.perception.geometry.depthSource`, while implementation uses
+`mura.xr.mapping`.
 
 **Recommended fix.** Use one path and meaning. Prefer `depthAssist`, where `none` means passive
 visible stereo, plus a separate geometry capability switch. Add a behavior truth table and Nix

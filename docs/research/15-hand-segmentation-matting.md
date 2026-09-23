@@ -170,7 +170,7 @@ display time — never awaited.
 ### 3.1 Ego2Hands / Convolutional Segmentation Machine — the monochrome baseline
 
 **Repo:** `references/ego2hands/` (AlextheEngineer), paper arXiv
-[2011.07252](https://arxiv.org/abs/2011.07252). The standout for spatial-os because it is the one
+[2011.07252](https://arxiv.org/abs/2011.07252). The standout for Mura because it is the one
 purpose-built, real-time, *two-hand* egocentric segmentation model that is **trained on greyscale**.
 
 **Architecture** (`models/CSM/CSM.py`): a compact ResNet-bottleneck encoder (7×7 s2 conv → avgpool
@@ -198,7 +198,7 @@ dataset (also Box-hosted).
 
 **Notable design detail worth copying:** cheap **scene/domain adaptation** — freeze the composited
 foregrounds, swap the background pool for captures of the actual environment, fine-tune 10k iters
-(`README.md:109-124,141-163`). Translated to spatial-os: record hand-free passthrough sequences per
+(`README.md:109-124,141-163`). Translated to Mura: record hand-free passthrough sequences per
 headset (or per home), composite hands over them, and adapt the model to the device's optics.
 
 **License — flagged:** `README.md:171-173`: "This dataset can only be used for
@@ -222,7 +222,7 @@ objects per hand (`README.md:71-81`). Built on `mmsegmentation`; the default two
 their context-aware compositional data augmentation. Checkpoints are Google-Drive-hosted
 (`download_checkpoints.sh` uses `gdown`).
 
-**Role for spatial-os:** Swin-L is a server-class backbone — not a candidate for on-headset
+**Role for Mura:** Swin-L is a server-class backbone — not a candidate for on-headset
 real-time. Its value is (a) **11k+ labelled egocentric RGB frames** with separate L/R hand classes
 (sourced from EPIC-KITCHENS, Ego4D, THU-READ and their own escape-room footage per the paper), and
 (b) an **offline teacher**: run it over RGB passthrough recordings from our target devices to
@@ -279,7 +279,7 @@ heuristics, or dropped in favour of the CSM net).
 | Mercury's own nets | 1ch grey (160² det, ROI crops) | joints, not pixels | yes (shipping) | Monado models repo |
 
 **Flag:** "trained on greyscale" means *visible-spectrum luminance* (Ego2Hands greys down RGB
-captures, `Ego2Hands.py:334`). Headset tracking cameras on likely spatial-os targets (Quest-class,
+captures, `Ego2Hands.py:334`). Headset tracking cameras on likely Mura targets (Quest-class,
 Steam Frame-class) are monochrome with **near-IR sensitivity and often active IR illumination**
 (assumption — verify per device in the device contract). Skin albedo, sclera/vein contrast, and
 background reflectance all differ at ~850 nm from visible luminance; Canny-edge auxiliary input
@@ -396,7 +396,7 @@ in **reverse-Z**; it then declares one of three modes:
   and shows / fades / hides per pixel ("fully visible … or partially hidden, if it's behind or
   within the object").
 
-The load-bearing observation for spatial-os: **Apple documents only the composition contract —
+The load-bearing observation for Mura: **Apple documents only the composition contract —
 depth semantics, alpha semantics, a 3-value policy enum — and never the segmentation network.** The
 cutout is a system service; apps interact with a policy. That is precisely the right protocol
 boundary for zxr-shell-v2.
@@ -460,7 +460,7 @@ be produced in — or converted to — that same encoding before the compare, or
 
 ## 7. Licensing table
 
-| Asset | License | Shipping implication for spatial-os |
+| Asset | License | Shipping implication for Mura |
 |---|---|---|
 | Ego2Hands **code** | **none** (no LICENSE file in repo) | default all-rights-reserved: may not redistribute or derive shipped code from it; the *architecture idea* (2-stage CSM, grey+edge input, energy head) is freely reimplementable |
 | Ego2Hands **dataset + pretrained weights** | "scientific/non-commercial purposes only" (`README.md:171-173`) | usable for internal research/benchmarking; **do not train shipped weights on it**; a FOSS distro is redistributable downstream incl. commercially, so NC-tainted weights are a no |
@@ -478,7 +478,7 @@ isolated by process boundary respectively.
 
 ---
 
-## 8. What spatial-os should adopt / reject, and the prototype path
+## 8. What Mura should adopt / reject, and the prototype path
 
 **Adopt:**
 - The **four-artifact framing** as protocol vocabulary: joints (exists), mask, matte (α+F), hand

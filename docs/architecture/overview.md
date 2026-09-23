@@ -1,11 +1,11 @@
-# spatial-os architecture: overview
+# Mura architecture: overview
 
 **Status:** draft, derived from [docs/research/00-synthesis.md](../research/00-synthesis.md).
 This document defines the layers, the boundaries between them, and the vocabulary the rest of
 `docs/architecture/` uses. It is deliberately technology-specific where the research settled a
 decision and deliberately open where a hardware spike is still required.
 
-## What spatial-os is
+## What Mura is
 
 A Nix-built, NixOS-based, Wayland-based Linux XR distribution that targets many standalone VR
 headsets by turning **pinned vendor firmware ("donors") + device definitions + pinned sources** into
@@ -70,7 +70,7 @@ flowchart TB
 The XR shell/compositor, OpenXR applications, and 2D Wayland applications. Talks only OpenXR and
 Wayland. Knows nothing about specific hardware.
 
-The shell is the spatial-os XR compositor — a Wayland-native, client-renders / compositor-composites
+The shell is the Mura XR compositor — a Wayland-native, client-renders / compositor-composites
 design continuing the wxrc `zxr` protocol lineage as `zxr-shell-v2`, itself an OpenXR client of
 Monado, serving `xdg-shell` for 2D apps and `zxr-shell-v2` for 3D apps in one depth-tested space.
 This resolves the previously-open "2D apps in a headset session" question from
@@ -100,7 +100,7 @@ before any user session exists, per-unit calibration is system state (not `$HOME
 tiered (IMU-only pre-auth, full 6DoF with the session). The decision, the doff/don/idle re-auth
 policy, and the lock-as-composition-policy model are in
 [adr/0007-session-greeter-lock.md](adr/0007-session-greeter-lock.md), selected via
-`spatial.xr.session.*`. On devices whose USB-C can drive a monitor, the same session also offers
+`mura.xr.session.*`. On devices whose USB-C can drive a monitor, the same session also offers
 **docked desktop mode** — flat presentation on the external display with the XR stack quiesced
 while doffed ([adr/0015-docked-desktop-mode.md](adr/0015-docked-desktop-mode.md)).
 

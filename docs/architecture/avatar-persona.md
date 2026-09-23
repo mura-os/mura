@@ -9,7 +9,7 @@
 
 The goal is an open Persona: **enroll a user once (phone video), produce a saved, portable,
 animatable representation, drive it live from whatever the headset actually senses, and render it
-photoreal at VR rate for telepresence** — on spatial-os, from public research, with every claim
+photoreal at VR rate for telepresence** — on Mura, from public research, with every claim
 about "what the headset gives us" verified against code.
 
 ## The four-stage decomposition (and what the OS owns)
@@ -19,7 +19,7 @@ flowchart LR
     subgraph offline [Enrollment - offline desktop tool, NOT an OS component]
         cap[phone video] --> track[FLAME tracking + matting] --> fit[avatar fitting] --> asset[(persona asset)]
     end
-    subgraph live [Live - spatial-os components]
+    subgraph live [Live - Mura components]
         sensing[headset sensing via Monado] --> driver[avatar driver service]
         asset --> runtime[avatar runtime renderer]
         driver -->|"versioned control vector"| runtime
@@ -36,7 +36,7 @@ flowchart LR
 4. **The runtime** (live) — control vector → deformed Gaussians → stereo colour+depth, submitted
    as an ordinary zxr client ([composition §7.2](zxr-shell-v2-composition.md)).
 
-**spatial-os owns only the asset format, the driver service, and the runtime renderer.** The
+**Mura owns only the asset format, the driver service, and the runtime renderer.** The
 enrollment pipeline is a separate desktop tool whose only OS-visible obligation is emitting a
 valid asset. This is the enrollment-heavy / runtime-light pattern every production system uses
 (GASP, SqueezeMe distillation — [27 §8](../research/27-avatar-claims-audit.md)).

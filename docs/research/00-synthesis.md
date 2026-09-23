@@ -4,11 +4,11 @@
 ([01-mobile-nixos](01-mobile-nixos.md), [02-postmarketos](02-postmarketos.md),
 [03-android-compat](03-android-compat.md), [04-nix-imaging](04-nix-imaging.md),
 [05-xr-userspace](05-xr-userspace.md), [06-donor-pipeline](06-donor-pipeline.md),
-[07-device-landscape](07-device-landscape.md)) and extracts the decisions the spatial-os
+[07-device-landscape](07-device-landscape.md)) and extracts the decisions the Mura
 architecture must make. It is the bridge from research to `docs/architecture/`.
 
 The reference projects were studied as *examples of how to target many mobile/XR devices*, not as
-code to import. spatial-os imports none of them wholesale; it borrows patterns. Where a pattern
+code to import. Mura imports none of them wholesale; it borrows patterns. Where a pattern
 recurs across independent projects, that convergence is treated as strong evidence.
 
 ---
@@ -29,7 +29,7 @@ distribution on one side, a per-device hardware-adaptation bundle on the other, 
 | Yocto/meta-qcom | distro layer + image recipes | `conf/machine/<board>.conf` | SoC `.inc` + kernel + firmware + boot recipes |
 | robotnix | AOSP + module system | `device` string + flavor JSON | device source repos + vendor blobs |
 
-The lesson is unambiguous: **spatial-os's central artifact is a typed device contract**, and its
+The lesson is unambiguous: **Mura's central artifact is a typed device contract**, and its
 central discipline is keeping the common distribution genuinely common. This is confirmed by the
 smallest device files in the corpus — a 25-line Mobile NixOS `oneplus-enchilada`
 ([01](01-mobile-nixos.md) §3.2), a 3-package pmaports Lynx R1 port ([02](02-postmarketos.md) §3.3),
@@ -39,17 +39,17 @@ adding a device is mostly data.
 The corollary, equally strong: the three-layer decomposition **device → SoC-family → vendor/common**
 appears independently in pmaports (`device-* → soc-qcom-sdm845 → soc-qcom`), meta-qcom
 (`board.conf → qcom-sm8250.inc → qcom-common.inc`), and Mobile NixOS (`device → family → SoC module`).
-spatial-os should adopt it directly.
+Mura should adopt it directly.
 
 ---
 
-## 2. Where the projects disagree, and how spatial-os should decide
+## 2. Where the projects disagree, and how Mura should decide
 
 ### 2.1 Build engine: imperative orchestration vs. pure derivations
 
 postmarketOS (`pmbootstrap`, imperative chroots + QEMU) and Sailfish (Android build inside an RPM
 inside an OBS chroot) are the imperative extreme; robotnix and Mobile NixOS are the Nix extreme.
-The Nix projects win decisively on the property spatial-os cares most about — reproducibility — and
+The Nix projects win decisively on the property Mura cares most about — reproducibility — and
 the imperative projects' own maintainers treat their statefulness as a liability (`pmbootstrap zap`
 exists because chroots rot, [02](02-postmarketos.md) §8).
 
@@ -121,7 +121,7 @@ functional spec for header v0–v4 + `vendor_boot` + `init_boot` + AVB behavior.
 
 The device landscape splits cleanly. Steam Frame already uses RAUC + casync A/B
 ([06](06-donor-pipeline.md) §2.2, [07](07-device-landscape.md)); the donor-pipeline doc shows all
-the tooling is in nixpkgs and recommends RAUC+casync for spatial-os's own updates. Android-boot
+the tooling is in nixpkgs and recommends RAUC+casync for Mura's own updates. Android-boot
 devices need boot/dtbo/vbmeta/super slot management that a generic partition writer can't safely do
 ([02](02-postmarketos.md) §11 item 1, [04](04-nix-imaging.md) §7).
 
@@ -186,7 +186,7 @@ brick appliance's tools *refuse to write to block devices* — flashing is a sep
 
 ### 3.7 Support tiers encoded in-tree and CI-enforced
 postmarketOS's directory-as-tier with CI gates ([02](02-postmarketos.md) §3.6) and Mobile NixOS's
-`supportLevel` enum surfaced in generated docs ([01](01-mobile-nixos.md) §9 item 11). spatial-os
+`supportLevel` enum surfaced in generated docs ([01](01-mobile-nixos.md) §9 item 11). Mura
 needs booting / XR-functional / release-supported tiers gating which checks are mandatory, with
 tier requirements encoded as evaluatable checks (fixing pmOS's wiki-only requirements gap).
 

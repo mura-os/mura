@@ -15,7 +15,7 @@ notifications; watchers event-driven, no polling.
 ## 1. The schema artifact
 
 Emitted from evaluated NixOS options (`nixosOptionsDoc`-shaped projection) as
-`system.build.spatialSettingsSchema` → `/etc/spatial/settings-schema.json`. Constraint 9: no
+`system.build.muraSettingsSchema` → `/etc/mura/settings-schema.json`. Constraint 9: no
 consumer compiles in an independent default; a missing/corrupt artifact is an explicit failure
 mode.
 
@@ -54,10 +54,10 @@ removes them, and are enumerable (`ListInstances(template)`) so migrations cover
 | class / stratum | Store | Written by | Survives |
 |---|---|---|---|
 | build-fact | the artifact | nixos-rebuild | generations |
-| preference, per-unit | `/var/lib/spatial/settings/config/` | daemon (polkit-gated for privileged keys) | reboots, rebuilds, users |
-| preference, per-user | `$XDG_CONFIG_HOME/spatial/settings/` | daemon for the session | reboots, rebuilds |
-| state, per-unit | `/var/lib/spatial/settings/state/` | daemon | reboots, rebuilds |
-| state, per-user | `$XDG_STATE_HOME/spatial/settings/` | daemon | reboots, rebuilds |
+| preference, per-unit | `/var/lib/mura/settings/config/` | daemon (polkit-gated for privileged keys) | reboots, rebuilds, users |
+| preference, per-user | `$XDG_CONFIG_HOME/mura/settings/` | daemon for the session | reboots, rebuilds |
+| state, per-unit | `/var/lib/mura/settings/state/` | daemon | reboots, rebuilds |
+| state, per-user | `$XDG_STATE_HOME/mura/settings/` | daemon | reboots, rebuilds |
 | session | daemon memory | grant holders | nothing |
 
 Render scale, follow-mode knobs, passthrough policy, entry grants are **preferences**
@@ -130,13 +130,13 @@ Rebuild-time application remains the activation script's (standard NixOS switch)
 
 Locks are schema facts generated from the profile module. **Consumers of security-relevant keys
 resolve the effective value from the authenticated artifact themselves** (path-pinned,
-root-owned `/etc/spatial/settings-schema.json`, its store hash listed in the system closure):
+root-owned `/etc/mura/settings-schema.json`, its store hash listed in the system closure):
 a compromised daemon can lie on the bus but cannot alter locked effective values for consumers
 that follow this rule; the daemon is convenience, not authority, for locked keys.
 
 ## 8. The bus interface
 
-`org.spatialos.Settings1` (session bus; system-scoped writes brokered to the daemon's system half
+`org.mura.Settings1` (session bus; system-scoped writes brokered to the daemon's system half
 with polkit):
 
 - `Get(s key) → (v value, s provenance)`; `Set(s key, v value)`; `Reset(s key)`;

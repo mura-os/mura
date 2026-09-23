@@ -1,8 +1,8 @@
-# 38 — Desktop Linux security landscape and the spatial-os consolidation
+# 38 — Desktop Linux security landscape and the Mura consolidation
 
 **Status:** research and decision index, 2026-09-23.
 **Scope:** how deployed Linux desktops compose security, where NixOS changes the mechanics, and
-where spatial-os has fixed policy. This proposes no new framework; the index names each owner.
+where Mura has fixed policy. This proposes no new framework; the index names each owner.
 
 ## Executive result
 
@@ -22,7 +22,7 @@ signed substitutes protect deployment, while impermanence can discard undeclared
 **not** supply comprehensive MAC by default, and a normal input-addressed closure hash is not proof
 of output contents or reproducibility. [W22][W24][W25][W26][W27]
 
-spatial-os is therefore an **appliance profile assembled from ordinary Linux parts**. Its XR
+Mura is therefore an **appliance profile assembled from ordinary Linux parts**. Its XR
 sensor, capture, lock, sharing, and per-unit-state controls are unusually concrete. Its real gaps
 are the default app sandbox, MAC stance, secrets/keyring ownership, AT-SPI boundary, general
 at-rest encryption, and device-specific verified boot. [L01][L15]
@@ -42,14 +42,14 @@ separate UIDs/domains—to be isolated from one another. [W01]
 `systemd-logind` binds a login session to at most one seat, tracks the active session, and manages
 ACLs for seat devices; `pam_systemd` registers it in a scope. This is a DRM/input lifecycle
 boundary, not a same-user sandbox: `user@UID.service` is shared across that user's sessions.
-spatial-os correctly uses greetd/PAM for registration and logind for active-compositor device
+Mura correctly uses greetd/PAM for registration and logind for active-compositor device
 access. [W02][L16]
 
 ### 1.3 PAM answers “did this conversation authenticate?”
 
 PAM stacks `auth`, `account`, `password`, and `session` modules using controls such as `required`,
 `requisite`, `sufficient`, `optional`, or exact bracketed rules. It does not define UI: the caller
-renders generic conversation messages. Keeping PAM in `spatial-authd`, away from the XR deadline,
+renders generic conversation messages. Keeping PAM in `mura-authd`, away from the XR deadline,
 and placing iris beside rather than instead of the credential is conventional separation adapted
 to XR. [W03][L02][L03][L16]
 
@@ -58,7 +58,7 @@ to XR. [W03][L02][L03][L16]
 Polkit is neither PAM nor a sandbox. Its system-bus authority checks a named action for a subject,
 and a per-session agent may collect credentials. Ordered authorization rules are ECMA-262
 edition-5 JavaScript intended for administrators and special-purpose OS environments. That fits
-reviewed spatial-os appliance policy, but not a blanket “wheel may do everything” shortcut. KDE
+reviewed Mura appliance policy, but not a blanket “wheel may do everything” shortcut. KDE
 KAuth demonstrates the right split: unprivileged UI requests an action; a small helper validates
 the D-Bus caller through polkit and performs it. [W04][W19]
 
@@ -69,7 +69,7 @@ opening required paths; the same-user session bus is broadly permissive. Service
 validate callers and arguments. Flatpak interposes `xdg-dbus-proxy`, but proxy and portal bugs have
 caused real escapes; a 2026 filter bug leaked session/AT-SPI broadcasts until version 0.1.8.
 AT-SPI is the hardest exception because it intentionally supports cross-app inspection, keystroke
-listeners, and synthetic input; unrestricted access is unsafe on GNOME, KDE, and spatial-os alike.
+listeners, and synthetic input; unrestricted access is unsafe on GNOME, KDE, and Mura alike.
 [W05][W09][W16]
 
 ### 1.6 Wayland removes ambient authority and makes the compositor the TCB
@@ -206,7 +206,7 @@ Ordinary Nix outputs are usually **input-addressed**:
 the path hash commits to derivation inputs, not directly to output bytes.
 `nix store make-content-addressed` can rewrite a closure into content-addressed form, but current
 whole-system TPM measurement/attestation work remains planned rather than a stable default.
-Therefore spatial-os invariant 7 is correctly stronger: independent rebuild byte comparison is the
+Therefore Mura invariant 7 is correctly stronger: independent rebuild byte comparison is the
 release evidence.
 Calling the normal closure path an “attestation” would overclaim. [W26][W27][L01]
 
@@ -220,7 +220,7 @@ appliance, but it is opt-in and does not itself encrypt persisted state. [W28]
 Plaintext secrets must not enter the world-readable Nix store.
 `sops-nix` and `agenix` store encrypted material with the deployment and decrypt it into runtime
 paths; systemd credentials can further scope delivery to a unit.
-This is good mechanism, but spatial-os has not selected ownership for user keyring secrets,
+This is good mechanism, but Mura has not selected ownership for user keyring secrets,
 service secrets, recovery material, and signing keys as one policy. [W29][W33]
 
 ### 3.4 The missing default: MAC
@@ -253,7 +253,7 @@ additional applications.
 Users can disable read-only mode, and non-Flatpak changes may be lost at the next update.
 That is robust deployment policy, not Android-equivalent per-app or MAC policy. [W32]
 
-spatial-os sits between these precedents.
+Mura sits between these precedents.
 Its desired product posture is closer to Android—a fixed-function device with protected sensors,
 state, and boot chain—while its implementation ingredients are NixOS, systemd, Wayland, portals,
 and Linux application compatibility.
@@ -318,7 +318,7 @@ The local research also records the costs: guest copies without the mature virtg
 GPU in Spectrum's configuration, larger GPU attack surface if virgl/venus is enabled, and substantial
 integration work for zero-copy color, depth, and explicit synchronization. [L12]
 
-For spatial-os, default microVM-per-app isolation is rejected on resource-budget grounds.
+For Mura, default microVM-per-app isolation is rejected on resource-budget grounds.
 A smartphone-class SoC is already sustaining camera perception, tracking, compositor work, and
 72–120 Hz VR rendering; duplicate guest kernels, memory, buffer copies, and virtual GPU machinery
 consume the same latency, thermal, and memory-bandwidth budget.
@@ -330,7 +330,7 @@ justifies the cost.
 deferred behind missing dmabuf, drm-syncobj, and guest-GPU plumbing.
 This is a scope constraint, not a claim that microVM isolation is weak. [L12]
 
-## 6. The spatial-os consolidated security index
+## 6. The Mura consolidated security index
 
 This is the reviewer-facing pointer; “owner” defines the decision and this doc only consolidates it.
 
@@ -339,7 +339,7 @@ This is the reviewer-facing pointer; “owner” defines the decision and this d
 | Lock invariant I1: locked frames sample no client color/depth, and no client receives input | Compositor lock state withdraws focus/seat and composes only the lock scene | Compositor/display | [ADR 0007 §Decision](../architecture/adr/0007-session-greeter-lock.md) |
 | Lock invariant I2: externally report locked only after a zero-client-sample frame is submitted | Order `SetLockedHint`/suspend sequencing after `xrEndFrame` of the locked composition | Compositor/session | [ADR 0007 §Decision](../architecture/adr/0007-session-greeter-lock.md) |
 | Lock invariant I3: only PAM or configured grace unlocks; crash returns locked | Boot/session supervision restarts into locked state; presence alone is insufficient | Session/auth | [ADR 0007 §Decision](../architecture/adr/0007-session-greeter-lock.md) |
-| PAM cannot stall the XR frame loop | `spatial-authd` owns libpam over a socketpair; generic PAM conversation; `pam_faillock` | Auth/system | [ADR 0007 §PAM out of process](../architecture/adr/0007-session-greeter-lock.md) |
+| PAM cannot stall the XR frame loop | `mura-authd` owns libpam over a socketpair; generic PAM conversation; `pam_faillock` | Auth/system | [ADR 0007 §PAM out of process](../architecture/adr/0007-session-greeter-lock.md) |
 | Biometrics sit beside PAM and never replace the credential | Iris/face is a parallel verifier within the sensor privacy boundary | Auth/perception | [ADR 0007](../architecture/adr/0007-session-greeter-lock.md), [ADR 0011 §4](../architecture/adr/0011-eye-tracking-ipd.md) |
 | Persona/face data has three trust classes | Trusted local runtime owns asset; untrusted local apps get composition only; trusted remote runtime requires explicit Persona consent | Perception/app/sharing | [ADR 0010 §Consequences](../architecture/adr/0010-avatar-control-space-and-driver.md) |
 | Room-camera frames and hand mattes never reach clients | Monado frameserver owns cameras; services publish finished dmabuf layers; clients declare policy only | Perception/runtime | [ADR 0008](../architecture/adr/0008-perception-services-placement.md), [perception design](../architecture/perception-passthrough-hands.md) |
@@ -430,7 +430,7 @@ These are questions, not decisions; each names the precedent that could answer i
 
 ## 8. Consistency check against desktop Linux
 
-No accepted spatial-os decision contradicts the desktop-Linux composition.
+No accepted Mura decision contradicts the desktop-Linux composition.
 PAM out of process follows greetd/screen-locker practice; polkit remains the right future action
 authorizer; compositor-owned lock/capture/input policy is exactly where Wayland places authority;
 portals remain the consent layer; systemd credentials and protected state fit NixOS deployment.
@@ -445,11 +445,11 @@ Each difference follows from XR geometry or timing and still preserves familiar 
 The one wording correction reviewers should enforce is around Nix.
 Nix store immutability, closure completeness, trusted cache signatures, content-addressed outputs,
 reproducible builds, verified boot, and remote attestation are related but distinct properties.
-Spatial-os invariant 7 already states the defensible requirement—independent rebuild comparison—
+Mura invariant 7 already states the defensible requirement—independent rebuild comparison—
 and should not be weakened to “the closure hash attests the system.”
 
 The one posture mismatch is incompleteness, not contradiction:
-spatial-os wants Android-like appliance security, but its accepted documents do not yet select a
+Mura wants Android-like appliance security, but its accepted documents do not yet select a
 default app sandbox, enforcing MAC policy, broad storage encryption/key lifecycle, or AVB chain.
 Until those owners exist, the compositor/sensor plane is better specified than the base OS plane.
 

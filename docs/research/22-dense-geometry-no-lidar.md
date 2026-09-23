@@ -1,6 +1,6 @@
 # 22 — Dense geometry without LiDAR: planes, fused meshes, semantics
 
-**Date:** 2026-09-22. Research pass for spatial-os. This document covers the SLOW/static world
+**Date:** 2026-09-22. Research pass for Mura. This document covers the SLOW/static world
 geometry track: gravity-aligned planes, TSDF-fused meshes, and coarse semantics, built from
 camera+IMU only, on Adreno/Hexagon-class mobile XR hardware. Frame-rate *dynamic* occlusion
 (passthrough depth, hands) is Tier 1–3's job and is out of scope here
@@ -189,7 +189,7 @@ avoid. Revisit only as an offline/docked refinement teacher.
 ### 4.3 v2 path: what ov_plane teaches (method, not code)
 
 `references/ov-plane/` (RPNG, **GPL-3.0** — `ov-plane/LICENSE`, method reference only; also
-hard-coupled to OpenVINS while spatial-os tracks Basalt) is a monocular MSCKF VIO that makes
+hard-coupled to OpenVINS while Mura tracks Basalt) is a monocular MSCKF VIO that makes
 planes *first-class state*. The extractable method, from code:
 
 - **Detection from sparsity**: for tracked features with triangulated 3D positions, run Delaunay
@@ -204,7 +204,7 @@ planes *first-class state*. The extractable method, from code:
   (`ov_plane/src/state/State.h:116`), enabling point-to-plane loop closures.
 
 The v2 lesson is that plane-aided VIO is bidirectional: planes don't just come *out* of tracking,
-they stabilize it, and plane IDs become as persistent as the odometry itself. For spatial-os this
+they stabilize it, and plane IDs become as persistent as the odometry itself. For Mura this
 is a future Basalt-side integration (or a Monado plane-tracker module), gated on v1 evidence that
 plane *stability* (not detection) is the binding constraint.
 
@@ -224,7 +224,7 @@ plane *stability* (not detection) is the binding constraint.
 - It reuses voxblox's `merged`/`fast` integrators wholesale (`semantic_tsdf_integrator_fast.h`);
   the ROS server is a thin subclass of voxblox's (`semantic_tsdf_server.h:47`).
 
-Adaptation for spatial-os, keeping the pattern and shrinking the cost:
+Adaptation for Mura, keeping the pattern and shrinking the cost:
 
 - **Minimal label set for the shell** (8 fits in 3 bits; one uint8 histogram slot each):
   `floor, wall, ceiling, table/platform, seat, door, window, other`. Rationale per consumer:
@@ -274,11 +274,11 @@ rule as plane extension.
 
 ### 6.3 The `depthSource` device-contract axis
 
-Proposed typed option, extending the `spatial.*` contract
-([device-contract §spatial.adaptation](../architecture/device-contract.md)):
+Proposed typed option, extending the `mura.*` contract
+([device-contract §mura.adaptation](../architecture/device-contract.md)):
 
 ```
-spatial.perception.geometry.depthSource =
+mura.perception.geometry.depthSource =
   none              # no depth capability at all: planes-from-landmarks only, no TSDF
   flood-ir          # passive stereo + flood illumination (Steam Frame): stereo backend,
                     #   night-capable; blank-wall inference REQUIRED; illuminator duty policy
@@ -296,7 +296,7 @@ Per-value geometry-service implications: `none`/`flood-ir` raise the inferred-st
 response — the response is *fewer observed voxels*, more inferred planes. `active-ir-pattern` and
 `tof-sensor` shrink the inferred budget and enable mesh-first occlusion in v2. The enum is about
 *geometry policy*, deliberately not about which stereo network runs — that stays
-`spatial.xr.passthrough.depthBackend` ([perception §contract](../architecture/perception-passthrough-hands.md)).
+`mura.xr.passthrough.depthBackend` ([perception §contract](../architecture/perception-passthrough-hands.md)).
 
 ## 7. The tri-state confidence model
 
@@ -315,7 +315,7 @@ How the studied systems represent not-knowing, verified from code:
   sustained evidence over time (dynablox recipe: last-occupied timestamp + consecutive-occupancy
   duration, `voxels.h:38-52`) — free is a claim that needs evidence, not the absence of hits.
 
-spatial-os composes these into the committed tri-state (with the occupied/free split inside
+Mura composes these into the committed tri-state (with the occupied/free split inside
 "observed"), per voxel and per plane region:
 
 | State | Source | Occlusion | Shadows | Boundary |
@@ -350,7 +350,7 @@ Minimum viable boundary, from precedents:
   **[verified]**).
 - **A play volume** — either a user-drawn polygon (roomscale) or a default stationary cylinder;
   Quest's stationary default is 1×1 m centered on the user (same source). Drawn boundaries are
-  authored *against passthrough*, which spatial-os gets for free from the environment layer.
+  authored *against passthrough*, which Mura gets for free from the environment layer.
 - **Kept-out volumes** — tri-state derived: observed-occupied and unknown space adjacent to the
   play volume. This is where this design exceeds the precedents: Quest/SteamVR guard a
   user-drawn line; a tri-state map also guards *the space the user never scanned*.
@@ -391,7 +391,7 @@ cheap because it queries, never reconstructs.
    low-rate NPU segmentation, labels lifted to planes/mesh at extraction (§5).
 5. **Two operating points on the one `DepthFrame` interface**: mapping = keyframe-rate,
    accuracy-biased, hard confidence gate, no hole-filling (§6.1).
-6. **`spatial.perception.geometry.depthSource`** enum (`none | flood-ir | active-ir-pattern |
+6. **`mura.perception.geometry.depthSource`** enum (`none | flood-ir | active-ir-pattern |
    tof-sensor | android-backed`) in the device contract, controlling geometry *policy* (inferred
    budget, illuminator duty), not backend selection (§6.3).
 7. **Boundary as compositor composition-policy + perception-side distance probes**, with
@@ -422,7 +422,7 @@ cheap because it queries, never reconstructs.
 - **Treating flood IR as a depth feature** — Steam Frame's illuminators change SNR, not texture;
   planning mapping quality around them repeats the blank-wall failure at night (§6.2).
 - **GPU voxel hashing in v1** — room-scale bounds make the dense clipmap strictly simpler and
-  probably faster on a tiler GPU (§3); hashing is a scale feature spatial-os doesn't need yet.
+  probably faster on a tiler GPU (§3); hashing is a scale feature Mura doesn't need yet.
 
 ## 11. Open questions
 

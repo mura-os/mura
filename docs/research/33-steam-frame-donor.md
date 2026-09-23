@@ -155,8 +155,8 @@ edk2 firmware) on the x86_64 dev host via `nix run .#frame-vm-run`:
 | Image | `packages.aarch64-linux.frame-image`: 33 GiB sparse GPT (zstd artifact 1.9 GiB); remote build ~23 min end-to-end |
 | Boot | UEFI → systemd-boot → slot A; `multi-user.target` + `graphical.target` active; autologin session; sshd up |
 | Layout | `lsblk` partlabels exactly `esp / rootfs_a / rootfs_b / syspersist / home`; cmdline `root=PARTLABEL=rootfs_a rauc.slot=A` (the donor's slot-cmdline contract, §3) |
-| RAUC | `compatible=spatial-os-deckard`, booted `rootfs.0 (A)`, custom backend (`spatial-bootconf`) reporting primary correctly |
-| XR wiring | `monado.socket` active (user unit); `/etc/spatial-device.json` correct |
+| RAUC | `compatible=Mura-deckard`, booted `rootfs.0 (A)`, custom backend (`mura-bootconf`) reporting primary correctly |
+| XR wiring | `monado.socket` active (user unit); `/etc/mura-device.json` correct |
 | Update round-trip | test-signed 2.1 GiB `.raucb` → `rauc install` into slot B (**4 m 42 s** with the VM disk on fast local SSD; effectively unbounded on slow storage — see lessons), backend flipped primary to B, reboot → **booted `rootfs.1 (B)`** with `root=PARTLABEL=rootfs_b rauc.slot=B`, `rauc status mark-good` → both slots good |
 | Donor-kernel boot mode | **not executed — infeasible by evidence** (§4: no `VIRTIO_BLK/NET` in Valve's kernel) |
 
@@ -194,7 +194,7 @@ kernel (§4), and the not-yet-obtained flash/recovery procedure — the hardware
   trap (indented terminators) — use `writeText`.
 **Update flow:**
 - RAUC health-gating needs a *mark-good service* on boot (we ran `rauc status mark-good`
-  manually); wire it to the `spatial.qualification.readinessCheck` per
+  manually); wire it to the `mura.qualification.readinessCheck` per
   [images-and-updates.md](../architecture/images-and-updates.md) — now a concrete TODO with a
   proven substrate.
 - RAUC refuses block devices as bundles ("not a regular file") and qemu pads attached raw files

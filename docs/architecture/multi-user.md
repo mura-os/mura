@@ -8,7 +8,7 @@ input hardening) survive — they were correctness, not policy.
 **Decision record:** [ADR 0018](adr/0018-multi-user-accounts.md).
 **Evidence base:** [research/41](../research/41-multi-user-login-landscape.md) — its Linux
 mechanics sections (§1, §3); the closed-platform sections are context and anti-patterns.
-**The frame:** multi-user on spatial-os **is standard Linux multi-user** — passwd/shadow, PAM,
+**The frame:** multi-user on Mura **is standard Linux multi-user** — passwd/shadow, PAM,
 NSS, wheel + polkit. The XR layer adds exactly four things: per-user calibration, the spatial
 greeter scene, an *optional* PIN input method, and the A/B durability wiring. Nothing else is
 special.
@@ -23,7 +23,7 @@ past a handful of entries, and `/home` sizing/quotas are the administrator's bus
 - **Creation is standard.** `useradd`/`userdel`/`passwd` over SSH or a TTY work, period —
   because the persisted userdb (below) *is* `/etc`'s backing store, standard tools operate on
   it natively. The in-headset settings UI is a convenience path for the same operation: a
-  polkit-gated admin action that `spatial-provisiond` executes (it is *a* path, not an
+  polkit-gated admin action that `mura-provisiond` executes (it is *a* path, not an
   authority — the only place provisiond remains load-bearing is the guest token gate, §4).
 - **Admin is wheel + polkit.** No "owner" role exists. The first account created at setup is a
   normal user in `wheel`, like every desktop installer's first account. Privilege is per-action
@@ -56,7 +56,7 @@ past a handful of entries, and `/home` sizing/quotas are the administrator's bus
    and a drop-in adds `RequiresMountsFor=/persist/userdb` to `userborn.service`.
 3. **Permissions:** `/persist/userdb/` is `0755 root`; `passwd`/`group` `0644`; `shadow`
    `0000 root` — world-traversable because `getpwuid` is universal. This is why the userdb
-   lives beside, not under, the `0750` `spatial/` tree.
+   lives beside, not under, the `0750` `mura/` tree.
 4. **Uid discipline:** the persisted files are the single allocation ledger both slots share.
    The picker's enumeration window (§2) follows login.defs (`UID_MIN`/`UID_MAX`, typically
    1000–60000 — the SDDM/tuigreet pattern, fidelity-checked against both trees); guest
@@ -89,7 +89,7 @@ Extends the G1 auth scene; greetd needs zero changes for the picker because
 **The Unix account password is the login credential.** SSH, TTY, `su`, the greeter — one
 credential system, PAM all the way down, like every Linux machine.
 
-- **`pam_spatial_pin` is an optional per-user convenience**, stacked *beside* the password in
+- **`pam_mura_pin` is an optional per-user convenience**, stacked *beside* the password in
   the greeter/lock stacks — the fprintd model — because typing a strong password on a ray-cast
   keyboard is miserable, not because the password goes away. A user enrolls a PIN (or doesn't)
   from their own session; a user who wants PIN-only may lock their own password — their
@@ -110,7 +110,7 @@ credential system, PAM all the way down, like every Linux machine.
 
 A **Linux feature with a decade of LightDM precedent** (doc 41 §1.6): an ephemeral account
 created at session start, destroyed at session end. Off by default; enabled by the
-administrator (`spatial.xr.session.guest.enable` or at runtime via the polkit-gated setting).
+administrator (`mura.xr.session.guest.enable` or at runtime via the polkit-gated setting).
 
 - **Mechanism (the greetd translation — LightDM's lifecycle transfers, its daemon-resident
   auth does not):** guest login rides the normal greetd PAM service through a sufficient

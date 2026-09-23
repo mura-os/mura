@@ -58,7 +58,7 @@ Four parts; the first reaffirms ADR 0006, the rest extract the value.
 
 ### 1. Not the backbone — ADR 0006 stands
 
-spatial-os does **not** build its compositor from KWin VR. Decisive reasons, in order:
+Mura does **not** build its compositor from KWin VR. Decisive reasons, in order:
 
 1. **3D-tier foreclosure.** The Qt-owned OpenXR session and depthless submission make
    client-rendered colour+depth composition (zxr-shell-v2's core capability) structurally
@@ -106,7 +106,7 @@ record of what a working 2D-in-VR tier needed:
 
 ### 3. `kwin-vr` reserved as an optional packaged session — design only, no packaging now
 
-`spatial.xr.shell` reserves the value `kwin-vr` beside `stardust` and `wayvr` (ADR 0006
+`mura.xr.shell` reserves the value `kwin-vr` beside `stardust` and `wayvr` (ADR 0006
 consequences). If and when packaged, it follows the monado-rev model: pinned fork revision +
 patch series (KWin fork, Qt series, XWayland MRs, Monado fork) built from the pinned
 `references/` recipe. Its value: a KDE-maturity 2D-in-VR fallback and a working comparison
@@ -125,7 +125,7 @@ Apr-2026 adds a rollback barrier):
 - the dual-DRM-lease direct-mode `comp_target` (display bring-up pattern for dual-SDE panels),
 - the SSC/QMI sensor path with per-unit `efs` calibration decoding — which lands exactly in
   ADR 0007's "per-unit calibration is system state" slot, and whose live motorized-IPD readout
-  plugs into ADR 0011's `spatial.hardware.ipd` model,
+  plugs into ADR 0011's `mura.hardware.ipd` model,
 - Linux-side eye tracking + gaze-driven FSR foveation as an ADR 0011-adjacent pattern (foveation
   itself is not yet decided anywhere — flagged as a new open item for the eye-tracking backlog).
 
@@ -156,16 +156,16 @@ GL-multiview path; our Vulkan renderer uses `VK_KHR_multiview`, unaffected).
 
 ## Alternatives considered
 
-- **Build spatial-os's compositor from KWin VR** (amend ADR 0006): rejected — Decision §1's four
+- **Build Mura's compositor from KWin VR** (amend ADR 0006): rejected — Decision §1's four
   reasons; the 3D-tier foreclosure alone is disqualifying, and it is the tier that
-  differentiates spatial-os from every 2D-in-VR product.
+  differentiates Mura from every 2D-in-VR product.
 - **Ignore it**: rejected — it is the only shipping evidence of a complete 2D tier's WM-core
   requirements, it contains the best available Galaxy XR bring-up code, and its maintainer
   discussion independently validates our modularity architecture.
 - **Contribute our seams to KWin** (make KWin a consumer of zxr-style integration): not ours to
   decide and out of scope; but if KDE lands Vlad's preferred shape (window info + thumbnails +
   input forwarding over protocols), a future KWin could consume the same seam family ADR 0012
-  §4 defines. *Superseded update:* spatial-os is now specifying that shape itself —
+  §4 defines. *Superseded update:* Mura is now specifying that shape itself —
   [ADR 0014](0014-toplevel-delegation-protocol.md) / `zspatial-toplevel-export-v1`, with a KWin
   producer MR as milestone M-B; the revisit trigger is M-B's outcome.
 - **Package kwin-vr now**: rejected as scope — this workstream is exploration and design; the
@@ -181,5 +181,5 @@ GL-multiview path; our Vulkan renderer uses `VK_KHR_multiview`, unaffected).
 - Doc 07's Galaxy XR section gains the `monado-galaxyxr` bring-up evidence; gaze-driven foveation
   is recorded as evidence under [28 §Open questions item 7](../../research/28-eye-tracking-stack.md)
   (ADR 0011 unchanged; foveation policy placement remains open).
-- `spatial.xr.shell = kwin-vr` is reserved in documentation; contract/packaging changes land with the packaging work (implementation-path §5 owns the ordering).
+- `mura.xr.shell = kwin-vr` is reserved in documentation; contract/packaging changes land with the packaging work (implementation-path §5 owns the ordering).
 - The references manifest pins the four fork repos for reproducible future study.

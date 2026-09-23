@@ -50,7 +50,7 @@ compositor-launched client or exposed to all privileged clients is explicitly co
   deciding when to unlock. May only be sent once the hard requirement below is met.
 - event `finished` — the compositor refuses or terminates the lock (e.g. another lock already
   held, or the compositor "implements some alternative, secure way to authenticate and unlock the
-  session" — XML lines 172–176; this clause is load-bearing for spatial-os, see §2.4). May be sent
+  session" — XML lines 172–176; this clause is load-bearing for Mura, see §2.4). May be sent
   immediately on creation, or later even after `locked` (compositor policy).
 - `get_lock_surface(id, surface: wl_surface, output: wl_output)` — gives a `wl_surface` the lock-
   surface role **for one specific output**. Errors: `role` (surface already has a role),
@@ -123,9 +123,9 @@ scales (lines 24–48), acks configure and re-renders on each geometry change (l
 draws with EGL. Both demonstrate the key division of labor: **the compositor owns the guarantee
 (blanking, input isolation, crash policy); the locker owns only pixels and the auth decision.**
 
-### 2.4 Mapping to spatial-os: lock as internal compositor policy state
+### 2.4 Mapping to Mura: lock as internal compositor policy state
 
-The composition model (zxr-shell-v2-composition.md §7) makes the spatial-os compositor the single
+The composition model (zxr-shell-v2-composition.md §7) makes the Mura compositor the single
 OpenXR client that composites *everything* and submits one stereo projection layer to Monado. The
 `ext-session-lock-v1` obligations translate almost verbatim into an internal state machine:
 
@@ -173,7 +173,7 @@ conversation (§4) or an explicitly configured policy (grace resume, §6).
 **logind integration is orthogonal and required either way**: kscreenlocker listens for the logind
 session's `Lock`/`Unlock` signals, calls `SetLockedHint`, and locks on `PrepareForSleep`
 (`references/kscreenlocker/ksldapp.cpp` lines 228–253, 350–351, wired in `logind.cpp`). The
-spatial-os compositor should do the same directly: `loginctl lock-session` and
+Mura compositor should do the same directly: `loginctl lock-session` and
 lock-before-suspend then work with zero extra components.
 
 ## 3. kscreenlocker: the locker-as-separate-process alternative
@@ -202,7 +202,7 @@ Mechanics, all from `references/kscreenlocker/`:
   with inhibition checks, logind `Lock`/`Unlock`/`PrepareForSleep`, lock-on-start
   (`ksldapp.cpp` lines 110–156, 228–285). Grace time (`m_lockGrace`) allows unlock-without-auth
   shortly after an idle-triggered lock (`userActivity`/`isGraceTime`, lines 425–459) — a policy
-  knob spatial-os wants for doff/don (§6).
+  knob Mura wants for doff/don (§6).
 
 **Tradeoffs vs internal state (and vs ext-session-lock):**
 - *For separate process:* PAM, QML themes, and a whole UI toolkit stay out of the compositor
@@ -214,7 +214,7 @@ Mechanics, all from `references/kscreenlocker/`:
   ext-session-lock standardized away; the unlock signal ("process printed a line / exited 0") is
   far weaker typed than `unlock_and_destroy`; four restart attempts of a crashing GPU greeter is
   exactly the kind of machinery a headset compositor shouldn't improvise around its render loop.
-- *Middle path (what spatial-os should copy):* keep the **authority** internal (compositor owns
+- *Middle path (what Mura should copy):* keep the **authority** internal (compositor owns
   lock state, triggers, logind), but push the **PAM conversation** out of process (§4.4) — the
   kscreenlocker split at the auth boundary rather than the UI boundary. The lock *scene* stays
   compositor-owned because on a headset the lock scene must render through the same
@@ -272,9 +272,9 @@ them. Relevant options **[external, NixOS]**:
   [design preview: PAM rule ordering](https://discourse.nixos.org/t/design-preview-pam-rule-ordering-and-targets/66399)).
 - Full-text override (`.text = ''...''`) remains the escape hatch for exotic stacks.
 
-For spatial-os: define a first-class service, e.g. `security.pam.services.spatial-lock`, owned by
-the `spatial.xr.shell` module, defaulting to `unixAuth` plus the PIN module (§4.4); and a separate
-`spatial-greeter` service only if/when a multi-user greeter exists (doc 11). Keeping the locker's
+For Mura: define a first-class service, e.g. `security.pam.services.mura-lock`, owned by
+the `mura.xr.shell` module, defaulting to `unixAuth` plus the PIN module (§4.4); and a separate
+`mura-greeter` service only if/when a multi-user greeter exists (doc 11). Keeping the locker's
 service name stable is what lets users add fprintd/u2f declaratively.
 
 ### 4.4 PIN / pattern / no-keyboard conversation design
@@ -285,8 +285,8 @@ collects digits into a buffer and submits the string as the `PAM_PROMPT_ECHO_OFF
 Concrete design constraints, derived from the sources above:
 
 1. **Run the conversation out of the render loop.** hyprlock's blocking-thread model or swaylock's
-   forked-child model; for spatial-os prefer swaylock's **separate process** (a tiny
-   `spatial-authd` helper spawned at lock time, socketpair protocol: `{prompt, echo flag} →
+   forked-child model; for Mura prefer swaylock's **separate process** (a tiny
+   `mura-authd` helper spawned at lock time, socketpair protocol: `{prompt, echo flag} →
    {response}` plus one-way info/error texts). The compositor never links libpam; module crashes
    and multi-second hangs (fprintd timeout, network modules) can't stall `xrWaitFrame`. This is
    the kscreenlocker split applied at the auth boundary (§3).
@@ -298,13 +298,13 @@ Concrete design constraints, derived from the sources above:
    PIN (OOBE creates it; pam_unix verifies it; zero new code) — the Quest model, where the
    passcode is 4–16 digits and device-local
    ([Meta Quest passcode help](https://www.meta.com/en-gb/help/quest/1198803198189099/)
-   **[external]**); or (b) a dedicated `pam_spatial_pin.so` verifying an argon2-hashed PIN stored
-   in per-unit system state (`/var/lib/spatial/`, beside calibration — *not* $HOME), so the PIN
+   **[external]**); or (b) a dedicated `pam_mura_pin.so` verifying an argon2-hashed PIN stored
+   in per-unit system state (`/var/lib/mura/`, beside calibration — *not* $HOME), so the PIN
    unlocks the device while the account password stays strong, matching Android/visionOS
    layering. **Recommended: (b)**, with (a) as the MVP.
 4. **Pattern unlock is just a PIN encoding** (sequence of cell indices submitted as text);
    Quest ships pattern and PIN equivalently **[external, same sources]**. No PAM impact.
-5. **Rate limiting belongs in PAM**, not the UI: `pam_faillock` in the `spatial-lock` stack;
+5. **Rate limiting belongs in PAM**, not the UI: `pam_faillock` in the `mura-lock` stack;
    surface its "N left" info messages in the scene (hyprlock precedent,
    `references/hyprlock/src/auth/Pam.cpp` lines 63–67). Consumer precedent for hard fallbacks:
    Optic ID allows five failed biometric attempts before forcing the passcode
@@ -378,7 +378,7 @@ on NixOS (`references/jovian-nixos/modules/steam/autostart.nix`):
   Design reference for the *ideal* headset unlock modality: don-to-unlock with a rarely-typed
   strong credential behind it.
 
-### 5.3 What spatial-os should do
+### 5.3 What Mura should do
 
 **Recommended appliance default:** no display manager UI, ever. Auto-login the owner account
 directly into the zxr session and treat the compositor-integrated lock as the only auth surface:
@@ -388,7 +388,7 @@ directly into the zxr session and treat the compositor-integrated lock as the on
   with **lock state = locked** whenever a credential is enrolled (Quest's power-on lock), so the
   greeter-less boot is safe even though authentication happened "for free."
 - Session structure: copy gamescope-session — a `wayland-sessions` entry that starts a systemd
-  user target (`spatial-session.target`) owning Monado (if user-slice), the compositor, and shell
+  user target (`mura-session.target`) owning Monado (if user-slice), the compositor, and shell
   services, so restart/crash policy is systemd's.
 - Multi-user: out of scope for the appliance default (Quest-style secondary profiles are a lock-
   screen feature, not a greeter feature — profile switch from the lock scene is the future hook).
@@ -412,7 +412,7 @@ Detection: HMD proximity sensors surface in OpenXR as `XR_EXT_user_presence` —
 `XrEventDataUserPresenceChangedEXT.isUserPresent`, queued on every change and once at session
 start; systems without the sensor must report `supportsUserPresence = XR_FALSE`
 ([Khronos registry](https://registry.khronos.org/OpenXR/specs/1.1/man/html/XrEventDataUserPresenceChangedEXT.html)
-**[external]**). Since the spatial-os compositor *is* the OpenXR client, presence events arrive
+**[external]**). Since the Mura compositor *is* the OpenXR client, presence events arrive
 directly in its frame loop — no extra daemon, no D-Bus hop; doff/don feeds the same internal
 policy state machine as idle and logind. (Monado's `XR_EXT_user_presence` coverage per target
 headset is **unverified** — qualification-matrix item; fallbacks are the raw proximity evdev/IIO
@@ -448,7 +448,7 @@ include input events or a presence sensor... compositor-specific" —
 - **Honor `zwp_idle_inhibit_manager_v1`**: a fullscreen video player or an XR app in a cutscene
   legitimately blocks the dim/lock ladder. Cage shows the minimal compositor-side pattern —
   maintain the inhibitor list, feed `wlr_idle_notifier_v1_set_inhibited` on create/destroy
-  (`references/cage/idle_inhibit_v1.c` lines 24–36, 50–69); like Cage, spatial-os can start with
+  (`references/cage/idle_inhibit_v1.c` lines 24–36, 50–69); like Cage, Mura can start with
   "any live inhibitor inhibits" and skip visibility filtering, since a headset shows one focused
   space. Note the protocol split ext-idle-notify makes: `get_idle_notification` respects
   inhibitors, `get_input_idle_notification` ignores them **[external, same source]** — the lock
@@ -521,8 +521,8 @@ viewed through lenses that expect barrel-pre-distorted per-eye content.
    Android's shell-integrated Keyguard at consumer scale.
 2. **logind integration in the compositor**: `Lock`/`Unlock` signals, `SetLockedHint`,
    `PrepareForSleep`-ordered locking (kscreenlocker's trigger set, minus the process supervision).
-3. **Out-of-process PAM conversation** (`spatial-authd` over socketpair; swaylock's fork model /
-   kscreenlocker's auth split), service `security.pam.services.spatial-lock`, `pam_faillock`
+3. **Out-of-process PAM conversation** (`mura-authd` over socketpair; swaylock's fork model /
+   kscreenlocker's auth split), service `security.pam.services.mura-lock`, `pam_faillock`
    included, generic-prompt-capable lock UI with PIN-pad fast path (§4.4).
 4. **Jovian's appliance session pattern**: autologin (mechanism per doc 11) + systemd user target
    as the session body + self-clearing one-shot boot overrides; **boot into locked state** when a
@@ -551,12 +551,12 @@ viewed through lenses that expect barrel-pre-distorted per-eye content.
    (third-party 2D lockers composed as a head-locked quad over a void)? Cheap once internal state
    exists, but it makes an external process the unlock authority — likely gate it behind the same
    privileged-client policy the XML anticipates, defaulting to internal-only on the appliance.
-2. PIN storage: MVP as owner-password-is-PIN vs `pam_spatial_pin.so` with argon2 hash in
-   `/var/lib/spatial/` — §4.4 recommends the module; decide enrollment UX (in-headset OOBE vs
+2. PIN storage: MVP as owner-password-is-PIN vs `pam_mura_pin.so` with argon2 hash in
+   `/var/lib/mura/` — §4.4 recommends the module; decide enrollment UX (in-headset OOBE vs
    companion tool) alongside doc 11's first-boot story. **RESOLVED (2026-09-23):** option (b)
    ratified by [ADR 0017](../architecture/adr/0017-first-run-provisioning.md); the first-boot
    story is [first-run-onboarding.md](../architecture/first-run-onboarding.md) (in-headset OOBE
-   via `zxr --oobe` + `spatial-provisiond`; companion tool recorded as an open alternative).
+   via `zxr --oobe` + `mura-provisiond`; companion tool recorded as an open alternative).
 3. Monado's actual `XR_EXT_user_presence` coverage per target device (qualification-matrix item);
    fallback path via raw proximity evdev/IIO.
 4. Grace-window default (30 s? 60 s?) and whether "same head re-donned" heuristics may extend it —

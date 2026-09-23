@@ -2,7 +2,7 @@
 # to mechanically enumerate the wlroots API breaks a port must cross (ADR 0006).
 #
 # This is a SPIKE, not part of the product build. It is impure (reads the git-ignored
-# references/wxrc clone by absolute path) and deliberately never fails the build: it
+# references/wxrc clone beside this file) and deliberately never fails the build: it
 # tees meson/ninja output to $out so the error enumeration is captured even when the
 # compile fails (which is the expected, informative outcome per docs/research/09 §4).
 #
@@ -12,7 +12,7 @@
 let
   flake = builtins.getFlake (toString ../.);
   pkgs = flake.inputs.nixpkgs.legacyPackages.${system};
-  wxrcSrc = /run/media/j/tinystore/experiments/spatial-os/references/wxrc;
+  wxrcSrc = ../references/wxrc;
 in
 pkgs.stdenv.mkDerivation {
   name = "wxrc-modern-probe";

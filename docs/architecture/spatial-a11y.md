@@ -1,4 +1,4 @@
-# spatial-os architecture: spatial accessibility (design note)
+# Mura architecture: spatial accessibility (design note)
 
 **Status:** design note (places workstream) — the documented intent for the accessibility
 component the registry marks missing, and the reservation of its protocol surface. Evidence:

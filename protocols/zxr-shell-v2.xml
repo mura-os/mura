@@ -46,7 +46,7 @@
     Warning! The protocol described in this file is currently in the
     experimental phase. Backward incompatible changes may be added without
     bumping the major version of the extension. As such, gating usage on the
-    protocol's presence is discouraged outside spatial-os itself.
+    protocol's presence is discouraged outside Mura itself.
   </description>
 
   <interface name="zxr_shell_v2" version="1">

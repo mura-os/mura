@@ -1,6 +1,6 @@
 # 11 — Display managers, greeters, and the seat/DRM handoff
 
-**Date:** 2026-09-22. Research for the spatial-os session/login model (feeds ADR 0007). Written in the
+**Date:** 2026-09-22. Research for the Mura session/login model (feeds ADR 0007). Written in the
 main session from the local clones and targeted web verification (the Opus subagent hit a resource
 limit; sources are the same). File paths are relative to repo roots under `references/`; pinned
 commits in `references/MANIFEST.json`.
@@ -9,7 +9,7 @@ commits in `references/MANIFEST.json`.
 display path is up — panel/DRM bring-up, lens distortion, IPD, and at least rotational (IMU)
 tracking. So the greeter/login surface needs Monado + an XR compositor *already running* before any
 user session exists. This inverts the desktop assumption that a display manager can hand a bare
-compositor to the GPU. spatial-os's compositor is a Wayland-native, client-renders /
+compositor to the GPU. Mura's compositor is a Wayland-native, client-renders /
 compositor-composites XR shell that is itself an OpenXR client of Monado
 ([ADR 0006](../architecture/adr/0006-compositor-strategy.md),
 [zxr-shell-v2-composition.md](../architecture/zxr-shell-v2-composition.md)). The hypothesis this doc
@@ -27,13 +27,13 @@ greeter user, driven by greetd.**
   is *not* privileged with auth itself; it relays a PAM conversation to/from the daemon. Examples:
   agreety, gtkgreet, tuigreet, ReGreet, SDDM's QML themes, GDM's greeter (a restricted GNOME Shell).
 - **Session** — the program the daemon `exec`s as the user after auth (a compositor, a shell). On
-  spatial-os this is the zxr compositor + shell.
+  Mura this is the zxr compositor + shell.
 - **Lock screen** — runs *inside* an already-authenticated session; the session compositor hides
   content and shows a locker that re-authenticates the *same* user. Distinct from the greeter (which
   authenticates *any* user, pre-session). Covered in [doc 12](12-lock-screens-and-appliance-login.md).
 
 The daemon/greeter split is the important one: it lets the greeter be *any program*, including a
-whole compositor. That is precisely the seam spatial-os exploits.
+whole compositor. That is precisely the seam Mura exploits.
 
 ## 2. The greetd model (the one we transpose)
 
@@ -175,7 +175,7 @@ greetd's config distinguishes (NixOS wiki; `greetd` config):
   This is the appliance/kiosk autologin, and it is exactly what SteamOS/Jovian's
   `gamescope-session` uses to boot straight into the session.
 
-So the two spatial-os profiles map directly onto greetd config:
+So the two Mura profiles map directly onto greetd config:
 
 - **Appliance:** `initial_session = { user = owner; command = <zxr session>; }` — boot straight into
   the owner's XR session; security is the in-session compositor lock (doc 12), not a greeter.
@@ -189,12 +189,12 @@ So the two spatial-os profiles map directly onto greetd config:
 `security.pam.services.greetd` (`startSession = true`, `allowNullPassword`), pins the greeter to VT1
 with `Conflicts=getty@tty1.service`, `Type=idle`, `wantedBy=graphical.target`, and disables
 `autovt@tty1`. It also wires `services.displayManager.sessionData.desktops` (generated
-`wayland-sessions`/`xsessions` `.desktop` files). Consequences for spatial-os:
+`wayland-sessions`/`xsessions` `.desktop` files). Consequences for Mura:
 
 - We **reuse `services.greetd`** as the daemon; we do **not** use `services.displayManager.sddm/gdm`
   (wrong compositor coupling, §3).
 - greetd only accepts **env-less commands**, so the session command is a wrapper. Our session
-  chooser should map `spatial.xr.shell` values (`zxr`/`stardust`/`wayvr`) to session commands from
+  chooser should map `mura.xr.shell` values (`zxr`/`stardust`/`wayvr`) to session commands from
   the *module system*, not from hand-written `.desktop` files — the greeter lists declared sessions.
 - The `greeter` user needs `seat`/`video`/`input` group access for the XR display path, and access
   to the per-unit calibration (system state, `/var/lib` or vendor persist — never `$HOME`), because
@@ -225,7 +225,7 @@ one caveat to verify on hardware: some HMD/IMU devices are slow to release/re-ac
 re-enumeration), so the handoff may need a brief settle, and firmware/calibration state must be
 system-level so the second instance re-reads it (it must not live in the greeter user's `$HOME`).
 
-## 8. What spatial-os should adopt
+## 8. What Mura should adopt
 
 1. **greetd as the daemon**, both profiles: `initial_session` for appliance autologin, `default_session`
    for the multi-user XR greeter. Reuse `services.greetd`.
@@ -238,10 +238,10 @@ system-level so the second instance re-reads it (it must not live in the greeter
    PIN, fingerprint all just work).
 4. **Sequential handoff, per-user Monado**, relying on greetd's exit-then-start and logind/seatd DRM
    brokering (§4, §7). No shared system-wide Monado.
-5. **Sessions from the module system** (`spatial.xr.shell` values) rather than `.desktop` files.
+5. **Sessions from the module system** (`mura.xr.shell` values) rather than `.desktop` files.
 6. **Calibration + firmware as system state** so both Monado instances read it pre- and post-login.
 
-## 9. What spatial-os should reject
+## 9. What Mura should reject
 
 - **A system-wide shared Monado across users** — fights Monado's per-user `$XDG_RUNTIME_DIR` service
   model and creates a cross-user socket/security problem; unnecessary given the sequential handoff.

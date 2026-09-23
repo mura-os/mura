@@ -22,7 +22,7 @@ pursue"). No protocol exists for it: capture protocols are damage-driven copies 
 contract, no input path, and no surface tree ([32 §1](../../research/32-toplevel-export-prior-art.md));
 protocol proxying (waypipe) forwards apps, not sessions. The missing seam — per-toplevel
 zero-copy export with consumer-driven pacing and producer-retained shell authority — would let a
-live KWin/Plasma (or any producer) session's windows float individually in spatial-os.
+live KWin/Plasma (or any producer) session's windows float individually in Mura.
 
 ## Decision
 
@@ -62,7 +62,7 @@ upstreaming and deliberate.
   ([32 §6.3](../../research/32-toplevel-export-prior-art.md)).
 - **M-B — the KWin producer MR series.** The political demonstration: a seam-shaped patch series
   addressed directly to the §Context positions, showing a live Plasma session's windows floating
-  in spatial-os. *Concretized (2026-09-23, producer-spec workstream):* the plan is now
+  in Mura. *Concretized (2026-09-23, producer-spec workstream):* the plan is now
   [producers/kwin.md](../producers/kwin.md) — nine MRs, sequenced so every core seam lands with
   its consumer (two standalone, then the plugin series incl. resubmissions of fork commits the
   author triaged as clean-interface material, plus the **delegated-window-state MR** the

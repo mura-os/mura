@@ -1,6 +1,6 @@
 # 05 — XR Userspace: Packaging, Configuration, and Integration
 
-Research for spatial-os (Nix/NixOS-based Wayland XR distro for standalone headsets).
+Research for Mura (Nix/NixOS-based Wayland XR distro for standalone headsets).
 Focus: what the build system must **build, ship, wire together, and make configurable** —
 not runtime algorithm internals.
 
@@ -237,7 +237,7 @@ openvr app ── openvrpaths.vrpath ── OpenComposite/xrizer ─┤
   possible" (`doc/writing-driver.md`). The supported extension points are (a) upstream
   the driver, (b) build Monado as a superproject/toolkit with your own target and lists
   (the `AVAILABLE_DRIVERS` append hook in `CMakeLists.txt`), or (c) pin+patch like WiVRn.
-  For spatial-os, a device port realistically means **a pinned Monado rev + patch set or
+  For Mura, a device port realistically means **a pinned Monado rev + patch set or
   a superproject target**, per device — WiVRn's `monado-rev` + `patches/monado/` is the
   proven pattern.
 - The one dlopen'd plugin seam that *does* exist: SLAM/VIT trackers. `t_tracker_slam`
@@ -259,7 +259,7 @@ openvr app ── openvrpaths.vrpath ── OpenComposite/xrizer ─┤
 - What a new headset needs, concretely: a Monado driver (in-tree flag or patch set),
   its `XRT_BUILD_DRIVER_*` enabled, udev rules for its USB/HID IDs, any tracker plugin
   (Basalt build for SLAM devices), device calibration data path, and env-var defaults —
-  i.e. exactly the per-device option bundle spatial-os's `modules/xr/` must express.
+  i.e. exactly the per-device option bundle Mura's `modules/xr/` must express.
 - WiVRn sidesteps hardware drivers entirely: its "devices" are network-fed `xrt_device`s
   (`server/driver/wivrn_controller.cpp` etc.), and per-headset differences live in the
   Android client (`client/hmd_traits.cpp`, gradle flavors).
@@ -316,7 +316,7 @@ openvr app ── openvrpaths.vrpath ── OpenComposite/xrizer ─┤
 ## 6. Image assembly and flashing
 
 Not applicable to any studied project — all assume an existing host OS. What they assume,
-i.e. the contract spatial-os's image must provide:
+i.e. the contract Mura's image must provide:
 
 - A **systemd user session** with D-Bus: Monado/WiVRn ship user units; WiVRn starts apps
   via `org.freedesktop.systemd1` transient units (`server/start_systemd_unit.cpp`,
@@ -327,7 +327,7 @@ i.e. the contract spatial-os's image must provide:
   link the loader, never the runtime (`doc/packaging-notes.md`).
 - WiVRn client deployment today is APK-sideloading via adb from GitHub releases
   (`dashboard/apk_installer.cpp`) — i.e. the "flashing" story for the headset side is
-  entirely the vendor's Android; spatial-os replacing the headset OS is precisely the
+  entirely the vendor's Android; Mura replacing the headset OS is precisely the
   gap none of these projects cover.
 
 ## 7. Update mechanism / versioning / ABI
@@ -371,7 +371,7 @@ i.e. the contract spatial-os's image must provide:
   but branch-based `[patch.crates-io]` entries make bumping hazardous and upstream
   reproducibility contingent on forks not force-pushing.
 
-## 9. What spatial-os should adopt
+## 9. What Mura should adopt
 
 1. **Monado as the system OpenXR runtime, out-of-process** (`XRT_FEATURE_SERVICE=ON`,
    `XRT_FEATURE_SERVICE_SYSTEMD=ON`): socket-activated user service + system-wide
@@ -412,7 +412,7 @@ i.e. the contract spatial-os's image must provide:
    client .so makes Nix-style whole-closure switching the *correct* update model — lean
    into it.
 
-## 10. What spatial-os should reject and why
+## 10. What Mura should reject and why
 
 - **Envision's build-at-runtime orchestration** (git clone of branch heads into `~/.local
   /share`, `LD_LIBRARY_PATH` prefixes, mutable per-user stacks): unreproducible,
@@ -433,7 +433,7 @@ i.e. the contract spatial-os's image must provide:
 - **Branch-following upstreams anywhere in the build** (Envision defaults, Stardust's
   `[patch.crates-io]` branches): everything must resolve to rev+hash at eval time.
 - **Relying on the vendor-Android + APK model** (WiVRn's client side) as the long-term
-  headset story — it's the thing spatial-os exists to replace; but keep WiVRn server
+  headset story — it's the thing Mura exists to replace; but keep WiVRn server
   support as a bridge feature since its host packaging is excellent.
 
 ## 11. Open questions
@@ -446,7 +446,7 @@ i.e. the contract spatial-os's image must provide:
    server, which component provides `FLAT_WAYLAND_DISPLAY` for 2D apps in a headset-only
    session (Flatland? a headless host compositor?) — needs a decision and packaging.
 3. **Driver strategy for the specific headset**: is there an existing Monado driver
-   (in-tree list in `CMakeLists.txt`) for the target device, or does spatial-os maintain
+   (in-tree list in `CMakeLists.txt`) for the target device, or does Mura maintain
    a patch series — and if so, what's the rebase cadence against Monado main (WiVRn
    demonstrates ~11 patches is sustainable)?
 4. **SLAM/VIT plugin**: Basalt is the only production `libbasalt.so` provider
@@ -459,6 +459,6 @@ i.e. the contract spatial-os's image must provide:
 7. **Multi-runtime coexistence**: if WiVRn (bridge) and native Monado both ship, how is
    runtime selection surfaced (`active_runtime.<arch>.json` per loader spec vs
    `XR_RUNTIME_JSON` per-session) without runtime symlink games?
-8. **Upstreaming path**: which spatial-os patches (device driver, session integration)
+8. **Upstreaming path**: which Mura patches (device driver, session integration)
    are candidates for Monado upstream to shrink the fork surface, given Monado's
    explicit "upstream as much as possible" guidance (`doc/writing-driver.md`)?

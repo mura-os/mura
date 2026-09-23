@@ -8,7 +8,7 @@
 
 ## Context
 
-spatial-os spans a device/SoC/family module system, a donor pipeline, image builders, an XR stack,
+Mura spans a device/SoC/family module system, a donor pipeline, image builders, an XR stack,
 and many patches. Should this be one repository or several? The user explicitly flagged "sound
 project structure (git mono/super project?)" as a requirement, expecting many customisations and
 patches.

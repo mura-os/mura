@@ -1,10 +1,10 @@
-# spatial-os architecture: the device contract
+# Mura architecture: the device contract
 
 **Status:** draft. Derived from [00-synthesis](../research/00-synthesis.md) §3.1, and the deviceinfo
 schemas surveyed in [02-postmarketos](../research/02-postmarketos.md) §3.1 and
 [03-android-compat](../research/03-android-compat.md) §3.2/§9.1.
 
-The device contract is spatial-os's central artifact. It is a **typed NixOS-module option set** that
+The device contract is Mura's central artifact. It is a **typed NixOS-module option set** that
 a device declares; evaluation turns it into the acquire/parse/extract derivation graph, the kernel
 build, the adaptation bundle, the image variants, and the qualification checks. Typed options give
 type-checking, defaults, documentation, and `mkRenamedOptionModule`-based deprecation for free, and
@@ -30,20 +30,20 @@ let assertions reject inconsistent combinations before anything builds.
 
 ## Option namespace
 
-Everything lives under `spatial.*`. The option groups below are the contract; each maps to a module
+Everything lives under `mura.*`. The option groups below are the contract; each maps to a module
 under `modules/` or `devices/`.
 
-### `spatial.device.*` — identity and support (mandatory minimum)
+### `mura.device.*` — identity and support (mandatory minimum)
 
 | Option | Type | Notes |
 |---|---|---|
-| `spatial.device.codename` | str | e.g. `lynx-r1`; directory name, searchable |
-| `spatial.device.vendor` | str | e.g. `lynx` |
-| `spatial.device.name` | str | human-readable, e.g. "Lynx R1" |
-| `spatial.device.arch` | enum `aarch64`\|`x86_64` | build/host platform |
-| `spatial.device.supportTier` | enum `booting`\|`xr-functional`\|`release-supported` | gates mandatory checks (see §Qualification) |
-| `spatial.device.maintainers` | listOf str | empty ⇒ cannot exceed `booting` tier |
-| `spatial.device.skuConstraints` | attrs | hardware revision constraints this port is valid for (defaults to "all revisions") |
+| `mura.device.codename` | str | e.g. `lynx-r1`; directory name, searchable |
+| `mura.device.vendor` | str | e.g. `lynx` |
+| `mura.device.name` | str | human-readable, e.g. "Lynx R1" |
+| `mura.device.arch` | enum `aarch64`\|`x86_64` | build/host platform |
+| `mura.device.supportTier` | enum `booting`\|`xr-functional`\|`release-supported` | gates mandatory checks (see §Qualification) |
+| `mura.device.maintainers` | listOf str | empty ⇒ cannot exceed `booting` tier |
+| `mura.device.skuConstraints` | attrs | hardware revision constraints this port is valid for (defaults to "all revisions") |
 
 Only `codename`, `vendor`, and `name` have no default and are strictly mandatory; `arch`,
 `supportTier`, `maintainers`, and `skuConstraints` have defaults (`aarch64`, `booting`, `[]`, "all
@@ -51,17 +51,17 @@ revisions"). So a bring-up device sets ~3–5 fields. Everything below has defau
 family, or is derived from the donor. (The minimal example at the end of this document omits
 `skuConstraints` for exactly this reason.)
 
-### `spatial.hardware.soc` and families
+### `mura.hardware.soc` and families
 
-`spatial.hardware.soc` is an enum (`msm8998`, `sm8250`, `sm8550`, `sm8650`, …) set by the family,
+`mura.hardware.soc` is an enum (`msm8998`, `sm8250`, `sm8550`, `sm8650`, …) set by the family,
 not the device. (Naming aligned to the implemented contract — registry §10.1 resolved; this doc
-previously said `spatial.soc.*`.) The SoC module provides the shared kernel base, firmware search paths, the DSP/sensor
+previously said `mura.soc.*`.) The SoC module provides the shared kernel base, firmware search paths, the DSP/sensor
 userspace stack, A/B slot ack, and default kconfig fragments — mirroring pmOS `soc-qcom-<family>`
 and meta-qcom `qcom-<soc>.inc`. Families (`families/<name>/`) are plain module imports for
 near-identical models; per Mobile NixOS guidance, implement real devices first and extract families
 later rather than designing a deep hierarchy up front.
 
-### `spatial.donor.*` — the donor manifest
+### `mura.donor.*` — the donor manifest
 
 The full schema is specified in [donor-pipeline.md](donor-pipeline.md) §manifest. From the device's
 perspective it declares: accepted firmware build IDs and their hashes, the acquisition method
@@ -70,20 +70,20 @@ and licensing/redistribution flags. Known-good build IDs matter for unlock prese
 ([07](../research/07-device-landscape.md)): e.g. Galaxy XR launch firmware before the Dec-2025
 unlock-removing update.
 
-### `spatial.kernel.*` — kernel build + contract
+### `mura.kernel.*` — kernel build + contract
 
 | Option | Type | Notes |
 |---|---|---|
-| `spatial.kernel.source` | pinned src | vendor tag or mainline rev+hash |
-| `spatial.kernel.structuredExtraConfig` | attrs | with per-option provenance comments (Jovian style) |
-| `spatial.kernel.configFile` | path | literal `.config` as source of truth (Mobile NixOS style) |
-| `spatial.kernel.dtbs` | listOf str | DTB name templates, resolved per device |
-| `spatial.kernel.bootimg.headerVersion` | enum 0–4 | derived from donor `unpack_bootimg`; **no legacy-only assumption** |
-| `spatial.kernel.bootimg.offsets` | attrs | base/kernel/ramdisk/second/tags/dtb; from donor |
-| `spatial.kernel.bootimg.hasVendorBoot` / `hasInitBoot` / `hasDtbo` | bool | from donor |
-| `spatial.kernel.contract` | enum alias set | which kconfig contract categories apply |
+| `mura.kernel.source` | pinned src | vendor tag or mainline rev+hash |
+| `mura.kernel.structuredExtraConfig` | attrs | with per-option provenance comments (Jovian style) |
+| `mura.kernel.configFile` | path | literal `.config` as source of truth (Mobile NixOS style) |
+| `mura.kernel.dtbs` | listOf str | DTB name templates, resolved per device |
+| `mura.kernel.bootimg.headerVersion` | enum 0–4 | derived from donor `unpack_bootimg`; **no legacy-only assumption** |
+| `mura.kernel.bootimg.offsets` | attrs | base/kernel/ramdisk/second/tags/dtb; from donor |
+| `mura.kernel.bootimg.hasVendorBoot` / `hasInitBoot` / `hasDtbo` | bool | from donor |
+| `mura.kernel.contract` | enum alias set | which kconfig contract categories apply |
 
-The kernel is a standalone `buildLinux` derivation. `spatial.kernel.contract` composes named
+The kernel is a standalone `buildLinux` derivation. `mura.kernel.contract` composes named
 categories (container/systemd prerequisites, per-subsystem-backend prerequisites, distro security
 policy, XR requirements). It is checked in **two phases**, and **import-from-derivation is
 forbidden**:
@@ -95,17 +95,17 @@ forbidden**:
   symbols stripped before diffing. Exposed as a per-device lazy check so `nix flake check` never
   builds every device kernel.
 
-Source-of-truth precedence: the literal `spatial.kernel.configFile` is authoritative;
+Source-of-truth precedence: the literal `mura.kernel.configFile` is authoritative;
 `structuredExtraConfig` is applied on top and the realization-time check verifies the merged result
 (Mobile NixOS's validator model). This contract is the mechanism that lets NixOS be the default
 runtime safely (see [adr/0002](adr/0002-nixos-vs-nix-built-userspace.md)).
 
-### `spatial.adaptation.*` — per-subsystem backend selection
+### `mura.adaptation.*` — per-subsystem backend selection
 
 Each subsystem independently selects its backend. This is the core of the hardware boundary.
 
 ```nix
-spatial.adaptation = {
+mura.adaptation = {
   display   = { backend = "native"; };          # native | android-backed | device-specific
   gpu       = { backend = "native"; };          # Mesa/Freedreno by default
   camera    = { backend = "native"; };          # V4L2
@@ -127,70 +127,70 @@ spatial.adaptation = {
 - **device-specific**: a dedicated implementation. DSP-based tracking has no ecosystem precedent
   ([03](../research/03-android-compat.md) §9.6, §11 item 1) and must be prototyped per device.
 
-Assertions: an `android-backed` subsystem requires `spatial.donor` to expose the needed partitions
+Assertions: an `android-backed` subsystem requires `mura.donor` to expose the needed partitions
 and the kconfig contract to include the Android-HAL prerequisite category; a `native` subsystem
 requires its mainline kconfig category.
 
-### `spatial.xr.*` — XR runtime and device driver
+### `mura.xr.*` — XR runtime and device driver
 
 Mirrors Monado's build/runtime surface ([05](../research/05-xr-userspace.md) §9 item 4):
 
 | Option | Type | Notes |
 |---|---|---|
-| `spatial.xr.runtime` | enum `monado`\|`wivrn`\|`none` | Monado is the only initial on-device runtime; `wivrn` models the optional streaming-**server** role (its headset side is an Android app on the vendor runtime, per [05-xr-userspace](../research/05-xr-userspace.md) §2.2) and is not a drop-in appliance runtime; `none` for headless bring-up |
-| `spatial.xr.monado.rev` + `.patches` | rev + listOf patch | per-device driver as monado-rev + patch series (WiVRn pattern) |
-| `spatial.xr.monado.drivers.<name>.enable` | bool | → `XRT_BUILD_DRIVER_*`, minimal per-device runtime |
-| `spatial.xr.compositor.backend` | enum `vk-display`\|`wayland-direct`\|`window` | vk-display for appliance; **first feasibility test** |
-| `spatial.xr.environment` | attrs | → systemd unit env (the proven config channel) |
-| `spatial.xr.tracking.slam.package` | pkg | provides `libbasalt.so`, sets `VIT_SYSTEM_LIBRARY_PATH` |
-| `spatial.xr.calibration.paths` | attrs | per-device calibration data locations (per-unit state) |
+| `mura.xr.runtime` | enum `monado`\|`wivrn`\|`none` | Monado is the only initial on-device runtime; `wivrn` models the optional streaming-**server** role (its headset side is an Android app on the vendor runtime, per [05-xr-userspace](../research/05-xr-userspace.md) §2.2) and is not a drop-in appliance runtime; `none` for headless bring-up |
+| `mura.xr.monado.rev` + `.patches` | rev + listOf patch | per-device driver as monado-rev + patch series (WiVRn pattern) |
+| `mura.xr.monado.drivers.<name>.enable` | bool | → `XRT_BUILD_DRIVER_*`, minimal per-device runtime |
+| `mura.xr.compositor.backend` | enum `vk-display`\|`wayland-direct`\|`window` | vk-display for appliance; **first feasibility test** |
+| `mura.xr.environment` | attrs | → systemd unit env (the proven config channel) |
+| `mura.xr.tracking.slam.package` | pkg | provides `libbasalt.so`, sets `VIT_SYSTEM_LIBRARY_PATH` |
+| `mura.xr.calibration.paths` | attrs | per-device calibration data locations (per-unit state) |
 
-### `spatial.deployment.*` — partitions, images, flashing
+### `mura.deployment.*` — partitions, images, flashing
 
 | Option | Type | Notes |
 |---|---|---|
-| `spatial.deployment.bootScheme` | enum `android-bootimg`\|`uefi-rauc`\|`abl-uboot` | selects image family + update backend |
-| `spatial.deployment.partitions` | listOf submodule | layout; `keepVerbatim` list for pass-through blobs |
-| `spatial.deployment.abSlots` | bool | drives slot handling and the mark-successful unit |
-| `spatial.deployment.flashMethod` | enum | `fastboot`\|`heimdall`\|`edl-qdl`\|`rauc`\|… (declarative flasher table) |
-| `spatial.deployment.protectedPartitions` | listOf str | persist/calib/NV — never touched without a separately-reviewed op |
-| `spatial.deployment.imageVariants` | listOf str | which `lib/images/` variants to build |
+| `mura.deployment.bootScheme` | enum `android-bootimg`\|`uefi-rauc`\|`abl-uboot` | selects image family + update backend |
+| `mura.deployment.partitions` | listOf submodule | layout; `keepVerbatim` list for pass-through blobs |
+| `mura.deployment.abSlots` | bool | drives slot handling and the mark-successful unit |
+| `mura.deployment.flashMethod` | enum | `fastboot`\|`heimdall`\|`edl-qdl`\|`rauc`\|… (declarative flasher table) |
+| `mura.deployment.protectedPartitions` | listOf str | persist/calib/NV — never touched without a separately-reviewed op |
+| `mura.deployment.imageVariants` | listOf str | which `lib/images/` variants to build |
 
-### `spatial.hardware.ipd.*` and the `eyes` subsystem (ADR 0011)
+### `mura.hardware.ipd.*` and the `eyes` subsystem (ADR 0011)
 
-`spatial.hardware.ipd.source` ∈ `fixed | manual | manual-sensed | stored | motorized-auto` declares
+`mura.hardware.ipd.source` ∈ `fixed | manual | manual-sensed | stored | motorized-auto` declares
 where the rendering-IPD value comes from, with `ipd.defaultMeters` as the safe pre-auth default
 (greeter/lock render with it per [adr/0007](adr/0007-session-greeter-lock.md)). `motorized-auto`
 (an eye-tracked lens servo, Galaxy XR / Play For Dream class) requires
-`spatial.adaptation.eyes.backend != "none"` — asserted. The eyes backend selects the session-scoped
+`mura.adaptation.eyes.backend != "none"` — asserted. The eyes backend selects the session-scoped
 Monado-side eye-tracking service (gaze via `XR_EXT_eye_gaze_interaction`, rotation-center IPD into
 `eye_relation`, event-gated motor proposals); see
 [adr/0011-eye-tracking-ipd.md](adr/0011-eye-tracking-ipd.md). The qualification matrix gains
 per-device rows — *IPD source*, *eye-camera access class*, *ET capability*, *iris auth* — with
 current values in [research/29](../research/29-eye-hardware-ipd-per-target.md).
 
-### `spatial.hardware.externalDisplay` and docked mode (ADR 0015)
+### `mura.hardware.externalDisplay` and docked mode (ADR 0015)
 
-`spatial.hardware.externalDisplay` ∈ `none | dp-altmode | usb-display` declares whether the
+`mura.hardware.externalDisplay` ∈ `none | dp-altmode | usb-display` declares whether the
 device's USB-C port can drive an external display (doc-ahead-of-implementation; verified
 per-device values in [research/07 §External video-out](../research/07-device-landscape.md):
 Quest 3 `dp-altmode` vendor-supported, Galaxy XR `dp-altmode` community-verified, Lynx R1
 reported-unverified, Steam Frame and Quest 1 `none`). It gates the mirror tier and docked desktop
 mode of [adr/0015-docked-desktop-mode.md](adr/0015-docked-desktop-mode.md), whose session policy
-surface is `spatial.xr.session.docked.*` (doc-only until packaging):
+surface is `mura.xr.session.docked.*` (doc-only until packaging):
 
 | Option | Type | Notes |
 |---|---|---|
-| `spatial.xr.session.docked.enable` | bool | offer docked desktop mode when the fact permits |
-| `spatial.xr.session.docked.lockOnDoffWhileDocked` | bool (default false) | whether doff-while-docked also locks the flat presentation (ADR 0007 amendment) |
-| `spatial.xr.session.docked.deepIdleAfter` | nullOr seconds | soft→deep quiescence timer; deep idle stops Monado + perception units |
+| `mura.xr.session.docked.enable` | bool | offer docked desktop mode when the fact permits |
+| `mura.xr.session.docked.lockOnDoffWhileDocked` | bool (default false) | whether doff-while-docked also locks the flat presentation (ADR 0007 amendment) |
+| `mura.xr.session.docked.deepIdleAfter` | nullOr seconds | soft→deep quiescence timer; deep idle stops Monado + perception units |
 
-### `spatial.qualification.*` — required functionality and tests
+### `mura.qualification.*` — required functionality and tests
 
 | Option | Type | Notes |
 |---|---|---|
-| `spatial.qualification.acceptanceTests` | listOf test | automated + manual, gated by tier |
-| `spatial.qualification.readinessCheck` | test | the XR-readiness health check an update must pass |
+| `mura.qualification.acceptanceTests` | listOf test | automated + manual, gated by tier |
+| `mura.qualification.readinessCheck` | test | the XR-readiness health check an update must pass |
 
 ## Support tiers (encoded and CI-enforced)
 
@@ -216,7 +216,7 @@ CI asserts that a device's declared tier is consistent with the checks it actual
 {
   imports = [ ../../families/xr2-gen1 ];
 
-  spatial.device = {
+  mura.device = {
     codename = "lynx-r1";
     vendor = "lynx";
     name = "Lynx R1";
@@ -225,12 +225,12 @@ CI asserts that a device's declared tier is consistent with the checks it actual
     maintainers = [ ];
   };
 
-  spatial.hardware = {
+  mura.hardware = {
     displays = 2;
     panel = { width = 1600; height = 1600; refresh = 90; };
   };
 
-  spatial.donor = import ./donor.nix;   # hashes, build IDs, extraction rules
+  mura.donor = import ./donor.nix;   # hashes, build IDs, extraction rules
   # kernel, adaptation, xr, deployment all default from the xr2-gen1 family + sm8250 SoC module
 }
 ```

@@ -25,7 +25,7 @@
 | **M-11** (categorical privacy guarantee false) | Spec §6 re-worded: gating is an objective with residual risk; masks must travel in the keyframe packet and be enforced at mapping-side descriptor extraction (NfrMapper gap named); descriptor-region tests required. |
 | **M-12** (store corruption/recovery absent) | Spec §6: doc 21's durability rules made normative (checksums, copy-on-write generations, fsync, tombstones); M2 gate includes power-cut/torn-write/wrong-key tests. |
 | **M-15** (milestone ordering hides APIs/validation) | M0 added; M1 gains the internal shell↔anchor xrt API; M2 split into durability + reloc-UX gates with false-switch rate. |
-| **M-17** (`depthSource = none` contradictory) | Renamed to `spatial.xr.mapping.depthAssist` in contract + spec; `none` = passive stereo, documented as such in both places. |
+| **M-17** (`depthSource = none` contradictory) | Renamed to `mura.xr.mapping.depthAssist` in contract + spec; `none` = passive stereo, documented as such in both places. |
 | **M-18** (packaging/RT/license overstatements) | Spec §2/§10 + ADR: "latency-critical soft RT", "unmodified VIO algorithm, patched integration package", license review noted as due — process separation is architectural, not a legal theorem. |
 | **M-19** (wrong-reloc evidence overstated) | Spec §5: zero-wrong-accept attributed to the RTAB-Map study specifically; 50-inlier treated as precedent to recalibrate. |
 | **M-20** (open questions miss the breakers) | §12 restructured into blocking (M0/M1/M2) vs non-blocking, importing the review's list. |

@@ -15,7 +15,7 @@ Composes with [ADR 0006](0006-compositor-strategy.md) (the zxr compositor) and
 ADR 0006 creates one program — the zxr compositor — that could absorb the whole desktop (the
 GNOME Shell shape: everything in the compositor process) or shed everything (the wlroots/sway
 shape: compositor as kernel, all UI external). Both extremes are coherent; neither is what
-spatial-os wants. We need decided seams *before* the shell components are written, because the
+Mura wants. We need decided seams *before* the shell components are written, because the
 seam determines each component's process model, protocol surface, and whether third parties can
 replace it.
 
@@ -51,7 +51,7 @@ where latency, lock, or capture invariants forbid delegation.
 | Clipboard manager | `ext-data-control-v1`, binding-gated | Privileged global filtered to the trusted client; previews follow visibility policy (never floated into a shared/spectated space). |
 | Session restore manager | `xdg-session-management-v1` (served by zxr) + the `.desktop` database | The protocol restores window state for returning app instances but deliberately excludes relaunching — the manager owns relaunch and binds restored toplevels to **place IDs** (ADR 0009 anchors), so a room's workspace comes back apps-and-all. Evidence: doc 30 addendum. |
 | SNI watcher + host | StatusNotifierItem/Watcher D-Bus (de-facto spec, formally still draft 0.1) | **Decision: host SNI, don't drop it.** A supervised watcher service owns the bus name; the host renders items as typed badges in a panel applet/component (COSMIC's `cosmic-applet-status-area` + socket-activated watcher; Plasma's systemtray applet + KDED watcher — [30 §A3](../../research/30-wayland-de-anatomy-protocol-seams.md)). Dropping tray compatibility was rejected: too many long-running apps (chat, sync, audio) signal only through SNI. Never the sole route to critical/safety controls. |
-| Greeter, lock *auth*, PAM | greetd IPC / `spatial-authd` socketpair | Already decided in ADR 0007; listed for completeness as system-plane spin-outs. |
+| Greeter, lock *auth*, PAM | greetd IPC / `mura-authd` socketpair | Already decided in ADR 0007; listed for completeness as system-plane spin-outs. |
 
 ### 2. Pluggable in-process (plugin seam, not a protocol)
 

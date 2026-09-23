@@ -8,26 +8,26 @@
 {
   imports = [ ../../soc/virtual ];
 
-  spatial.device = {
+  mura.device = {
     codename = "virtual-headset";
-    vendor = "spatial-os";
+    vendor = "mura";
     name = "Virtual Headset (VM smoke target)";
     arch = "x86_64";
     supportTier = "booting";
     maintainers = [ ];
   };
 
-  spatial.hardware = {
+  mura.hardware = {
     displays = 1;
     panel = { width = 1920; height = 1080; refresh = 60; };
   };
 
   # No donor: this is a from-source VM, so donor stays null and no flashable image
   # outputs are produced (null-propagation gating).
-  spatial.donor = null;
+  mura.donor = null;
 
   # Native everything; simulated tracking (Monado's SIMULATED driver).
-  spatial.adaptation = {
+  mura.adaptation = {
     display.backend = "native";
     gpu.backend = "native";
     camera.backend = "native";
@@ -37,7 +37,7 @@
     tracking.backend = "device-specific"; # simulated, provided by the runtime itself
   };
 
-  spatial.xr = {
+  mura.xr = {
     runtime = "monado";
     compositor.backend = "window"; # windowed compositor inside the VM, not vk-display
     environment = {
@@ -48,9 +48,9 @@
     };
   };
 
-  spatial.kernel.contract = [ "systemd" "container" ];
+  mura.kernel.contract = [ "systemd" "container" ];
 
-  spatial.deployment = {
+  mura.deployment = {
     bootScheme = "vm";
     flashMethod = "none";
     imageVariants = [ "dev-vm" ];
@@ -58,15 +58,15 @@
 
   # Standard NixOS bits that make the VM boot and present a Wayland session.
   # (Kept at the top level: mixing these with an explicit `config` block is rejected
-  # by the module system when top-level `spatial.*` options are also set.)
+  # by the module system when top-level `mura.*` options are also set.)
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = false;
   fileSystems."/" = lib.mkDefault { device = "/dev/disk/by-label/nixos"; fsType = "ext4"; };
 
-  services.getty.autologinUser = lib.mkDefault "spatial";
-  users.users.spatial = {
+  services.getty.autologinUser = lib.mkDefault "mura";
+  users.users.mura = {
     isNormalUser = true;
-    password = "spatial";
+    password = "mura";
     extraGroups = [ "wheel" "video" "input" ];
   };
 

@@ -1,4 +1,4 @@
-# Device landscape for spatial-os
+# Device landscape for Mura
 
 **Research date:** 2026-09-22
 
@@ -12,7 +12,7 @@ The six targets divide into three practical classes. Oculus Quest 1 and Lynx R1 
 | Lynx R1 | Snapdragon XR2 Gen 1; SM8250-family, downstream board platform `kona` | Lynx AOSP 12 | Vendor-documented open bootloader; fastboot and authenticated Firehose recovery available | **Unverified:** no public Lynx-R1 vendor kernel tree found; do not confuse Lynx's GPL ORB-SLAM release with kernel source | Active; postmarketOS/mainline boots to a debug shell | Official [Lynx firmware portal](https://portal.lynx-r.com/downloads/firmware/lynx-r-1/) |
 | Samsung Galaxy XR (`SM-I610`, board reported as `anorak`) | Snapdragon XR2+ Gen 2; public Qualcomm part-number mapping is unverified | Android XR / “XR One UI,” Android 14-based | Launch firmware unlockable; Dec. 2025 update reportedly removes unlock; Apr. 2026 update reportedly adds rollback barrier | Official model-specific release through [Samsung Open Source](https://opensource.samsung.com/uploadSearch?searchValue=SM-I610) | Generic SM8550/QCS8550 support is strong, but the XR2+ mapping and Galaxy XR board port are unverified; community port is reported in progress | Samsung FUS via Frija/SamFirm ecosystem; Samsung support site does not publish full images |
 | Play For Dream MR (`anorak`) | Snapdragon XR2+ Gen 2; exact silicon ID unverified | DreamOS, Android 14-based | FreeXR reports an unlocked unit with vendor-left-unburnt eFuse; scope and update durability are unknown | No public vendor GPL kernel release located | No public device port; only adjacent SM8550-family upstream work | OTA only; official downloads page exposes manuals, not firmware |
-| Valve Steam Frame (`deckard`) | Snapdragon 8 Gen 3 / SM8650 | SteamOS, Arch-derived aarch64 Linux; **not Android** | Developer Mode exposes SSH/RDP and root-capable stock Linux; alternate-OS/secure-boot policy is not yet documented | **Kernel identity donor-verified** ([33 §4](33-steam-frame-donor.md)): 6.18 LTS, pkgbase `linux-618-deckard`, config extracted via IKCONFIG, production DTBs in-image; binary packages public, source tarball still unlocated (GPL acquisition task) | SM8650 has broad upstream support; Valve uses upstream Mesa Turnip | Official public [SteamOS VR image index](https://holo-images.steamos.cloud/vr/) with `.raucb` and `.castr` — **reconstructed, audited, and mirrored by a VM-boot-proven spatial-os image** ([33 §9](33-steam-frame-donor.md)) |
+| Valve Steam Frame (`deckard`) | Snapdragon 8 Gen 3 / SM8650 | SteamOS, Arch-derived aarch64 Linux; **not Android** | Developer Mode exposes SSH/RDP and root-capable stock Linux; alternate-OS/secure-boot policy is not yet documented | **Kernel identity donor-verified** ([33 §4](33-steam-frame-donor.md)): 6.18 LTS, pkgbase `linux-618-deckard`, config extracted via IKCONFIG, production DTBs in-image; binary packages public, source tarball still unlocated (GPL acquisition task) | SM8650 has broad upstream support; Valve uses upstream Mesa Turnip | Official public [SteamOS VR image index](https://holo-images.steamos.cloud/vr/) with `.raucb` and `.castr` — **reconstructed, audited, and mirrored by a VM-boot-proven Mura image** ([33 §9](33-steam-frame-donor.md)) |
 | Meta Quest 3 (`eureka`) | Snapdragon XR2 Gen 2, package marking `SXR2230P`; SM8550-derived | Meta Horizon OS; Android 12.1L at launch, Android 14 currently | Locked; temporary root exists on selected firmware, but no public bootloader unlock | No verified Quest 3 GPL source drop found; older Quest source repository does not contain Eureka | SM8550 is well-supported upstream; no public Eureka DTS/bootable mainline port | Official latest-only [Meta update tool](https://www.meta.com/help/quest/software_update/); unofficial [historical archive](https://cocaine.trade/Quest_3_firmware) |
 
 Status terms above are deliberately narrow: “root” means control after the vendor kernel has booted, while “unlocked” means the boot chain can accept a non-vendor OS image.
@@ -46,7 +46,7 @@ Status terms above are deliberately narrow: “root” means control after the v
 - The Qualcomm chain is PBL → XBL → ABL/UEFI `LinuxLoader` → AVB-verified Android boot image. `xbl_a/b`, `abl_a/b`, `boot_a/b`, `modem_a/b`, and `bluetooth_a/b` are present in the published [Quest partition research](https://github.com/QuestEscape/research).
 - “USB Update Mode” is Qualcomm fastboot exposed by ABL. EDL also exists, but there is no supported public unbrick path for a retail unit with damaged XBL/ABL.
 - The device is A/B. The WebUSB unlocker explicitly reads the active slot, backs up 13 inactive-slot partitions, writes the downgrade images, and returns to the original slot; its [procedure and failure conditions](https://github.com/darknight1050/quest1-bootloader-unlocker-web) are the best current boot-layout documentation.
-- Boot image header version is **unverified from a current image**. Because Quest launched before Android 9, a legacy v0 Android boot image is plausible, but spatial-os must inspect the actual selected firmware with `unpack_bootimg` rather than encode that assumption.
+- Boot image header version is **unverified from a current image**. Because Quest launched before Android 9, a legacy v0 Android boot image is plausible, but Mura must inspect the actual selected firmware with `unpack_bootimg` rather than encode that assumption.
 - `vendor_boot` was introduced with Android 11 and is not expected on this Android 10 device; it is absent from the early published partition map. Dynamic partitions are also **not verified** for the final firmware.
 - Unlock method: start from final build `49845030443200410`, obtain temporary root, put Quest 1 build `16476800119700000` (v29.0.0.66, 2021-05-10) into the inactive slot, exploit CVE-2021-1931 in its ABL fastboot implementation, request an unlock token, clear rollback indexes, and restore the original slot. The full sequence is documented by the [WebUSB implementation](https://github.com/darknight1050/quest1-bootloader-unlocker-web).
 - Unlocking wipes userdata. The unlock is persistent across clean reboots, but no source guarantees behavior across every manually flashed firmware. There are no newer official Quest 1 releases to test.
@@ -58,7 +58,7 @@ Status terms above are deliberately narrow: “root” means control after the v
 - An older mirror, [QuestEscape/updates](https://github.com/QuestEscape/updates), contains factory and early full OTAs. Some historical packages are incremental, so the manifest and hash must be checked before use.
 - Pin two artifacts: final `49845030443200410` as the known root/unlock entry point and vulnerable `16476800119700000` only as the inactive-slot unlock payload.
 - Do not substitute a Quest 2 image or a neighboring Quest 1 build. The patched ABL payload and 13-partition set are Monterey/build-specific.
-- These mirrors redistribute Meta binaries without an explicit redistribution grant. The build system should download from user-configured URLs, verify hashes, and never vendor the ZIPs into spatial-os.
+- These mirrors redistribute Meta binaries without an explicit redistribution grant. The build system should download from user-configured URLs, verify hashes, and never vendor the ZIPs into Mura.
 
 ### 6. Donor suitability
 
@@ -108,7 +108,7 @@ Status terms above are deliberately narrow: “root” means control after the v
 - Packages support both ADB sideload and complete QFIL/QDL restore. Lynx says users may [restore to a specific version](https://portal.lynx-r.com/documentation/view/updating-your-device), making this the cleanest Android donor workflow in the set.
 - No firmware version is known to patch the open bootloader. Pinning is still required because system/vendor interfaces, panel behavior, and firmware blobs change.
 - Start with 1.4.1 for current userspace and separately preserve the version used by the mainline developer. Do not assume DT or calibration compatibility across hardware revisions.
-- The downloads are publicly served by Lynx. Redistribution terms are not stated; spatial-os should record URL, MD5/SHA-256, and extraction recipe rather than mirror the ZIP.
+- The downloads are publicly served by Lynx. Redistribution terms are not stated; Mura should record URL, MD5/SHA-256, and extraction recipe rather than mirror the ZIP.
 
 ### 6. Donor suitability
 
@@ -149,7 +149,7 @@ Status terms above are deliberately narrow: “root” means control after the v
   passthrough fused into the distortion pass, `XR_EXT_eye_gaze_interaction` eye tracking via the
   OEM QNN library, and gaze-driven `VK_KHR_fragment_shading_rate` foveation. 6DoF/SLAM is not
   implemented. It presupposes launch firmware (or root): per the unlock notes below, current
-  retail units cannot reach it. Disposition for spatial-os: [ADR 0013](../architecture/adr/0013-kwin-vr-disposition.md) §4.
+  retail units cannot reach it. Disposition for Mura: [ADR 0013](../architecture/adr/0013-kwin-vr-disposition.md) §4.
 - XR-specific gaps will include both display pipelines, multi-camera synchronization, iris/eye tracking, depth sensing, calibration, audio, and power/thermal policy — the fork above now provides working reference code for the display, IMU-tier sensor, passthrough, and eye-tracking slices of that list.
 
 ### 4. Boot chain
@@ -157,7 +157,7 @@ Status terms above are deliberately narrow: “root” means control after the v
 - Launch units exposed a working OEM Unlock toggle in Android Developer Options; multiple outlets confirmed that it actually completed the [bootloader unlock](https://www.androidauthority.com/samsung-galaxy-xr-bootloader-unlocking-3609841/).
 - As a modern Qualcomm Samsung device, the expected low-level chain is PBL → XBL → Samsung/Qualcomm ABL/UEFI → AVB/GKI. This is a **platform inference**; no Galaxy XR-specific ABL/XBL dump was located.
 - Samsung normally uses Download Mode/Odin rather than a user-facing Qualcomm fastboot flashing workflow. Exact Galaxy XR fastboot commands and recovery key sequence remain **unknown**.
-- The exact partition map, A/B status, `init_boot`, `vendor_boot`, dynamic `super`, and boot header version are **unverified**. Android 14/GKI makes v4 `boot` plus `vendor_boot` and dynamic partitions plausible, but spatial-os must derive these from the SM-I610 package or a device dump.
+- The exact partition map, A/B status, `init_boot`, `vendor_boot`, dynamic `super`, and boot header version are **unverified**. Android 14/GKI makes v4 `boot` plus `vendor_boot` and dynamic partitions plausible, but Mura must derive these from the SM-I610 package or a device dump.
 - Community tracking reports that the first update on 2025-12-09 removed the working unlock and that the 2026-04-08 update prevents downgrading to launch firmware; see the carefully qualified [Samsung unlock status notes](https://github.com/zenfyrdev/bootloader-unlock-wall-of-shame/blob/main/brands/samsung/README.md).
 - Therefore an already-unlocked launch-firmware unit is materially different from a current retail-updated unit. Whether an unlocked unit remains unlocked after each Samsung update is **unverified**.
 
@@ -168,7 +168,7 @@ Status terms above are deliberately narrow: “root” means control after the v
 - FUS generally exposes the latest firmware for a CSC, not a durable archive of every historical build. Archive the launch package immediately from an eligible unit/account and record CSC, bootloader binary revision, and hashes.
 - Pin pre-2025-12-09 launch firmware for unlock work. The first update is reported as build suffix `AYKE`, about 925 MB, in [first-update reporting](https://sammyguru.com/galaxy-xr-gets-first-update-with-new-travel-mode-feature/); avoid it when unlockability is the goal.
 - Avoid the 2026-04-08 enterprise/security update and later if downgrade capability matters. Current July 2026 firmware `I610UEU2AZF3` is explicitly a newer security build in [Samsung update reporting](https://www.sammobile.com/news/galaxy-xr-gets-a-mysterious-1-5gb-update/).
-- Samsung firmware is proprietary. FUS retrieval for an owned device is preferable to third-party mirrors; spatial-os should never redistribute AP/BL archives.
+- Samsung firmware is proprietary. FUS retrieval for an owned device is preferable to third-party mirrors; Mura should never redistribute AP/BL archives.
 
 ### 6. Donor suitability
 
@@ -215,7 +215,7 @@ Status terms above are deliberately narrow: “root” means control after the v
 - DreamOS updates are delivered over the air. No stable public OTA URL, full recovery image, checksums, or version archive was found.
 - Pin the exact factory firmware on an unlocked unit and block updates until bootloader state, anti-rollback, partition layout, and a recovery path are verified.
 - DreamOS 4.5 is the latest publicly announced version at the research date, but it is neither recommended nor known-safe for unlock retention.
-- Firmware obtained by intercepting an authenticated OTA remains proprietary and may include account-bound URLs. spatial-os should support user-supplied extraction only.
+- Firmware obtained by intercepting an authenticated OTA remains proprietary and may include account-bound URLs. Mura should support user-supplied extraction only.
 
 ### 6. Donor suitability
 
@@ -248,7 +248,7 @@ Status terms above are deliberately narrow: “root” means control after the v
 - **Update (2026-09-23, donor-verified — [33](33-steam-frame-donor.md)):** the production kernel is `6.18.0-gbfea53e51a5d`, pkgbase **`linux-618-deckard`**; binary packages are public (`holo-packages.steamos.cloud/archlinux-deckard-hotfixes/`); the full config was extracted via IKCONFIG and all eight deckard board DTBs (dv1→mp, model `"SM8650 MP rev1 4slam 2et"`) ship in the image; the boot chain is PBL → XBL(A/B) → **U-Boot 2025.07-rc3+valve** → `/boot`. The source tarball remains unpublished in the indexed mirrors (no `deckard` sources dir; checked root + holo-main) — the GPL acquisition task stands, now with the exact package name to request.
 - SM8650 has broad upstream support. The [linux-msm SM8650 matrix](https://linux-msm.github.io/mainline-status/soc/sm8650) covers UFS, USB-C, WLAN, Bluetooth, GPU, DSI, DSPs, camera, video, and power foundations across Linux 6.8–6.19.
 - Valve and Igalia use the open Mesa Turnip Vulkan driver for Adreno 750 and have upstreamed much of the work; Igalia describes its [Frame-specific Turnip effort](https://www.igalia.com/2025/11/helpingvalve.html).
-- The remaining spatial-os work is primarily Deckard board description, dual-display/camera integration, Valve tracking services, and packaging—not a from-zero Qualcomm Linux port.
+- The remaining Mura work is primarily Deckard board description, dual-display/camera integration, Valve tracking services, and packaging—not a from-zero Qualcomm Linux port.
 
 ### 4. Boot chain
 
@@ -327,7 +327,7 @@ Status terms above are deliberately narrow: “root” means control after the v
 
 ## External video-out capability (docked-mode fact, verified 2026-09-23)
 
-Per-device evidence for the `spatial.hardware.externalDisplay` contract fact
+Per-device evidence for the `mura.hardware.externalDisplay` contract fact
 ([ADR 0015](../architecture/adr/0015-docked-desktop-mode.md) — mirror tier and docked desktop
 mode both gate on it):
 
@@ -341,7 +341,7 @@ mode both gate on it):
 | Play For Dream MR | **Unknown** — no public port capability documentation located | — |
 
 Notes for ADR 0015: Meta's behaviour is the mirror-tier prior art (hotplug → auto-mirror, DRM
-blanking, no audio) *except* that Meta mirrors passthrough by default — spatial-os's capture
+blanking, no audio) *except* that Meta mirrors passthrough by default — Mura's capture
 taxonomy default is the opposite (passthrough excluded unless consented,
 [spatial-sharing.md §2.2](../architecture/spatial-sharing.md)). The Galaxy XR result means the
 flagship docked-mode target has working silicon for it; Steam Frame, the strongest near-term
@@ -350,7 +350,7 @@ feature, never assumed.
 
 ## Implications for the build system
 
-spatial-os needs at least two image families. Quest 1, Lynx, Galaxy XR, Play For Dream, and eventually Quest 3 require Android/Qualcomm-aware artifacts: raw `Image`/DTB assembly where possible, Android boot-image packing for each verified header version, AVB metadata policy, A/B slot handling, and optional `vendor_boot`/dynamic-partition support. Steam Frame instead needs an EFI/UEFI and RAUC-oriented target capable of producing signed A/B rootfs updates and, once its actual boot map is confirmed, the appropriate ESP/UKI or Valve-specific boot payload.
+Mura needs at least two image families. Quest 1, Lynx, Galaxy XR, Play For Dream, and eventually Quest 3 require Android/Qualcomm-aware artifacts: raw `Image`/DTB assembly where possible, Android boot-image packing for each verified header version, AVB metadata policy, A/B slot handling, and optional `vendor_boot`/dynamic-partition support. Steam Frame instead needs an EFI/UEFI and RAUC-oriented target capable of producing signed A/B rootfs updates and, once its actual boot map is confirmed, the appropriate ESP/UKI or Valve-specific boot payload.
 
 Kernel packaging must separate SoC support from board support. MSM8998 and SM8250 can share mature linux-msm foundations, SM8550-like XR2 Gen 2/XR2+ devices need newer GKI/mainline branches, and Steam Frame's SM8650 can track a modern upstream kernel. Each headset still needs its own DTS, panel/camera topology, firmware manifest, calibration preservation rules, and hardware enablement status; “SoC boots” must not be represented as “XR headset works.”
 

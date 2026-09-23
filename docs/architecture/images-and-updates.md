@@ -1,4 +1,4 @@
-# spatial-os architecture: image assembly and updates
+# Mura architecture: image assembly and updates
 
 **Status:** draft. Derived from [00-synthesis](../research/00-synthesis.md) §2.4/§2.5,
 [04-nix-imaging](../research/04-nix-imaging.md) §6/§7, [01-mobile-nixos](../research/01-mobile-nixos.md)
@@ -7,7 +7,7 @@
 ## Two image families, one interface
 
 The device landscape forces (at least) two image families, selected by
-`spatial.deployment.bootScheme`:
+`mura.deployment.bootScheme`:
 
 - **`uefi-rauc`** — Steam Frame (SM8650, SteamOS-class): a GPT/UEFI disk with A/B system partitions,
   built with nixpkgs `image.modules` + systemd-repart, updated with RAUC + casync.
@@ -55,7 +55,7 @@ machine-readable install manifest (hashes, provenance, recovery instructions) + 
 uses **bare tool names** so it tars up and runs from a non-Nix laptop
 ([01](../research/01-mobile-nixos.md) §6.3, meta-qcom's "factory restore bundle"
 [02](../research/02-postmarketos.md) §9 item 11). A declarative flasher table (pmOS pattern,
-[02](../research/02-postmarketos.md) §6) maps `spatial.deployment.flashMethod` → argv templates
+[02](../research/02-postmarketos.md) §6) maps `mura.deployment.flashMethod` → argv templates
 resolved from the contract, including `flash_vbmeta` (avbtool verification-disable where the device is
 unlocked) and `flash_dtbo`.
 
@@ -67,7 +67,7 @@ model, firmware prerequisites, partition layout, slot state, and bootloader cond
 writing, and:
 - refuses to run on a mismatched board (Tow-Boot identity check,
   [01](../research/01-mobile-nixos.md) §12);
-- protects `spatial.deployment.protectedPartitions` (persist/calib/NV/identity) unless a separately
+- protects `mura.deployment.protectedPartitions` (persist/calib/NV/identity) unless a separately
   reviewed operation explicitly touches them;
 - for single-slot devices, documents a different recovery guarantee than an A/B device — it does not
   advertise the same atomicity.
@@ -90,8 +90,8 @@ Steam Frame already uses this ([07](../research/07-device-landscape.md),
 [06](../research/06-donor-pipeline.md) §2.2), all tooling is in nixpkgs, and the bundle format is
 simple to generate from a Nix-built rootfs derivation. A/B slots via RAUC; `format=plain` bundles
 carrying `.caibx` indexes; chunks served from a dumb HTTPS store; device-side seeding from the
-installed slot for cheap deltas. Unlike Valve's rootfs-only bundle, spatial-os RAUC manifests are
-multi-image where the device also has spatial-os-managed boot/ESP partitions. Deterministic chunking
+installed slot for cheap deltas. Unlike Valve's rootfs-only bundle, Mura RAUC manifests are
+multi-image where the device also has Mura-managed boot/ESP partitions. Deterministic chunking
 is the one reproducibility cost to design for.
 
 ### Android-slot backend (android-bootimg devices)
@@ -104,7 +104,7 @@ the backend is slot-scheme-aware.
 
 ### Health-gated success
 An update is marked successful only after a **hardware-aware readiness check**: the intended kernel
-booted, the adaptation services started, and the XR path passed `spatial.qualification.readinessCheck`
+booted, the adaptation services started, and the XR path passed `mura.qualification.readinessCheck`
 — not merely "the kernel booted." Rollback must account for mutable-data migrations and AVB
 rollback-protection (arbitrary downgrades cannot be promised). The full design is
 [implementation-path.md §3a](implementation-path.md): profile-specific blessing tiers (appliance =

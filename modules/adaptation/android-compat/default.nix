@@ -10,7 +10,7 @@
 {
   # Intentionally no options/config yet. When the first android-backed subsystem is
   # implemented, add:
-  #   - spatial.adaptation.androidCompat.androidGeneration
+  #   - mura.adaptation.androidCompat.androidGeneration
   #   - the android-headers-<gen>-<device> derivation wiring
   #   - a late, optional systemd LXC unit (never a local-fs.target prerequisite)
   #   - per-subsystem donor blob-closure selection

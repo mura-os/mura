@@ -1,6 +1,6 @@
 # 10 — XR/Wayland protocol comparison: motorcar, zxr, zwin, StardustXR, WayVR
 
-**Date:** 2026-09-22. Research pass B3 for spatial-os. This document compares the five known
+**Date:** 2026-09-22. Research pass B3 for Mura. This document compares the five known
 architectures for putting multiple applications into one shared XR space on Linux, to ground
 **ADR 0006 (compositor strategy)**. It builds directly on
 [08-wxrc.md](08-wxrc.md) Part 1 (the Motorcar→wxrc design lineage and its terminology:
@@ -40,10 +40,10 @@ That layer is already solved and shipped, and is **orthogonal to this comparison
 wayland-protocols ≥ 1.22) lets a desktop compositor lease the headset's
 [non-desktop DRM connector](https://drewdevault.com/blog/DRM-leasing-and-VR-for-Wayland/) to the
 OpenXR runtime; Monado consumes it in `comp_window_direct_wayland.c` (doc 05 §5). It hands a
-*display* to a *runtime* — it says nothing about how *apps* share a 3D space. On the spatial-os
+*display* to a *runtime* — it says nothing about how *apps* share a 3D space. On the Mura
 appliance, where the panel is the only display, Monado's `VK_KHR_display` backend can own the DRM
 device with no host compositor at all (doc 05 §5, §11 Q1); `wp_drm_lease_v1` matters mainly for
-the desktop/dev profile where spatial-os components run under an existing compositor. Either way,
+the desktop/dev profile where Mura components run under an existing compositor. Either way,
 every model below sits *above* this layer as an OpenXR client (or, in motorcar's 2014 case, its
 pre-OpenXR equivalent).
 
@@ -143,7 +143,7 @@ bindings. The current server (`references/stardustxr-server/`, v0.52) has migrat
 to its `gluon-ipc`/`strong-ipc` crates (`Cargo.toml` lines 151–169) but the model is unchanged:
 clients create persistent server-side nodes —
 
-- **Spatials** (`src/nodes/spatial.rs`): transform nodes with parent-child relationships, mapped
+- **Spatials** (`src/nodes/mura.rs`): transform nodes with parent-child relationships, mapped
   1:1 onto Bevy ECS entities server-side;
 - **Fields** (`src/nodes/fields.rs`): signed-distance-field shapes for input/intersection queries
   (`RayMarchResult`, `FieldSample`);
@@ -158,7 +158,7 @@ Input is mediated by SUIS (Spatial Universal Interaction System): input *methods
 model, and fully compositor-arbitrated. The server itself is an OpenXR client of Monado/WiVRn
 (doc 05 §2.3). The 2D story is the known gap: **no in-tree Wayland compositor in the current
 revision**; 2D apps get `FLAT_WAYLAND_DISPLAY` forwarded to a *client* app (Flatland) that is
-expected to be the panel compositor (doc 05 §2.3, §11 Q2 — the packaging/decision hole spatial-os
+expected to be the panel compositor (doc 05 §2.3, §11 Q2 — the packaging/decision hole Mura
 flagged). Status: actively developed through September 2026.
 
 ### 2.5 WayVR / wlx-overlay lineage — the zero-new-protocol baseline
@@ -298,14 +298,14 @@ server-routed input (SUIS), fd-passing, dmabuf-with-explicit-sync textures. What
 latency-insensitive clients (the server re-renders your nodes at full XR framerate whether or not
 you're awake — no per-client pacing problem at all), genuinely spatial semantics (zones, fields,
 spatial parenting across clients), and it *exists and runs on Monado today*. What it costs, for
-spatial-os specifically: (a) it re-derives the thesis §5.3.2 argument in reverse — doc 08 §1.2's
+Mura specifically: (a) it re-derives the thesis §5.3.2 argument in reverse — doc 08 §1.2's
 case for Wayland-native (input routed by the display server that owns the surfaces) is abandoned,
 and with it interop with every existing Wayland tool, portal, and protocol; (b) the 2D story is
 *delegated to a client* (Flatland via `FLAT_WAYLAND_DISPLAY`) with no in-tree compositor — doc 05
 §11 Q2's open packaging hole — so "unmodified 2D apps first-class" depends on a second,
 separately-maintained compositor project; (c) the supply chain is branch-pinned Bevy/wgpu forks
 (doc 05 §8, §10). It is the strongest *running* 3D-app platform here, and the right thing to
-*package* as an optional session (doc 05 §9.7) — but adopting its protocol means spatial-os's
+*package* as an optional session (doc 05 §9.7) — but adopting its protocol means Mura's
 shell is no longer a Wayland compositor, which contradicts the Part 1 philosophy the project has
 already committed to.
 
@@ -314,20 +314,20 @@ The most active, most packaged, most used project in the Linux XR shell space (n
 Flatpak-adjacent, WiVRn/Envision integration) defines **zero protocol**: an embedded smithay
 compositor, dmabuf import, quads via `XR_EXTX_overlay`. Lesson one: *the 2D-panels-in-XR problem
 requires no new protocol at all* — an embedded compositor + OpenXR quad layers is sufficient, and
-any spatial-os compositor gets that tier almost for free (smithay/wlroots plumbing that WayVR has
+any Mura compositor gets that tier almost for free (smithay/wlroots plumbing that WayVR has
 already demonstrated end-to-end, including Xwayland). Lesson two: the ceiling is hard — no
 depth-composited shared space, no 3D clients, no cross-app occlusion, input limited to
-laser-onto-plane. WayVR is an overlay accessory to someone else's session; spatial-os needs to
+laser-onto-plane. WayVR is an overlay accessory to someone else's session; Mura needs to
 *be* the session. The gap between WayVR and zxr is precisely the set of things a protocol is for:
 per-view matrices, client depth, 3D input focus.
 
-### 4.4 Recommendation for spatial-os: continue the zxr lineage, refilled from motorcar
+### 4.4 Recommendation for Mura: continue the zxr lineage, refilled from motorcar
 
 Given the constraints — Monado is the runtime (doc 05 §9.1), unmodified 2D Wayland apps are
 first-class by philosophy (doc 08 §1.1), and the user co-authored the original zxr spec and
 intends to continue it — the recommendation is:
 
-**Back the spatial-os compositor with a revised zxr: a Wayland-native, client-renders/
+**Back the Mura compositor with a revised zxr: a Wayland-native, client-renders/
 compositor-composites protocol, implemented in a compositor that is itself an OpenXR client of
 Monado.** The compositor exposes ordinary xdg-shell for 2D apps (WayVR-tier functionality,
 smithay/wlroots-standard) and `zxr-shell-v2` for 3D apps; both composite into one

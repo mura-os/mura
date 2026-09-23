@@ -89,9 +89,9 @@ access.
 
 ## Consequences
 
-- Device contract gains `spatial.xr.sensing.*` (declared facts: gaze, eyelid, face-weight
+- Device contract gains `mura.xr.sensing.*` (declared facts: gaze, eyelid, face-weight
   source/schema, mouth camera, mic channels) populated from the verified matrix in
-  [25 §3](../../research/25-avatar-driving-sensing.md), and a minimal `spatial.xr.avatar.enable`.
+  [25 §3](../../research/25-avatar-driving-sensing.md), and a minimal `mura.xr.avatar.enable`.
   Per-device **S-1 sensing** and **R-1 render** kill-gates precede any model/renderer investment
   ([avatar-persona.md §kill-gates](../avatar-persona.md)).
 - The audio rung needs a small upstream-shaped piece: a Monado `xrt_device` registering
@@ -119,6 +119,6 @@ access.
   detail; it is the degraded-mode schema that audio emitters produce, not a superset
   ([25 §2](../../research/25-avatar-driving-sensing.md)).
 - **OSC (`/avatar/parameters/*`) transport:** rejected — the community's app-level hack;
-  spatial-os has Monado's device layer and a typed protocol.
+  Mura has Monado's device layer and a typed protocol.
 - **Compositor-side driver:** rejected for the ADR 0008 reasons (second clock domain, display
   path risk); the compositor consumes the avatar as a zxr client's colour+depth, nothing more.

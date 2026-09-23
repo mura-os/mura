@@ -29,12 +29,12 @@ realistic ones.
 
 ### 1. Contract modeling
 
-- **`spatial.hardware.ipd.source`** ∈ `fixed | manual | manual-sensed | stored | motorized-auto` —
+- **`mura.hardware.ipd.source`** ∈ `fixed | manual | manual-sensed | stored | motorized-auto` —
   the source of the rendering-IPD value: hardcoded default; unsensed mechanical (user-entered value);
   device-reported mechanism position; per-user stored software value (fixed optics — Lynx-class);
-  eye-tracked motorized servo. Plus `spatial.hardware.ipd.defaultMeters` (safe pre-auth/greeter
+  eye-tracked motorized servo. Plus `mura.hardware.ipd.defaultMeters` (safe pre-auth/greeter
   default, per ADR 0007).
-- **`spatial.adaptation.eyes`** joins the per-subsystem backend matrix:
+- **`mura.adaptation.eyes`** joins the per-subsystem backend matrix:
   `none | native | android-backed | device-specific` (default `none` — most targets lack the
   hardware). `android-backed` = the donor's ET service closure; `native` = our own pipeline on
   directly accessible cameras; `device-specific` = bespoke (e.g. vendor DSP protocol).
@@ -92,7 +92,7 @@ are re-resolved at the new encoder position before unfreezing
 
 ## Consequences
 
-- Contract gains `spatial.hardware.ipd.*` and `spatial.adaptation.eyes` with assertions and tests;
+- Contract gains `mura.hardware.ipd.*` and `mura.adaptation.eyes` with assertions and tests;
   the qualification matrix gains per-device rows: *IPD source*, *eye-camera access class*, *ET
   capability*, *iris auth* (values per [29's matrix](../../research/29-eye-hardware-ipd-per-target.md)).
 - Donor pipeline: for `android-backed` eyes, the donor manifest must capture the vendor ET

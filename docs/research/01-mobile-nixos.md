@@ -15,7 +15,7 @@ All paths below are relative to the respective repo root. Unless prefixed with `
 
 **Tow-Boot** is "an opinionated distribution of U-Boot" (`tow-boot/README.md`) by the same author. It solves the layer *below*: turn a board's idiosyncratic vendor boot process into uniform, EBBR-ish, installable platform firmware with a consistent UX (same baud rate everywhere, same boot menu, same installer flow). Mobile NixOS assumes that firmware exists and boots a generic disk image off it — `devices/pine64-pinephone/README.adoc:8-11` ("It is recommended to install Tow-Boot to dedicated storage... Mobile NixOS is tested with Tow-Boot").
 
-For spatial-os the pairing matters more than either project individually: **the boot-chain problem and the OS-image problem are deliberately separated into two repos with a narrow contract between them.**
+For Mura the pairing matters more than either project individually: **the boot-chain problem and the OS-image problem are deliberately separated into two repos with a narrow contract between them.**
 
 ---
 
@@ -151,7 +151,7 @@ There is no single mechanism; there are **five**, chosen per device by redistrib
 
 **(a) Pinned third-party firmware repo — the happy path.** `devices/oneplus-enchilada/firmware/default.nix` does a `fetchFromGitLab` of `sdm845-mainline/firmware-oneplus-sdm845` at a fixed rev + sha256, then reshuffles `lib/firmware/postmarketos/*` up one level. Always tagged `meta.license = lib.licenses.unfree` with the comment *"We make no claims that it can be redistributed."*
 
-**(b) Extraction from a pinned vendor OS image** — the donor-image pattern spatial-os needs, in ~25 lines (`devices/families/mainline-chromeos-sc7180/firmware/non-redistributable.nix`): `fetchzip` a specific ChromeOS recovery `.bin.zip` from `dl.google.com`, then
+**(b) Extraction from a pinned vendor OS image** — the donor-image pattern Mura needs, in ~25 lines (`devices/families/mainline-chromeos-sc7180/firmware/non-redistributable.nix`): `fetchzip` a specific ChromeOS recovery `.bin.zip` from `dl.google.com`, then
 
 ```26:39:references/mobile-nixos/devices/families/mainline-chromeos-sc7180/firmware/non-redistributable.nix
   echo ":: Extracting $part from ChromeOS image"
@@ -406,7 +406,7 @@ Honest summary: mobile-nixos solves *first install* and *in-place userspace upda
 
 ---
 
-## 9. What spatial-os should adopt
+## 9. What Mura should adopt
 
 1. **The four-term taxonomy (system-type / SoC / family / device), with families as plain `imports`.** It maps onto the headset landscape: system-type ∈ {`android-bootimg`, `abl-chainload-uboot`, `steamos-uefi`}, SoC ∈ {XR2 Gen1, XR2+ Gen2, SD845, Van Gogh…}, family ∈ {Quest-family, Pico-family}, device ∈ individual headsets. A 25-line `oneplus-enchilada` and a 19-line `acer-lazor` are the proof the decomposition works (`doc/in-depth/devices.adoc`).
 
@@ -438,7 +438,7 @@ Honest summary: mobile-nixos solves *first install* and *in-place userspace upda
 
 ---
 
-## 10. What spatial-os should reject
+## 10. What Mura should reject
 
 1. **Do not replace stage-1 with a bespoke language runtime.** The mruby init (`boot/`, 70 `.rb` files + LVGL GUI + a custom mruby builder overlay + a native loader) is the largest maintenance liability in the repo, and it exists mostly to get a pretty splash and a touch recovery menu. Modern NixOS has `boot.initrd.systemd`, which gives generation selection, Plymouth, fsck, LUKS, and kexec for free and is maintained by someone else. Use it; add device-specific units where mobile-nixos uses tasks.
 
@@ -456,7 +456,7 @@ Honest summary: mobile-nixos solves *first install* and *in-place userspace upda
 
 8. **Do not leave the update story as "`nixos-rebuild` and good luck."** For devices that boot from `fastboot`-flashed partitions, with users who aren't Nix experts, boot-artifact lifecycle is a feature, not an afterthought. mobile-nixos' own answer (`stage-0` kexec) is enabled by exactly zero in-tree devices.
 
-9. **Do not duplicate infrastructure across sibling repos.** `tow-boot/support/image-builder/` is a copy of `mobile-nixos/overlay/image-builder/`. If spatial-os grows a boot-firmware sibling, factor the image builder into a shared flake input on day one.
+9. **Do not duplicate infrastructure across sibling repos.** `tow-boot/support/image-builder/` is a copy of `mobile-nixos/overlay/image-builder/`. If Mura grows a boot-firmware sibling, factor the image builder into a shared flake input on day one.
 
 10. **Do not treat `nixos-unstable` as the only supported base** unless prepared to pay the tax. `README.adoc:19` — *"Mobile NixOS is only expected to build successfully against the **unstable** branch of Nixpkgs"* — plus a HEAD commit titled `fix/nixpkgs-2026-07` tells you the steady-state maintenance load.
 
@@ -466,10 +466,10 @@ Honest summary: mobile-nixos solves *first install* and *in-place userspace upda
 
 Worth stating plainly, because it calibrates how much of the above to trust.
 
-- **The tree has shrunk.** `devices/` currently holds 12 entries: `acer-juniper`, `acer-lazor`, `asus-dumo`, `lenovo-krane`, `lenovo-wormdingler`, `motorola-potter`, `oneplus-enchilada`, `oneplus-fajita`, `pine64-pinephone`, `pine64-pinephonepro`, `pine64-pinetab`, `uefi-x86_64`. Only **three** are Android-boot donor devices, and one (`motorola-potter`) is `supportLevel = "broken"`. What survived is Chromebooks and PINE64 — mainline kernels, cooperative bootloaders. **The Android-donor path is the least-exercised part of the codebase, and it is exactly the path spatial-os needs.**
+- **The tree has shrunk.** `devices/` currently holds 12 entries: `acer-juniper`, `acer-lazor`, `asus-dumo`, `lenovo-krane`, `lenovo-wormdingler`, `motorola-potter`, `oneplus-enchilada`, `oneplus-fajita`, `pine64-pinephone`, `pine64-pinephonepro`, `pine64-pinetab`, `uefi-x86_64`. Only **three** are Android-boot donor devices, and one (`motorola-potter`) is `supportLevel = "broken"`. What survived is Chromebooks and PINE64 — mainline kernels, cooperative bootloaders. **The Android-donor path is the least-exercised part of the codebase, and it is exactly the path Mura needs.**
 - **CI covers very little.** `release.nix`'s `tested` aggregate is `uefi-x86_64`, `motorola-potter`, `asus-dumo`, the `hello`/`phosh` examples, and the cross canaries (`release.nix:289-329`). `README.adoc:47-50`: *"There is no published artifacts for the time being."*
 - **But it is not dead.** HEAD is 2026-07, the pin is current, PinePhone tracks a 2025-10 kernel. Active maintenance, narrow device set.
-- **Cross-compilation is real but partial.** `modules/system-target.nix` auto-derives `nixpkgs.buildPlatform` when host ≠ local (with a `tryEval` on `config.nixpkgs.localSystem` to tolerate pure/flake evals), `release.nix:101-113` builds aarch64 and armv7l from x86_64, and dedicated "cross-canary" derivations are aggregated into a Hydra job (`release.nix:264-278`). Where it breaks, it breaks in userspace: `modules/cross-workarounds.nix` force-disables all NetworkManager plugins under cross and *neuters* `btrfs-progs` entirely on armv7l with a `lib.warn`. Expect cross to cover kernel + initrd + base system and to need native aarch64 builders (or binfmt) for a full desktop stack. For spatial-os — mostly aarch64, one x86_64 target — plan native aarch64 builders as the primary path, cross as the fast-iteration path.
+- **Cross-compilation is real but partial.** `modules/system-target.nix` auto-derives `nixpkgs.buildPlatform` when host ≠ local (with a `tryEval` on `config.nixpkgs.localSystem` to tolerate pure/flake evals), `release.nix:101-113` builds aarch64 and armv7l from x86_64, and dedicated "cross-canary" derivations are aggregated into a Hydra job (`release.nix:264-278`). Where it breaks, it breaks in userspace: `modules/cross-workarounds.nix` force-disables all NetworkManager plugins under cross and *neuters* `btrfs-progs` entirely on armv7l with a `lib.warn`. Expect cross to cover kernel + initrd + base system and to need native aarch64 builders (or binfmt) for a full desktop stack. For Mura — mostly aarch64, one x86_64 target — plan native aarch64 builders as the primary path, cross as the fast-iteration path.
 
 ---
 
@@ -540,19 +540,19 @@ Tow-Boot owns SoC bring-up, DRAM init, ATF/TF-A, boot menu, boot-source priority
 
 The contract is thin and legible: mobile-nixos' `u-boot` system type writes `boot.scr` and `mobile-nixos/{boot,recovery}/…` into an ext4 partition labelled `boot` and assumes some U-Boot will find it. Mobile NixOS never builds U-Boot. Tow-Boot never builds a kernel for the OS — though it does build a tiny Celun-based Linux for its graphical touch installer (`tow-boot/embedded-linux-os/`, `tow-boot/modules/tow-boot/installer.nix:414-431`).
 
-**spatial-os should copy this seam:** a separate, small, independently-versioned "spatial-boot" component handling ABL chainloading, U-Boot/EDK2, and firmware installation/update, with the OS image builder depending on nothing but "a boot environment that can load a kernel + initrd + DTB from a known partition."
+**Mura should copy this seam:** a separate, small, independently-versioned "mura-boot" component handling ABL chainloading, U-Boot/EDK2, and firmware installation/update, with the OS image builder depending on nothing but "a boot environment that can load a kernel + initrd + DTB from a known partition."
 
 ---
 
 ## 13. Open questions
 
-1. **Boot image header v3/v4 and `vendor_boot`.** Neither repo handles it. Does spatial-os vendor AOSP's `mkbootimg.py`/`unpack_bootimg.py`, or write a Nix-native packer? How do `vendor_ramdisk` fragments and `bootconfig` interact with a NixOS initrd? (Gap relative to `overlay/mkbootimg/`, `system-types/android/bootimg.nix`.)
+1. **Boot image header v3/v4 and `vendor_boot`.** Neither repo handles it. Does Mura vendor AOSP's `mkbootimg.py`/`unpack_bootimg.py`, or write a Nix-native packer? How do `vendor_ramdisk` fragments and `bootconfig` interact with a NixOS initrd? (Gap relative to `overlay/mkbootimg/`, `system-types/android/bootimg.nix`.)
 
 2. **Blob acquisition for XR-specific hardware.** The donor-image pattern assumes a downloadable vendor image with a stable URL. Quest/Pico firmware is neither freely downloadable nor stably hosted. Does the runtime-`/vendor`-mount approach become the *primary* mechanism, and if so, how do we characterise reproducibility when a key input lives on the user's device?
 
 3. **Where does `stage-0`-style kexec fit?** It is the only mechanism either repo offers for updating a kernel without reflashing, and it is used by no device. Is chainloading U-Boot from ABL (Tow-Boot's model) a better answer, or do we need both — kexec as the fallback where ABL chainloading isn't achievable?
 
-4. **A/B slots.** mobile-nixos models A/B as three booleans plus a mark-successful unit (`system-types/android/default.nix:89-126`, `modules/boot-control.nix`). Headsets that ship A/B give us real rollback — but does spatial-os drive slot switching itself (write inactive, flip, confirm) or defer to the vendor bootloader? What counts as a *successful* boot on a device with no display until compositor start?
+4. **A/B slots.** mobile-nixos models A/B as three booleans plus a mark-successful unit (`system-types/android/default.nix:89-126`, `modules/boot-control.nix`). Headsets that ship A/B give us real rollback — but does Mura drive slot switching itself (write inactive, flip, confirm) or defer to the vendor bootloader? What counts as a *successful* boot on a device with no display until compositor start?
 
 5. **Kernel sharing across a family.** Can one XR2 kernel + per-device DTB serve multiple headsets, as the family model assumes? Or do vendor forks diverge enough per device that `family` degenerates to "shared metadata only"? This determines whether the abstraction pays for itself.
 
@@ -562,4 +562,4 @@ The contract is thin and legible: mobile-nixos' `u-boot` system type writes `boo
 
 8. **Signing.** Depthcharge images here are signed with public devkeys (`system-types/depthcharge/default.nix:81-83`); Android images are unsigned. Unlocked headsets mostly don't verify — but for AVB-enforcing bootloaders, or user-owned keys, where does key management live in the build?
 
-9. **Who owns the display/tracking hardware description?** mobile-nixos has `mobile.hardware.screen.{width,height}` and a pile of framebuffer quirks (`modules/quirks/framebuffer.nix`, `modules/quirks/qualcomm/msm-fb-notify.nix`). An XR distro needs per-device lens/panel/IMU/tracking metadata as a first-class concern. Is that a `spatial.hardware.hmd.*` namespace in the module system, or external data (à la a Monado device database) that the build merely packages?
+9. **Who owns the display/tracking hardware description?** mobile-nixos has `mobile.hardware.screen.{width,height}` and a pile of framebuffer quirks (`modules/quirks/framebuffer.nix`, `modules/quirks/qualcomm/msm-fb-notify.nix`). An XR distro needs per-device lens/panel/IMU/tracking metadata as a first-class concern. Is that a `mura.hardware.hmd.*` namespace in the module system, or external data (à la a Monado device database) that the build merely packages?

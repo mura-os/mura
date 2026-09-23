@@ -5,7 +5,7 @@
 let
   pkgs = nixpkgs.legacyPackages.${system};
 in
-pkgs.runCommand "spatial-protocols-check"
+pkgs.runCommand "mura-protocols-check"
 {
   nativeBuildInputs = [ pkgs.libxml2 pkgs.wayland-scanner ];
   src = ../protocols;

@@ -43,7 +43,7 @@ the assumptions it is meant to encode.
      unsupported modes produce no flashable output.
 
 3. **The unlock-to-flash workflow is not represented by the flasher table.**
-   - **Where:** `device-contract.md` §`spatial.deployment.*`; `images-and-updates.md` §Build never
+   - **Where:** `device-contract.md` §`mura.deployment.*`; `images-and-updates.md` §Build never
      flashes; `07-device-landscape.md` device-specific boot-chain sections.
    - **Problem:** `flashMethod = fastboot|heimdall|edl-qdl|…` models a command, not the stateful
      workflows described by the evidence: Quest inactive-slot ABL manipulation, Samsung
@@ -64,7 +64,7 @@ the assumptions it is meant to encode.
    - **Why it matters:** This can destroy optical calibration, radio identity, attestation, and NV
      state. It is a safety and privacy failure, not merely a packaging bug.
    - **Suggested resolution:** Split partition classes into `vendorPayload`,
-     `preserveInPlace`, `backupOnlySensitive`, and `spatialManaged`. Forbid per-unit classes from
+     `preserveInPlace`, `backupOnlySensitive`, and `muraManaged`. Forbid per-unit classes from
      donor derivations, caches, images, and install manifests by assertion. Model backup/restore as
      device-local installer operations with encrypted handling and explicit redaction.
 
@@ -148,7 +148,7 @@ the assumptions it is meant to encode.
 
 11. **The three backend values are too abstract to be executable contracts.**
     - **Where:** `overview.md` §Hardware-adaptation; `device-contract.md`
-      §`spatial.adaptation.*`; `adr/0003` §Decision.
+      §`mura.adaptation.*`; `adr/0003` §Decision.
     - **Problem:** `android-backed` may mean in-process libhybris, binder service bridge, or LXC,
       which have different kernels, lifecycle, security and filesystem needs. “Optional” also means
       only non-boot-critical; an Android-backed display/tracker may still be mandatory for XR
@@ -207,16 +207,16 @@ the assumptions it is meant to encode.
       claims away from per-unit backup/state and post-build signatures.
 
 16. **The runtime model incorrectly treats WiVRn as a drop-in standalone runtime.**
-    - **Where:** `device-contract.md` §`spatial.xr.*`; `05-xr-userspace.md` §2.2 and §10.
+    - **Where:** `device-contract.md` §`mura.xr.*`; `05-xr-userspace.md` §2.2 and §10.
     - **Problem:** The contract offers `runtime = monado|wivrn`, but the research says WiVRn's
       headset client is an Android OpenXR application using the vendor runtime; its server role is
       a PC/host runtime. That does not establish WiVRn as the native appliance runtime on a
-      spatial-os headset.
+      Mura headset.
     - **Why it matters:** The option implies service and image configurations that have not been
       defined or demonstrated.
     - **Suggested resolution:** Keep Monado as the only initial on-device runtime. Model WiVRn
       separately as an optional streaming role with explicit client/server placement after a real
-      spatial-os use case is proven.
+      Mura use case is proven.
 
 ## Non-blocking concerns
 
@@ -288,15 +288,15 @@ down the following:
 
 - [ ] Define the exact Nix option type for a pinned source (`path`, `fetchTree` input, derivation, or
   a typed source submodule); “pinned src” is not a type.
-- [ ] Define `spatial.kernel.contract` as a list/set of named categories, including valid names,
+- [ ] Define `mura.kernel.contract` as a list/set of named categories, including valid names,
   merge behavior, severity, and unknown-category failure.
 - [ ] Decide whether `.config` or `structuredExtraConfig` is authoritative and how the other is
   derived/validated.
 - [ ] Split eval-time kernel assertions from realization-time final-`.config` checks; explicitly
   forbid IFD.
 - [ ] Define which checks default `nix flake check` evaluates/builds and which are CI shards.
-- [ ] Define build platform versus host/target platform in `spatialSystem` and flake output names.
-- [ ] Add the missing `spatial.hardware.*` schema used by the sample.
+- [ ] Define build platform versus host/target platform in `muraSystem` and flake output names.
+- [ ] Add the missing `mura.hardware.*` schema used by the sample.
 - [ ] Type display topology: panel count, resolution per panel, physical size, refresh modes,
   orientation, DRM connector mapping, and stereo layout.
 - [ ] Type camera and sensor topology sufficiently to describe simulated and physical devices,
@@ -313,14 +313,14 @@ down the following:
   backend, expected OpenXR test app, and pass condition.
 - [ ] Define whether the VM must launch StardustXR; if so, specify session user, D-Bus, XDG runtime,
   socket activation, and headless/windowed display setup.
-- [ ] Define `spatial.xr.runtime` initial scope; remove or separately model WiVRn.
+- [ ] Define `mura.xr.runtime` initial scope; remove or separately model WiVRn.
 - [ ] Type Monado revision and patches, including whether family/device values may override each
   other and how patch order is fixed.
 - [ ] Define driver option names and map them to known `XRT_BUILD_DRIVER_*` values with rejection of
   unknown names.
 - [ ] Define compositor backend dependencies and whether `wayland-direct` includes/provides the
   DRM-lease compositor.
-- [ ] Define `spatial.xr.environment` merge and secret policy; environment values must never be a
+- [ ] Define `mura.xr.environment` merge and secret policy; environment values must never be a
   credential channel.
 - [ ] Define calibration path entries: source class, mount, ownership, permissions, requiredness,
   schema version, and whether content is per-unit.
@@ -328,7 +328,7 @@ down the following:
   health probe, criticality, and readiness contribution.
 - [ ] Replace backend defaults with either explicit selections or capability-driven defaults that
   fail closed when family evidence is absent.
-- [ ] Specify `spatial.deployment.partitions` fields: stable identifier, source class, slot, size,
+- [ ] Specify `mura.deployment.partitions` fields: stable identifier, source class, slot, size,
   filesystem, update owner, preservation class, and permitted operations.
 - [ ] Remove `persist`/calibration/NV from image-source and donor-pass-through types.
 - [ ] Define Android stage-1, rootfs location and slot-selection options even if the VM does not use
@@ -344,7 +344,7 @@ down the following:
   physical `xr-functional` requirements.
 - [ ] Specify the NixOS module import/merge order; the prose alternates between
   device→family→SoC→common and device→SoC-family→common.
-- [ ] Define what `spatialSystem` returns internally before projecting named flake outputs; avoid an
+- [ ] Define what `muraSystem` returns internally before projecting named flake outputs; avoid an
   untyped public grab-bag without making implementation impossible.
 - [ ] Define the smallest scaffold success test: evaluation, VM boot, Monado socket activation,
   active-runtime manifest correctness, and one simulated OpenXR frame/health result.

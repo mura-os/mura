@@ -143,7 +143,7 @@ Qualcomm's XR2+ Gen 2 product brief states that the upgraded ISP and full-color 
 The same brief lists two image front ends capable of 12 MP at 90 FPS for video see-through and 12 concurrent cameras ([official product brief](https://docs.qualcomm.com/doc/87-73622-1/87-73622-1_REV_A_Snapdragon_XR2__Gen_2_Platform_Product_Brief.pdf)).
 Qualcomm does not define the measurement endpoints, camera exposure assumptions, display scan position, reprojection mode, resolution, or image-processing configuration in that brief.
 The brief also says results vary by OEM implementation and other factors ([official product brief](https://docs.qualcomm.com/doc/87-73622-1/87-73622-1_REV_A_Snapdragon_XR2__Gen_2_Platform_Product_Brief.pdf)).
-Accordingly, “12 ms” is evidence of platform capability/targeting, not a guaranteed photon-to-photon latency for spatial-os.
+Accordingly, “12 ms” is evidence of platform capability/targeting, not a guaranteed photon-to-photon latency for Mura.
 
 ## Part 1 conclusion — realistic XR2+ Gen 2 Linux backends
 
@@ -330,7 +330,7 @@ Use it to guide tiling, PTQ, and layout experiments rather than as a clone targe
 - **StreamSplat 2608.01659:** real, but code is only promised upon acceptance and the method is persistent 3DGS ([paper](https://arxiv.org/abs/2608.01659)).
 - **StreamSplat 2506.08862:** real ICLR 2026 work, but dynamic uncalibrated 3D reconstruction is outside the depth hot path ([paper](https://arxiv.org/abs/2506.08862v2)).
 - **Mobile-GS:** real, but mobile Vulkan code is withheld and the task is rendering an already built Gaussian scene ([repo](https://github.com/xiaobiaodu/mobile-gs)).
-- **Flux-GS:** real and Apache-2.0, but clone only if spatial-os starts a mobile Gaussian renderer workstream ([repo](https://github.com/xiaobiaodu/Flux-GS)).
+- **Flux-GS:** real and Apache-2.0, but clone only if Mura starts a mobile Gaussian renderer workstream ([repo](https://github.com/xiaobiaodu/Flux-GS)).
 - **LagerNVS:** real, but high-end feed-forward NVS is not an XR2 stereo backend ([CVPR paper](https://openaccess.thecvf.com/content/CVPR2026/html/Szymanowicz_LagerNVS_Latent_Geometry_for_Fully_Neural_Real-time_Novel_View_Synthesis_CVPR_2026_paper.html)).
 - **LiveStre4m:** real, but 14 FPS-class multi-view NVS and an unclear code license make it unsuitable here ([paper](https://arxiv.org/abs/2604.06740), [repo](https://github.com/pedro-quesado/LiveStre4m)).
 - **VoroTracing:** real and fast on RTX 5090, but a desktop differentiable NVS renderer is not evidence for XR2 feasibility ([paper](https://arxiv.org/html/2608.17682)).

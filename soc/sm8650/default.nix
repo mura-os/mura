@@ -8,5 +8,5 @@
 # for VM proofs and early bring-up.
 { lib, ... }:
 {
-  spatial.hardware.soc = lib.mkDefault "sm8650";
+  mura.hardware.soc = lib.mkDefault "sm8650";
 }

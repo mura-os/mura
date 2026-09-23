@@ -9,7 +9,7 @@
 {
   imports = [ ../../soc/sm8650 ../../families/uefi-rauc ];
 
-  spatial.device = {
+  mura.device = {
     codename = "deckard";
     vendor = "valve";
     name = "Valve Steam Frame";
@@ -18,7 +18,7 @@
     maintainers = [ ];
   };
 
-  spatial.hardware = {
+  mura.hardware = {
     displays = 2;
     # 2160x2160 per eye LCD, 72-120 Hz (144 experimental) — doc 07.
     panel = { width = 2160; height = 2160; refresh = 90; };
@@ -26,9 +26,9 @@
 
   # First real donor: byte-verified reconstruction of Valve's VR-channel update
   # payload (doc 33). localOnly; never fetched by nix build.
-  spatial.donor = import ./donor.nix;
+  mura.donor = import ./donor.nix;
 
-  spatial.adaptation = {
+  mura.adaptation = {
     display.backend = "native";
     gpu.backend = "native"; # Adreno 750 / freedreno-turnip upstream
     camera.backend = "native";
@@ -38,15 +38,15 @@
     tracking.backend = "device-specific"; # inside-out CV; no open driver yet
   };
 
-  spatial.xr = {
+  mura.xr = {
     runtime = "monado";
     compositor.backend = "window"; # VM proof: windowed; vk-display on hardware
     environment = { };
   };
 
-  spatial.kernel.contract = [ "systemd" "container" ];
+  mura.kernel.contract = [ "systemd" "container" ];
 
-  spatial.deployment = {
+  mura.deployment = {
     bootScheme = "uefi-rauc";
     abSlots = true;
     flashMethod = "rauc";
@@ -55,10 +55,10 @@
   };
 
   ###### VM-proof userspace (parity with devices/virtual-headset) ######
-  services.getty.autologinUser = lib.mkDefault "spatial";
-  users.users.spatial = {
+  services.getty.autologinUser = lib.mkDefault "mura";
+  users.users.mura = {
     isNormalUser = true;
-    password = "spatial";
+    password = "mura";
     extraGroups = [ "wheel" "video" "input" ];
   };
   security.sudo.wheelNeedsPassword = false;

@@ -27,7 +27,7 @@ is internally inconsistent, the picked side is marked **[picked]** and the alter
   `zwp` prefix its interfaces carry. We follow the modern form: protocol name matches the
   interface namespace and carries `_v1` (so `zspatial_toplevel_export_v1`, `zxr_shell_v2`).
 - **Copyright block**: first child of `<protocol>`. Upstream embeds the full MIT license text
-  (xdg-shell.xml:4-30); spatial-os files use `SPDX-License-Identifier: MIT` plus attribution
+  (xdg-shell.xml:4-30); Mura files use `SPDX-License-Identifier: MIT` plus attribution
   instead, with **real names** — attribution lines name people or legal entities with years,
   never a bare collective. When a protocol continues prior work, stack lineage copyright lines
   the way upstream does: ext-workspace-v1.xml:3-6 credits Billington 2019 / Bozhinov 2020 /
@@ -212,7 +212,7 @@ v2 does not inherit their era's shortcuts, not to diminish them.
   unit "specified in meters" for a projection matrix (:128); descriptions carry typos
   ("copositor", "tradtional", :5-6) and single-line run-on paragraphs (:41-44).
 
-## 8. spatial-os addenda
+## 8. Mura addenda
 
 - **Namespace policy** (protocols/README.md "Namespace and governance posture"): `zspatial_`/`zxr_`
   are local experimental namespaces; nothing in this tree is an upstream protocol, and 2D

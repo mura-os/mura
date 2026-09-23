@@ -131,7 +131,7 @@ the shape list in `UnifiedEyeData`.
   (`arkit2flame_model.py:40`) and `mediapipe-blendshapes-to-flame/` adapters.
 - FB2 → UE for Quest Pro lives in out-of-corpus VRCFT modules (REPORTED; module registry).
 
-**Recommendation for spatial-os:** normalize the driver's semantic channel namespace to
+**Recommendation for Mura:** normalize the driver's semantic channel namespace to
 **Unified Expressions (88) + a separate typed gaze/lid/pupil block + jaw & head pose**, i.e. UE's
 factoring, not its C# types. Reasons: (1) it is the only schema that is a superset of FB2, HTC,
 ANDROID *and* ARKit — every verified source maps into it without loss, and published mappings
@@ -211,7 +211,7 @@ avatars and any downstream calibration.
 
 ---
 
-## 5. Adopt / reject / open questions for spatial-os
+## 5. Adopt / reject / open questions for Mura
 
 **Adopt (backed by verified code):**
 1. **Monado owns the expression clock domain**, extending ADR 0008 to face/gaze: the avatar driver
@@ -222,7 +222,7 @@ avatars and any downstream calibration.
    service should also *re-publish* whatever it synthesizes as a Monado face device (an
    `xrt_device` with the FB2 visual and/or audio input), so ordinary OpenXR clients (Overte,
    Resonite-likes) get degraded-mode Personas for free through the standard extension.
-3. **Device contract options** under `spatial.xr.sensing.*` (typed, per device-contract
+3. **Device contract options** under `mura.xr.sensing.*` (typed, per device-contract
    conventions): `gaze = none|combined|per-eye`, `eyelid = none|weights|openness`,
    `faceWeights = none|fb2-visual|fb2-audio|android|htc`, `mouthCamera = none|internal|addon`,
    `micChannels = int`, each with a `provenance` note. The §3 matrix is the initial population.
@@ -238,18 +238,18 @@ avatars and any downstream calibration.
 - Normalizing to ARKit-52 internally (loses FB2/UE tongue, per-corner lip detail; it's the
   *degraded-mode* schema, not the canonical one).
 - OSC (`/avatar/parameters/*`) as the system transport — it is the community's app-level hack;
-  spatial-os has Monado's device layer.
+  Mura has Monado's device layer.
 - Building on per-eye gaze or pupil diameter as required channels — no verified Linux path
   delivers them today (Galaxy XR's `XR_ANDROID_eye_tracking` is the only candidate and WiVRn
   doesn't transport it).
-- Treating "Steam Frame has eye tracking" as "spatial-os gets gaze on Steam Frame" — different
+- Treating "Steam Frame has eye tracking" as "Mura gets gaze on Steam Frame" — different
   runtime stack, zero evidence of third-party exposure.
 
 **Open questions / kill-gates (per device, before any model work):**
 1. **Signals-present gate:** on the physical device, enumerate that the expected OpenXR extension
    actually lists and that a tracker create + first `xrGetFaceExpressionWeights2FB`/gaze locate
    returns `isValid` within N seconds. (Cheap conformance-style check; runs under
-   `spatial.qualification.acceptanceTests`.)
+   `mura.qualification.acceptanceTests`.)
 2. **Timestamp-usability gate:** sample weights at app rate for 60 s; require monotonic
    `sample_time_ns`, jitter within budget, and skew vs. Monado's clock bounded — WiVRn's rebase
    makes this pass by construction, but Android-path and future native drivers must prove it.

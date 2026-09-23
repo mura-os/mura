@@ -12,11 +12,11 @@ input) and the open 2D-app question in [05-xr-userspace §11](../../research/05-
 
 ## Context
 
-spatial-os needs an XR compositor/shell: the component that puts multiple applications into one
+Mura needs an XR compositor/shell: the component that puts multiple applications into one
 shared 3D space on a headset, keeping unmodified 2D Wayland apps first-class (the Motorcar
 philosophy, [08](../../research/08-wxrc.md) Part 1 §1.1). The user co-authored the original
 `zxr_shell_unstable_v1` protocol for wxrc (2019, with Drew DeVault and Simon Ser) and wants to
-continue that work; it is intended to be the backbone of the spatial-os compositor.
+continue that work; it is intended to be the backbone of the Mura compositor.
 
 The research established five candidate architectures ([10](../../research/10-xr-wayland-protocol-comparison.md)
 §2), spanning "no new protocol" to "leave Wayland entirely":
@@ -98,7 +98,7 @@ make upstreaming a realistic goal, not a fork.
 wxrc's GLES2 + `XR_MNDX_egl_enable` path ties the compositor to Monado and to a GL interop Vulkan
 never needed ([08 §2.5](../../research/08-wxrc.md), [09 §2](../../research/09-wxrc-ecosystem-gap-2026.md)).
 Target **Vulkan with `XR_KHR_vulkan_enable2`**: Khronos-ratified (not the provisional MNDX
-extension), matches Monado's native Vulkan path and the rest of the spatial-os XR stack
+extension), matches Monado's native Vulkan path and the rest of the Mura XR stack
 (StardustXR's `dmatex` is Vulkan+dmabuf+syncobj), and provides the external-memory/modifier/
 sync primitives the dmabuf depth path needs. GLES2+MNDX remains available only as a throwaway
 bring-up shortcut, never the production target.
@@ -160,8 +160,8 @@ protocol is finished, and it directly closes the open 2D-app question in
 
 ## Consequences
 
-- A new module surface is added: `spatial.xr.shell` selecting the compositor/session
-  (`zxr` = the spatial-os compositor | `stardust` | `wayvr` | `none`), and a compositor backend
+- A new module surface is added: `mura.xr.shell` selecting the compositor/session
+  (`zxr` = the Mura compositor | `stardust` | `wayvr` | `none`), and a compositor backend
   option. [overview.md](../overview.md) and `modules/xr/` are updated to reflect that the shell/2D
   path is now a defined layer, not an open question.
 - The reusable assets from the lineage are the **zxr protocol design** and the **thesis philosophy**
@@ -213,5 +213,5 @@ protocol is finished, and it directly closes the open 2D-app question in
   substrate forecloses the client-depth 3D tier; five-upstream patch carry; desktop-first session
   model), but adopted as a **design donor** for this ADR's 2D tier (the five WM-core seams, the
   XR-preflight and dmabuf-format-filter patterns) and reserved as an optional session
-  (`spatial.xr.shell = kwin-vr`). Its topology — one process, one projection layer, ray→plane
+  (`mura.xr.shell = kwin-vr`). Its topology — one process, one projection layer, ray→plane
   input, zero-copy dmabuf — independently validates this ADR's shape at daily-driver quality.

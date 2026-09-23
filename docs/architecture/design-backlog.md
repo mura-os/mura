@@ -51,13 +51,13 @@ spikes on real hardware, then the *proven* path is encoded — not designed spec
 ## Deferred to pre-release design (not needed for first boot, needed before a release)
 
 - **#4 / #5 Per-unit state model.** Split partition classes (`vendorPayload` / `preserveInPlace` /
-  `backupOnlySensitive` / `spatialManaged`); forbid per-unit classes from donor derivations, caches,
+  `backupOnlySensitive` / `muraManaged`); forbid per-unit classes from donor derivations, caches,
   images, and manifests by assertion; define versioned state domains, migration edges, and a
   no-mark-success-until-validated rule. (The current `keepVerbatim` conflation is a known gap; the
   contract's `protectedPartitions` is the placeholder.)
 - **#8 Device × variant × check evaluation strategy.** Lazy per-device output constructors, a cheap
   eval-only inventory, CI shards, and an explicit build-vs-host-vs-target platform model in
-  `spatialSystem`.
+  `muraSystem`.
 - **#9 / tiers evidence.** Separate static / build / VM / hardware-automated / manual evidence
   classes; signed qualification records bound to device revision + donor hash + output hash + test
   version, with freshness policy. CI validates evidence; it does not pretend to run absent hardware.
@@ -88,7 +88,7 @@ duplicated here.
 
 ## Scope decisions
 
-- **App distribution/installation is out of scope** (2026-09-23). spatial-os installs NixOS onto
+- **App distribution/installation is out of scope** (2026-09-23). Mura installs NixOS onto
   the device; after that the user owns a PC and brings whatever medium they want (nix profiles,
   Flatpak, plain binaries) — the OS does not ship an app store or bless a distribution channel.
   What *is* in scope is the launcher (desktop-entry + icon-theme consumption; registry §5) and
@@ -100,7 +100,7 @@ duplicated here.
 ## Standing rule from the review — status update (2026-09-23)
 
 The **uefi-rauc family's spike is done**: the Steam Frame donor was reconstructed, byte-verified,
-and inventoried, and a spatial-os image mirroring its slot architecture boots and A/B-updates in a
+and inventoried, and a Mura image mirroring its slot architecture boots and A/B-updates in a
 VM ([33 §9–§10](../research/33-steam-frame-donor.md)). Generalizing uefi-rauc machinery
 (mark-good service, bundle builder, bootconf backend) is therefore now licensed *for that family*.
 The Android-family machinery (`lib/donor` automation, android-bootimg) remains gated on the Lynx

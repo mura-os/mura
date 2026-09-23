@@ -18,8 +18,8 @@ solves XR-stack pinning and cross-pinning ([05](../../research/05-xr-userspace.m
 
 ## Decision
 
-- **One integration path.** `nixosModules.default` (the `spatial.*` module set) plus
-  `spatialSystem = { device, ... }: …` (mirrors `lib.robotnixSystem`,
+- **One integration path.** `nixosModules.default` (the `mura.*` module set) plus
+  `muraSystem = { device, ... }: …` (mirrors `lib.robotnixSystem`,
   [04](../../research/04-nix-imaging.md) §9 item 1). No second entry point; any convenience alias is
   thin.
 - **Typed, named, discoverable outputs:** `packages.<system>.<device>-<variant>` and
@@ -50,7 +50,7 @@ solves XR-stack pinning and cross-pinning ([05](../../research/05-xr-userspace.m
 - Device outputs appear/disappear based on donor+contract availability (null-propagation), matching
   the brick pattern.
 - CI is the enforcement point for contract validity, reproducibility golden hashes, and tier claims.
-- The XR stack's update cadence is largely delegated to nixpkgs-xr; spatial-os pins it and layers
+- The XR stack's update cadence is largely delegated to nixpkgs-xr; Mura pins it and layers
   per-device Monado patches on top.
 
 ## Alternatives considered

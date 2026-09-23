@@ -315,7 +315,7 @@ protection is Unix permissions in `$XDG_RUNTIME_DIR` plus the transport (`:261-2
 
 **Assessment `[I]`:** wprs's resumption semantics are genuinely desirable and unavailable elsewhere,
 but the absence of dmabuf, the version-fragile wire format and the narrower coverage make it
-unsuitable as spatial-os's primary mechanism. Its *idea* — a stateful, idempotent surface-state
+unsuitable as Mura's primary mechanism. Its *idea* — a stateful, idempotent surface-state
 protocol — is the right model if we ever want detachable XR sessions.
 
 ---
@@ -680,7 +680,7 @@ free. `[V]`
 
 ---
 
-## 9. Intersection analysis for spatial-os
+## 9. Intersection analysis for Mura
 
 ### 9.1 (a) Remote 2D apps as native planes — mode 4 vs mode 2
 
@@ -704,9 +704,9 @@ session — fine, and it is how per-app security contexts arise (§8). And waypi
 **both** ends. With several 2048²-class planes that is tens of MiB per app on the headset, which
 matters on a mobile SoC.
 
-### 9.2 (b) Spectrum-style microVM isolation as a spatial-os security option
+### 9.2 (b) Spectrum-style microVM isolation as a Mura security option
 
-Spectrum's architecture maps onto spatial-os cleanly, and its per-VM jailed GPU backend (§5.2) is a
+Spectrum's architecture maps onto Mura cleanly, and its per-VM jailed GPU backend (§5.2) is a
 better story than anything in the waypipe world because the *proxy itself* is unprivileged and
 confined. The shape `[I]`: zxr-shell-v2 listens on a Wayland socket as usual; each untrusted app
 gets a microVM with a virtio-gpu device offering the cross-domain context plus a guest proxy; the
@@ -726,7 +726,7 @@ beyond waypipe itself, and already supports host↔guest and sibling-guest topol
 (`waypipe.scd:259-289`). It costs a diff+compress+copy per damaged region versus cross-domain's
 shared memory, but it is perhaps two orders of magnitude less integration work and brings dmabuf and
 explicit-sync support that wayland-proxy-virtwl lacks. This is the right first implementation of VM
-isolation for spatial-os.
+isolation for Mura.
 
 ### 9.3 (c) Could a zxr-shell-v2 **3D** client be proxied?
 
@@ -772,7 +772,7 @@ forwarding in the guest proxy and a guest GPU context type — both large, both 
 
 ---
 
-## 10. What spatial-os adopts / rejects / defers
+## 10. What Mura adopts / rejects / defers
 
 **Adopt.**
 
@@ -806,7 +806,7 @@ a guest-GPU-context decision; revisit only if `--vsock` copies prove to be the b
 (b) **USB transport** — ship CDC-NCM first, evaluate FunctionFS only against measured latency
 (§7.3). (c) **Session resumption / detachable XR sessions** — waypipe-rs cannot reconnect at all,
 wprs can; if we want "unplug the headset, keep the apps", the wprs model (stateful app-side
-compositor, stateless display-side client) is the right starting point. (d) **A spatial-os-specific
+compositor, stateless display-side client) is the right starting point. (d) **A Mura-specific
 guest proxy** for 3D clients, contingent on all four prerequisites in §9.3.
 
 ---
@@ -836,7 +836,7 @@ guest proxy** for 3D clients, contingent on all four prerequisites in §9.3.
 7. **Does `--title-prefix`-style rewriting generalise?** waypipe demonstrates safe in-place rewriting
    for equal-or-shorter payloads (`tracking.rs:4061-4075`). Should we rewrite `xdg_toplevel` app-ids
    to carry provenance for spatial placement, or take that from the security-context app-id instead?
-8. **Whitelist or pass-through for a future spatial-os guest proxy?** wayland-proxy-virtwl's
+8. **Whitelist or pass-through for a future Mura guest proxy?** wayland-proxy-virtwl's
    whitelist (`relay.ml:1427`) fails closed and is auditable; waypipe's pass-through is
    forward-compatible but forwards protocols nobody reviewed. For an isolation boundary fail-closed
    is probably right — which argues *against* reusing waypipe unchanged as the VM-boundary proxy

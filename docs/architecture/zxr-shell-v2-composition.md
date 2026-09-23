@@ -200,7 +200,7 @@ flowchart TB
     app3dA["3D app A (Vulkan raster)"] -->|"colour+depth+frame meta+sync"| comp
     app3dB["3D app B (GL ray-march)"] -->|"colour+depth+frame meta+sync"| comp
     app2d["2D apps (unmodified xdg-shell)"] -->|"ordinary wl_surface"| comp
-    subgraph compbox [spatial-os compositor - one OpenXR app]
+    subgraph compbox [Mura compositor - one OpenXR app]
         comp["placement + shared camera + frame scheduling + Vulkan depth composition"]
     end
     comp -->|"one composed stereo projection layer"| monado["Monado (unmodified)"]
@@ -317,7 +317,7 @@ missed. zxr treats them as normative from the first interaction milestone:
    "somewhat starts to conflict with Grab All and Recenter" (31 §2.10) — the flag-pile failure
    mode.
 9. **One source of truth for defaults and sizing.** Runtime defaults and the settings schema are
-   generated from a single declaration (for spatial-os: the Nix module/contract emits both), and
+   generated from a single declaration (for Mura: the Nix module/contract emits both), and
    a presentation surface's physical size derives from one declared mapping (angular size or
    px/cm), never double-booked against pixel dimensions. Evidence: the fork's compiled-in follow
    defaults diverge from the kcfg defaults that actually apply, and virtual-screen size is

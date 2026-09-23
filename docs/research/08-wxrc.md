@@ -4,7 +4,7 @@
 written from the primary sources — Forrest Reiling's 2014 Cal Poly Master's thesis
 (`references/motorcar-thesis/thesis.pdf`) and the two protocol XMLs — to capture the *intent* the
 project carries forward. **Part 2 (code-level analysis)** is the deep read of the Motorcar, wxrc,
-and wxrd codebases and their protocols. spatial-os's compositor decision (ADR 0006) is grounded in
+and wxrd codebases and their protocols. Mura's compositor decision (ADR 0006) is grounded in
 Part 1, not just the surviving wire formats.
 
 Primary sources:
@@ -34,7 +34,7 @@ with windowing systems, and should be solved the same way (thesis Abstract, §2.
 The thesis frames this as *extending* the existing windowing system rather than replacing it: build
 3D windowing on top of 2D windowing infrastructure so that (a) the modified surface of the stack is
 minimal and (b) **unmodified 2D applications keep working in the same 3D space** (thesis §6.3, §7.3.3).
-This is the philosophy the user wants carried into spatial-os: the XR shell is a *windowing system*,
+This is the philosophy the user wants carried into Mura: the XR shell is a *windowing system*,
 2D apps are first-class citizens embedded on planes, and hardware is abstracted below a protocol —
 not a bespoke VR application that happens to show windows.
 
@@ -46,7 +46,7 @@ a 3D-transformed window can't receive correctly-transformed input. In Wayland th
 the display server, so it can give a window an arbitrary 3D embedding and still deliver input in the
 window's local coordinate space, and route input by an arbitrary spatial data structure associated
 with the surface rather than the surface rectangle (thesis §5.3.2). That property is exactly what a
-3D windowing system needs. It is also the argument for spatial-os keeping the shell Wayland-native
+3D windowing system needs. It is also the argument for Mura keeping the shell Wayland-native
 rather than adopting a non-Wayland scene-graph IPC.
 
 ### 1.3 The three interpretations of a 3D window
@@ -106,14 +106,14 @@ The thesis (§7.3.2) identifies two timing modes with a real tradeoff: draw-with
 clients can desync from the current head pose) versus wait-for-clients (minimal latency, but one slow
 client drops frames). It proposes the mode could be toggled per client by application profile. For an
 XR compositor this is central; the zxr protocol's own TODOs (below) flag "better timing information"
-as unfinished, so spatial-os's protocol revision must treat frame pacing as first-class.
+as unfinished, so Mura's protocol revision must treat frame pacing as first-class.
 
 ### 1.7 Modularity: compositor library vs. device compositor
 
 Motorcar is deliberately split (thesis §7.3.1) into a reusable compositor *library* (Wayland backend,
 scene graph, compositing logic) and thin *device compositors* that instantiate device-specific classes
 (HMD, 6DoF tracker) and a window manager. Device SDKs stay out of the core. This maps directly onto
-spatial-os's device→adaptation split: the compositor is common; the per-headset display/tracking
+Mura's device→adaptation split: the compositor is common; the per-headset display/tracking
 integration is a device concern. The original device compositor targeted an Oculus Rift DK1 + Razer
 Hydra via a scene graph separating *virtual* nodes (any parent) from *physical* nodes (only physical
 parents) — the tracked-hardware topology.
@@ -135,7 +135,7 @@ system — the compositor owns view+projection, the client owns its model transf
 6DoF input device; zxr **folds everything into one MVP matrix per surface-view**, generalizes "eye" to
 an arbitrary number of `zxr_view_v1` globals, and moves depth from a packed-color-viewport hack to a
 typed `buffer_type` on a composite buffer — but drops input entirely and leaves timing unfinished. A
-2026 spatial-os protocol should keep motorcar's view/projection/model separation and 6DoF input, keep
+2026 Mura protocol should keep motorcar's view/projection/model separation and 6DoF input, keep
 zxr's N-view generalization and typed depth buffers, and finish timing + explicit-sync + dmabuf.
 
 ### 1.9 What Part 2 and the sibling docs must establish
@@ -302,7 +302,7 @@ architectural choice** that matters for the ADR:
 quality," on wlroots 0.15. But its dependencies **xrdesktop and gxr both have 2026-01-12 commits** —
 the Collabora VR framework is *alive* in 2026 even though wxrd is not. So option 2 in ADR 0006
 ("revive wxrd") means adopting a 2023 prototype on stale wlroots that routes through a still-maintained
-but heavyweight xrdesktop/gulkan/gxr/g3k stack — and it would **not** give spatial-os the 3D-windowing
+but heavyweight xrdesktop/gulkan/gxr/g3k stack — and it would **not** give Mura the 3D-windowing
 protocol, because wxrd already dropped it.
 
 ### 2.4 Motorcar (the ancestor): architecture in brief
@@ -318,7 +318,7 @@ view/projection, and the 2D-apps-on-quads mechanism. What wxrc **discarded**: Qt
 the actual depth-compositing implementation (specified in zxr, not wired — §2.1), and the fully
 realized cuboid/portal clipping (zxr has no clipping-mode arg at all — Part 1 §1.8).
 
-### 2.5 Implications for spatial-os
+### 2.5 Implications for Mura
 
 **It is a rewrite, not a port.** Every wlroots touchpoint wxrc uses is from the pre-scene-graph,
 pre-renderer-rework era and is gone or radically changed by wlroots 0.19:
@@ -341,7 +341,7 @@ wlroots 0.19 + a modern renderer is comparable in effort to porting, and yields 
 **The 2026 OpenXR binding decision.** wxrc's GLES2 + `XR_MNDX_egl_enable` path is the fragile part:
 it ties the compositor to Monado and to a GL interop that Vulkan never needed. A 2026 rewrite should
 seriously consider a **Vulkan** renderer with `XR_KHR_vulkan_enable2`, which (a) removes the
-`XR_MNDX_egl_enable` dependency, (b) matches the rest of the spatial-os XR stack (Monado's main
+`XR_MNDX_egl_enable` dependency, (b) matches the rest of the Mura XR stack (Monado's main
 compositor is Vulkan; StardustXR/`dmatex` is Vulkan+dmabuf+syncobj per doc 10), and (c) gives clean
 dmabuf + explicit-sync buffer sharing — which is also how a *real* zxr depth path would finally be
 wired (doc 09 resolves whether GL-on-OpenXR is still viable at all in 2026).
@@ -513,7 +513,7 @@ The draft should read as v1 grown up. Proposal:
   snapshot), `zxr_pointer_6dof_v2` and `zxr_ray_v2` (seat capabilities), `zxr_seat_v2` if the seat
   extension point is ours. Event/arg vocabulary for pacing and sync copies the sibling
   `protocols/zspatial-toplevel-export-v1.xml` (`display_time_hi/lo`, `period_ns`, `cutoff_ns`,
-  `presented`/`discarded`, timeline-fd + `point_hi/lo`) so the two spatial-os protocols read as one
+  `presented`/`discarded`, timeline-fd + `point_hi/lo`) so the two Mura protocols read as one
   family where semantics overlap.
 - **Vocabulary continuity from motorcar** where concepts return: `clipping_mode` with `cuboid` and
   `portal` entries keeps the thesis terminology (Part 1 §1.3) that the whole doc set already uses.

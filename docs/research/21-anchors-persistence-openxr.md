@@ -7,7 +7,7 @@
 - **Verified** means the cited specification, code, or vendor documentation states the claim.
 - **Observed implementation** means cited code implements it, without implying a standard guarantee.
 - **Inference** means a conclusion from verified facts that the source does not itself promise.
-- **Proposal** means a spatial-os design choice.
+- **Proposal** means a Mura design choice.
 - **Unknown** marks an answer not established by reviewed public sources.
 - Local AsciiDoc is treated as primary specification text and checked against generated Registry pages.
 - Vendor documentation is evidence for that vendor's published contract, not every device/release.
@@ -25,7 +25,7 @@ extensions in SDK 1.1.49 on 2025-06-10
 ([release](https://github.com/KhronosGroup/OpenXR-SDK/releases/tag/release-1.1.49);
 [Registry](https://registry.khronos.org/OpenXR/specs/1.1/man/html/XR_EXT_spatial_entity.html)).
 
-**Design conclusion.** spatial-os needs two layers:
+**Design conclusion.** Mura needs two layers:
 1. a map/anchor service owning relocalization, correction, storage, encryption, and policy; and
 2. Monado's standards-facing translation of handles, snapshots, futures, and errors.
 
@@ -329,7 +329,7 @@ and a spatial-frame/camera adjustment compensating
 ([FAQ](https://learn.microsoft.com/en-us/mixed-reality/world-locking-tools/documentation/introfaq)).
 Patents describe transformed local maps and pose-graph correction, proving publication, not use
 ([patent](https://exa.ai/library/legal/patent/xb0hf8wll56pbyr5zfqx5t)).
-### 4.2 Precise spatial-os transform design
+### 4.2 Precise Mura transform design
 **Proposal.** Let `T_A_B` transform coordinates from frame B into frame A.
 - `local`: smooth gravity-aligned live VIO/render frame.
 - `map`: optimized persistent frame; loop closure may change estimates.
@@ -351,7 +351,7 @@ Correction policy can:
 - apply immediately, maximizing physical correctness but visibly popping; or
 - interpolate `T_local_map`, reducing the pop but temporarily allowing misalignment.
 No filter guarantees perfect physical registration and zero visual motion after a discontinuity.
-spatial-os should expose quality/correction state and use bounded, explicit policy.
+Mura should expose quality/correction state and use bounded, explicit policy.
 ### 4.3 Fit with OpenXR spaces
 **Verified.** `xrLocateSpace` locates one space relative to another at requested time
 ([API](https://registry.khronos.org/OpenXR/specs/1.1/man/html/xrLocateSpace.html)).
@@ -488,7 +488,7 @@ processing, retention, and accessibility
 EDPB guidance names avoidance, access limitation, aggregation, pseudonymization, and deletion
 ([guidance](https://www.edpb.europa.eu/system/files/documents/files/file1/edpb_guidelines_201904_dataprotection_by_design_and_by_default_v2.0_en.pdf)).
 
-**Proposal — spatial-os defaults:**
+**Proposal — Mura defaults:**
 - On-device only.
 - No map, descriptor, image, geometry, or UUID leaves the device without explicit sharing.
 - Retain descriptors/landmarks rather than images when measured quality permits.
@@ -595,6 +595,6 @@ Distribution-specific UI, encryption policy, and store implementation may remain
 13. How will tests force cancellation, out-of-order completion, and client death during commit?
 14. Can old plane backends support association, or must the canonical tracker match geometry?
 15. Should anchor `XrSpace` wait for a ratified bridge?
-16. Which Monado patches are upstreamable versus spatial-os service code?
+16. Which Monado patches are upstreamable versus Mura service code?
 The blocking spike is proving cold-start room relocalization, re-establishing `T_local_map`, and
 returning physically correct anchors without exposing or indefinitely retaining raw home imagery.

@@ -1,6 +1,6 @@
 # 12 — Mobile stereo depth: the geometry proxy for passthrough
 
-**Date:** 2026-09-22. Research pass for spatial-os. Depth is the geometry proxy the passthrough
+**Date:** 2026-09-22. Research pass for Mura. Depth is the geometry proxy the passthrough
 compositor needs: from two rectified camera images, produce per-view disparity/depth + confidence,
 fast and stable, on a Qualcomm XR2 / XR2+ Gen 2 class SoC (Adreno GPU / Hexagon NPU). This
 document defines the depth-backend options and the interface the compositor consumes. The
@@ -247,12 +247,12 @@ dataset, 640×480):
   deliberate trade that ties depth quality to head-motion speed.
 - Pose sensitivity: needs only *relative* inter-frame pose; a modified ORB-SLAM3 on their headset
   stays within 0.3° / 0.5 mm inter-frame error, below the noise level where accuracy degrades
-  (their Figure 6). spatial-os gets this pose from Monado's tracker.
+  (their Figure 6). Mura gets this pose from Monado's tracker.
 - Cold start: accuracy converges over the first handful of frames as temporal aggregation fills in
   (their Figure 7) — a backend must report warm-up (e.g. via confidence) rather than emit garbage.
 
 Together: **TC-Stereo supplies the studied mechanism with code; XR-Stereo supplies the existence
-proof that this class of model runs at 30 fps at 640×480 on the exact silicon spatial-os targets —
+proof that this class of model runs at 30 fps at 640×480 on the exact silicon Mura targets —
 in plain float, no quantization, via ONNX.** That existence proof is the single most
 load-bearing external fact in this document.
 
@@ -307,7 +307,7 @@ treated as a 2D tensor whose *channels are disparities*, aggregated with plain 2
   [Fast-FoundationStereo-TRT](https://github.com/ruisv/Fast-FoundationStereo-TRT): "distributed
   under the same NVIDIA non-commercial research license"; the OpenStereo-vendored copy carries
   `references/openstereo/stereo/modeling/models/fast_foundationstereo/LICENSE.txt`, © 2026 NVIDIA)
-  — **unusable in a shipping spatial-os image; fine as an offline teacher only if the license's
+  — **unusable in a shipping Mura image; fine as an offline teacher only if the license's
   research scope covers generating training data — needs legal reading.** Also simply too heavy
   for XR2-class silicon (918 ms on Orin NX, which is faster than an XR2 NPU for fp16).
 
@@ -364,7 +364,7 @@ input 384×512 → output 192×256, SNPE 2.24, S24+ / Snapdragon 8 Gen 3 Hexagon
 i.e. the Hilbert-encoded W8A8 model beats even W8A16 quality at ~2/3 the latency and power —
 **~12 ms per frame for a full stereo network on a phone-class Hexagon**. The technique is
 head+LUT only (~14 % overhead), composable with *any* backbone in §3.1, and directly relevant to
-spatial-os because passthrough will see every terrace on every wall. Directly informs the
+Mura because passthrough will see every terrace on every wall. Directly informs the
 interface: a backend may legitimately return depth as **two 8-bit channels + encoding tag**
 rather than one float channel.
 
@@ -419,7 +419,7 @@ invisible in EPE. TC-Stereo's own evaluation motivation is the temporal version 
 
 ---
 
-## 5. The spatial-os depth-backend interface
+## 5. The Mura depth-backend interface
 
 What the passthrough compositor consumes, designed so classical, learned, and hardware backends
 are interchangeable. Sketch (names illustrative):
@@ -476,7 +476,7 @@ Design decisions, each traceable to the research above:
 
 ---
 
-## 6. What spatial-os should adopt / reject
+## 6. What Mura should adopt / reject
 
 **Adopt:**
 
@@ -539,7 +539,7 @@ view, never the score.
    with IR sensitivity; all surveyed training data is pinhole RGB. Does rectification (with its
    resolution loss at the periphery) plus teacher-distillation close the gap, or is
    native-fisheye stereo (epipolar curves, not lines) eventually required?
-4. **Pose-error robustness at spatial-os quality bar**: XR-Stereo tolerates 0.3°/0.5 mm
+4. **Pose-error robustness at Mura quality bar**: XR-Stereo tolerates 0.3°/0.5 mm
    inter-frame noise (§2.2) — Monado's tracker on the target device needs characterizing against
    that bound, including during fast rotation where passthrough matters most.
 5. **Both-view strategy cost**: shared-backbone two-view inference vs one-view + shader
@@ -555,4 +555,4 @@ view, never the score.
    doc 14.
 8. **XR-Stereo dataset licensing chain**: CC BY 4.0 for the 640×480 subset is fine for training;
    confirm attribution requirements propagate correctly into distributed model weights under the
-   spatial-os licensing policy.
+   Mura licensing policy.

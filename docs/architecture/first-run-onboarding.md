@@ -28,11 +28,11 @@ account database becomes mutable through exactly one authority (provisiond over 
 persist-backed files), and member accounts get a reduced per-user wizard on first login
 (multi-user.md §3). Secrets (PIN hashes, Wi-Fi credentials, device
 keys) are **never Nix option values** — the store is world-readable; they exist only as
-runtime state written by `spatial-provisiond` (§4.2) under protected persistent storage.
+runtime state written by `mura-provisiond` (§4.2) under protected persistent storage.
 
 ## 2. Persistent-state classes (normative)
 
-`/var/lib/spatial` binds onto `/persist/spatial` (pulled in by `spatial-persist-setup.service`;
+`/var/lib/mura` binds onto `/persist/mura` (pulled in by `mura-persist-setup.service`;
 [families/uefi-rauc](../../families/uefi-rauc/default.nix) is the first implementation). The
 subtrees are **classes with different lifecycles**, and every consumer and reset path must
 treat them by class, never the tree as one blob:
@@ -43,7 +43,7 @@ treat them by class, never the tree as one blob:
 | `identity/` | device keys, attestation material | survives | survives; regenerated only by explicit re-provisioning |
 | `enrollment/` | PIN hash, user credentials, user calibration (§5), the provisioning marker | survives | **wiped** |
 | `state/` | update/migration bookkeeping, quarantine records | survives | reset per settings-schema policy |
-| `/persist/userdb/` (multi-user profile; **its own class**, beside `spatial/` — dir 0755, passwd/group 0644, shadow 0000; see [multi-user.md §1.1/§6](multi-user.md)) | userdb | survives | all human rows removed; owner recreated by OOBE |
+| `/persist/userdb/` (multi-user profile; **its own class**, beside `mura/` — dir 0755, passwd/group 0644, shadow 0000; see [multi-user.md §1.1/§6](multi-user.md)) | userdb | survives | all human rows removed; owner recreated by OOBE |
 | machine-id | `/etc/machine-id`, persisted here and committed **before D-Bus/logind start** | **survives** (one identity per unit, not per slot) | **rotated** — privacy; machine identity is not hardware identity |
 
 Per-user preferences and remembered state stay in `$XDG_CONFIG_HOME` / `$XDG_STATE_HOME` on
@@ -52,7 +52,7 @@ Per-user preferences and remembered state stay in `$XDG_CONFIG_HOME` / `$XDG_STA
 ## 3. F1 — silent machine provisioning
 
 One-shot systemd units, no UI, no XR. Work: data-partition growth where the device needs it,
-per-unit key generation into `identity/`, the `/persist/spatial` skeleton (the setup service's
+per-unit key generation into `identity/`, the `/persist/mura` skeleton (the setup service's
 job), settings-store seeding (empty stores + the generation tag), nix-db rehydration where the
 family requires it.
 
@@ -86,8 +86,8 @@ profile the dispatcher sits in `initial_session` the same way (§7).
 **Marker-access semantics (recorded for implementation):** the dispatcher *executes as greetd's
 configured session user* (a root-owned file does not run as root), and the authoritative marker
 sits inside `enrollment/` (0700 root) — so the dispatcher cannot read it directly. A boot-time
-root unit (ordered after `spatial-persist-setup.service`) publishes a **non-secret mirror flag**
-`/run/spatial/provisioned` reflecting the marker's presence; the dispatcher reads only that flag.
+root unit (ordered after `mura-persist-setup.service`) publishes a **non-secret mirror flag**
+`/run/mura/provisioned` reflecting the marker's presence; the dispatcher reads only that flag.
 The alternatives — querying provisiond at dispatch time, or a privileged dispatcher that drops
 credentials before exec — are recorded and rejected for v1 (a socket round-trip or a setuid-ish
 step at every boot, versus one tmpfs stat). The authoritative marker never leaves root
@@ -105,11 +105,11 @@ returned `exec`.
 
 `zxr --oobe` is an **unprivileged wizard UI** — a third restricted compositor mode beside
 `--greeter`, on the same scene machinery, IMU-tier tracking, no client Wayland socket, rendered
-with factory calibration and the safe default IPD (`spatial.xr.ipd.defaultMeters`). It can draw,
+with factory calibration and the safe default IPD (`mura.xr.ipd.defaultMeters`). It can draw,
 read input, and talk to exactly two privileged surfaces:
 
-- **`spatial-provisiond`** — a narrowly scoped root service on a private socket (the
-  spatial-authd shape: SOCK_SEQPACKET, JSON records, one conversation). It owns every
+- **`mura-provisiond`** — a narrowly scoped root service on a private socket (the
+  mura-authd shape: SOCK_SEQPACKET, JSON records, one conversation). It owns every
   provisioning write: PIN-hash creation (argon2, into `enrollment/`), device-key operations,
   and the **provisioning marker**, which is root-owned and committed transactionally (write
   sidecar → fsync → rename) as the *last* act of onboarding. The UI cannot mint, modify, or
@@ -135,7 +135,7 @@ incomplete step if interrupted:
    provisiond's add-account path — the first, self-authorizing conversation, whose bootstrap
    authorization is the provisioning-marker-absent state itself (there is no owner PIN yet to
    re-enter; multi-user.md §1).
-4. **PIN enrollment** — doc 12 option (b): `pam_spatial_pin` verifies an argon2 hash in
+4. **PIN enrollment** — doc 12 option (b): `pam_mura_pin` verifies an argon2 hash in
    `enrollment/`; provisiond writes it. The lock-screen PIN pad and this enrollment share the
    digit-pad scene component (session-auth §2.3's `style=secret` fast path).
 5. **User calibration** (§5): IPD (measured via the ADR 0011 fixation-target wizard where eye
@@ -172,7 +172,7 @@ is reset — on an appliance the final fallback is recovery/wipe, not a root she
 
 ## 7. The MVP path (appliance profile)
 
-Steam Deck model: `spatial.xr.session.autoLogin = "owner"`, no greeter, and F2 runs as the
+Steam Deck model: `mura.xr.session.autoLogin = "owner"`, no greeter, and F2 runs as the
 *first session content* instead of pre-login — same wizard, same provisiond authority, same
 marker; the dispatcher's decision happens inside the session start using the §4.1 continuation
 semantics (launch the wizard and wait, verify the marker committed, then exec the session —

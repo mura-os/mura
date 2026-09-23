@@ -1,7 +1,7 @@
-# spatial-os architecture: foreign-session integration (toplevel export/delegation)
+# Mura architecture: foreign-session integration (toplevel export/delegation)
 
 **Status:** draft design (foreign-session workstream). Specifies how windows owned by *another*
-compositor become first-class floating windows in spatial-os, and the new protocol seam that
+compositor become first-class floating windows in Mura, and the new protocol seam that
 requires. Evidence base: [research/32](../research/32-toplevel-export-prior-art.md) (prior art +
 the R1–R22 requirements distillate), [research/31](../research/31-kwin-vr.md) (the KWin VR fork),
 [research/19](../research/19-wayland-proxying.md) (protocol proxying). Strategy and milestones:
@@ -30,7 +30,7 @@ in-process KWin VR plugin. For future upstream presentation, verbatim and dated
 > that way it just naturally grows into a fork on its own"* — the demand-and-feasibility proof
 > that a mature-DE VR mode is wanted, daily-usable, and unmergeable as an in-process plugin.
 
-spatial-os ([ADR 0012](adr/0012-de-modularity-spinout-seams.md)) and the KWin maintainers arrived
+Mura ([ADR 0012](adr/0012-de-modularity-spinout-seams.md)) and the KWin maintainers arrived
 at the same boundary from opposite directions: the 2D compositor provides windows + input over a
 narrow privileged interface; the XR compositor composes. Nobody has specified that interface.
 This document and the draft XML do.
@@ -47,7 +47,7 @@ KWin-maintainer/Mutter-maintainer persona and revised.
 
 ## 2. The client-integration taxonomy
 
-Four ways a "foreign" application or session appears in spatial-os space. All four land as
+Four ways a "foreign" application or session appears in Mura space. All four land as
 surfaces in zxr's world model (T1 — free-floating, no output binding); they differ in *who owns
 the app* and *what crosses the boundary*:
 

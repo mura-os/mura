@@ -3,5 +3,5 @@
 # the shared kernel base, firmware search paths, and DSP/sensor userspace stack.
 { lib, ... }:
 {
-  spatial.hardware.soc = lib.mkDefault "virtual";
+  mura.hardware.soc = lib.mkDefault "virtual";
 }

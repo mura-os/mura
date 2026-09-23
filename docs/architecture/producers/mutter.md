@@ -10,7 +10,7 @@ full file:line evidence and the R1–R24 matrix are in
 [ADR 0014 §4](../adr/0014-toplevel-delegation-protocol.md) (this brief supersedes its one-line
 GNOME verdict). Code citations are into `references/mutter` @ 888a7b7 (Mutter 51.0),
 `references/gnome-shell`, `references/gnome-remote-desktop`.
-**Budget impact** (inv. 9): none on spatial-os device budgets — this brief plans changes to a
+**Budget impact** (inv. 9): none on Mura device budgets — this brief plans changes to a
 foreign codebase; zxr's consumer-side cost is bounded in the conformance spec's own statement.
 
 ## 1. Verdict
@@ -181,5 +181,5 @@ confirming research/32 §6.2.
    the per-node channel needs working grab/focus evidence from the other two producers before
    Mutter review.
 6. **A named sponsor**: §1's adoption record says a motivated external contributor carries the
-   series; spatial-os (or a contracted GNOME shop) plays that role at M-C+, offering §3's
+   series; Mura (or a contracted GNOME shop) plays that role at M-C+, offering §3's
    independently-defensible MRs (a)–(d) first.

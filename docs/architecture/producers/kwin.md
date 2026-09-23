@@ -10,7 +10,7 @@ contract: [`protocols/zspatial-toplevel-export-v1.xml`](../../../protocols/zspat
 milestone M-B made concrete. Code citations are into `references/kwin` @ d84a316 (master) and
 `references/kwin-vr` @ ccdd46e (the
 [MR !8671](https://invent.kde.org/plasma/kwin/-/merge_requests/8671) fork).
-**Budget impact** (inv. 9): none on spatial-os device budgets (foreign codebase); zxr's
+**Budget impact** (inv. 9): none on Mura device budgets (foreign codebase); zxr's
 consumer-side cost is bounded in the conformance spec's statement.
 
 ## 1. The two sentences this brief answers
@@ -96,7 +96,7 @@ Both satisfy conformance §2.1 verbatim.
 ## 5. Engagement plan (M-B execution)
 
 - **Sequence**: MR 1 and MR 2 first — standalone, self-justifying. The series MRs 3–9 arrive
-  *together with the working consumer*: a live Plasma session's windows floating in spatial-os,
+  *together with the working consumer*: a live Plasma session's windows floating in Mura,
   the conformance §8 tests green against the smithay reference producer (M-A) first. No seam is
   ever in-tree without its user — the fork's five seams sat unmerged precisely because they were
   argued as interfaces without a consumer; the series does not repeat that.
@@ -112,7 +112,7 @@ Both satisfy conformance §2.1 verbatim.
   consumer — with the one honest core cost (MR 4's delegated state) named up front instead of
   discovered in review.
 
-## 6. Relationship to spatial-os milestones
+## 6. Relationship to Mura milestones
 
 Gating unchanged (ADR 0014): M-A (zxr consumer + smithay reference producer, after composition
 M1) precedes any KWin MR beyond 1–2. This brief exists so M-B starts from a verified plan

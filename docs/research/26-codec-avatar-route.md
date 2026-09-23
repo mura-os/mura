@@ -1,7 +1,7 @@
 # Codec-Avatar Route Audit (Learned Universal Expression Latent)
 
 **Audit date:** 2026-09-22
-**Scope:** whether Meta's codec-avatar driving stack (universal 256-d expression latent + headset-image encoder) is recoverable from public artifacts as a v2 upgrade path for the spatial-os Persona system.
+**Scope:** whether Meta's codec-avatar driving stack (universal 256-d expression latent + headset-image encoder) is recoverable from public artifacts as a v2 upgrade path for the Mura Persona system.
 **Method:** read-only study of `references/ava-256` (main + local study branches `study/pr-1`, `study/pr-7`, `study/pr-19`), `references/goliath`, `references/match`, plus paper-level web verification. No builds, no dataset/checkpoint downloads; S3 objects were verified by HTTP `HEAD` only (headers, no payload).
 **Verdict definitions:** as in `docs/research/16-perception-claims-audit.md` — VERIFIED / PARTIAL / UNVERIFIED / FABRICATED.
 
@@ -10,7 +10,7 @@
 The learned-driver route splits into two problems with very different status.
 **Driving an existing Ava-256 subject** is bounded engineering: the universal decoder checkpoint, per-frame dome expression codes, headset-frame ground-truth codes, and full encoder training code are all publicly recoverable, though scattered across three unmerged PRs whose file formats do not quite agree.
 **Enrolling a NEW person into the latent space** is a research project, not bounded engineering: every public path to a code runs through registered meshes + unwrapped textures in Ava topology, produced upstream by closed registration tooling, and no trained headset-encoder or mesh-encoder-for-new-subjects checkpoint is published. MATCH/TEMPEH provides a credible open substitute for the registration step, but nobody has demonstrated the splice.
-For spatial-os this means: ship the semantic control space as v1, and make the Persona control interface a **versioned, opaque-vector-capable contract** so a learned-latent driver can be added without touching the renderer.
+For Mura this means: ship the semantic control space as v1, and make the Persona control interface a **versioned, opaque-vector-capable contract** so a learned-latent driver can be added without touching the renderer.
 
 # Part 1 — ava-256 `main`: what the code-producing path actually is
 
@@ -143,7 +143,7 @@ The code-producing path, verified from source: `registered mesh (7306 verts, Ava
 **New work:** the encoder itself (nothing like it in any studied repo), plus robustness across 256 identities to a *new* face under casual lighting — precisely the generalization problem Bai et al. needed 17K subjects and SSL to solve, albeit for the harder oblique-IR case. Dome lighting is uniform and controlled; casual RGB is not, and Ava-256 contains no lighting variation to train that robustness from.
 **Assessment: trainable today as an experiment; generalization to unseen identities from 256 subjects under uncontrolled lighting is the open research risk.** A hybrid (Route 1 for enrollment/identity, a Route 2-style network for runtime driving, PR-1 code as the trainer with the `encodings_gt.pt` adapter) is the plausible v2 shape.
 
-For the headset-sensing case specifically (the actual spatial-os deployment target), note the sensing mismatch: PR-1 and the ava-256 encoder data assume Quest Pro-style *face-observing* IR cameras. A spatial-os target headset without eye/face cameras cannot use this encoder family at all, which independently justifies keeping the semantic v1 space (drivable from generic gaze/expression estimators) as the floor.
+For the headset-sensing case specifically (the actual Mura deployment target), note the sensing mismatch: PR-1 and the ava-256 encoder data assume Quest Pro-style *face-observing* IR cameras. A Mura target headset without eye/face cameras cannot use this encoder family at all, which independently justifies keeping the semantic v1 space (drivable from generic gaze/expression estimators) as the floor.
 
 ## Route 3 — None/other
 
@@ -157,7 +157,7 @@ Waiting on URAvatar/FiCA-class releases is not a plan (Part 5.3). Goliath does n
 - Research project (months, uncertain): new-person enrollment (Routes 1/2) and casual-conditions robustness. No public artifact demonstrates either.
 - Not blocked: nothing essential is behind Meta-internal walls *for the dataset subjects*, and the MATCH bridge gives the new-person problem a concrete, testable attack.
 
-## Implications for the spatial-os Persona asset format
+## Implications for the Mura Persona asset format
 
 The decisive coupling fact: **a 256-d code is only meaningful relative to a specific decoder checkpoint** (PR-19's codes are literally named `aeparams_1440000.pkl` after the decoder iteration). Therefore the control interface must version the *pair* (control space, renderer/decoder), not just the driver. v1 should reserve:
 

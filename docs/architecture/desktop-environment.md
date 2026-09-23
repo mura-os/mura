@@ -1,7 +1,7 @@
-# The spatial-os desktop environment: the plane model
+# The Mura desktop environment: the plane model
 
 **Status:** draft (Phase B of the desktop-architecture workstream).
-This document gives spatial-os its *horizontal* structure: what a complete spatial-os desktop
+This document gives Mura its *horizontal* structure: what a complete Mura desktop
 environment consists of, organized into planes by authority, with each feature split into
 mechanism / policy / presentation. The per-component inventory (what exists, what's partial, what's
 missing, with evidence) lives in [component-registry.md](component-registry.md); the modularity
@@ -52,7 +52,7 @@ Two questions, plus the boot-time trust root, yields five planes.
 
 ## 2. Terminology: the five traps
 
-The desktop vocabulary spatial-os inherits is overloaded in ways that have historically confused
+The desktop vocabulary Mura inherits is overloaded in ways that have historically confused
 architecture discussions. This document (and the registry and ADRs) uses the following
 disambiguations everywhere; when other documents' wording collides with these, these win.
 
@@ -85,7 +85,7 @@ and D-Bus conventions with no Wayland involvement (sources pinned at
 `references/xdg-specs`). (b) The **`xdg_*` namespace inside `wayland-protocols`** (`xdg-shell`,
 `xdg-activation`, `xdg-decoration`, `xdg-session-management`) — a protocol-governance label,
 unrelated to (a)'s base-directory spec beyond shared ancestry. (c) **`xdg-desktop-portal`** — the
-sandboxed-app D-Bus mediation service (one frontend, per-DE backends). spatial-os needs all
+sandboxed-app D-Bus mediation service (one frontend, per-DE backends). Mura needs all
 three, they evolve independently, and a claim about "XDG support" is meaningless until it says
 which one. Doc 30's addendum compares (a) against what KDE and GNOME actually implement.
 
@@ -97,7 +97,7 @@ regions and move/resize/close grabs (inseparable from input dispatch). The worke
 places all three.
 
 **5. "Session management" is three concepts.** *Session supervision* — starting/stopping the
-session's services (`spatial-session.target`, ADR 0007). *Login-session tracking* — users, seats,
+session's services (`mura-session.target`, ADR 0007). *Login-session tracking* — users, seats,
 device ownership (logind). *Application session restoration* — "these apps were open, these
 windows belonged here; restore them after login" (the `xdg-session-management-v1` seam plus a
 restore manager, §6.3 — XR-amplified, because anchored places persist *placement* but something
@@ -113,7 +113,7 @@ greetd in our stack; output configuration is an unrelated responsibility.)
 flowchart TB
     subgraph sysplane ["System plane — before/around any session"]
         greetd["greetd + zxr --greeter (ADR 0007)"]
-        seat["logind/seatd · systemd user session · spatial-session.target"]
+        seat["logind/seatd · systemd user session · mura-session.target"]
     end
     subgraph authplane ["Authority plane — the zxr compositor (ADR 0006)"]
         wl["Wayland server: xdg-shell 2D tier + zxr-shell-v2 3D tier"]
@@ -144,7 +144,7 @@ flowchart TB
 Everything that runs before, or stands outside, a user session: seat and device brokering
 (logind/seatd), the display manager (greetd), the greeter (the zxr compositor in restricted
 `--greeter` mode), autologin policy, the boot splash, and the systemd user session that owns the
-session body (`spatial-session.target`: Monado, compositor, shell services). Decided in
+session body (`mura-session.target`: Monado, compositor, shell services). Decided in
 [ADR 0007](adr/0007-session-greeter-lock.md); researched in
 [11](../research/11-display-managers-greeters.md)/[12](../research/12-lock-screens-and-appliance-login.md).
 Its distinguishing property: it must bring up the XR display path (panel, distortion, per-unit
@@ -244,7 +244,7 @@ transfers focus (and honors `xdg-activation` semantics so focus stealing stays i
 frame graph, decomposed currency; "which is active" is per-consumer, never one bit.)* The *space
 model* — which spatial places exist, which windows belong to
 each, which is active — is authority-plane state, exactly as a desktop workspace model is
-compositor state; in spatial-os a place is additionally **anchored**: bound to a mapping-service
+compositor state; in Mura a place is additionally **anchored**: bound to a mapping-service
 anchor so "the kitchen workspace" relocalizes with the room (ADR 0009's map/local frame contract —
 corrections move anchors, never the rendered world mid-frame). The pager/overview that shows the
 user their places and lets them switch is presentation, consumable over the `ext-workspace`
@@ -265,7 +265,7 @@ input-dispatch correctness.
 
 **Lock — the exemplar (already decided).** ADR 0007 splits it exactly on this rule: enforcement
 (I1–I3) is compositor mechanism; the *policy* ladder (doff/don grace, idle steps, boot-locked) is
-configuration; the PAM conversation is a separate process (`spatial-authd`); and the lock *scene*
+configuration; the PAM conversation is a separate process (`mura-authd`); and the lock *scene*
 is presentation — compositor-internal on the appliance profile (because the lock surface must
 exist even when every client is dead), while the dev/desktop profile exposes
 `ext-session-lock-v1` so third-party lockers work. One feature, four placements, each argued from
@@ -276,7 +276,7 @@ mechanism/policy/presentation. The rest of the DE should be factored with the sa
 What the standard vocabulary *means* on a headset — the compatibility surface stays (the protocols
 still speak of outputs and surfaces), but the semantics shift:
 
-| Desktop concept | spatial-os meaning |
+| Desktop concept | Mura meaning |
 |---|---|
 | Output / monitor | No physical output a client should reason about. The compositor composes into stereo eye views; for layer-shell/pager purposes it may expose *virtual* outputs (the desktop-mirror window, a spectate view — doc 17's output sources). Output-anchored semantics ("top edge of the screen") are reinterpreted against *reference frames* (head-locked, world-anchored, hand/wrist-locked). |
 | Workspace | A **place**: a named set of windows parented to a typed reference frame (map anchor, head, hand, docked plane — [places-model.md](places-model.md)/ADR 0016), persisted when pinned and relocalized by the mapping service (ADR 0009). Workspace *switch* may be a physical walk, a teleport, or a summon — "active" is decomposed per consumer, and location events offer, never yank. |
@@ -292,7 +292,7 @@ still speak of outputs and surfaces), but the semantics shift:
 | Desktop icons | None. The environment is not an icon surface; app icons live in the launcher — a phone-style grid / "start menu" scene (ADR 0012's desktop-icons non-goal). |
 | System tray | A StatusNotifierItem (SNI) host in the panel — apps shipping SNI render as typed badges on panel surfaces (ADR 0012 decision; COSMIC precedent). There is no free-floating XR tray. |
 | Session restore | Places persist *where* windows belong (ADR 0009 anchors); the restore manager owns *relaunching* apps into them after login, over the `xdg-session-management-v1` seam (§2 trap 5, §6.3). |
-| Docked mode | **The same session, flat presentation — not a different desktop** ([ADR 0015](adr/0015-docked-desktop-mode.md)): with `spatial.hardware.externalDisplay`, zxr scans a flat-composition output onto the monitor; doff-while-docked quiesces the XR stack (perception off, cadence off, damage-driven 2D) instead of locking; don returns the same windows to space. |
+| Docked mode | **The same session, flat presentation — not a different desktop** ([ADR 0015](adr/0015-docked-desktop-mode.md)): with `mura.hardware.externalDisplay`, zxr scans a flat-composition output onto the monitor; doff-while-docked quiesces the XR stack (perception off, cadence off, damage-driven 2D) instead of locking; don returns the same windows to space. |
 
 Desktop concepts with **no XR analog** (do not build them): physical multi-monitor arrangement
 UIs, cursor themes as a user-facing concern (the "cursor" is a ray/fingertip; shape feedback is
@@ -356,7 +356,7 @@ plane. Everything else in the graph descends from one or more of these:
  ├─ output paths — three alternatives; none requires another
  │   ├─ desktop-window dev output            (any desktop; no HMD, no Monado)
  │   ├─ docked flat-composition output ──► external DRM connector
- │   │      (gated on [build] spatial.hardware.externalDisplay — ADR 0015;
+ │   │      (gated on [build] mura.hardware.externalDisplay — ADR 0015;
  │   │       damage-driven; carries the quiescence ladder when doffed)
  │   └─ OpenXR loop ──► [P] Monado ──► [build] device adaptation
  │        └──► [S] per-unit calibration state
@@ -381,7 +381,7 @@ plane. Everything else in the graph descends from one or more of these:
  │   └─ window-local composition textures (feeds the capture seam, §6.3)
  ├─ 3D tier (zxr-shell-v2 colour+depth clients in the shared depth-tested space)
  │   └─ 3D decorations / manipulation affordances ──► input routing (hit volumes)
- ├─ lock state machine (I1–I3) ──► [S] spatial-authd ──► PAM stack ──► PIN credential
+ ├─ lock state machine (I1–I3) ──► [S] mura-authd ──► PAM stack ──► PIN credential
  │   ├─ lock scene (in-process presentation, appliance profile)
  │   └─ doff/don + idle ladder ──► presence (HMD-only: XR_EXT_user_presence)
  └─ boundary breach response ──► [P] boundary probes (§6.5)
@@ -394,7 +394,7 @@ The session cluster around it:
                                         ├──► compositor core (same binary, restricted)
                                         ├──► [P] Monado (IMU tier only)
                                         └──► [S] per-unit calibration state
-[S] spatial-session.target ──► systemd user session
+[S] mura-session.target ──► systemd user session
      └─ owns: Monado · compositor · shell/service daemons (supervision, not dependency)
 [S] boot splash ──► [S] per-unit calibration state   (cosmetic; nothing depends on it)
 ```
@@ -406,7 +406,7 @@ Notes on edges that are easy to get wrong:
   desktop. Only the OpenXR loop, presence, the greeter's tracking tier, and §6.5 need hardware.
 - The **space model's edge to mapping is degraded, not hard** — that is what makes local places
   buildable while ADR 0009's M0 gate is unresolved.
-- **`spatial-session.target` supervises but is not depended on**: the compositor functions when
+- **`mura-session.target` supervises but is not depended on**: the compositor functions when
   launched by hand; the target is how the appliance profile arranges crash/restart.
 
 ### 6.3 The privileged seam layer: authority models → protocols → consumers
@@ -477,7 +477,7 @@ sharing service, consent/portal machinery, and (for anchored spaces) the mapping
 ### 6.5 Perception chain into the authority plane
 
 ```text
-[build] camera adaptation (spatial.adaptation.camera / .eyes)
+[build] camera adaptation (mura.adaptation.camera / .eyes)
    │
 [P] Monado frameserver — one clock, one calibration (ADR 0008)
    ├─ [P] Basalt VIO (VIT seam) — head pose, pose-at-exposure

@@ -1,5 +1,5 @@
 {
-  description = "spatial-os — a Nix-built, NixOS-based, Wayland XR distribution for standalone VR headsets";
+  description = "Mura — a Nix-built, NixOS-based, Wayland XR distribution for standalone VR headsets";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -34,17 +34,17 @@
         });
 
       # The single integration path (ADR 0005): evaluate a device into a NixOS system.
-      spatialSystem = import ./lib/eval-device.nix { inherit nixpkgs; };
+      muraSystem = import ./lib/eval-device.nix { inherit nixpkgs; };
     in
     {
-      # The spatial-os module set — importable into any NixOS configuration.
+      # The Mura module set — importable into any NixOS configuration.
       nixosModules.default = { imports = import ./modules; };
 
       # Helper re-exported so downstream flakes can build their own devices.
-      lib.spatialSystem = spatialSystem;
+      lib.muraSystem = muraSystem;
 
       # Device evaluations.
-      nixosConfigurations.virtual-headset = spatialSystem {
+      nixosConfigurations.virtual-headset = muraSystem {
         device = ./devices/virtual-headset;
         system = "x86_64-linux";
         extraModules = [{ nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }];
@@ -53,7 +53,7 @@
       # Valve Steam Frame (deckard): the first real device target. aarch64 artifacts
       # build on remote aarch64 builders (ADR 0004; nixbuild.net) and are excluded
       # from `nix flake check`.
-      nixosConfigurations.valve-steam-frame = spatialSystem {
+      nixosConfigurations.valve-steam-frame = muraSystem {
         device = ./devices/valve-steam-frame;
         system = "aarch64-linux";
         extraModules = [{ nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }];

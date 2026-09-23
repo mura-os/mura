@@ -62,7 +62,7 @@ Concretely:
 - **The depth estimator is a pluggable backend inside the passthrough service**
   (classical Vulkan / `VK_QCOM` / Adreno DFS / Hexagon HTP — [perception §depth backend](../perception-passthrough-hands.md)),
   selected per device, none of which changes this placement.
-- **Camera access itself is a per-device `spatial.adaptation.camera` concern** (V4L2 vs a vendor
+- **Camera access itself is a per-device `mura.adaptation.camera` concern** (V4L2 vs a vendor
   path); Monado's frameserver already abstracts camera sources, so per-device camera bring-up has a
   natural home.
 
@@ -85,7 +85,7 @@ Concretely:
 
 ## Consequences
 
-- spatial-os builds the two services as Monado frame-sinks (or Monado-adjacent processes sharing its
+- Mura builds the two services as Monado frame-sinks (or Monado-adjacent processes sharing its
   frameserver), delivering dmabuf + explicit-sync layers to the zxr compositor. The compositor gains
   an **environment-layer** input and a **hand-top-layer** input with policy, both non-blocking.
 - **Monado's pose-query API must serve arbitrary exposure timestamps at camera rate with high
@@ -93,8 +93,8 @@ Concretely:
   perception doc and here.
 - The GPL matting model is process-isolated by construction; the compositor (and Monado core, BSL)
   do not become derivative works.
-- `spatial.xr.passthrough.*` contract options (enable, latencyMode, depthBackend, handCutout policy)
-  configure these services; per-device camera geometry extends `spatial.adaptation.camera`.
+- `mura.xr.passthrough.*` contract options (enable, latencyMode, depthBackend, handCutout policy)
+  configure these services; per-device camera geometry extends `mura.adaptation.camera`.
 - **Not ratified beyond placement:** the *internal* structure of each service, the depth backend per
   device, and the exact frame-graph wiring depend on the BSP-access unknowns the claims audit
   enumerated (camera zero-copy into Vulkan, Adreno DFS/HTP availability, the "12 ms" endpoints) and
@@ -112,5 +112,5 @@ Concretely:
   reason — it would have to re-share frames with Monado's Mercury/SLAM anyway. Retained as a
   fallback shape only if a specific BSP cannot expose cameras through Monado's frameserver.
 - **Per-application (client-side) passthrough/cutout** (à la the Rectus OpenXR API layer): rejected —
-  it is the model spatial-os exists to replace; passthrough and hand cutout are system services with
+  it is the model Mura exists to replace; passthrough and hand cutout are system services with
   a privacy boundary (clients never see camera frames or mattes), not per-app effects.

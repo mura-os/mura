@@ -27,7 +27,7 @@ appliance. Everything else about multi-user is a solved Linux problem and is tre
    `autoLogin = "owner"` names an ordinary unprivileged account; no session on any profile
    carries ambient root. Account creation/removal/credential-reset are standard admin
    operations (`useradd`, `sudo passwd`, …); the in-headset settings UI is a polkit-gated
-   convenience path executing the same operations via `spatial-provisiond`, which is *a* path,
+   convenience path executing the same operations via `mura-provisiond`, which is *a* path,
    not the authority.
 2. **Durability via userborn `passwordFilesLocation = /persist/userdb/`** with the normative
    wiring of multi-user.md §1.1 (initrd mount, no `nofail`, `RequiresMountsFor` drop-in,
@@ -35,9 +35,9 @@ appliance. Everything else about multi-user is a solved Linux problem and is tre
    hybrid mode is what preserves administrator-created rows). The appliance profile keeps
    ADR 0017's fully-declarative arrangement. A consequence worth naming: because the persisted
    userdb backs `/etc` natively, **standard tools just work** — SSH in and `useradd`; no
-   spatial-os-specific tooling is ever required for account management.
+   Mura-specific tooling is ever required for account management.
 3. **Passwords primary; PIN optional.** The Unix password is the login credential everywhere
-   (greeter, lock, SSH, TTY). `pam_spatial_pin` is an optional per-user convenience stacked
+   (greeter, lock, SSH, TTY). `pam_mura_pin` is an optional per-user convenience stacked
    beside it (the fprintd model), existing because ray-keyboard password entry is painful.
    A user may lock their own password to go PIN-only — their choice. This **rescinds** rev 2's
    decision 8 and restores ADR 0017's greetd wiring to "standard, plus the optional stacked
@@ -91,7 +91,7 @@ appliance. Everything else about multi-user is a solved Linux problem and is tre
 
 ## Consequences
 
-- Contract: `spatial.xr.session.multiUser.enable` (selects the userborn wiring),
+- Contract: `mura.xr.session.multiUser.enable` (selects the userborn wiring),
   `multiUser.uidRange` (picker window, default 1000–60000), `guest.enable`; the cap option and
   its assertion/tests are deleted; profile-coupling assertions stand.
 - ADR 0017 decision 2's rev-2 amendment is rescinded (greetd stack: standard + optional

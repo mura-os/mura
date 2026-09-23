@@ -1,6 +1,6 @@
 # 02 — postmarketOS (pmbootstrap + pmaports) and meta-qcom
 
-Research for spatial-os build-system design. Sources: local shallow clones under
+Research for Mura build-system design. Sources: local shallow clones under
 `references/`: `pmbootstrap` (build tool), `pmaports` (device/package ports),
 `meta-qcom` (Yocto BSP layer for Qualcomm). File paths below are relative to each
 repo root.
@@ -17,7 +17,7 @@ ARM hardware. Its build system is split in two repositories:
   images. Entry point `pmbootstrap.py`, all logic in `pmb/`.
 - **pmaports** — a git repository of Alpine `APKBUILD` packaging recipes:
   device ports (`device/`), shared packages (`main/`), cross toolchains
-  (`cross/`), plus two policy files that matter greatly for spatial-os:
+  (`cross/`), plus two policy files that matter greatly for Mura:
   `deviceinfo_schema.toml` (typed schema for device descriptors) and
   `kconfigcheck.toml` (kernel-config contract).
 
@@ -27,7 +27,7 @@ is the "machine abstraction" counterpart: machine configs in `conf/machine/`,
 SoC-family includes in `conf/machine/include/`, recipes for kernel, boot
 firmware, GPU userspace, partition tables.
 
-Both target the same silicon families spatial-os cares about: pmaports contains a
+Both target the same silicon families Mura cares about: pmaports contains a
 **Lynx R1 port (SM8250/XR2 Gen 1)** in `device/testing/device-lynx-r1/`, an
 archived **MSM8998** family (`device/archived/soc-qcom-msm8998/` — Quest 1
 silicon), and a flagship-quality **SDM845** family in community; meta-qcom covers
@@ -349,7 +349,7 @@ The `-nonfree-firmware` subpackage convention (see
   device packages. The full kernel `.config` is committed per arch
   (`config-postmarketos-qcom-sdm845.aarch64`, ~9.7k lines) — no fragment
   composition; kernels are built with `LLVM=1`.
-- **kconfig contract** (the pattern spatial-os most wants):
+- **kconfig contract** (the pattern Mura most wants):
   `pmaports/kconfigcheck.toml` defines rule categories as
   `["category:<name>".">=KVER"."<arches>"]` sections with tristate/list/string
   value semantics, e.g. default category requires
@@ -477,7 +477,7 @@ in-tree `defconfig` + `arch/arm64/configs/qcom.config` + fragment
   by git commit (`firmware-lynx-r1: _commit="5ee6f8..."`); kernel configs are
   committed in full, so kernel builds are effectively input-complete; repository
   signing keys ship with the tool (`pmb/data/keys/`).
-- Determinism boundary worth noting for spatial-os: the deviceinfo parser does
+- Determinism boundary worth noting for Mura: the deviceinfo parser does
   naive quote-stripping (`value.replace('"', "")` in `pmb/parse/deviceinfo.py`)
   on a bash-sourceable file — the format is convenient but weakly specified; the
   schema TOML is the corrective move (the parser even carries a FIXME to make the
@@ -492,11 +492,11 @@ in-tree `defconfig` + `arch/arm64/configs/qcom.config` + fragment
 
 ---
 
-## 9. What spatial-os should adopt
+## 9. What Mura should adopt
 
 1. **A typed, versioned device schema with a deprecation lifecycle**
    (`deviceinfo_schema.toml`). In Nix this maps almost 1:1 to a NixOS module
-   option set (`options.spatial.device.*` with types, defaults, enums,
+   option set (`options.mura.device.*` with types, defaults, enums,
    `mkRenamedOptionModule` for renames). Keep pmOS's category split
    (identity / boot-image / flash-partitions / usb-gadget) and its discipline of
    *schema-recorded* obsolescence (`fate`/`epitaph`) — invaluable when many
@@ -504,7 +504,7 @@ in-tree `defconfig` + `arch/arm64/configs/qcom.config` + fragment
    being tiny (6 fields) so a bring-up port is a 30-line file.
 2. **Three-layer device model: device → SoC family → vendor** as seen in
    `device-oneplus-enchilada → soc-qcom-sdm845(kernel/audio/fw) → soc-qcom`.
-   spatial-os targeting msm8998 (Quest 1), sdm845/850, sm8250 (Quest 2/Lynx),
+   Mura targeting msm8998 (Quest 1), sdm845/850, sm8250 (Quest 2/Lynx),
    XR2 Gen 2 should make `soc-qcom-<family>` a Nix module providing the shared
    kernel, firmware search paths, qbootctl, hexagonrpcd, sensor stack; devices
    contribute only DTB name, cmdline, blobs, module lists. meta-qcom's
@@ -521,14 +521,14 @@ in-tree `defconfig` + `arch/arm64/configs/qcom.config` + fragment
    timers, sched deadline) and `category:waydroid`-style optional sets.
 4. **Tier policy encoded in the tree and enforced by CI**
    (`device/{main,community,testing,downstream,archived}` +
-   `.ci/testcases/test_kernel.py` + `allows_downstream_ports`). For spatial-os:
+   `.ci/testcases/test_kernel.py` + `allows_downstream_ports`). For Mura:
    tiers should gate which checks are mandatory (kconfig categories, boot test,
    maintainer set), and "downstream kernel allowed" should be an explicit,
    quarantined tier — important early when Quest-class devices may need
    downstream kernels before mainline catches up.
 5. **Declarative flasher table** (`pmb/config/__init__.py::flashers` +
    `variables.py`). A tiny interpreter over argv templates supports 9 flash
-   protocols with ~200 lines. spatial-os needs at minimum fastboot (Qualcomm
+   protocols with ~200 lines. Mura needs at minimum fastboot (Qualcomm
    headsets) and whatever Steam Frame uses; model it as data, including the
    `flash_vbmeta`/`flash_dtbo` auxiliary actions and the avbtool
    verification-disable trick.
@@ -551,20 +551,20 @@ in-tree `defconfig` + `arch/arm64/configs/qcom.config` + fragment
 9. **Single descriptor consumed at build-time and run-time** — deviceinfo is
    installed into the image and drives on-device mkinitfs/boot-deploy. In Nix
    the natural analog is the evaluated device module surfacing both in the image
-   builder and as `/etc/spatial-device.json` for runtime tools (A/B ack, flash
+   builder and as `/etc/mura-device.json` for runtime tools (A/B ack, flash
    scripts, XR runtime probing).
 10. **A/B slot acknowledgement daemon** (`soc-qcom-qbootctl` pattern) and
     `flash_kernel_on_update` semantics as explicit, per-device opt-in flags.
 11. From meta-qcom specifically: **separating the pre-Linux boot stack**
     (`recipes-bsp/firmware-boot/*`) from the rootfs, and shipping a
     "full flash bundle" image type (`image_types_qcom.bbclass` qcomflash:
-    GPT bins + boot firmware + rootfs + flash scripts) — spatial-os will need the
+    GPT bins + boot firmware + rootfs + flash scripts) — Mura will need the
     same "factory restore bundle" artifact per headset; and **in-layer license
     texts with per-recipe LicenseRef gating** for QTI blobs.
 
 ---
 
-## 10. What spatial-os should reject and why
+## 10. What Mura should reject and why
 
 1. **Imperative chroot builds and QEMU-emulated packaging**
    (`pmb/chroot/*`, binfmt QEMU, crossdirect). Nix derivations already give
@@ -577,7 +577,7 @@ in-tree `defconfig` + `arch/arm64/configs/qcom.config` + fragment
    `-openrc`/`-systemd` subpackage duplication, `install_if` magic. These are
    Alpine mechanics, not architecture. (Note the schema literally says arch
    "must be supported by Alpine Linux" — a reminder that pmOS inherits its
-   platform matrix from its parent distro; spatial-os inherits nixpkgs' instead.)
+   platform matrix from its parent distro; Mura inherits nixpkgs' instead.)
 3. **Mutable on-device package updates as the primary update path** (apk upgrade
    + regenerate boot.img on device). For sealed consumer XR devices, image-based
    A/B updates (systemd-sysupdate/OSTree-style, or Nix generations with A/B
@@ -603,11 +603,11 @@ in-tree `defconfig` + `arch/arm64/configs/qcom.config` + fragment
    override mechanics.
 7. **Tier semantics living partly outside the repo** — pmOS device-category
    *requirements* (what community tier demands beyond kconfig) are on the wiki,
-   not in-tree; only fragments are CI-enforced. spatial-os should encode tier
+   not in-tree; only fragments are CI-enforced. Mura should encode tier
    requirements fully as evaluatable checks.
 8. **Placeholder/out-of-band blob layers without in-tree stubs being explicit
    about provenance** (`firmware-qcom-rb3gen2.bb` placeholder): acceptable for
-   Qualcomm's NDA world, but spatial-os's "pinned donor firmware" premise should
+   Qualcomm's NDA world, but Mura's "pinned donor firmware" premise should
    make every blob's origin (donor image + extraction path + hash) a first-class,
    evaluatable input instead.
 
@@ -624,7 +624,7 @@ in-tree `defconfig` + `arch/arm64/configs/qcom.config` + fragment
 2. **AVB/secure boot on retail headsets**: pmOS's answer is
    "flash verification-disabled vbmeta" (`flashers` `flash_vbmeta` action), which
    presumes an unlockable bootloader. Quest devices are not fastboot-unlockable
-   without exploits — what is the spatial-os equivalent of the flasher table for
+   without exploits — what is the Mura equivalent of the flasher table for
    exploit-initiated boot chains, and does the deviceinfo schema need a
    "boot-chain method" axis beyond `flash_method`?
 3. **Where does the kconfig contract live** in a Nix design — as derivation
@@ -641,13 +641,13 @@ in-tree `defconfig` + `arch/arm64/configs/qcom.config` + fragment
    (per-unit firmware ≠ fixed-output derivation)?
 5. **Multi-device images**: meta-qcom's `qcom-armv8a` machine builds one rootfs
    with a DTB list covering a dozen boards + dtbloader; pmOS builds strictly
-   per-device images. Should spatial-os aim for a shared aarch64 rootfs with
+   per-device images. Should Mura aim for a shared aarch64 rootfs with
    per-device boot artifacts (closer to qcom-armv8a + UKI), which Nix's
    content-addressed store makes cheap, or per-device images (simpler A/B
    story)?
 6. **SoC-family kernel governance**: pmOS family kernels (sdm845-mainline,
    qualcomm-sm8250) are community forks with their own release tags. Does
-   spatial-os track these existing forks as flake inputs (free-riding on their
+   Mura track these existing forks as flake inputs (free-riding on their
    XR-adjacent enablement — Lynx R1's kernel is already a 6.13 mainline fork) or
    maintain its own tree per family?
 7. **Steam Frame / SteamOS donor**: nothing in either ecosystem models an

@@ -187,8 +187,8 @@ contract; do not start by implementing the four depth backends or Tier-2 matting
     - Perception §“Contract surface” and `lib/contract/default.nix` expose concrete `vk-qcom`,
       `adreno-dfs`, and `hexagon` selectors before capabilities exist. `latencyMode` has no testable service
       semantics. `upperLimbVisibility` is a runtime shell/client policy, not a hardware device fact.
-    - Conversely, perception says camera geometry extends `spatial.adaptation.camera`, but that option is
-      currently only `{ backend = ...; }`; device-contract §`spatial.adaptation.*` specifies no camera
+    - Conversely, perception says camera geometry extends `mura.adaptation.camera`, but that option is
+      currently only `{ backend = ...; }`; device-contract §`mura.adaptation.*` specifies no camera
       geometry schema at all.
     - There are no assertions tying passthrough to Monado + zxr, ensuring hand cutout has passthrough, or
       rejecting unsupported backend/device combinations.

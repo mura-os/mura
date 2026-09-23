@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clone the spatial-os reference set (shallow) and pin it in MANIFEST.json.
+# Clone the Mura reference set (shallow) and pin it in MANIFEST.json.
 # Re-running is idempotent: existing checkouts are kept, missing ones cloned.
 set -u
 
@@ -34,7 +34,7 @@ repos=(
   'meta-qcom|https://github.com/qualcomm-linux/meta-qcom.git|'
   'mkosi|https://github.com/systemd/mkosi.git|'
   'freexr|https://github.com/FreeXR/FreeXR.git|init'
-  # --- wxrc compositor lineage (spatial-os compositor research) ---
+  # --- wxrc compositor lineage (Mura compositor research) ---
   'motorcar|https://github.com/evil0sheep/motorcar.git|stable'
   'motorcar-thesis|https://github.com/evil0sheep/MastersThesis.git|'
   'wxrc|https://git.sr.ht/~sircmpwn/wxrc|'

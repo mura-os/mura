@@ -6,7 +6,7 @@
 # explicit, warned stubs so an incomplete port fails loud rather than silently.
 { lib, config, pkgs, ... }:
 let
-  a = config.spatial.adaptation;
+  a = config.mura.adaptation;
 
   # Subsystems that currently only have a native implementation in the scaffold.
   stubbed = lib.filterAttrs (_: v: v.backend or "native" != "native")
@@ -23,7 +23,7 @@ in
     # DSP/sensor userspace on top. Nothing device-specific belongs here.
 
     warnings = lib.mapAttrsToList
-      (name: v: "spatial.adaptation.${name}.backend = ${v.backend}: not yet implemented in the scaffold (only 'native' is wired). Implement it in modules/adaptation before relying on this subsystem.")
+      (name: v: "mura.adaptation.${name}.backend = ${v.backend}: not yet implemented in the scaffold (only 'native' is wired). Implement it in modules/adaptation before relying on this subsystem.")
       (lib.filterAttrs (_: v: v.backend != "device-specific") stubbed);
   };
 }

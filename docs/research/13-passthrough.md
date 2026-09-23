@@ -808,7 +808,7 @@ Rectus's "cutout" mode (`StereoCutoutEnabled`, default **off**, `config_manager.
 
 ---
 
-## 7. What spatial-os should adopt, reject, and how it maps onto zxr-shell-v2
+## 7. What Mura should adopt, reject, and how it maps onto zxr-shell-v2
 
 ### 7.1 Passthrough is the environment colour+depth source
 
@@ -1047,7 +1047,7 @@ non-blocking and the display path is always free to reuse the previous snapshot.
    artefact source `[R]`.
 7. **Per-device camera geometry as a contract input.** Camera↔eye offset `t`, camera baseline,
    camera FOV vs display FOV, and rolling-shutter parameters all change the tuning and decide
-   whether cross-camera fill is worth anything (§6.3). This belongs in the typed `spatial.*` device
+   whether cross-camera fill is worth anything (§6.3). This belongs in the typed `mura.*` device
    contract ([device-contract.md](../architecture/device-contract.md)), not in compositor constants.
 8. **Rolling shutter.** Nothing in the corpus models it. A rolling-shutter camera on a rotating head
    makes `T_{W←Ci}(t_expose)` a function of image row. Probably ignorable; needs to be *measured*

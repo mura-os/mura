@@ -1,11 +1,11 @@
-# spatial-os architecture: budgets (frame, compute, power, thermal)
+# Mura architecture: budgets (frame, compute, power, thermal)
 
 **Status:** draft (gap-closure workstream). This document owns the *global* contention model —
 one SoC, hard frame deadlines, a battery, and a fanless (or nearly fanless) thermal envelope,
 shared by every plane at once. Individual docs own their components' internals; this document
 owns the partition between them and **the discipline rule that keeps it owned**.
 
-The posture, stated once: spatial-os is effectively near-embedded development. Perception,
+The posture, stated once: Mura is effectively near-embedded development. Perception,
 composition, clients, and services contend for a smartphone-class SoC while a headset demands
 desktop-GPU-grade deadlines. Efficiency is not an optimization pass; it is an architectural
 invariant ([overview.md](overview.md) invariant 9).
@@ -41,7 +41,7 @@ Two clock domains, deliberately decoupled (ADR 0008's latest-complete rule):
 
 ## 3. The partition (per plane; device classes parameterized by contract facts)
 
-Device classes (from `spatial.hardware.*`): **A** = XR2 Gen 1 class (Lynx R1, Quest 1: 72 Hz,
+Device classes (from `mura.hardware.*`): **A** = XR2 Gen 1 class (Lynx R1, Quest 1: 72 Hz,
 ~1600p×2), **B** = XR2+ Gen 2 class (Galaxy XR, Play For Dream: 90 Hz, 3552×3840×2 — the panel
 that makes everything hard), **C** = SM8650/Steam Frame (Linux-native, 90–120 Hz), **V** = dev
 VM/desktop (correctness only, no budget gates).

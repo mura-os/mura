@@ -378,7 +378,7 @@ capture the complete vendor eye-tracking service/DSP closure, not just a sensor 
 - OpenXR's cross-vendor `XR_EXT_eye_gaze_interaction` surface is a pose at
   `/input/gaze_ext/pose`, with optional sample time—not a camera-frame interface
   ([Khronos](https://registry.khronos.org/OpenXR/specs/1.1/man/html/XrEyeGazeSampleTimeEXT.html)).
-  That is the correct default application boundary for spatial-os.
+  That is the correct default application boundary for Mura.
 - Industry practice is on-device image processing, ephemeral raw frames, and permission-gated
   derived poses:
   [Meta](https://www.meta.com/legal/quest/eye-tracking-privacy-notice/),
@@ -398,7 +398,7 @@ capture the complete vendor eye-tracking service/DSP closure, not just a sensor 
   ([official statute](https://ilga.gov/legislation/publicacts/95/095-0994.htm)).
   A gaze vector is not automatically an iris scan, but retaining eye images/templates or using gaze
   behavior to identify a person can trigger materially different obligations.
-- spatial-os should expose only gaze pose/status to ordinary clients, require explicit per-app
+- Mura should expose only gaze pose/status to ordinary clients, require explicit per-app
   permission, show a persistent use indicator, prohibit silent retention, and keep raw-eye capture
   behind a privileged diagnostic capability with visible consent.
 - Per-user ET calibration and iris templates are credentials/profile data.

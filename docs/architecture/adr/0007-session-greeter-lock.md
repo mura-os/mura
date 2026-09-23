@@ -43,7 +43,7 @@ owner account straight into the zxr session (greetd `initial_session`, the mecha
 Security is the **compositor-integrated lock**, which is the *only* auth surface the user sees. The
 session comes up **locked whenever a credential is enrolled** (Quest "lock on power-on/sleep"), so
 the greeter-less boot is still safe. The session body is a systemd user target
-(`spatial-session.target`) owning Monado, the compositor, and shell services, so crash/restart is
+(`mura-session.target`) owning Monado, the compositor, and shell services, so crash/restart is
 systemd's job; any mutable "next-boot" override must be self-clearing (Jovian's failsafe).
 
 **Multi-user / desktop profile.** greetd `default_session` runs the **zxr compositor in `--greeter`
@@ -72,12 +72,12 @@ built-in lock.
 
 ### PAM out of process
 
-Authentication runs in a small `spatial-authd` helper over a socketpair (swaylock's fork model /
+Authentication runs in a small `mura-authd` helper over a socketpair (swaylock's fork model /
 kscreenlocker's auth-boundary split), so the compositor never links libpam and a hung/crashing PAM
 module (fprintd timeout, network modules) can't stall `xrWaitFrame`. NixOS service
-`security.pam.services.spatial-lock` (owned by the module), `pam_faillock` included; the lock UI
+`security.pam.services.mura-lock` (owned by the module), `pam_faillock` included; the lock UI
 renders **generic** PAM prompts (`visible`/`secret`/`info`/`error`) with a controller-ray PIN-pad
-fast path and a ray-reachable virtual keyboard fallback. PIN is a `pam_spatial_pin`-style
+fast path and a ray-reachable virtual keyboard fallback. PIN is a `pam_mura_pin`-style
 argon2-hashed credential in per-unit system state (MVP: owner-password-is-PIN). Biometrics (iris/
 face) come later as a parallel unlock path beside PAM, never replacing it — the eye-camera privacy
 boundary and hardware substrate for iris auth are specified in
@@ -85,7 +85,7 @@ boundary and hardware substrate for iris auth are specified in
 
 ### Cross-cutting requirements
 
-- **Per-unit calibration (lens/distortion/IPD) is system state** (`/var/lib/spatial/` or vendor
+- **Per-unit calibration (lens/distortion/IPD) is system state** (`/var/lib/mura/` or vendor
   persist), never `$HOME` — pre-auth greeter/lock rendering and the pre-Monado splash all need it
   before any user logs in. This tightens [device-contract.md](../device-contract.md)'s calibration
   paths and `protectedPartitions` wording (calibration is `backupOnlySensitive`/system, per-user
@@ -108,17 +108,17 @@ boundary and hardware substrate for iris auth are specified in
   broken through lenses); dark panels or, as a stretch goal, a static per-eye *pre-distorted* logo
   driven from system-state calibration. The boot-locked compositor is the first legible UI; anything
   before it is cosmetic.
-- **Sessions come from the module system** (`spatial.xr.shell` values: `zxr`/`stardust`/`wayvr`),
+- **Sessions come from the module system** (`mura.xr.shell` values: `zxr`/`stardust`/`wayvr`),
   surfaced to the greeter — not hand-written `.desktop` files.
 
 ## Consequences
 
-- New contract options under `spatial.xr.session.*` (see below) select profile and lock policy,
-  mirroring the `spatial.xr.shell` pattern; typed, defaulted, assertion-checked.
+- New contract options under `mura.xr.session.*` (see below) select profile and lock policy,
+  mirroring the `mura.xr.shell` pattern; typed, defaulted, assertion-checked.
 - `services.greetd` is reused as the daemon in both profiles (`initial_session` vs `default_session`);
   `services.displayManager.sddm/gdm` are **not** used ([11 §6, §9](../../research/11-display-managers-greeters.md)).
-- The compositor gains a `--greeter` mode and an internal lock state machine; `spatial-authd` and
-  `security.pam.services.spatial-lock` are new components.
+- The compositor gains a `--greeter` mode and an internal lock state machine; `mura-authd` and
+  `security.pam.services.mura-lock` are new components.
 - [overview.md](../overview.md) and [zxr-shell-v2-composition.md](../zxr-shell-v2-composition.md) are
   updated: the session/login path is now a defined part of the common layer, and "lock = compose
   only the lock scene" is noted as a composition-policy state.
@@ -148,6 +148,6 @@ target (qualification-matrix item); grace-window default and any "same head re-d
 logind** at implementation-path B2, forced at G2; seatd stays an appliance-minimization option);
 and whether the desktop profile's `ext-session-lock-v1` support should extend to third-party
 headset lockers. *PIN storage/enrollment UX is **closed** by
-[ADR 0017](0017-first-run-provisioning.md): option (b) `pam_spatial_pin` (argon2 hash in the
-`enrollment/` state class, enrolled through `spatial-provisiond` at OOBE), with
+[ADR 0017](0017-first-run-provisioning.md): option (b) `pam_mura_pin` (argon2 hash in the
+`enrollment/` state class, enrolled through `mura-provisiond` at OOBE), with
 owner-password-is-PIN as the recorded appliance bridge.*

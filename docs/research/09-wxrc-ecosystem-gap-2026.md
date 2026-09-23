@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-22  
 **Scope:** the external patch stack named by wxrc: DRM leasing, OpenXR, Monado, wlroots, Mesa, Vulkan, Xwayland, and Sway.  
-**Question:** which 2019 patches landed, which were superseded, and what still has to be built for spatial-os?
+**Question:** which 2019 patches landed, which were superseded, and what still has to be built for Mura?
 
 ## Executive finding
 
@@ -23,7 +23,7 @@ The crucial negative result is that generic Wayland DMA-BUF did **not** make nat
 
 - **LANDED** — the required capability exists upstream in the 2026 stack.
 - **SUPERSEDED** — the original patch/API did not land, but a different upstream mechanism supplies the capability.
-- **STILL-MISSING** — spatial-os still needs new implementation or design work; this does not necessarily mean an upstream fork is required.
+- **STILL-MISSING** — Mura still needs new implementation or design work; this does not necessarily mean an upstream fork is required.
 
 Where no recoverable patch set identifies an exact change, this document marks the conclusion as **inference** rather than silently inventing patch history.
 
@@ -55,7 +55,7 @@ wlroots 0.19 exposes a complete lease-manager API: offer an output, grant or rej
 
 ### 2026 status: **LANDED**
 
-No spatial-os fork of wayland-protocols, wlroots, a host compositor, or Monado is required for basic HMD leasing. The NixOS image must select compatible versions and test `non-desktop` recognition, hotplug, revocation, multi-GPU selection, and session restart.
+No Mura fork of wayland-protocols, wlroots, a host compositor, or Monado is required for basic HMD leasing. The NixOS image must select compatible versions and test `non-desktop` recognition, hotplug, revocation, multi-GPU selection, and session restart.
 
 ---
 
@@ -86,11 +86,11 @@ For a **distribution architecture**, Vulkan is safer:
 - Vulkan exposes explicit external memory, DRM modifiers, synchronization, and layout transitions needed by the depth design.
 - wlroots has had an opt-in Vulkan renderer since 0.15, built on `VK_EXT_image_drm_format_modifier` and `VK_EXT_physical_device_drm` ([initial renderer commit](https://git.nixnet.services/blankie/wlroots/commit/8e346922508aa3eaccd6e12f2917f6574f349843)).
 
-Vulkan does not magically solve depth transport across Wayland. It supplies the primitives from which spatial-os can define that transport.
+Vulkan does not magically solve depth transport across Wayland. It supplies the primitives from which Mura can define that transport.
 
 ### 2026 status: **LANDED**
 
-The exact Monado EGL capability wxrc needed is upstream. Keep it as a bring-up path, but treat a Vulkan renderer as the production redesign unless spatial-os deliberately accepts Monado/EGL coupling.
+The exact Monado EGL capability wxrc needed is upstream. Keep it as a bring-up path, but treat a Vulkan renderer as the production redesign unless Mura deliberately accepts Monado/EGL coupling.
 
 ---
 
@@ -120,7 +120,7 @@ The historically identifiable changes are upstream:
 
 ### 2026 status: **LANDED**
 
-Use stock Monado. spatial-os needs runtime configuration, hardware-driver selection, reproducible device tests, and failure handling, but no recovered 2019 Monado patch. The uncertainty is historical attribution at commit granularity, not capability.
+Use stock Monado. Mura needs runtime configuration, hardware-driver selection, reproducible device tests, and failure handling, but no recovered 2019 Monado patch. The uncertainty is historical attribution at commit granularity, not capability.
 
 ---
 
@@ -294,7 +294,7 @@ Sway was also the principal reference consumer for changing wlroots APIs. That i
 
 Sway 1.7 released VR-headset leasing and depended on wlroots 0.15 ([Sway 1.7](https://github.com/swaywm/sway/releases/tag/1.7)). Monado direct mode runs under Sway without the 2019 patch.
 
-spatial-os may use a conventional host compositor during development: run wxrc nested/windowed for iteration, or run Monado against the host lease interface. The final shell does not need Sway merely because wxrc listed it.
+Mura may use a conventional host compositor during development: run wxrc nested/windowed for iteration, or run Monado against the host lease interface. The final shell does not need Sway merely because wxrc listed it.
 
 ### 2026 status: **LANDED**
 
@@ -304,7 +304,7 @@ Drop Sway from wxrc's required build closure unless intentionally used as a deve
 
 ## Summary
 
-| Component | 2019 patch purpose | 2026 status | What spatial-os must do |
+| Component | 2019 patch purpose | 2026 status | What Mura must do |
 |---|---|---|---|
 | DRM leasing / wayland-protocols | Lease a non-desktop HMD to an XR runtime | **LANDED** | Package current users; test detection, hotplug, revocation, multi-GPU |
 | OpenXR | Pass EGL display/config/context via `XR_MNDX_egl_enable` | **LANDED**, provisional | Keep for GL bring-up; prefer `XR_KHR_vulkan_enable2` long term |
@@ -327,11 +327,11 @@ Drop Sway from wxrc's required build closure unless intentionally used as a deve
 - [ ] **OpenXR headers/loader:** current headers with MNDX revision 2 and `XR_KHR_vulkan_enable2`.
 - [ ] **Vulkan:** released headers/loader/driver with `VK_EXT_acquire_drm_display`, direct display, and Monado's external-memory/semaphore requirements.
 - [ ] **Mesa:** normal current package; do not apply !1509/!8981.
-- [ ] **wlroots DRM leasing:** 0.19.1+ if spatial-os itself offers leases.
+- [ ] **wlroots DRM leasing:** 0.19.1+ if Mura itself offers leases.
 - [ ] **Xwayland:** current version containing DRM-lease support.
 - [ ] **Sway:** carry no patch.
 
-### B. Needs a fresh, relatively small spatial-os patch series
+### B. Needs a fresh, relatively small Mura patch series
 
 - [ ] Update build definitions and probes for current Meson, OpenXR, Wayland generation, wlroots 0.19, and cglm.
 - [ ] Remove old `XR_MND_*` assumptions and verify revision-2 `PFN_xrEglGetProcAddressMNDX`.
@@ -368,7 +368,7 @@ This is the dominant engineering item for ADR 0006. Estimate protocol/lifetime t
   - Do not label an arbitrary color FourCC as a native depth format.
   - Portable baseline: encode linearized depth in a negotiated color-sample buffer and reconstruct it.
   - Advanced path: define Vulkan external-memory format, modifier, layout, queue ownership, and synchronization.
-- [ ] **Specify synchronization.** `wp_linux_drm_syncobj_v1` is per-`wl_surface` and requires acquire/release points for its attached buffer ([protocol](https://wayland.app/protocols/linux-drm-syncobj-v1)). zxr composite buffers are out-of-band, so spatial-os must bind them to a surface commit or add equivalent per-buffer timeline semantics.
+- [ ] **Specify synchronization.** `wp_linux_drm_syncobj_v1` is per-`wl_surface` and requires acquire/release points for its attached buffer ([protocol](https://wayland.app/protocols/linux-drm-syncobj-v1)). zxr composite buffers are out-of-band, so Mura must bind them to a surface commit or add equivalent per-buffer timeline semantics.
 - [ ] **Specify frame timing.** Include predicted display time, view poses, submission deadline, missed-frame behavior, and whether one slow client may stall the compositor.
 - [ ] **Specify atomic pairing.** Both eyes and both buffer types need one frame identity; independent `wl_buffer` arrival is insufficient.
 - [ ] **Specify depth math.** Define projection convention, near/far mapping, reversed-Z policy, normalization, precision, invalid values, and clipping.
@@ -424,7 +424,7 @@ The 2019 ecosystem patch burden has mostly disappeared. Do not estimate seven up
 3. one new synchronized 3D color/depth/timing/input protocol;
 4. one hardware qualification program.
 
-That is substantial, but bounded and mostly under spatial-os's control.
+That is substantial, but bounded and mostly under Mura's control.
 
 ---
 

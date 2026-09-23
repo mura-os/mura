@@ -32,7 +32,7 @@ fact.
 ## Decision
 
 1. **NixOS is the default runtime**, on a kernel that meets an explicit **kconfig + feature
-   contract** (`spatial.kernel.contract`).
+   contract** (`mura.kernel.contract`).
 2. **"NixOS userspace" and "kernel meets the contract" are separately verified.** The contract gate
    (Mobile NixOS's validator-script idea + pmOS's `kconfigcheck` CI gate,
    [00](../../research/00-synthesis.md) §3.3) is a build/eval check that distinguishes errors from
@@ -56,7 +56,7 @@ fact.
 
 ## Consequences
 
-- Every device declares `spatial.kernel.contract`; CI runs it against the built `.config`.
+- Every device declares `mura.kernel.contract`; CI runs it against the built `.config`.
 - The default image pipeline targets NixOS closures (see [images-and-updates.md](../images-and-updates.md)).
 - The escape-hatch profile is scoped and documented before it is ever built; it is not a compatibility
   flag.

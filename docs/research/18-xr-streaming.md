@@ -1,6 +1,6 @@
 # 18 — XR/game streaming engines: WiVRn, ALVR, Sunshine/Moonlight, wolf, Monado comp_multi
 
-**Date:** 2026-09-22. Research pass for spatial-os spatial sharing. This document studies the
+**Date:** 2026-09-22. Research pass for Mura spatial sharing. This document studies the
 *network protocols and streaming pipelines* of the mature open XR/game streamers, as engine
 candidates for the sharing modes of
 [zxr-shell-v2-composition.md](../architecture/zxr-shell-v2-composition.md): mode 3 (per-observer
@@ -255,7 +255,7 @@ Enumerated precisely, since this is the closest system to "per-observer RGBD str
    fine — that's Monado comp_multi + the layer squasher, §6 — but they collapse to one squashed
    view for one headset.)
 3. **The observer is the head.** The streamed views are the headset's own eyes; poses flow from the
-   viewer to the renderer. A spatial-os remote observer is the same loop, but the renderer is a
+   viewer to the renderer. A Mura remote observer is the same loop, but the renderer is a
    *shared app* rendering an additional view — WiVRn has no notion of a view that isn't the local
    HMD.
 4. **No per-app streams.** Everything is squashed pre-encode; a remote observer could never occlude
@@ -358,7 +358,7 @@ wolf reimplements the Moonlight *server* with a different execution model
   switches input devices between wayland displays). That is per-observer *encode* budgets over a
   shared *render* — the 2D analog of our mode-3 requirement, minus per-observer viewpoints.
 
-For spatial-os this is a pattern, not an engine: **per-app capture groups**. A "sharable app" can
+For Mura this is a pattern, not an engine: **per-app capture groups**. A "sharable app" can
 be given its own private compositor endpoint whose output feeds N observer pipelines; session
 lifecycle, input isolation, and fan-out live outside the app. It also anticipates sibling doc 19's
 proxying question: wolf's answer to "how does a remote session see one app" is "give the app a
@@ -455,7 +455,7 @@ composition contract:
   encoder/pacer/clock modules* rather than forking its session model. WiVRn remains untouched as
   the whole-desktop-to-headset path (mode 0/2 for our own HMD, already packaged per 05 §2.2).
 
-## 8. What spatial-os adopts / rejects / defers
+## 8. What Mura adopts / rejects / defers
 
 **Adopt**
 

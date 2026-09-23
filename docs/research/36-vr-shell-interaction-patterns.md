@@ -64,7 +64,7 @@ free-position search (WayVR `Spread`; KWin VR's `SpaceAllocator3D` does an
 azimuth/elevation angular-overlap search at fixed radius with angular spacing —
 `spaceallocator3d.cpp:139-200` — used for screens, per-session only). Two systems document
 numeric defaults (WiVRn 0.5 m; Android XR 1.75 m + dp size bounds); everyone else leaves distance
-to config. Only visionOS forbids apps from choosing placement — a hard policy spatial-os should
+to config. Only visionOS forbids apps from choosing placement — a hard policy Mura should
 copy (matches ADR 0012 §2: placement policy never delegated to clients). Simula contributes the
 one subtle mechanism nobody else has: **defer placement until the surface's committed dimensions
 are stable for N frames**, avoiding placing against a first-frame configure size
@@ -119,11 +119,11 @@ Center, Quest, kwin-vr OSD), **wrist/body-anchored summary** (WayVR Watch; the w
 carries battery/status), and **pull-model inbox in the launcher overlay** (Android XR, Navigator).
 No platform world-anchors notifications near their app. The two load-bearing convergences: (a)
 **do-not-disturb is coupled to immersion state**, with a *critical-class exemption* that bypasses
-it (Quest's battery/party-invite carve-out is exactly the shape spatial-os's
+it (Quest's battery/party-invite carve-out is exactly the shape Mura's
 boundary/tracking-loss notifications need); (b) small transients are allowed to be hard
 head-locked (kwin-vr parents OSDs to the camera with zero smoothing) — the comfort discipline of
 constraint 6 is applied to *large* surfaces, not toasts, everywhere. WayVR's monitor-not-server
-choice is a compat trick spatial-os doesn't need (we own the session and will run the spec
+choice is a compat trick Mura doesn't need (we own the session and will run the spec
 service per registry §6), but its **per-topic routing table** (each toast topic → Hide/Center/
 Watch) is the right policy shape for the presentation row.
 
@@ -141,7 +141,7 @@ Watch) is the right policy shape for the presentation row.
 Prose: verified as asked — on Quest a permission request **does** yank the user into a system
 layer and pauses the immersive app; Meta's design docs treat this as a known cost and push
 developers to pre-contextualize the request ("in-situ") because the system dialog itself cannot
-be re-styled or embedded. The consumer platforms agree on three properties spatial-os should
+be re-styled or embedded. The consumer platforms agree on three properties Mura should
 treat as normative: (1) permission UI is rendered by a **system layer no app can draw over or
 imitate**; (2) sensor-use is disclosed by a **persistent trusted indicator** (visionOS dots ≙
 our active-share badges row, registry §5); (3) consent prompts *withdraw input from the app*
@@ -230,7 +230,7 @@ layout authority in three costumes and must live in one state machine (constrain
    distance facing the user; second window adjacent (slot/dock or angular free-slot search);
    clients never choose placement. Divergence is only in *structure* (dock vs free float) and
    tracks input hardware: controller platforms tolerate free placement, hands/gaze-first
-   platforms pre-structure it. spatial-os's free-floating T1 windows + anchored places select:
+   platforms pre-structure it. Mura's free-floating T1 windows + anchored places select:
    head-relative arc spawn with an angular-slot search (SpaceAllocator3D's shape), dimension-
    stability deferral (Simula), and the visionOS rule that apps cannot self-place. A dock is a
    *layout policy* option, not architecture.
@@ -243,7 +243,7 @@ layout authority in three costumes and must live in one state machine (constrain
    with a critical-class bypass is common; *where* the toast lives (head vs wrist vs launcher
    inbox) genuinely diverges with body-tracking hardware (wrist anchor needs reliable hands/
    wrists — WayVR's watch presumes controllers/hands; consumer HMDs keep it head-space).
-   spatial-os: per-topic routing table (WayVR's shape) under a compositor-capped head-follow
+   Mura: per-topic routing table (WayVR's shape) under a compositor-capped head-follow
    default; wrist is a policy option gated on hand tracking; critical class reserved for
    authority-plane events (boundary, tracking, battery, lock).
 4. **Consent — dominant pattern exists (structurally).** System-layer dialog no app can draw
@@ -252,7 +252,7 @@ layout authority in three costumes and must live in one state machine (constrain
    a delegable client — see §10.4.
 5. **Boundary — NO convergence** (§6 prose): draw-your-own vs invisible-auto-zone vs presets;
    OSS ships nothing. The divergence is honest (posture + passthrough quality + locomotion
-   expectations), so spatial-os must *choose per profile* rather than copy: see §10.5.
+   expectations), so Mura must *choose per profile* rather than copy: see §10.5.
 6. **Virtual keyboard — dominant pattern exists.** Floating focus-bound system keyboard,
    distance-switched direct-touch/ray dual mode, readout bar, dictation fallback,
    physical-keyboard escape hatch (passthrough cutout). Divergences are input-hardware-driven
@@ -368,7 +368,7 @@ launcher on a reserved gesture with XDG desktop-entry consumption in every OSS s
 focus-bound system keyboard with distance-switched touch/ray dual mode and dictation fallback.
 (2) No convergence on boundary setup — draw-your-own (Quest) vs non-configurable auto-zone
 (visionOS) vs presets+floor-confirm (Android XR) vs nothing (all OSS) — because the topic is
-posture- and passthrough-quality-dependent; spatial-os should branch per profile rather than
+posture- and passthrough-quality-dependent; Mura should branch per profile rather than
 pick one. (3) Nothing contradicts constraints 6–9; the shells lacking caps/stabilization are
 the ones with documented user pain, and WiVRn/visionOS demonstrate the compliant shapes. Three
 refinements: express the constraint-6 cap as a clamp over exponential easing; admit event-time

@@ -1,10 +1,10 @@
-# spatial-os — read this before touching anything
+# Mura — read this before touching anything
 
 ## Why this project exists
 
 Every shipping XR headset is a walled garden. Meta, Apple, Google, and the rest treat the
 hardware as theirs and the person wearing it as a licensee — accounts capped, credentials
-dictated, encryption withheld, software sources gated, root forbidden. **spatial-os exists
+dictated, encryption withheld, software sources gated, root forbidden. **Mura exists
 because of that.** It is a Linux PC in headset form: Free Software, libre, no walled gardens.
 The wearer is the administrator. The OS never treats its user as stupid, and never removes a
 power user's choice to protect them from themselves.

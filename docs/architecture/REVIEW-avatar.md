@@ -39,7 +39,7 @@ Do not freeze the asset or `ControlFrame` schemas before those results.
 2. **`semantic-v1` is not a control-space specification.**
    - Avatar design §“Driver → runtime” gives prose—UE-88 plus gaze, lids, jaw, and head pose—but no normative channel IDs/order, ranges, neutral values, units, handedness, axes, rotation representation, coordinate frames, NaN policy, or unknown-channel rule.
    - ADR 0010 §“Decision” calls this a wire format yet points back to that sketch. `{id, kind, dim}` does not define 88 float semantics.
-   - Research 25 §2 says UE is a factoring borrowed from VRCFT, not a frozen spatial-os registry, and notes differing roll/shrug and eye factoring.
+   - Research 25 §2 says UE is a factoring borrowed from VRCFT, not a frozen Mura registry, and notes differing roll/shrug and eye factoring.
    - “Semantic-v1 needs no binding” is false in the compatibility sense: it needs an exact registry/version identity even if it needs no learned decoder.
    - **Resolution:** publish a machine-readable registry with stable IDs, canonical units/frames, legal ranges, defaults, and version-compatibility rules.
 
@@ -119,7 +119,7 @@ Do not freeze the asset or `ControlFrame` schemas before those results.
    - **Resolution:** split R-0 (minimal Vulkan animation+splat), Z-1 (generic zxr T1 acceptance), and R-1 (integrated sustained run), with bounded investment at each stage.
 
 14. **The contract models software paths as immutable device facts.**
-   - `lib/contract/default.nix` §`spatial.xr.sensing` calls values per-device facts, but Quest Pro `fb2-visual` is specifically a WiVRn client/vendor-runtime path (research 25 §1, §3), not intrinsic Linux hardware exposure.
+   - `lib/contract/default.nix` §`mura.xr.sensing` calls values per-device facts, but Quest Pro `fb2-visual` is specifically a WiVRn client/vendor-runtime path (research 25 §1, §3), not intrinsic Linux hardware exposure.
    - The same hardware used natively, through another streamer, or without permission differs. Steam Frame is the inverse: hardware exists while Linux API exposure is unknown.
    - `faceWeights` conflates schema (`fb2/android/htc`) and source (`visual/audio`); `mouthCamera = "internal"` may describe input to a closed vendor tracker despite no OS camera access.
    - **Resolution:** separate hardware, execution location, transport/runtime, schema, provenance, and OS accessibility. WiVRn relay capability belongs to a runtime-path profile.

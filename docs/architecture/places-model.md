@@ -1,4 +1,4 @@
-# spatial-os architecture: the places model
+# Mura architecture: the places model
 
 **Status:** draft design (places workstream). The window/space model the registry names its
 largest structural gap (§8 item 1), designed on the evidence of

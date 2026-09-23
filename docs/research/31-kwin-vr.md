@@ -262,7 +262,7 @@ the window is sent to that output (`Workspace.sendClientToScreen`), the 3D grab 
 `window.vr = false` — at which point the still-running interactive move resumes as an ordinary 2D
 drag under the cursor at the landing point. The pointer warp is what makes re-entry continuous.
 
-Transferable vocabulary for spatial-os: *edge-barrier detach* (margin-gated), *cursor-anchor
+Transferable vocabulary for Mura: *edge-barrier detach* (margin-gated), *cursor-anchor
 continuity* (grab point pinned to the same content pixel across the transition), and *re-entry by
 pick-UV pointer warp*. In zxr's native model there is no output to escape — with one amendment
 since docked desktop mode was decided: [ADR 0015](../architecture/adr/0015-docked-desktop-mode.md)
@@ -319,7 +319,7 @@ All' and 'Recenter': you can now continue to move your head to position all wind
 overlapping answers (automatic follow, manual grab-all, discrete recenter) to the same
 where-do-windows-go question, with only the suppression list above as arbitration.
 
-Transferable for spatial-os: follow mode is pure **window-management policy** — an ADR 0012 §2
+Transferable for Mura: follow mode is pure **window-management policy** — an ADR 0012 §2
 in-process policy module ([adr/0012](../architecture/adr/0012-de-modularity-spinout-seams.md))
 whose *motion* must run under the effects module's authority-owned comfort caps (max angular
 velocity/scale-rate — exactly what the fork's uncapped exponential slerp lacks). The reusable
@@ -374,7 +374,7 @@ culling margin, and snapping/magnetism to interactive elements; Tanja's complain
 head-wobble under raw headgaze. Daily-driven evidence, in other words, that a raw head ray
 demonstrably needs a stabilization layer this codebase never grew.
 
-Transferable for spatial-os: this is the **pluggable hover/focus policy** of composition §7.3
+Transferable for Mura: this is the **pluggable hover/focus policy** of composition §7.3
 constraint 1 ([zxr-shell-v2-composition.md](../architecture/zxr-shell-v2-composition.md)) working
 end-to-end — pick-derived hover with the resolver as the seam — and the veto-based front-to-back
 arbitration is a reusable shape for trusted chrome vs. content. The gap is equally normative: gaze
@@ -417,7 +417,7 @@ record in the MR: real displays *"are only useful when you want to show somethin
 nearby… In VR you manipulate individual windows"* — screens are the compatibility artifact,
 windows the real model.
 
-Transferable for spatial-os — two consumers, one inversion. (a) The **virtual-screen-quad compat
+Transferable for Mura — two consumers, one inversion. (a) The **virtual-screen-quad compat
 artifact** (registry shell/authority; the "nested compositor as one quad" row in
 [foreign-session-integration.md §2](../architecture/foreign-session-integration.md), and
 spatial-sharing §2.2's persistent named window-set): same one-model-two-presentations shape, but
@@ -434,11 +434,11 @@ directions at once; `379a24d` has no analog for us because our flat presentation
 
 The fork = upstream master + **20 core commits** + the plugin commit. This is empirical evidence of
 the minimum WM-core surface an in-process 3D mode needs from a mature 2D compositor. Table columns:
-what it changes, why VR needs it, invasiveness (LOC / mechanism), and the corresponding spatial-os
+what it changes, why VR needs it, invasiveness (LOC / mechanism), and the corresponding Mura
 authority-plane subsystem ([desktop-environment.md §3](../architecture/desktop-environment.md)) or
 [component-registry](../architecture/component-registry.md) row.
 
-| Commit | What it changes | Why VR needs it | Invasiveness | spatial-os subsystem |
+| Commit | What it changes | Why VR needs it | Invasiveness | Mura subsystem |
 |---|---|---|---|---|
 | `07306c0` input: customizable hovered-window resolution | settable `HoveredWindowFinder` callback in `InputDeviceHandler` | pick result, not 2D stacking, decides hover/focus | low (26 LOC, callback + default lambda) | Input subsystem (ray routing/focus) |
 | `d65d60a` input: customizable pointer position limiting | settable `PositionLimiter` in `PointerInputRedirection`; default = old confine/edge-barrier/screen-contains chain | VR windows live at 2D coords outside all outputs | low (38 LOC, callback) | Input subsystem |
@@ -446,12 +446,12 @@ authority-plane subsystem ([desktop-environment.md §3](../architecture/desktop-
 | `02db754` window: VR interactive move/resize | forks `updateInteractiveMoveResize` into Standard/Vr paths; no size limits, no electric borders/quick-tile/maximize for VR windows; non-transient VR windows can't move in 2D | 2D constraint logic is meaningless/hostile in 3D | **high** (97 LOC through `Window`'s central state machine, `isVr()` branches) | Window model / WM policy |
 | `0448fdd` prevent output change during move/resize | blocks `m_output = outputAt(center)` reassignment while `vrMode && isInteractiveMoveResize`; `sendToOutput(force)` | windows "teleport" between outputs when their 2D rect crosses output geometry | **high** (touches `Window`, `WaylandWindow`, `InternalWindow`, `X11Window`; commit message lists 4 unfixed flaws) | Window model — exposes that KWin's window↔output binding is load-bearing everywhere |
 | `5dd778f` window: `vr` property | `Window::setVr/isVr` + signal | the mode bit everything else keys on | trivial (24 LOC) | Window model (spatial state; our windows carry world transforms instead) |
-| `7ea1940` workspace: `vrMode` state | `Workspace::vrMode` + signal | global mode bit | trivial (17 LOC) | (no analog — spatial-os has no 2D↔3D global mode) |
+| `7ea1940` workspace: `vrMode` state | `Workspace::vrMode` + signal | global mode bit | trivial (17 LOC) | (no analog — Mura has no 2D↔3D global mode) |
 | `7946c59` scene: exclude VR windows from 2D rendering | `WindowItem::computeVisibility()` returns false for `isVr()` | window must not also paint on a 2D output | trivial (3 LOC) | Scene graph / composition engine |
 | `d8cd595` window: expose lockScreen/lockScreenOverlay/inputMethod/surface/decoration | Q_PROPERTY plumbing only | QML lock policy + 3D model construction | trivial (21 LOC) | Lock enforcement (ADR 0007 I1–I3) + scene graph |
 | `f5e8aec` surface/subcompositor properties | `SurfaceInterface.size/.subSurface`, `SubSurfaceInterface.position` as Q_PROPERTYs | recursive subsurface→3D construction | trivial (5 LOC) | Scene graph |
 | `39a0dc5` window: offscreen rendering fixes | frame callbacks / `framePainted` when a window is visible but outside every output | VR windows must keep receiving frame callbacks | low (25 LOC), fixes real core assumptions | Composition engine (window-local textures) |
-| `136855f` leasable-output mechanism + persistence | `leasable` flag on outputs, persisted; leasable desktop outputs offered via `wp_drm_lease_v1`, removed from workspace while leased | AR glasses are desktop connectors; Monado needs the panel in direct mode | **high** (18 files, 182 LOC across drm backend, lease protocol, output config store, kscreen integration) — the change KDE rejects on technical grounds | Output paths (spatial-os: Monado owns the HMD; lease consumed by Monado on dev profile per ADR 0006 — we never lease *desktop* outputs) |
+| `136855f` leasable-output mechanism + persistence | `leasable` flag on outputs, persisted; leasable desktop outputs offered via `wp_drm_lease_v1`, removed from workspace while leased | AR glasses are desktop connectors; Monado needs the panel in direct mode | **high** (18 files, 182 LOC across drm backend, lease protocol, output config store, kscreen integration) — the change KDE rejects on technical grounds | Output paths (Mura: Monado owns the HMD; lease consumed by Monado on dev profile per ADR 0006 — we never lease *desktop* outputs) |
 | `3ec9802` drm: disable non-primary planes before lease | clears hw cursor etc. before handing the connector over | stale cursor plane stays visible for the lessee | low (23 LOC, drm backend) | Output paths (Monado-side concern for us) |
 | `379a24d` compositor: skip virtual-output rendering | gates only the `renderLayer()` call in `Compositor::composite` for virtual outputs — damage collection and frame pacing keep running (§2.12) | plugin samples client buffers directly; avoids double work | low (9 LOC) | (no analog: our virtual outputs — spectate/mirror — are deliberately rendered, doc 17) |
 | `d58ceea` pointer-lock toggle in window menu | user-facing unlock for pointer-constrained apps | games grabbing the pointer must be escapable without a real screen edge | low (49 LOC, useractions) | Input subsystem (constraint policy) |
@@ -471,7 +471,7 @@ interfaces to make it clean."* The diffs bear that out precisely:
 1. **Forced hover (`07306c0`)** and **2. pointer limits (`d65d60a`)** and **3. popup bounds
    (`c877221`)** are all the same shape: KWin's hardcoded 2D policy extracted into a **settable
    std::function with the old behaviour as the default**. Each is ~30 LOC, zero behaviour change
-   when unset. These are clean seams; for spatial-os they are *native properties* — our input
+   when unset. These are clean seams; for Mura they are *native properties* — our input
    subsystem routes rays and our popup placement is plane-relative from day one, no output
    rectangles exist to escape from.
 2. **4. Move/resize (`02db754`)** is genuinely invasive: `Window::updateInteractiveMoveResize` is
@@ -485,7 +485,7 @@ interfaces to make it clean."* The diffs bear that out precisely:
    maximize/restore targets the wrong output; quick-tile outlines appear on the wrong output). The
    author's own conclusion in the MR: *"Perhaps automatic output changes should be totally
    prohibited in VR mode"* / possibly *"limit VR mode to a single virtual screen."* The lesson for
-   spatial-os is structural: **a 2D compositor's window↔output binding is a load-bearing invariant
+   Mura is structural: **a 2D compositor's window↔output binding is a load-bearing invariant
    scattered through the codebase**, exactly the "no physical output a client should reason about"
    redefinition our plane model makes ([desktop-environment.md §5](../architecture/desktop-environment.md)).
 
@@ -520,7 +520,7 @@ tracking costs); (3) two XWayland patches, both still unmerged upstream; (4) for
 completeness, the author's Monado fork (§5); (5) optionally Mesa multiview and the Plasma cosmetic
 patches. That is **five upstreams patched simultaneously** — strikingly like wxrc's 2019 "patch
 large swaths of the ecosystem" posture ([08 §2.2](08-wxrc.md)), except most of the Qt series has an
-upstream trajectory. It maps directly onto spatial-os's declared patch discipline
+upstream trajectory. It maps directly onto Mura's declared patch discipline
 ([repo-structure.md §Patch management](../architecture/repo-structure.md)): pinned rev + curated
 series per upstream, WiVRn's `monado-rev` + `patches/monado/*.patch` pattern — the difference is
 that our model plans for Monado + kernel patches only, while adopting KWin VR would add KWin, Qt,
@@ -598,16 +598,16 @@ library. For [ADR 0011](../architecture/adr/0011-eye-tracking-ipd.md): this is t
 demonstrated Linux-side Galaxy XR gaze source *and* the first working gaze→foveation consumer in
 Monado — both on the Monado side of our plane boundary, exactly where ADR 0008/0011 place them.
 
-## 6. Maintainer objections, mapped onto the spatial-os plane model
+## 6. Maintainer objections, mapped onto the Mura plane model
 
-| Objection (quoted in §1) | Applies to spatial-os? |
+| Objection (quoted in §1) | Applies to Mura? |
 |---|---|
-| **Size/maintenance**: "bigger than the Xorg session support… I'm still puzzled how we would maintain such a plugin" | **Partially applies.** Our compositor is also one big process, and zxr-shell-v2 + composition engine is comparable engineering mass. The difference is audience: KDE must maintain VR *beside* a 2D desktop product most maintainers can't test; for spatial-os the XR compositor *is* the product — there is no second product to burden. |
-| **`if (isVr)` bitrot**: special-cased modes rot when most developers never exercise them | **Dissolved by construction.** spatial-os has no 2D-desktop mode to fork against; the desktop dev window is an *output path* of the same code ([composition doc §7.1](../architecture/zxr-shell-v2-composition.md)), not a second policy regime. The fork's two "hard" patches (move/resize, window↔output) are precisely the code we never write: our window model has world transforms and no outputs. |
+| **Size/maintenance**: "bigger than the Xorg session support… I'm still puzzled how we would maintain such a plugin" | **Partially applies.** Our compositor is also one big process, and zxr-shell-v2 + composition engine is comparable engineering mass. The difference is audience: KDE must maintain VR *beside* a 2D desktop product most maintainers can't test; for Mura the XR compositor *is* the product — there is no second product to burden. |
+| **`if (isVr)` bitrot**: special-cased modes rot when most developers never exercise them | **Dissolved by construction.** Mura has no 2D-desktop mode to fork against; the desktop dev window is an *output path* of the same code ([composition doc §7.1](../architecture/zxr-shell-v2-composition.md)), not a second policy regime. The fork's two "hard" patches (move/resize, window↔output) are precisely the code we never write: our window model has world transforms and no outputs. |
 | **Output-model invasiveness**: "we arrived at the current design after a painstaking process… we'd rather leave core things as is"; disagreement on "leasing regular outputs" | **Dissolved.** [desktop-environment.md §5](../architecture/desktop-environment.md): no physical output a client reasons about; Monado owns the HMD display; `wp_drm_lease_v1` is consumed by Monado on the dev profile (ADR 0006), never served for *desktop* connectors by our compositor. The entire `0448fdd`/`136855f` pain is a 2D-compositor-retrofit artifact. |
 | **"We'd rather provide windows/thumbnails/input and let them compose overlays"** | **This is our architecture.** Vlad's preferred integration shape — compositor exports window content + input, an external XR process composes — is the seam family ADR 0012 §4 defines from the other side (we *are* the XR-native authority plane; a 2D guest would consume our seams, not vice versa). The author's rebuttal ("this is the almost exact description of the VR plugin today") is half-true: the plugin does consume window content generically, but only by living inside KWin's process and QObject model — the un-seamed version of the idea. |
-| **David's "what is KWin providing?"** | The honest answer from the code: the entire mature window model — xdg-shell/popups/subsurfaces, Xwayland, decorations, session lock, screen management, settings/i18n infra. That *is* the value, and it is exactly the mass [component-registry.md §8](../architecture/component-registry.md) says spatial-os is missing. The question cuts both ways. |
-| **(implicit) crash domain**: the xrtest crash that took KWin down | **Applies to us.** One compositor process means XR-session setup and GPU work share the session's fate. The fork's mitigations (separate preflight process, same-GPU check, deferred plugin activation) are directly reusable patterns; ours additionally include session supervision (`spatial-session.target`, ADR 0007). |
+| **David's "what is KWin providing?"** | The honest answer from the code: the entire mature window model — xdg-shell/popups/subsurfaces, Xwayland, decorations, session lock, screen management, settings/i18n infra. That *is* the value, and it is exactly the mass [component-registry.md §8](../architecture/component-registry.md) says Mura is missing. The question cuts both ways. |
+| **(implicit) crash domain**: the xrtest crash that took KWin down | **Applies to us.** One compositor process means XR-session setup and GPU work share the session's fate. The fork's mitigations (separate preflight process, same-GPU check, deferred plugin activation) are directly reusable patterns; ours additionally include session supervision (`mura-session.target`, ADR 0007). |
 
 ## 7. Capability matrix vs. the zxr-shell-v2 plan
 
@@ -671,9 +671,9 @@ protocol seams.
    shape, running daily on real hardware down to an Intel UHD 600.
 3. **KDE will likely not merge it.** Both maintainers' quoted positions (size, bitrot, output
    model) plus the author's own "naturally grows into a fork" reading mean KWin VR should be
-   treated as a *fork/reference*, not an upstream feature spatial-os could ride.
+   treated as a *fork/reference*, not an upstream feature Mura could ride.
 4. **Vlad's preferred integration shape — "provide windows, thumbnails, input; let them compose" —
-   is a description of spatial-os's authority-plane + seam architecture** (ADR 0012), argued
+   is a description of Mura's authority-plane + seam architecture** (ADR 0012), argued
    independently by the KWin maintainer from the opposite direction.
 5. **The patch-carry cost of adopting KWin VR is five upstreams** (KWin fork, Qt per-point-release
    series, XWayland ×2 unmerged, Monado fork, optional Mesa/Plasma) — wxrc-2019-like breadth,

@@ -13,7 +13,7 @@
 ## Context
 
 A standalone headset with USB-C DisplayPort alt-mode can drive a monitor. That enables the
-DeX-class product question: when docked, is spatial-os a PC? The verified hardware reality
+DeX-class product question: when docked, is Mura a PC? The verified hardware reality
 (doc 07): Quest 3 supports video-out officially, Galaxy XR demonstrably (community-verified,
 vendor-undocumented), Lynx R1 reportedly, Steam Frame **cannot** (USB 2.0 port only). So the
 feature is real on flagship targets and impossible on others — it must be a fact-gated option,
@@ -35,7 +35,7 @@ Three candidate architectures were weighed:
 The performance objection to B3 — a mobile SoC must not burn XR-grade power while the headset
 sits on the desk — is answered by observing that everything expensive about XR mode is already a
 separable, gated subsystem: perception services are independent units under
-`spatial-session.target` (ADR 0008), tiered tracking exists in the boot direction (ADR 0007's
+`mura-session.target` (ADR 0008), tiered tracking exists in the boot direction (ADR 0007's
 IMU-only greeter), Monado is socket-activated ([overview.md](../overview.md)), and 2D desktop
 composition is damage-driven rather than cadence-driven.
 
@@ -47,7 +47,7 @@ rejected.**
 
 ### The contract fact
 
-`spatial.hardware.externalDisplay = none | dp-altmode | usb-display` (per-device declared fact;
+`mura.hardware.externalDisplay = none | dp-altmode | usb-display` (per-device declared fact;
 defaults per doc 07's verification table). Everything below is absent when `none`
 (Steam Frame, Quest 1).
 
@@ -98,7 +98,7 @@ States and transitions (dock detect = DRM connector hotplug; presence = `XR_EXT_
   flat scene, repaint on damage only, no `xrWaitFrame` cadence, no eye buffers, no perception —
   i.e. **B1's performance with B3's continuity**. Spatial scene *state* (window transforms,
   places) persists in memory throughout.
-- Mechanism: `spatial-session.target` gains a docked subset target; the perception services and
+- Mechanism: `mura-session.target` gains a docked subset target; the perception services and
   Monado are already the right unit granularity (ADR 0008, overview).
 
 ### Presence and lock interaction (amends ADR 0007's ladder)
@@ -121,7 +121,7 @@ desktop when the XR stack is off.
 
 ### Contract policy surface (doc-only until packaging)
 
-`spatial.xr.session.docked.{enable, lockOnDoffWhileDocked, deepIdleAfter}` — declared in
+`mura.xr.session.docked.{enable, lockOnDoffWhileDocked, deepIdleAfter}` — declared in
 [device-contract.md](../device-contract.md) as doc-ahead-of-implementation, per the registry
 §10.2 convention.
 
@@ -170,8 +170,8 @@ desktop when the XR stack is off.
   different desktop").
 - [ADR 0007](0007-session-greeter-lock.md) is amended: the doff/don ladder gains the docked
   branch; greeter/lock gain the monitor presentation; policy ownership for quiescence lives here.
-- [device-contract.md](../device-contract.md) gains `spatial.hardware.externalDisplay` and the
-  `spatial.xr.session.docked.*` options (doc-only).
+- [device-contract.md](../device-contract.md) gains `mura.hardware.externalDisplay` and the
+  `mura.xr.session.docked.*` options (doc-only).
 - [component-registry.md](../component-registry.md) gains the docked output path (authority) and
   docked-mode policy/quiescence ladder (system+authority) rows; the power/thermal row gains this
   ADR as a customer.

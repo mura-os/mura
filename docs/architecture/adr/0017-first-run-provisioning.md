@@ -29,15 +29,15 @@ blocking.
    creates an account) is that profile's model. On the **multi-user profile**, ADR 0018 makes
    the account database mutable through exactly one authority (provisiond → userborn's persisted
    files); multi-account and guest are designed there, not here.
-2. **PIN = doc 12 option (b), ratified.** A dedicated `pam_spatial_pin` module verifies an
+2. **PIN = doc 12 option (b), ratified.** A dedicated `pam_mura_pin` module verifies an
    argon2-hashed PIN stored in the `enrollment/` state class — the device-unlock credential is
    layered above the account password (Android/visionOS layering), and the account password
-   stays strong. **PAM wiring (appliance profile):** `pam_spatial_pin` is wired into
-   `security.pam.services.spatial-lock` only; greetd's login stack stays standard
+   stays strong. **PAM wiring (appliance profile):** `pam_mura_pin` is wired into
+   `security.pam.services.mura-lock` only; greetd's login stack stays standard
    account-password, with owner-password-is-PIN (doc 12 option (a)) recorded as the appliance
-   bridge until `pam_spatial_pin` ships. Both stacks are declared through NixOS modules, never
+   bridge until `pam_mura_pin` ships. Both stacks are declared through NixOS modules, never
    hand-edited. This closes ADR 0007's open question. *Refined by
-   [ADR 0018](0018-multi-user-accounts.md) rev 3: everywhere `pam_spatial_pin` appears it is an
+   [ADR 0018](0018-multi-user-accounts.md) rev 3: everywhere `pam_mura_pin` appears it is an
    **optional per-user convenience stacked beside the Unix password** (the fprintd model) —
    passwords remain the login credential on every surface; the multi-user.md §3 input contract
    governs the module.*
@@ -46,10 +46,10 @@ blocking.
    `zxr --oobe` while provisioning is incomplete, `zxr --greeter` otherwise (greetd cannot
    select sessions from runtime state; a NixOS option cannot change post-evaluation). The
    dispatcher *executes as greetd's session user* and therefore reads the **non-secret
-   `/run/spatial/provisioned` flag** a boot-time root unit publishes — never the root-0700
+   `/run/mura/provisioned` flag** a boot-time root unit publishes — never the root-0700
    marker itself; continuation is re-dispatch on multi-user and launch-wait-exec on the
    appliance (first-run-onboarding §4.1 records both semantics). The OOBE is an **unprivileged UI**; every privileged write goes through
-   **`spatial-provisiond`** (root, private socket, spatial-authd shape), which owns PIN-hash
+   **`mura-provisiond`** (root, private socket, mura-authd shape), which owns PIN-hash
    writes, device keys, and the root-owned **transactionally committed marker**. Appliance MVP:
    autologin + the same wizard as first session content.
 4. **The marker on `/persist` is the first-run authority, not `ConditionFirstBoot`** (a fresh
@@ -80,9 +80,9 @@ blocking.
 
 - The F-track (F1/F2) enters [implementation-path.md](../implementation-path.md) §2; multi-user
   G2 requires enrollment (or the VM fixture); the appliance MVP requires neither.
-- New components for the registry: the dispatcher wrapper, `spatial-provisiond`, the OOBE mode,
-  F1 provisioning units; `pam_spatial_pin` moves to specified.
-- The contract grows `spatial.xr.session.provisioning.*`
+- New components for the registry: the dispatcher wrapper, `mura-provisiond`, the OOBE mode,
+  F1 provisioning units; `pam_mura_pin` moves to specified.
+- The contract grows `mura.xr.session.provisioning.*`
   ([lib/contract](../../../lib/contract/default.nix)).
 - ADR 0007's open-questions list drops PIN storage/enrollment (pointer added).
 - The recovery environment (where factory reset runs) is a named open item

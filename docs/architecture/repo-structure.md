@@ -1,4 +1,4 @@
-# spatial-os architecture: repository structure and patch management
+# Mura architecture: repository structure and patch management
 
 **Status:** draft. Derived from [00-synthesis](../research/00-synthesis.md) and the layout precedents
 in [01-mobile-nixos](../research/01-mobile-nixos.md) §2/§3, [02-postmarketos](../research/02-postmarketos.md)
@@ -6,7 +6,7 @@ in [01-mobile-nixos](../research/01-mobile-nixos.md) §2/§3, [02-postmarketos](
 
 ## Monorepo, with vendored sources kept out
 
-spatial-os is a **single flake-based monorepo**. The device/SoC/family decomposition, the module
+Mura is a **single flake-based monorepo**. The device/SoC/family decomposition, the module
 system, and the image builders all share one evaluation and one pinned nixpkgs; splitting them across
 repos would reproduce the Mobile-NixOS/Tow-Boot duplication (their image-builder is copied between
 repos — [01](../research/01-mobile-nixos.md) §10 item 9) with no benefit at this scale. The one
@@ -40,7 +40,7 @@ devices/
   <vendor>-<model>/            # device contract, donor manifest, kernel cfg, patches, tests, contract file
 pkgs/                          # overlay: XR components, kernels, tools (nixpkgs-xr pulled as input)
 patches/                       # patch sets, organized per upstream + per donor build (see below)
-protocols/                     # spatial-os Wayland protocol XMLs (zxr-shell-v2, the zspatial
+protocols/                     # Mura Wayland protocol XMLs (zxr-shell-v2, the zspatial
                                # shell-integration family incl. zspatial-toplevel-export) + governance
                                # notes + CONVENTIONS.md; CI: wayland-scanner + xmllint (tests/protocols.nix)
 specs/                         # normative non-Wayland contracts (IPC framings, storage formats,
@@ -62,8 +62,8 @@ which was the cleanest of the five Nix projects studied.
 One integration path (avoiding Mobile NixOS's two-entry-point wart —
 [01](../research/01-mobile-nixos.md) §10 item 4):
 
-- `nixosModules.default` — the `spatial.*` module set, usable in any NixOS config.
-- `spatialSystem = { device, ... }: …` — mirrors robotnix's `lib.robotnixSystem`
+- `nixosModules.default` — the `mura.*` module set, usable in any NixOS config.
+- `muraSystem = { device, ... }: …` — mirrors robotnix's `lib.robotnixSystem`
   ([04](../research/04-nix-imaging.md) §9 item 1); evaluates a device into its artifacts.
 - `packages.<system>.<device>-<variant>` — named, discoverable flake outputs (no untyped
   `build = types.attrs` grab-bag — [04](../research/04-nix-imaging.md) §10 item 9).
@@ -112,7 +112,7 @@ The design:
 - **nixpkgs-xr as a flake input** for the XR stack, reusing its nvfetcher daily-cron pin architecture
   (including the WiVRn→Monado cross-pin scrape) and cachix cache
   ([05](../research/05-xr-userspace.md) §2.4, §9 item 3).
-- **Scheduled bump PRs** (nvfetcher/Renovate) for spatial-os's own pins.
+- **Scheduled bump PRs** (nvfetcher/Renovate) for Mura's own pins.
 - **Release/tracking discipline** (nixos-apple-silicon, [04](../research/04-nix-imaging.md) §9 item
   11): `main` on nixos-unstable, `release-YY.MM` per NixOS stable, dated tags with CI-built artifacts
   and a written on-hardware test protocol.

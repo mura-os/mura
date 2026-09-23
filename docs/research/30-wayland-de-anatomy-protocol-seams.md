@@ -45,7 +45,7 @@ workspace, foreign-handle, and capture bases to new ext protocols while retainin
 upstream is incomplete ([workspace PR](https://github.com/pop-os/cosmic-comp/pull/1213),
 [capture PR](https://github.com/pop-os/cosmic-comp/pull/1280)).
 
-For spatial-os, COSMIC is therefore the closest implementation precedent. None of these protocols knows what an
+For Mura, COSMIC is therefore the closest implementation precedent. None of these protocols knows what an
 OpenXR view, world anchor, depth buffer, 3D bounds, or spatial workspace thumbnail is. The safe pattern is
 “upstream base object plus zxr extension,” not silently giving 2D protocol words new wire meanings.
 
@@ -186,7 +186,7 @@ present a safe frame before reporting `locked`, and stay locked if the client di
 niri, river, Mir, and others implement it; KWin and Mutter use integrated lockers and do not expose it
 ([matrix](https://wayland.app/protocols/ext-session-lock-v1)).
 
-For spatial-os, ADR 0007 stands: idle notify/inhibit are public compatibility mechanisms; ext-session-lock is
+For Mura, ADR 0007 stands: idle notify/inhibit are public compatibility mechanisms; ext-session-lock is
 dev/third-party only; secure built-in lock is compositor state.
 ### 2.7 `security-context-v1`: identity for attenuation, not permission
 A sandbox engine creates a listening Wayland socket, labels connections with engine, app ID, and instance ID, and
@@ -352,7 +352,7 @@ and supervises them, so a shell UI can restart without moving authority into tha
 ([services](https://deepwiki.com/pop-os/cosmic-epoch/1.2.1-core-system-services)).
 
 The greeter is a libcosmic app for greetd that can run inside cosmic-comp, with a separate privileged user-data daemon
-([repository](https://github.com/pop-os/cosmic-greeter/)). This is a useful modular precedent, though spatial-os ADR
+([repository](https://github.com/pop-os/cosmic-greeter/)). This is a useful modular precedent, though Mura ADR
 0007 deliberately chooses compositor-internal appliance lock plus an auth helper.
 ### 4.2 Standard seams actually used
 COSMIC uses wlr layer-shell for panel/dock; client and Smithay server handlers are visible in source
@@ -698,16 +698,16 @@ in development, but was not a complete user-facing feature as of the pinned date
 
 ### A2.3 XR amplification and verdict
 
-For spatial-os, a “place” is persistent compositor state, not application state. The compositor record should add
+For Mura, a “place” is persistent compositor state, not application state. The compositor record should add
 `place_id`, anchor identifier/version, transform relative to that anchor, bounds, presentation kind, and a safe
 fallback when an anchor cannot be resolved. The restore manager must relaunch the app into the intended place and
 deliver its opaque session identity; zxr then decides whether the old transform is still safe. This extends the
 existing workspace/anchor model without putting executable launch authority in the Wayland protocol.
 
-| Boundary | Rating | spatial-os responsibility |
+| Boundary | Rating | Mura responsibility |
 |---|---|---|
 | Returning toplevel → old state | **standard-seam** | Implement `xdg-session-management-v1`; extend stored compositor data with place/anchor IDs and degrade safely when anchors disappear. |
-| Login/session → application relaunch | **private-seam** | A supervised `spatial-session-restore` service uses desktop entries and activation, deduplicates autostart, and hands session IDs back to apps/toolkits. It never grants apps arbitrary placement. |
+| Login/session → application relaunch | **private-seam** | A supervised `mura-session-restore` service uses desktop entries and activation, deduplicates autostart, and hands session IDs back to apps/toolkits. It never grants apps arbitrary placement. |
 
 ## Addendum A3 — Status items and toplevel icons
 
@@ -736,7 +736,7 @@ Waybar's tray and sfwbar's tray act as hosts
 GNOME removed its built-in legacy tray in GNOME 3.26 (2017) and recommends that applications not require status
 icons; SNI/AppIndicator support is supplied by an extension, not core Shell
 ([removal](https://lists.gnome.org/archives/commits-list/2017-August/msg02952.html),
-[extension](https://extensions.gnome.org/extension/615/appindicator-support/)). spatial-os should support SNI for
+[extension](https://extensions.gnome.org/extension/615/appindicator-support/)). Mura should support SNI for
 compatibility, but must not make essential settings or safety state available only through it.
 
 ### A3.2 `xdg-toplevel-icon-v1` is a different icon
@@ -754,7 +754,7 @@ Mutter or COSMIC global in the surveyed releases
 [COSMIC request](https://github.com/pop-os/cosmic-comp/issues/1958)). zxr should implement it because a window icon
 can differ from the launcher icon and because Wine/SDL/Qt windows may lack a useful desktop-entry mapping.
 
-| Facility | Rating | spatial-os use |
+| Facility | Rating | Mura use |
 |---|---|---|
 | SNI watcher/host | **standard-seam (de facto D-Bus)** | A panel applet hosts icons/menus; a supervised watcher owns the bus name. Keep actions focus-safe and map their 2D coordinates only as hints. |
 | `xdg-toplevel-icon-v1` | **standard-seam** | zxr stores the icon on the toplevel model; external switcher/taskbar reads the compositor's chosen icon through its trusted model/control seam. |
@@ -810,7 +810,7 @@ pinned clone's actual XML inventory
 [unstable](../../references/wayland-protocols/unstable/),
 [experimental](../../references/wayland-protocols/experimental/)).
 
-| Protocol(s) | spatial-os relevance verdict |
+| Protocol(s) | Mura relevance verdict |
 |---|---|
 | `alpha-modifier-v1` | Implement for correct translucent 2D composition and scanout hints; zxr still resolves final alpha in its linear composition pass. |
 | `commit-timing-v1`, `fifo-v1`, `tearing-control-v1` | Implement timing/fifo for compatible 2D clients, but translate them into zxr's OpenXR-paced scheduler. Commit timing is a desired earliest presentation time; FIFO prevents superseding queued commits; tearing is only a hint and must never tear the HMD projection. “Async” can reduce a client's queue latency, not bypass `xrWaitFrame`/one-layer composition. |
@@ -861,13 +861,13 @@ parsing or portal coverage. The local spec catalog explicitly mixes local, exter
 ([catalog](../../references/xdg-specs/spec-index.toml)); versions below come from its revision manifest
 ([revisions](../../references/xdg-specs/spec-revs.toml)).
 
-| CDG specification | Status and KDE/GNOME reality | spatial-os contract |
+| CDG specification | Status and KDE/GNOME reality | Mura contract |
 |---|---|---|
 | [Base Directory](../../references/xdg-specs/basedir/basedir-spec.xml) | 0.8; tiny, old, and load-bearing. Both stacks use `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, `$XDG_CACHE_HOME`, state/runtime dirs through GLib/Qt/KF. Divergence is mostly fallback paths. | Use it everywhere; immutable Nix store assets do not erase per-user config/state/cache semantics. |
 | [Desktop Entry](../../references/xdg-specs/desktop-entry/desktop-entry-spec.xml) | 1.5; load-bearing launcher/app identity format. KDE `KService` and GNOME `GDesktopAppInfo` implement core keys, visibility, actions, MIME declarations, and `Exec`; vendor keys differ. GNOME does not “ignore desktop entries,” but does not use the menu hierarchy for its overview. | Launcher must parse via a mature library, honor `Hidden`, `NoDisplay`, `OnlyShowIn`, `NotShowIn`, `TryExec`, field-code quoting, DBus activation, actions, and desktop-file ID. Never hand-roll `Exec`. |
 | Icon Theme / Icon Naming | 0.13/0.8-era, externally managed in the catalog rather than cloned under this tree ([index](../../references/xdg-specs/spec-index.toml)). KDE and GNOME both rely on name lookup but ship different themes/fallbacks. | Ship `hicolor` fallback plus spatial theme; use spec lookup for launcher, notifications, SNI, and toplevel-icon names. Missing names must degrade to a placeholder. |
 | [MIME Applications](../../references/xdg-specs/mime-apps/mime-apps-spec.xml) + Shared MIME Info | MIME-apps 1.0.1; load-bearing default/recommended application mapping. KDE and GNOME both implement it, with UI/policy differences and shared-mime-info maintained externally. | Use for “open with” and defaults; portals remain the sandbox-aware chooser/launch path. |
-| [Autostart](../../references/xdg-specs/autostart/autostart-spec.xml) | 0.5 and effectively mature/frozen. Both desktops support `.desktop` autostart, but modern sessions increasingly translate it to systemd user services; the generator handles visibility/`TryExec` but skips `X-GNOME-Autostart-Phase` ([generator](https://man7.org/linux/man-pages/man8/systemd-xdg-autostart-generator.8.html)). | `spatial-session.target` owns native shell services. Start third-party XDG autostart via `xdg-desktop-autostart.target`; mark native units `X-systemd-skip=true`; deduplicate them during restore. |
+| [Autostart](../../references/xdg-specs/autostart/autostart-spec.xml) | 0.5 and effectively mature/frozen. Both desktops support `.desktop` autostart, but modern sessions increasingly translate it to systemd user services; the generator handles visibility/`TryExec` but skips `X-GNOME-Autostart-Phase` ([generator](https://man7.org/linux/man-pages/man8/systemd-xdg-autostart-generator.8.html)). | `mura-session.target` owns native shell services. Start third-party XDG autostart via `xdg-desktop-autostart.target`; mark native units `X-systemd-skip=true`; deduplicate them during restore. |
 | [Desktop Menu](../../references/xdg-specs/menu/menu-spec.xml) | 1.1, elaborate XML merge/query hierarchy. KDE still consumes menu/category structure; upstream GNOME Shell explicitly stopped using the menu spec for Overview organization ([GNOME statement](https://lists.freedesktop.org/archives/xdg/2013-December/013060.html)). Effectively dead as a universal shell UI contract. | Do not build launcher architecture around `.menu` layout. Index desktop entries/categories directly; optional compatibility importer only. |
 | [Trash](../../references/xdg-specs/trash/index.rst) | 1.0; stable filesystem convention implemented by KDE KIO and GNOME GIO, including per-mount trash when permissions allow. | Use GIO/KIO-compatible trash semantics in file UI; not a compositor service. |
 | [Desktop Notifications](../../references/xdg-specs/notification/notification-spec.xml) | Active D-Bus spec 1.3 dated 2024-08-18, not frozen: it added activation-token signaling. Plasma and GNOME Shell both provide session-scoped `org.freedesktop.Notifications` servers but differ in hints, persistence, actions, and presentation. | Notification daemon implements mandatory calls/signals and capability negotiation; use the 1.3 activation token before `ActionInvoked`; treat all hints as optional and let zxr enforce spatial comfort/DND. |
@@ -876,5 +876,5 @@ parsing or portal coverage. The local spec catalog explicitly mixes local, exter
 The design-changing divergences are concrete. The launcher can rely on desktop entries, basedir, icon lookup, and
 MIME defaults, but **not** on the menu spec producing one cross-desktop hierarchy. Notifications can rely on the D-Bus
 method/signals, but must capability-test actions, persistence, markup, sound, and activation tokens. Autostart is an
-input compatibility format, while `spatial-session.target` is the authority and supervision graph. SNI is optional
+input compatibility format, while `mura-session.target` is the authority and supervision graph. SNI is optional
 compatibility UI, not notification delivery and not a safety/status authority.

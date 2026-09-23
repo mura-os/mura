@@ -1,6 +1,6 @@
 # protocols/
 
-Home of spatial-os's Wayland protocol XMLs — the `zxr` / `zspatial` families. Declared in
+Home of Mura's Wayland protocol XMLs — the `zxr` / `zspatial` families. Declared in
 [repo-structure.md](../docs/architecture/repo-structure.md).
 
 ## Contents
@@ -18,7 +18,7 @@ Home of spatial-os's Wayland protocol XMLs — the `zxr` / `zspatial` families. 
 Per [research/32 §7](../docs/research/32-toplevel-export-prior-art.md) (wayland-protocols
 GOVERNANCE.md verified):
 
-- **`zspatial_`/`zxr_`** — spatial-os experimental namespaces, local to this tree (the shell
+- **`zspatial_`/`zxr_`** — Mura experimental namespaces, local to this tree (the shell
   family was renamed off `zext_` at toplevel-export rev 3: `zext_` read as a claim on the
   wayland-protocols `ext` namespace plus the retired `z` unstable prefix — a red-team finding
   against our own research/32 §7 recommendation). Nothing here is an

@@ -9,7 +9,7 @@ to `zxr_frame_slot_v2.set_depth_range` and
 [perception-intake §2](perception-intake.md) (the one canonical depth vocabulary).
 **Grounding:** "XDG" = **xdg-desktop-portal** (sense (c)). This spec extends the portal
 *additively and honestly*: the pinned frontend rejects unknown `SelectSources.types` bits, so §1
-defines the carrier as a spatial-os **frontend patch** (our normal patch-series model) with
+defines the carrier as a Mura **frontend patch** (our normal patch-series model) with
 upstreaming intent — never silent bit-squatting.
 **Budget impact** (inv. 9): capture rides existing capture/PipeWire lines; `APP_VOLUME`
 re-renders are governed by observer-view budget objects (spatial-sharing §8.1).
@@ -17,7 +17,7 @@ re-renders are governed by observer-view budget objects (spatial-sharing §8.1).
 ## 1. The carrier: a patched frontend, upstreaming intended
 
 The stock `xdg-desktop-portal` frontend validates `SelectSources.types` against `MONITOR|WINDOW|
-VIRTUAL` and rejects everything else, so backend-only extension is impossible. spatial-os
+VIRTUAL` and rejects everything else, so backend-only extension is impossible. Mura
 therefore carries a **frontend patch** (in `patches/xdg-desktop-portal/`, per the repo's
 patch-series model) that: (a) advertises `version >= 6` plus a vendor property
 `org.freedesktop.portal.ScreenCast.SpatialSourceTypes (u)`, and (b) accepts the spatial bits in
@@ -34,7 +34,7 @@ frontend, never backend-direct.
 
 **`WORKSPACE` is not a ScreenCast source type** (rev 1 error): joining a place is a session-layer
 operation with no media stream. It is provided by `spatial-sharingd` as
-`org.spatialos.Sharing1.JoinWorkspace(place_id, options) → handle`, presented through the same
+`org.mura.Sharing1.JoinWorkspace(place_id, options) → handle`, presented through the same
 chooser and consent UX (§4) but never through `Start`'s stream list, and never as a bufferless
 PipeWire node.
 
@@ -64,7 +64,7 @@ All vendor keys carry the `spatial_` prefix; signatures are canonical D-Bus stri
 - **Consumers opt in**: the profile is negotiated; a consumer that does not negotiate it never
   receives an RGBD stream (the chooser offers `XR_VIEW` as the generic fallback).
 - **One `spa_buffer` carries two logical images** (colour, depth), each possibly multi-plane:
-  a negotiated `SPA_PARAM` descriptor (`spatial.cast.layout`, versioned pod) maps each logical
+  a negotiated `SPA_PARAM` descriptor (`mura.cast.layout`, versioned pod) maps each logical
   image to an ordered range of `spa_data` blocks with fourcc, modifier, per-plane offsets/strides
   and dimensions. Explicit-sync `SPA_DATA_SyncObj` blocks, where negotiated, are reserved after
   the image blocks and identified by the descriptor. Colour-block-only decoding by a consumer
@@ -92,7 +92,7 @@ All vendor keys carry the `spatial_` prefix; signatures are canonical D-Bus stri
 - **Badging**: active sessions render the in-space badge (spatial-sharing §6 invariant 2);
   notification suppression per capture policy.
 - **Restore tokens**: vendor-scoped restore data
-  `("spatial-os", 1, {"kind": s, "window_uuid"|"view_id"|"place_id": s})` (exact GVariant types;
+  `("mura", 1, {"kind": s, "window_uuid"|"view_id"|"place_id": s})` (exact GVariant types;
   all members `s`); workspace-join restore re-offers, never silently rejoins.
 
 ## 5. Input injection scope

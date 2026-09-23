@@ -1,4 +1,4 @@
-# spatial-os
+# Mura
 
 A Nix-built, NixOS-based, Wayland-based Linux XR distribution targeting many standalone VR headsets
 (Oculus Quest 1, Lynx R1, Samsung Galaxy XR, Play For Dream MR, Valve Steam Frame, …). It turns
@@ -14,7 +14,7 @@ and `nix flake check` passes. Real device ports begin with a Lynx R1 hardware sp
 
 - [docs/](docs/README.md) — research (7 deep-dives + synthesis), architecture (5 docs + 5 ADRs),
   the red-team review, and its disposition.
-- `lib/contract/` — the typed `spatial.*` device contract (NixOS-module options + assertions).
+- `lib/contract/` — the typed `mura.*` device contract (NixOS-module options + assertions).
 - `lib/donor/`, `lib/images/` — donor-pipeline and image-variant builders (typed stubs until the
   Lynx spike, per the design backlog).
 - `modules/{os,xr,adaptation}` — the common distribution, XR runtime wiring, and per-subsystem
@@ -46,7 +46,7 @@ zxr M1; Alt+Return = terminal, Alt+Shift+E = quit) plus Monado running the **sim
 **Rung 2 — `nix run .#virtual-headset-vm`** (module/system integration; iteration = incremental
 rebuild, no image assembly — the VM shares the host `/nix/store`). Boots in seconds under KVM
 straight into a visible sway session (virgl-accelerated GL, 8 GiB/4 cores); `ssh -p 2221
-spatial@localhost` (password `spatial`). State persists in `./spatial-virtual-headset.qcow2` — delete it
+mura@localhost` (password `mura`). State persists in `./mura-virtual-headset.qcow2` — delete it
 for a factory-reset boot.
 
 **Rung 3 — `nix run .#frame-vm-run -- <image.raw[.zst]>`** (image/update machinery only): the

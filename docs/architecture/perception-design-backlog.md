@@ -84,7 +84,7 @@ accelerators until that path and P-1 exist.
   classical | none`, `handCutout.enable`; move vendor backend selectors (`vk-qcom`/`adreno-dfs`/
   `hexagon`) and runtime `upperLimbVisibility` policy out of the device contract into device
   capability data / shell+protocol config. Add the missing **typed camera-array schema** under
-  `spatial.adaptation.camera` (role/source, stereo sync group, format/rate, intrinsics/distortion,
+  `mura.adaptation.camera` (role/source, stereo sync group, format/rate, intrinsics/distortion,
   head↔camera extrinsics, calibration URI/version, timestamp clock, exposure/readout model, colour
   metadata, dmabuf caps, matte-source) and cross-field assertions (passthrough ⇒ Monado+zxr; hand
   cutout ⇒ passthrough). *(The current stubs are left as-is with this note; trimming happens when

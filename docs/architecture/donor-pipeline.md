@@ -1,9 +1,9 @@
-# spatial-os architecture: the donor pipeline
+# Mura architecture: the donor pipeline
 
 **Status:** draft. This is the architecture-level distillation of
 [06-donor-pipeline](../research/06-donor-pipeline.md), which contains the full prior-art walkthrough,
 the format zoo, and the metadata-preservation analysis. Read that document for the evidence; this one
-states the design spatial-os implements.
+states the design Mura implements.
 
 ## Principle
 
@@ -65,7 +65,7 @@ detected format, AVB summary). Per-container recipes, each a small derivation:
 - `dtbo.img` → `mkdtboimg dump`; `vbmeta.img` → `avbtool info_image`
 - `.raucb` → `unsquashfs` (+ `rauc info --keyring` when pinned) → `desync extract` → `verify-index`
 - Samsung `.tar.md5` → `tar` + `lz4 -d`
-- whole-disk GPT → a spatial-os port of the brick appliance's CRC-verified GPT inspector, adopted
+- whole-disk GPT → a Mura port of the brick appliance's CRC-verified GPT inspector, adopted
   nearly verbatim ([06](../research/06-donor-pipeline.md) §5.3)
 
 All tooling is in nixpkgs (`android-tools`, `payload-dumper-go`, `erofs-utils`, `squashfs-tools`,
@@ -97,7 +97,7 @@ directory structure — it drops ownership, non-exec mode bits, setuid, xattrs (
 capabilities and SELinux labels), and timestamps. Android filesystems depend on exactly this
 metadata to boot.
 
-**spatial-os is not rebuilding Android**, so the resolution is a **blob-default hybrid**
+**Mura is not rebuilding Android**, so the resolution is a **blob-default hybrid**
 ([06](../research/06-donor-pipeline.md) §4.4):
 1. **Default: verbatim partition blobs.** Everything metadata-sensitive stays a single image file;
    the store's normalization is harmless because metadata lives inside the blob's bytes. Pass-through
@@ -138,7 +138,7 @@ only `contract` requires human action.
 ## Reproducibility and safety rules
 
 - **Never re-compress in the pipeline** (decompression is deterministic, re-compression is not). Store
-  artifacts uncompressed/verbatim. Where spatial-os builds its own compressed rootfs, use
+  artifacts uncompressed/verbatim. Where Mura builds its own compressed rootfs, use
   `-processors 1` and fixed timestamps/UUIDs/hash-seeds.
 - **`licensing.redistributable = false` mechanically forces `preferLocalBuild = true;
   allowSubstitutes = false`** and exclusion from cache-push — donor bytes must not leak to a public

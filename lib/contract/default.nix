@@ -1,4 +1,4 @@
-# spatial-os device contract: typed option surface.
+# Mura device contract: typed option surface.
 #
 # This is the NixOS-module option set a device declares, per
 # docs/architecture/device-contract.md. It is a plain module (importable into any
@@ -25,10 +25,10 @@ let
     };
   };
 
-  cfg = config.spatial;
+  cfg = config.mura;
 in
 {
-  options.spatial = {
+  options.mura = {
 
     ## Identity and support (mandatory minimum) -----------------------------
     device = {
@@ -104,7 +104,7 @@ in
             - manual-sensed: device reports the mechanism position (Quest 1 / Lynx R1 class).
             - stored: per-user software value on fixed optics.
             - motorized-auto: eye-tracked servo (Galaxy XR / PFDM class); requires
-              spatial.adaptation.eyes.
+              mura.adaptation.eyes.
           '';
         };
         defaultMeters = mkOption {
@@ -264,7 +264,7 @@ in
         description = ''
           Per-device calibration data locations (per-unit SYSTEM state, never $HOME —
           ADR 0007). Keys are calibration kinds (camera, distortion, ipd, imu...),
-          values absolute paths (typically under /var/lib/spatial or a vendor persist
+          values absolute paths (typically under /var/lib/mura or a vendor persist
           mount listed in deployment.protectedPartitions).
         '';
       };
@@ -273,7 +273,7 @@ in
         default = "none";
         description = ''
           The XR shell/compositor session run above the OpenXR runtime (ADR 0006).
-          - zxr: the spatial-os compositor (Wayland-native, continues the wxrc zxr lineage
+          - zxr: the Mura compositor (Wayland-native, continues the wxrc zxr lineage
             as zxr-shell-v2; xdg-shell 2D apps + zxr-shell-v2 3D apps in one depth-tested space).
             Ships the 2D tier first, then the 3D-native tier (docs/research/10).
           - stardust: StardustXR as a packaged alternative session (not the backbone).
@@ -395,7 +395,7 @@ in
           default = false;
           description = ''
             Enable the Persona avatar driver service + runtime (docs/architecture/avatar-persona.md).
-            The driver consumes Monado face/gaze devices per spatial.xr.sensing.* and emits the
+            The driver consumes Monado face/gaze devices per mura.xr.sensing.* and emits the
             versioned semantic control stream; the runtime renders assets as a zxr client.
             Gated per device on the S-1 sensing and R-1 render kill-gates.
           '';
@@ -421,7 +421,7 @@ in
             Multi-user profile greeter run via greetd `default_session`.
             - zxr-greeter: the zxr compositor in restricted --greeter mode as the `greeter`
               user (Monado + IMU-only tracking, built-in auth scene, sessions from
-              `spatial.xr.shell`), per docs/research/11.
+              `mura.xr.shell`), per docs/research/11.
             - none: appliance profile (requires `session.autoLogin`).
           '';
         };
@@ -432,7 +432,7 @@ in
             description = ''
               Compositor-integrated lock (ADR 0007): an internal composition-policy state
               (compose only the lock scene, route input only to it, PAM via out-of-process
-              spatial-authd). Not ext-session-lock-v1 (that is exposed only for the dev
+              mura-authd). Not ext-session-lock-v1 (that is exposed only for the dev
               profile / third-party lockers).
             '';
           };
@@ -464,7 +464,7 @@ in
                 which execs `zxr --oobe` while the provisioning marker is absent and
                 `zxr --greeter` once it exists (multi-user profile).
               - in-session: the wizard runs as first session content after autologin
-                (appliance MVP, Steam Deck model). Same wizard, same spatial-provisiond
+                (appliance MVP, Steam Deck model). Same wizard, same mura-provisiond
                 authority, same marker.
               - none: no onboarding (bring-up/headless images; enrollment must be
                 seeded out of band, e.g. the VM test fixture).
@@ -474,7 +474,7 @@ in
           };
           markerPath = mkOption {
             type = types.str;
-            default = "/var/lib/spatial/enrollment/provisioned";
+            default = "/var/lib/mura/enrollment/provisioned";
             description = ''
               The root-owned, transactionally written provisioning marker
               (first-run-onboarding.md §4.2; enrollment state class — wiped by factory
@@ -525,7 +525,7 @@ in
             description = ''
               Guest mode (ADR 0018, multi-user.md §4): an ephemeral per-session account
               (provisiond add/remove around session lifecycle, LightDM contract), tmpfs or
-              wiped home, autologin-class PAM service `spatial-guest`, transient
+              wiped home, autologin-class PAM service `mura-guest`, transient
               calibration, owner-granted greeter tile. Requires multiUser.enable (the
               appliance profile has no greeter surface to grant it from).
             '';
@@ -582,27 +582,27 @@ in
   config.assertions = [
     {
       assertion = cfg.device.supportTier == "booting" || cfg.device.maintainers != [ ];
-      message = "spatial.device.supportTier '${cfg.device.supportTier}' requires at least one entry in spatial.device.maintainers.";
+      message = "mura.device.supportTier '${cfg.device.supportTier}' requires at least one entry in mura.device.maintainers.";
     }
     {
       assertion = cfg.device.supportTier == "booting" || cfg.qualification.readinessCheck != null;
-      message = "spatial.device.supportTier '${cfg.device.supportTier}' requires spatial.qualification.readinessCheck (the xr-functional tier is defined by a passing readiness check; device-contract.md §tiers, images-and-updates.md §health-gated success).";
+      message = "mura.device.supportTier '${cfg.device.supportTier}' requires mura.qualification.readinessCheck (the xr-functional tier is defined by a passing readiness check; device-contract.md §tiers, images-and-updates.md §health-gated success).";
     }
     {
       assertion = cfg.deployment.bootScheme != "android-bootimg" || cfg.kernel.bootimg.headerVersion != null;
-      message = "android-bootimg boot scheme requires spatial.kernel.bootimg.headerVersion (derive it from the donor with unpack_bootimg; do not assume a legacy header).";
+      message = "android-bootimg boot scheme requires mura.kernel.bootimg.headerVersion (derive it from the donor with unpack_bootimg; do not assume a legacy header).";
     }
     {
       # Any android-backed subsystem needs a donor to extract blobs from.
       assertion =
         let backends = with cfg.adaptation; [ display.backend gpu.backend camera.backend sensors.backend audio.backend wifiBt.backend tracking.backend eyes.backend ];
         in !(lib.any (b: b == "android-backed") backends) || cfg.donor != null;
-      message = "An 'android-backed' adaptation subsystem requires spatial.donor to be set (blobs are extracted from the pinned donor).";
+      message = "An 'android-backed' adaptation subsystem requires mura.donor to be set (blobs are extracted from the pinned donor).";
     }
     {
       # ADR 0011: motorized auto-IPD is an eye-tracked servo; it needs the eyes subsystem.
       assertion = cfg.hardware.ipd.source != "motorized-auto" || cfg.adaptation.eyes.backend != "none";
-      message = "spatial.hardware.ipd.source = \"motorized-auto\" requires spatial.adaptation.eyes.backend != \"none\" (the servo is driven by eye tracking; ADR 0011).";
+      message = "mura.hardware.ipd.source = \"motorized-auto\" requires mura.adaptation.eyes.backend != \"none\" (the servo is driven by eye tracking; ADR 0011).";
     }
     {
       # ADR 0007: a device with an XR shell session must select exactly one profile.
@@ -610,7 +610,7 @@ in
       # Headless/bring-up images (shell = "none") are exempt.
       assertion = cfg.xr.shell == "none"
         || ((cfg.xr.session.autoLogin != null) != (cfg.xr.session.greeter != "none"));
-      message = "spatial.xr.session must select exactly one profile when spatial.xr.shell is set: session.autoLogin (appliance) OR session.greeter != \"none\" (multi-user), not both and not neither (ADR 0007).";
+      message = "mura.xr.session must select exactly one profile when mura.xr.shell is set: session.autoLogin (appliance) OR session.greeter != \"none\" (multi-user), not both and not neither (ADR 0007).";
     }
     {
       # ADR 0017: a multi-user greeter needs a credential to verify, so onboarding must
@@ -618,25 +618,25 @@ in
       # "greeter-gated": the dispatcher sees the marker present and never runs the OOBE.
       assertion = cfg.xr.session.greeter == "none"
         || cfg.xr.session.provisioning.mode != "none";
-      message = "spatial.xr.session.greeter requires spatial.xr.session.provisioning.mode != \"none\" (multi-user login needs enrolled credentials; ADR 0017 / first-run-onboarding.md). Use mode = \"greeter-gated\", or an appliance profile.";
+      message = "mura.xr.session.greeter requires mura.xr.session.provisioning.mode != \"none\" (multi-user login needs enrolled credentials; ADR 0017 / first-run-onboarding.md). Use mode = \"greeter-gated\", or an appliance profile.";
     }
     {
       # ADR 0018: multi-account rides the greeter (picker + per-account PIN); the
       # appliance profile is single-owner by design.
       assertion = !cfg.xr.session.multiUser.enable || cfg.xr.session.greeter != "none";
-      message = "spatial.xr.session.multiUser.enable requires the multi-user profile (session.greeter != \"none\"); the appliance profile is single-owner (ADR 0017/0018).";
+      message = "mura.xr.session.multiUser.enable requires the multi-user profile (session.greeter != \"none\"); the appliance profile is single-owner (ADR 0017/0018).";
     }
     {
       # ADR 0018: the guest tile lives in the greeter scene and is owner-granted there.
       assertion = !cfg.xr.session.guest.enable || cfg.xr.session.multiUser.enable;
-      message = "spatial.xr.session.guest.enable requires spatial.xr.session.multiUser.enable (the guest tile is a greeter-scene affordance; ADR 0018 / multi-user.md §4).";
+      message = "mura.xr.session.guest.enable requires mura.xr.session.multiUser.enable (the guest tile is a greeter-scene affordance; ADR 0018 / multi-user.md §4).";
     }
     {
       # ADR 0018/multi-user.md §1.1: add-account and the owner OOBE both run through
       # provisiond, so multi-account requires an onboarding placement explicitly (not
       # merely transitively via the greeter assertion).
       assertion = !cfg.xr.session.multiUser.enable || cfg.xr.session.provisioning.mode != "none";
-      message = "spatial.xr.session.multiUser.enable requires spatial.xr.session.provisioning.mode != \"none\" (accounts are created only through spatial-provisiond; ADR 0018).";
+      message = "mura.xr.session.multiUser.enable requires mura.xr.session.provisioning.mode != \"none\" (accounts are created only through mura-provisiond; ADR 0018).";
     }
     {
       # multi-user.md §2: the picker enumeration window must be well-formed and start at
@@ -647,22 +647,22 @@ in
           cfg.xr.session.multiUser.uidRange.min <= cfg.xr.session.multiUser.uidRange.max
           && cfg.xr.session.multiUser.uidRange.min >= 1000
         );
-      message = "spatial.xr.session.multiUser.uidRange must satisfy min <= max with min >= 1000 (the login.defs human-account floor; multi-user.md §2).";
+      message = "mura.xr.session.multiUser.uidRange must satisfy min <= max with min >= 1000 (the login.defs human-account floor; multi-user.md §2).";
     }
     {
       # A lockable session needs a runtime to compose the lock scene over.
       assertion = cfg.xr.shell == "none" || !cfg.xr.session.lock.enable || cfg.xr.runtime != "none";
-      message = "spatial.xr.session.lock.enable requires spatial.xr.runtime != \"none\" (the lock scene composes over the runtime; ADR 0007).";
+      message = "mura.xr.session.lock.enable requires mura.xr.runtime != \"none\" (the lock scene composes over the runtime; ADR 0007).";
     }
     {
       # adr/0010 (avatar): audio-derived face weights need a microphone.
       assertion = cfg.xr.sensing.faceWeights != "fb2-audio" || cfg.xr.sensing.micChannels > 0;
-      message = "spatial.xr.sensing.faceWeights = \"fb2-audio\" requires spatial.xr.sensing.micChannels > 0 (adr/0010-avatar-control-space-and-driver.md).";
+      message = "mura.xr.sensing.faceWeights = \"fb2-audio\" requires mura.xr.sensing.micChannels > 0 (adr/0010-avatar-control-space-and-driver.md).";
     }
     {
       # adr/0010 (avatar): the avatar driver consumes Monado devices; the runtime renders via the zxr shell.
       assertion = !cfg.xr.avatar.enable || (cfg.xr.runtime != "none" && cfg.xr.shell == "zxr");
-      message = "spatial.xr.avatar.enable requires spatial.xr.runtime != \"none\" and spatial.xr.shell = \"zxr\" (driver consumes Monado face/gaze devices; runtime is a zxr client; adr/0010-avatar-control-space-and-driver.md).";
+      message = "mura.xr.avatar.enable requires mura.xr.runtime != \"none\" and mura.xr.shell = \"zxr\" (driver consumes Monado face/gaze devices; runtime is a zxr client; adr/0010-avatar-control-space-and-driver.md).";
     }
   ];
 }

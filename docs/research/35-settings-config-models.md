@@ -5,7 +5,7 @@
 
 ## 0. Question, constraints, and findings
 
-spatial-os currently has no runtime user-settings path: its declared surfaces are the build-time `spatial.*` Nix contract and `spatial.xr.environment` variables injected into Monado ([component registry §6](../architecture/component-registry.md#6-service-plane)).
+Mura currently has no runtime user-settings path: its declared surfaces are the build-time `mura.*` Nix contract and `mura.xr.environment` variables injected into Monado ([component registry §6](../architecture/component-registry.md#6-service-plane)).
 
 The missing service must eventually support the HMD settings surface in [ADR 0012 §4.5](../architecture/adr/0012-de-modularity-spinout-seams.md#4-the-zxr-private-protocol-surface-kept-minimal): IPD, render scale, refresh, recentering, passthrough, and the KWin-VR-derived general/input/head-gaze/follow-mode/advanced checklist.
 
@@ -38,12 +38,12 @@ A user-selected render scale, follow-mode preference, or hand-cutout policy is t
 
 An automatically remembered workspace, last settings page, or daemon checkpoint is state and belongs below `$XDG_STATE_HOME`. [`cosmic-config`](https://raw.githubusercontent.com/pop-os/libcosmic/1dc9aa37/cosmic-config/src/lib.rs) implements exactly this split: `Config::new()` uses the XDG config directory; `Config::new_state()` uses the state directory for values that change regularly without user action.
 
-Neither directory fits per-unit calibration. ADR 0007 requires lens/distortion calibration and device credentials in `/var/lib/spatial/` or vendor persist because greeter, lock, and early rendering need them before login; per-user IPD is applied after login ([ADR 0007](../architecture/adr/0007-session-greeter-lock.md#cross-cutting-requirements)).
+Neither directory fits per-unit calibration. ADR 0007 requires lens/distortion calibration and device credentials in `/var/lib/mura/` or vendor persist because greeter, lock, and early rendering need them before login; per-user IPD is applied after login ([ADR 0007](../architecture/adr/0007-session-greeter-lock.md#cross-cutting-requirements)).
 
 Vocabulary used below:
 
 - **build fact/default:** immutable artifact selected by Nix evaluation;
-- **per-unit system state:** device-specific mutable state under `/var/lib/spatial/`;
+- **per-unit system state:** device-specific mutable state under `/var/lib/mura/`;
 - **per-user preference:** intentional user choice under `$XDG_CONFIG_HOME`;
 - **per-user operational state:** restart-persistent, non-preference state under `$XDG_STATE_HOME`;
 - **session-ephemeral:** `$XDG_RUNTIME_DIR` or memory only.
@@ -116,7 +116,7 @@ System/organization defaults are not copied into user files. With no user entry,
 
 KConfigXT's `.kcfg` XML describes groups, keys, types, enums, defaults, bounds, labels, tooltips, and change signals. The build generates typed C++ getters/setters, providing one application source of truth ([KConfigXT guide](https://develop.kde.org/docs/features/configuration/kconfig_xt/)).
 
-This resembles constraint 9 in direction but not ownership: `.kcfg` emits application code, while spatial-os requires the evaluated Nix contract to emit schema/defaults for all trusted consumers. KConfigXT also allows `code="true"` C++ defaults, which would recreate the forbidden compiled-in policy channel.
+This resembles constraint 9 in direction but not ownership: `.kcfg` emits application code, while Mura requires the evaluated Nix contract to emit schema/defaults for all trusted consumers. KConfigXT also allows `code="true"` C++ defaults, which would recreate the forbidden compiled-in policy channel.
 
 Plasma System Settings pages are KConfig Modules. A managed KCM owns a generated config object, tracks dirty state, supports Apply/Reset/Defaults, and can show whether a value is defaulted or immutable ([KConfigXT KCM pattern](https://develop.kde.org/docs/features/configuration/kconfig_xt/), [KCM guide](https://develop.kde.org/docs/features/configuration/kcm/)).
 
@@ -142,7 +142,7 @@ Writes serialize one key and atomically replace its file. A transaction queues m
 
 Types and fallback defaults also exist in Rust. The local `CosmicCompConfig` derives `CosmicConfigEntry`, declares `#[version = 1]`, and implements Rust `Default` ([config crate](../../references/cosmic-comp/cosmic-comp-config/src/lib.rs)).
 
-That is useful typing but not constraint-9-safe alone: system-default files and Rust `Default` can diverge. A spatial-os producer would have to eliminate or mechanically check the second default channel.
+That is useful typing but not constraint-9-safe alone: system-default files and Rust `Default` can diverge. A Mura producer would have to eliminate or mechanically check the second default channel.
 
 ### 4.2 Watchers and daemon distribution
 
@@ -286,25 +286,25 @@ Then:
 
 The hard case is not “NixOS versus runtime settings” generally. It is whether `U(k)` denotes durable intent when `D_new` changes, and what happens when the new schema cannot represent it. OSTree distinguishes this per file; a settings service can do it per key.
 
-## 8. Mapping to spatial-os
+## 8. Mapping to Mura
 
 ### 8.1 Strata and matching precedents
 
 | Spatial stratum | Examples | Persistence | Best-fitting precedent |
 |---|---|---|---|
 | Build-time facts/defaults | panel geometry, supported refresh set, backends, profile defaults | Nix store/current generation | NixOS options + generated schema; GSettings compiled schema/default semantics |
-| Per-unit system state | lens/distortion calibration, device enrollment, protected calibration domains | `/var/lib/spatial/` or vendor persist | ADR 0007; Android protected device settings |
-| Per-user preferences | IPD preference, render scale, passthrough, comfort/input/follow mode | `$XDG_CONFIG_HOME/spatial/...`, sparse overrides | GSettings layering; COSMIC config files |
-| Per-user operational state | last workspace/page, restore bookkeeping, recents | `$XDG_STATE_HOME/spatial/...` | COSMIC `new_state`; XDG state definition |
+| Per-unit system state | lens/distortion calibration, device enrollment, protected calibration domains | `/var/lib/mura/` or vendor persist | ADR 0007; Android protected device settings |
+| Per-user preferences | IPD preference, render scale, passthrough, comfort/input/follow mode | `$XDG_CONFIG_HOME/mura/...`, sparse overrides | GSettings layering; COSMIC config files |
+| Per-user operational state | last workspace/page, restore bookkeeping, recents | `$XDG_STATE_HOME/mura/...` | COSMIC `new_state`; XDG state definition |
 | Session-ephemeral | recenter transaction, capability probe, subscriptions, pending edits | memory or `$XDG_RUNTIME_DIR` | session D-Bus/daemon patterns |
 
-This corrects two tempting conflations: `$XDG_STATE_HOME` is not the default for preferences, and `/var/lib/spatial/` must not absorb user choices merely because HMD hardware consumes them.
+This corrects two tempting conflations: `$XDG_STATE_HOME` is not the default for preferences, and `/var/lib/mura/` must not absorb user choices merely because HMD hardware consumes them.
 
 ### 8.2 Evidence-bounded minimum daemon shape
 
 Without selecting names, formats, or protocol, precedents bound a minimum:
 
-1. **Schema source:** generated from evaluated `spatial.*` declarations, carrying stable IDs, type/range/enum, default, description, stratum, version, and writability. Consumers have no independent normal defaults.
+1. **Schema source:** generated from evaluated `mura.*` declarations, carrying stable IDs, type/range/enum, default, description, stratum, version, and writability. Consumers have no independent normal defaults.
 2. **Storage resolver:** immutable generated defaults plus sparse preference overrides; separate state root; explicitly separate privileged per-unit state. Atomic replacement per key and versioned migration are the COSMIC baseline.
 3. **Mutation authority:** one session service validates writes, resets, and grouped changes against the active schema. Recovery-readable files may remain authoritative, but direct unvalidated edits cannot be the notification contract.
 4. **Notification bus:** session-bus events naming changed keys/groups, writability changes, and generation. GSettings/dconf provides semantics; COSMIC provides the Rust daemon shape.
@@ -333,7 +333,7 @@ The KWin-VR taxonomy in [research 31 §2.7](31-kwin-vr.md#27-ops-surface-kcm-pre
 
 ### 8.4 Open questions for design
 
-- Which `spatial.*` options are exportable runtime keys, and how is that annotation represented without confusing facts and preferences?
+- Which `mura.*` options are exportable runtime keys, and how is that annotation represented without confusing facts and preferences?
 - Is the active artifact JSON/CBOR, generated Rust, GSettings schema, or multiple mechanically checked representations?
 - Are user preferences file-per-key, transactional DB, or journal plus snapshots?
 - Which groups need true all-or-nothing commits rather than per-key atomic replacement?
@@ -352,6 +352,6 @@ The KWin-VR taxonomy in [research 31 §2.7](31-kwin-vr.md#27-ops-surface-kcm-pre
 
 The strongest precedent for schema-from-build-system is **NixOS's evaluated option metadata and artifact generators**, with GSettings proving that compiled schema/vendor defaults can remain separate from mutable user values. No surveyed DE already provides the exact Nix-module-to-runtime-registry pipeline.
 
-The best-supported storage/notification shape is **COSMIC-like sparse, versioned, atomically replaced user keys under `$XDG_CONFIG_HOME`, separate `$XDG_STATE_HOME` operational state, and a session D-Bus daemon emitting per-key changes**, augmented with GSettings-style validation, reset/writability, and profile lockdown. Per-unit calibration stays in `/var/lib/spatial/`.
+The best-supported storage/notification shape is **COSMIC-like sparse, versioned, atomically replaced user keys under `$XDG_CONFIG_HOME`, separate `$XDG_STATE_HOME` operational state, and a session D-Bus daemon emitting per-key changes**, augmented with GSettings-style validation, reset/writability, and profile lockdown. Per-unit calibration stays in `/var/lib/mura/`.
 
 The rebuild/runtime tension bites at explicit user overrides and schema migration: untouched values follow the new generated default; valid explicit intent survives; locks and invalid values need visible policy. Copying defaults into user storage or compiling fallback defaults into consumers destroys that distinction and violates constraint 9.

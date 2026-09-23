@@ -20,7 +20,7 @@ let
     options.warnings = lib.mkOption { type = lib.types.listOf lib.types.str; default = [ ]; };
   };
 
-  # Evaluate a device module against the contract alone — we only want the spatial.*
+  # Evaluate a device module against the contract alone — we only want the mura.*
   # options and assertions, not a full NixOS toplevel.
   evalContract = mod: (lib.evalModules {
     modules = [ ../lib/contract assertionsOption mod ];
@@ -29,7 +29,7 @@ let
 
   # A minimal valid device declaration.
   validDevice = { ... }: {
-    spatial.device = {
+    mura.device = {
       codename = "t";
       vendor = "v";
       name = "T";
@@ -37,10 +37,10 @@ let
       supportTier = "booting";
       maintainers = [ ];
     };
-    spatial.hardware.soc = "sm8250";
-    spatial.hardware.panel = { width = 1600; height = 1600; refresh = 90; };
-    spatial.deployment.bootScheme = "android-bootimg";
-    spatial.kernel.bootimg.headerVersion = 2;
+    mura.hardware.soc = "sm8250";
+    mura.hardware.panel = { width = 1600; height = 1600; refresh = 90; };
+    mura.deployment.bootScheme = "android-bootimg";
+    mura.kernel.bootimg.headerVersion = 2;
   };
 
   eval = evalContract validDevice;
@@ -48,22 +48,22 @@ let
   # Tier above 'booting' with and without a readiness check (registry §10.2 catch-up).
   xrFunctionalWithReadiness = {
     imports = [ validDevice ];
-    config.spatial.device.supportTier = lib.mkForce "xr-functional";
-    config.spatial.device.maintainers = lib.mkForce [ "j" ];
-    config.spatial.qualification.readinessCheck = "xr-smoke";
+    config.mura.device.supportTier = lib.mkForce "xr-functional";
+    config.mura.device.maintainers = lib.mkForce [ "j" ];
+    config.mura.qualification.readinessCheck = "xr-smoke";
   };
   xrFunctionalNoReadiness = {
     imports = [ validDevice ];
-    config.spatial.device.supportTier = lib.mkForce "xr-functional";
-    config.spatial.device.maintainers = lib.mkForce [ "j" ];
+    config.mura.device.supportTier = lib.mkForce "xr-functional";
+    config.mura.device.maintainers = lib.mkForce [ "j" ];
   };
 
   # A device with an XR shell + a valid appliance session profile (ADR 0007).
   applianceSession = {
     imports = [ validDevice ];
     config = {
-      spatial.xr.shell = "zxr";
-      spatial.xr.session.autoLogin = "owner";
+      mura.xr.shell = "zxr";
+      mura.xr.session.autoLogin = "owner";
     };
   };
 
@@ -72,9 +72,9 @@ let
   greeterSession = {
     imports = [ validDevice ];
     config = {
-      spatial.xr.shell = "zxr";
-      spatial.xr.session.greeter = "zxr-greeter";
-      spatial.xr.session.provisioning.mode = "greeter-gated";
+      mura.xr.shell = "zxr";
+      mura.xr.session.greeter = "zxr-greeter";
+      mura.xr.session.provisioning.mode = "greeter-gated";
     };
   };
 
@@ -82,8 +82,8 @@ let
   greeterNoProvisioning = {
     imports = [ validDevice ];
     config = {
-      spatial.xr.shell = "zxr";
-      spatial.xr.session.greeter = "zxr-greeter";
+      mura.xr.shell = "zxr";
+      mura.xr.session.greeter = "zxr-greeter";
     };
   };
 
@@ -91,11 +91,11 @@ let
   multiUserWithGuest = {
     imports = [ validDevice ];
     config = {
-      spatial.xr.shell = "zxr";
-      spatial.xr.session.greeter = "zxr-greeter";
-      spatial.xr.session.provisioning.mode = "greeter-gated";
-      spatial.xr.session.multiUser.enable = true;
-      spatial.xr.session.guest.enable = true;
+      mura.xr.shell = "zxr";
+      mura.xr.session.greeter = "zxr-greeter";
+      mura.xr.session.provisioning.mode = "greeter-gated";
+      mura.xr.session.multiUser.enable = true;
+      mura.xr.session.guest.enable = true;
     };
   };
 
@@ -103,9 +103,9 @@ let
   multiUserOnAppliance = {
     imports = [ validDevice ];
     config = {
-      spatial.xr.shell = "zxr";
-      spatial.xr.session.autoLogin = "owner";
-      spatial.xr.session.multiUser.enable = true;
+      mura.xr.shell = "zxr";
+      mura.xr.session.autoLogin = "owner";
+      mura.xr.session.multiUser.enable = true;
     };
   };
 
@@ -113,11 +113,11 @@ let
   multiUserBadUidRange = {
     imports = [ validDevice ];
     config = {
-      spatial.xr.shell = "zxr";
-      spatial.xr.session.greeter = "zxr-greeter";
-      spatial.xr.session.provisioning.mode = "greeter-gated";
-      spatial.xr.session.multiUser.enable = true;
-      spatial.xr.session.multiUser.uidRange = {
+      mura.xr.shell = "zxr";
+      mura.xr.session.greeter = "zxr-greeter";
+      mura.xr.session.provisioning.mode = "greeter-gated";
+      mura.xr.session.multiUser.enable = true;
+      mura.xr.session.multiUser.uidRange = {
         min = 1099;
         max = 1000;
       };
@@ -128,10 +128,10 @@ let
   guestWithoutMultiUser = {
     imports = [ validDevice ];
     config = {
-      spatial.xr.shell = "zxr";
-      spatial.xr.session.greeter = "zxr-greeter";
-      spatial.xr.session.provisioning.mode = "greeter-gated";
-      spatial.xr.session.guest.enable = true;
+      mura.xr.shell = "zxr";
+      mura.xr.session.greeter = "zxr-greeter";
+      mura.xr.session.provisioning.mode = "greeter-gated";
+      mura.xr.session.guest.enable = true;
     };
   };
 
@@ -139,7 +139,7 @@ let
   noProfile = {
     imports = [ validDevice ];
     config = {
-      spatial.xr.shell = "zxr";
+      mura.xr.shell = "zxr";
     };
   };
 
@@ -147,9 +147,9 @@ let
   bothProfiles = {
     imports = [ validDevice ];
     config = {
-      spatial.xr.shell = "zxr";
-      spatial.xr.session.autoLogin = "owner";
-      spatial.xr.session.greeter = "zxr-greeter";
+      mura.xr.shell = "zxr";
+      mura.xr.session.autoLogin = "owner";
+      mura.xr.session.greeter = "zxr-greeter";
     };
   };
 
@@ -157,8 +157,8 @@ let
   motorizedIpdWithEyes = {
     imports = [ validDevice ];
     config = {
-      spatial.hardware.ipd.source = "motorized-auto";
-      spatial.adaptation.eyes.backend = "device-specific";
+      mura.hardware.ipd.source = "motorized-auto";
+      mura.adaptation.eyes.backend = "device-specific";
     };
   };
 
@@ -166,7 +166,7 @@ let
   motorizedIpdNoEyes = {
     imports = [ validDevice ];
     config = {
-      spatial.hardware.ipd.source = "motorized-auto";
+      mura.hardware.ipd.source = "motorized-auto";
     };
   };
 
@@ -177,11 +177,11 @@ let
     # The valid device evaluates and passes all contract assertions.
     validDevicePasses = assertsPass eval;
     # codename is threaded through.
-    codenameSet = eval.config.spatial.device.codename == "t";
+    codenameSet = eval.config.mura.device.codename == "t";
     # default backend is native.
-    defaultBackendNative = eval.config.spatial.adaptation.gpu.backend == "native";
+    defaultBackendNative = eval.config.mura.adaptation.gpu.backend == "native";
     # tracking defaults to device-specific.
-    trackingDeviceSpecific = eval.config.spatial.adaptation.tracking.backend == "device-specific";
+    trackingDeviceSpecific = eval.config.mura.adaptation.tracking.backend == "device-specific";
     # ADR 0007: headless bring-up (shell = none) needs no session profile.
     headlessExemptFromProfile = assertsPass eval;
     # ADR 0007: appliance and greeter profiles each pass.
@@ -193,34 +193,34 @@ let
     # ADR 0017: greeter without onboarding placement fails; provisioning defaults off;
     # the marker default lives in the enrollment state class.
     greeterNoProvisioningFails = !assertsPass (evalContract greeterNoProvisioning);
-    provisioningDefaultNone = eval.config.spatial.xr.session.provisioning.mode == "none";
+    provisioningDefaultNone = eval.config.mura.xr.session.provisioning.mode == "none";
     provisioningMarkerInEnrollment =
-      eval.config.spatial.xr.session.provisioning.markerPath
-      == "/var/lib/spatial/enrollment/provisioned";
+      eval.config.mura.xr.session.provisioning.markerPath
+      == "/var/lib/mura/enrollment/provisioned";
     # ADR 0018: multi-account/guest profile coupling + defaults.
     multiUserWithGuestPasses = assertsPass (evalContract multiUserWithGuest);
     multiUserOnApplianceFails = !assertsPass (evalContract multiUserOnAppliance);
     guestWithoutMultiUserFails = !assertsPass (evalContract guestWithoutMultiUser);
-    multiUserDefaultOff = eval.config.spatial.xr.session.multiUser.enable == false;
+    multiUserDefaultOff = eval.config.mura.xr.session.multiUser.enable == false;
     # ADR 0018 rev 3: no account cap exists anywhere in the contract.
-    multiUserNoCapOption = !(eval.options.spatial.xr.session.multiUser ? maxAccounts);
+    multiUserNoCapOption = !(eval.options.mura.xr.session.multiUser ? maxAccounts);
     multiUserWindowLoginDefs =
-      eval.config.spatial.xr.session.multiUser.uidRange.max == 60000;
+      eval.config.mura.xr.session.multiUser.uidRange.max == 60000;
     multiUserBadUidRangeFails = !assertsPass (evalContract multiUserBadUidRange);
     # Lock triggers default sensibly.
-    lockDefaultsOn = eval.config.spatial.xr.session.lock.enable == true;
+    lockDefaultsOn = eval.config.mura.xr.session.lock.enable == true;
     # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.
-    eyesDefaultNone = eval.config.spatial.adaptation.eyes.backend == "none";
-    ipdDefaultFixed = eval.config.spatial.hardware.ipd.source == "fixed";
+    eyesDefaultNone = eval.config.mura.adaptation.eyes.backend == "none";
+    ipdDefaultFixed = eval.config.mura.hardware.ipd.source == "fixed";
     # ADR 0011: motorized-auto requires an eyes backend.
     motorizedIpdWithEyesPasses = assertsPass (evalContract motorizedIpdWithEyes);
     motorizedIpdNoEyesFails = !assertsPass (evalContract motorizedIpdNoEyes);
     # Registry §10.2 catch-up: doc-listed options now exist with sane defaults.
-    kernelDtbsDefaultEmpty = eval.config.spatial.kernel.dtbs == [ ];
-    kernelSourceDefaultNull = eval.config.spatial.kernel.source == null;
-    monadoRevDefaultNull = eval.config.spatial.xr.monado.rev == null;
-    slamPackageDefaultNull = eval.config.spatial.xr.tracking.slam.package == null;
-    calibrationPathsDefaultEmpty = eval.config.spatial.xr.calibration.paths == { };
+    kernelDtbsDefaultEmpty = eval.config.mura.kernel.dtbs == [ ];
+    kernelSourceDefaultNull = eval.config.mura.kernel.source == null;
+    monadoRevDefaultNull = eval.config.mura.xr.monado.rev == null;
+    slamPackageDefaultNull = eval.config.mura.xr.tracking.slam.package == null;
+    calibrationPathsDefaultEmpty = eval.config.mura.xr.calibration.paths == { };
     # Tier gate: above 'booting' requires a readiness check.
     xrFunctionalWithReadinessPasses = assertsPass (evalContract xrFunctionalWithReadiness);
     xrFunctionalNoReadinessFails = !assertsPass (evalContract xrFunctionalNoReadiness);
@@ -229,5 +229,5 @@ let
   failures = lib.filterAttrs (_: v: v != true) results;
 in
 if failures == { }
-then nixpkgs.legacyPackages.${system}.runCommand "spatial-contract-tests-pass" { } "echo ok > $out"
-else throw "spatial contract tests failed: ${builtins.toJSON (builtins.attrNames failures)}"
+then nixpkgs.legacyPackages.${system}.runCommand "mura-contract-tests-pass" { } "echo ok > $out"
+else throw "mura contract tests failed: ${builtins.toJSON (builtins.attrNames failures)}"

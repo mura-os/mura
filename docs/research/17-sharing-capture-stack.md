@@ -22,7 +22,7 @@ per-desktop **backend** implementing `org.freedesktop.impl.portal.ScreenCast`
 config, not code: a `.portal` file names the backend's bus name, interfaces, and desktops
 (`xdg-desktop-portal-wlr/wlr.portal`: `DBusName=org.freedesktop.impl.portal.desktop.wlr`,
 `Interfaces=…ScreenCast;…Screenshot`, `UseIn=wlroots;sway;…`), plus `portals.conf` per-desktop
-override (`xdg-desktop-portal/doc/portals.conf.rst.in`). **spatial-os becomes a first-class
+override (`xdg-desktop-portal/doc/portals.conf.rst.in`). **Mura becomes a first-class
 capture citizen by shipping one D-Bus service + one `.portal` file** — no upstream changes.
 
 ### 1.2 Session lifecycle
@@ -80,7 +80,7 @@ three methods (`src/screencast/screencast.c:731-749`):
   either from restore data or interactively (`setup_target`, `:132-231`). "Interactive" is
   literally exec'ing a chooser: `slurp` (click an output), or dmenu-style `wofi`/`rofi` lists of
   outputs and foreign toplevels (`src/screencast/chooser.c:224-227`). The consent UI is
-  backend-owned and completely replaceable — for spatial-os it becomes an in-space picker.
+  backend-owned and completely replaceable — for Mura it becomes an in-space picker.
 - **Start** — initializes the Wayland capture session, creates the PipeWire stream, spins the PW
   loop until a node id exists, and replies with node id + `source_type` + `mapping_id`
   (output name) + `pipewire-serial` + `restore_data` (`:535-729`).
@@ -144,7 +144,7 @@ metadata; hardware H.264 encode sessions via VA-API (`src/grd-encode-session-vaa
 NVENC (`grd-hwaccel-nvidia.c`), Vulkan (`grd-hwaccel-vulkan.c`), software fallback
 (`grd-encode-session-ca-sw.c`); RDP graphics pipeline with AVC420/444 (`grd-rdp-dvc-graphics-pipeline.c`).
 Architecture lesson #2: **capture, input injection, and transport meet only at a session object;
-each is independently replaceable.** spatial-os should keep the same seams so wayvnc, g-r-d-like
+each is independently replaceable.** Mura should keep the same seams so wayvnc, g-r-d-like
 daemons, or WebRTC stacks can all sit on the same compositor surface.
 
 ## 3. wayvnc/neatvnc: the minimal baseline and the capture-protocol reality
@@ -380,7 +380,7 @@ vendor-scoped. A "SpatialCast" is then:
     placement-graph replication (mode 5, sibling docs); it lives in the same consent dialog but
     hands off to the session layer. Reserving the bit keeps one consent surface for all five
     modes.
-- **Restore data**: `("spatial-os", 1, {source_type, window_uuid | view_id | workspace_id})` —
+- **Restore data**: `("mura", 1, {source_type, window_uuid | view_id | workspace_id})` —
   same single-use-token machinery, zero frontend changes (§1.3).
 - **Cursor-mode analogue**: for `XR_VIEW`, a `presence_mode` option (embed controllers/hands and
   focus highlights vs. metadata-only vs. hidden), mirroring how cursor modes gate what leaks
@@ -400,7 +400,7 @@ vendor-scoped. A "SpatialCast" is then:
 Everything above is additive on interface v6 semantics; a consumer that never sets the new bits
 sees today's portal exactly.
 
-## 10. What spatial-os adopts / rejects / defers
+## 10. What Mura adopts / rejects / defers
 
 **Adopt:**
 - The portal frontend/backend split; ship a `.portal` + backend rather than bespoke IPC (§1.1).
@@ -411,7 +411,7 @@ sees today's portal exactly.
 - libeis in-compositor for injection; per-share absolute devices with `mapping_id`-joined
   regions; emulated-input badging and pause-on-lock (§5).
 - g-r-d's plane separation (capture/input/transport) and damage-aware + hardware-encode pipeline
-  as the model for any spatial-os streaming daemon (§2).
+  as the model for any Mura streaming daemon (§2).
 - Permission-store-backed restore tokens with vendor-scoped restore data (§1.3).
 
 **Reject:**

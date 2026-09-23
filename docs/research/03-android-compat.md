@@ -1,7 +1,7 @@
 # 03 — Android Compatibility Ecosystem (Halium, libhybris, droid-hal, Droidian, Waydroid)
 
 Research target: evaluate the existing Android-compatibility stack as **one selectable backend per
-subsystem** for a Nix/NixOS-based Wayland XR distribution ("spatial-os"), not as the foundation of
+subsystem** for a Nix/NixOS-based Wayland XR distribution ("Mura"), not as the foundation of
 the distribution. All claims below are cited to files in the locally cloned repositories
 (`references/<repo>/<path>`), pinned at the commits recorded in `references/MANIFEST.json`.
 
@@ -199,7 +199,7 @@ machine-readable. There is no Halium-wide device database in a parseable format.
 ### 3.2 UBports standalone-kernel: a port declares `deviceinfo` + overlay directories
 
 This is the cleanest input contract in the ecosystem and the most directly relevant model for
-spatial-os. The complete declared surface is `deviceinfo` (documented exhaustively in
+Mura. The complete declared surface is `deviceinfo` (documented exhaustively in
 `halium-generic-adaptation-build-tools/deviceinfo.sample`, 246 lines) plus a handful of
 convention-named directories in the port repo root.
 
@@ -319,7 +319,7 @@ per-device configuration.
 
 ## 4. Vendor blob / donor firmware handling
 
-Four distinct strategies exist in these repos, and the differences matter enormously for spatial-os's
+Four distinct strategies exist in these repos, and the differences matter enormously for Mura's
 "pinned donor firmware image" plan.
 
 ### 4.1 Halium classic: blobs as git repos in the Android tree
@@ -363,7 +363,7 @@ system/android/{system,vendor}/etc/init
 …/{prop.halium,build.prop}                              # chmod 600
 ```
 
-Consequence for spatial-os: with this method the "donor firmware image" is not an *input to the
+Consequence for Mura: with this method the "donor firmware image" is not an *input to the
 build* — it is a *precondition of the device state*. That is unacceptable for a reproducible Nix
 build system, but the overlay mechanism (a small, declarative, per-device set of init/prop overrides
 layered on an opaque vendor partition) is exactly the right shape.
@@ -463,7 +463,7 @@ Three caveats that a config-generating build system must encode:
   (`build-sources.rst:74-75`).
 - Apparmor-vs-SELinux is a *distro-level* conflict, not a Halium-level decision: "Ubuntu touch needs
   apparmor patches in kernel, while Sailfish doesn't" (`halium-docs/project/Planning.rst:48`). The
-  `check-kernel-config` list above is the Ubuntu-Touch-flavoured variant. For spatial-os this means
+  `check-kernel-config` list above is the Ubuntu-Touch-flavoured variant. For Mura this means
   the kernel-config fragment set must be *composed per distro policy*, not copied.
 
 `lxc-checkconfig` is the runtime verification ("All option except `User namespace` need to be the
@@ -511,7 +511,7 @@ Two things stand out as good practice worth importing:
 - **Overlaystore module handling.** When `deviceinfo_use_overlaystore` is set, the build touches
   `${INSTALL_MOD_PATH}/lib/modules/.halium-override-dir` so the whole modules directory is
   bind-mounted from the device overlay and "rootfs won't ship any device-specific kernel module"
-  (`build-kernel.sh:72-76`). That is precisely the separation spatial-os needs between a generic
+  (`build-kernel.sh:72-76`). That is precisely the separation Mura needs between a generic
   rootfs closure and a per-device kernel/module artifact.
 
 Kernel↔system.img coupling is a documented hazard: module signing must match, or `insmod` fails with
@@ -693,7 +693,7 @@ container (`lxc.py:186-220`).
 
 Key structural observation: **only droid-hal-device treats bootloader-adjacent partitions as
 package-managed, updatable artifacts.** Everything else treats `boot.img` as a manual flash step.
-For an XR headset fleet this matters: spatial-os will need a package→partition flashing hook with
+For an XR headset fleet this matters: Mura will need a package→partition flashing hook with
 exactly droid-hal's "upgrade only, deferred to pre-init oneshot" semantics, or A/B slots.
 
 ---
@@ -764,7 +764,7 @@ timestamps, no floating refs).
 
 ---
 
-## 9. What spatial-os should adopt
+## 9. What Mura should adopt
 
 ### 9.1 Adopt `deviceinfo` as the device declaration schema — as a typed Nix module
 
@@ -780,7 +780,7 @@ derived: `deviceinfo_bootimg_header_version`, the six `flash_offset_*` values,
 `deviceinfo_bootimg_tailtype`, `deviceinfo_bootimg_has_init_boot_partition`,
 `deviceinfo_bootimg_has_vendor_kernel_boot_partition`, `deviceinfo_kernel_image_name`,
 `deviceinfo_ramdisk_compression`. All of these are extractable from a donor `boot.img` with
-`unpack_bootimg.py` (`deviceinfo.sample:113`) — so spatial-os can generate a first draft of a device
+`unpack_bootimg.py` (`deviceinfo.sample:113`) — so Mura can generate a first draft of a device
 module *from the pinned donor image*, which is strictly better than UBports' manual transcription.
 
 ### 9.2 Adopt the two-artifact model: `android-headers` + `android-config.h` as a derivation
@@ -880,7 +880,7 @@ portable to Nix build steps:
   plus conditional `inet.list` when the kernel config actually has
   `CONFIG_ANDROID_PARANOID_NETWORK=y` (`droid-hal-device.inc:969-1014`).
 
-For spatial-os these three become: `donorUdevRules`, `donorMountUnits`, `donorGroupPolicy` — pure
+For Mura these three become: `donorUdevRules`, `donorMountUnits`, `donorGroupPolicy` — pure
 functions of the pinned donor image. This directly removes the two most error-prone manual steps in
 the Halium workflow (§3.1).
 
@@ -899,7 +899,7 @@ mainline fallbacks (`lxc.py:271-320`, `gpu.py:37-60`) enumerate exactly where a 
 | **Sensors / IMU** | Kernel IIO drivers | `hybris/hardware` (`hw_get_module`) + the sensors HAL, exercised by `hybris/tests/test_sensors.c` (`tests/Makefile.am:211-217`); Sailfish wraps it in `sensorfw-qt5-hybris` (`build_packages.sh:285-286`); Waydroid has an out-of-tree `waydroid-sensord` and stubs the HAL when absent (`images.py:151-152`) | There is **no** libhybris sensors *wrapper library* — only the generic `libhardware` shim. Every consumer writes its own. Sensor sample latency/timestamps through a HAL + container boundary is the critical unknown for XR head tracking. |
 | **Audio** | ALSA/PipeWire | Audio HAL "dlopen'ed directly" (`Scope.rst:8`), i.e. via `hybris/hardware`; consumers are `pulseaudio-modules-droid` / `-droid-hidl` / `-droid-glue` / `-droid-jb2q` (`build_packages.sh:276-281`), with `audioflingerglue` needed only for the `-glue` variant | Four mutually exclusive PulseAudio module variants by generation; `-glue` additionally needs an Android-side `libaudioflingerglue.so` + `miniafservice`. No PipeWire module exists in any of these repos. |
 | **Wi-Fi / BT** | mac80211 + BlueZ | Wi-Fi: a standard libhybris wrapper (`hybris/wifi`, gated on `hardware_legacy/wifi.h` — `configure.ac:169`). BT: not in libhybris at all; the documented route is binder-IPC from native code via `libgbinder`/`bluebinder` (`libhybris/README.md:53-59`) | Halium's kernel config *disables* every `CONFIG_BT_HCI*` backend (`check-kernel-config:228-234`), implying BT goes through the Android stack. Device-specific bring-up incantations are real: `echo 1 > /dev/wcnss_wlan; echo sta > /sys/module/wlan/parameters/fwpath` for Qualcomm, `insmod` of `wlan.ko`/`bcmdhd.ko` from `init.rc` (`wifi.rst:11-47`). |
-| **DSP-based tracking (aDSP/cDSP, FastRPC)** | No evidence of any mainline path in any repo studied | No wrapper exists. The only DSP-adjacent artifact is the `adsp` subsystem entry in the udev symlink table (`makeudev:19`) and `/dev/adsp` nodes coming from `ueventd.rc` | **This is the biggest gap for spatial-os.** None of the seven projects wraps FastRPC/`libadsprpc`/`libcdsprpc`. Whatever exists must either be reached through libhybris `dlopen` of the vendor `.so` (plausible: it is a userspace library over an ioctl device, similar to the "Audio HAL dlopen'ed directly" case) or by running the vendor's DSP service daemon inside a container and talking to it over binder. Both need prototyping before any architecture is committed. |
+| **DSP-based tracking (aDSP/cDSP, FastRPC)** | No evidence of any mainline path in any repo studied | No wrapper exists. The only DSP-adjacent artifact is the `adsp` subsystem entry in the udev symlink table (`makeudev:19`) and `/dev/adsp` nodes coming from `ueventd.rc` | **This is the biggest gap for Mura.** None of the seven projects wraps FastRPC/`libadsprpc`/`libcdsprpc`. Whatever exists must either be reached through libhybris `dlopen` of the vendor `.so` (plausible: it is a userspace library over an ioctl device, similar to the "Audio HAL dlopen'ed directly" case) or by running the vendor's DSP service daemon inside a container and talking to it over binder. Both need prototyping before any architecture is committed. |
 
 ### 9.7 Adopt Waydroid's mainline-first fallback table as *build-time* configuration
 
@@ -912,14 +912,14 @@ table; reject the mechanism (runtime probing — see §10.4).
 
 Waydroid's sha256-against-manifest validation (`images.py:41-46, 84-97`) and
 `extract-headers.sh`'s retention of `git-revisions.txt` + `.repo/manifest.xml` (lines 294-348) are the
-two provenance mechanisms worth keeping. For spatial-os: every donor firmware image is a
+two provenance mechanisms worth keeping. For Mura: every donor firmware image is a
 `fetchurl`-style fixed-output derivation with a recorded hash, model, firmware version, and extraction
 date; every derived artifact (headers, udev rules, mount units, blob closure) records which donor it
 came from.
 
 ---
 
-## 10. What spatial-os should reject
+## 10. What Mura should reject
 
 ### 10.1 Reject the Android build tree as a build input
 
@@ -933,7 +933,7 @@ is enormous: `halium-docs/porting/common-kernel-build-errors.rst` and
 
 The UBports standalone-kernel method already proves the Android tree is unnecessary for the *port*:
 kernel from a plain git repo + defconfig, Android userspace as a prebuilt artifact
-(`build.sh`, `prepare-fake-ota.sh:56-90`). spatial-os should go one step further and take the Android
+(`build.sh`, `prepare-fake-ota.sh:56-90`). Mura should go one step further and take the Android
 userspace from the *pinned donor image* rather than from a third-party GSI CI artifact. The one
 thing that genuinely needs an Android tree is the *bionic half* of libhybris' compat layers
 (`libhybris/compat/*/Android.mk`) — which should therefore be scoped to exactly the layers a chosen
@@ -945,7 +945,7 @@ Halium's own architecture makes the Android container a *hard boot dependency*: 
 `/system` and `/vendor` before `local-fs.target`, and the LXC container must start before udev and
 other host daemons (`halium-docs/Distribution.rst:132-141`). Ubuntu Touch's kernel needs apparmor
 patches that Sailfish does not (`Planning.rst:48`), i.e. the compat layer's requirements propagate all
-the way into the kernel config. For spatial-os, where Android-compat is one selectable backend,
+the way into the kernel config. For Mura, where Android-compat is one selectable backend,
 the container must be an *optional, late-starting, per-subsystem* unit, not a `local-fs.target`
 prerequisite. Concretely: no `switch_root`-from-Android-initramfs boot design
 (`Distribution.rst:38-52`), no Android `init` as PID 1 of a mandatory container, and no Android
@@ -982,7 +982,7 @@ droid-hal-device ships the *entire* Android `/system/bin` and `/system/lib[64]` 
 (`droid-hal-device.inc:722-730`) with dependency extraction disabled wholesale
 (`__requires_exclude ^.*$`, line 118). It works, but it makes the adaptation a monolith: you cannot
 select camera without also shipping the media stack, and the `-detritus`/`straggler_files` mechanism
-(lines 328-335, 907-931) exists precisely because nobody knows what the extra files are. spatial-os
+(lines 328-335, 907-931) exists precisely because nobody knows what the extra files are. Mura
 should instead derive a *per-subsystem* blob closure from the donor image (the HAL `.so`, its
 `NEEDED` closure, its `.rc` and `*.xml` VINTF manifests, its `ueventd` entries), so that enabling the
 camera backend pulls camera blobs and nothing else.
@@ -1014,7 +1014,7 @@ partition it into: (a) container/systemd prerequisites (adopt), (b) Android-HAL 
    `libcdsprpc` / the SLPI sensor DSP. Is the vendor tracking stack on XR2-class parts reachable by
    `dlopen`ing the vendor `.so` under libhybris (like the audio HAL, `Scope.rst:8`), or does it require
    a vendor daemon plus binder (the post-Android-8 pattern noted in `libhybris/README.md:53-59`)?
-   This single question probably determines whether Halium-style compat is viable for spatial-os at
+   This single question probably determines whether Halium-style compat is viable for Mura at
    all. Needs a hardware spike.
 2. **Vulkan through libhybris on a hwcomposer display path is unproven.** `hybris/vulkan/platforms/`
    contains only `common`, `null`, and `wayland` — there is no hwcomposer WSI, and the libvulkan
@@ -1054,14 +1054,14 @@ partition it into: (a) container/systemd prerequisites (adopt), (b) Android-HAL 
    pointing there (`configure.ac:277-281` allows the latter — this looks promising and should be
    tested early).
 8. **VINTF / HIDL-vs-AIDL service manifests.** `compat/hwc2/Android.mk:107-129` shows the HAL
-   interface ABI changing at Android 13 (AIDL `composer3-V1-ndk`) and 14 (`V4-ndk`). If spatial-os
+   interface ABI changing at Android 13 (AIDL `composer3-V1-ndk`) and 14 (`V4-ndk`). If Mura
    runs donor HAL services in a container, the VINTF matching logic (`hwservicemanager` /
    `servicemanager` + `vintf` manifests) must be satisfied or bypassed. No repo studied documents
    doing this outside a full Android userspace.
 9. **A/B slots and boot-image flashing policy.** droid-hal's "flash on package upgrade via pre-init
    oneshot" (`droid-hal-device.inc:1127-1178`) is the only package-managed partition-update model
    here, and it is not slot-aware; `make-bootimage.sh:71-74` detects A/B by grepping the recovery
-   fstab for `slotselect`. What does spatial-os do for boot/dtbo/vendor_boot updates on A/B devices,
+   fstab for `slotselect`. What does Mura do for boot/dtbo/vendor_boot updates on A/B devices,
    and can it avoid writing partitions from a package at all?
 10. **Kernel provenance for XR targets.** The whole Halium/UBports model assumes a publishable
     vendor kernel source tree (`first-steps.rst:24-25` requires kernel source plus a LineageOS

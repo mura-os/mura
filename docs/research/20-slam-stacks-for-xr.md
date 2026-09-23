@@ -341,7 +341,7 @@ ILLIXR (`illixr/`, University of Illinois permissive license; very active — la
   plugin consumes slow VIO poses + IMU and serves fast poses; renderers query a
   `pose_prediction` service (`include/illixr/data_format/pose_prediction.hpp:32-38`).
   `offload_vio/` plugins even split VIO across the network at topic boundaries.
-- The lesson for spatial-os: **the multi-consumer seam VIT lacks is a topic**. In ILLIXR a
+- The lesson for Mura: **the multi-consumer seam VIT lacks is a topic**. In ILLIXR a
   mapping service would just subscribe to the camera, IMU, and slow-pose topics — no interface
   change. We don't adopt ILLIXR (research runtime, single-process plugin model, no isolation, no
   OpenXR conformance story comparable to Monado), but the layered design should treat ADR 0008's
@@ -369,7 +369,7 @@ separate library*: `LoopClosureDetector` feeds odometry and loop factors into
 `KimeraRPGO::RobustSolver` (`src/loopclosure/LoopClosureDetector.cpp:20,173-182`), a robust pose
 graph with GNC/PCM outlier rejection. That is the layered architecture drawn *inside one
 process*: VIO emits odometry factors; a distinct robust-PGO component owns the map estimate.
-Spatial-os should adopt this as the mapping service's internal shape (odometry factors in, robust
+Mura should adopt this as the mapping service's internal shape (odometry factors in, robust
 PGO, outlier-rejected loop factors) across a process boundary instead of a queue.
 
 ---
@@ -409,7 +409,7 @@ a headless-build patch would be part of that packaging cost.)
 
 ---
 
-## 9. What spatial-os should adopt
+## 9. What Mura should adopt
 
 1. **Basalt via VIT as layer A, unmodified, from nixpkgs** — the seam is stable (v2.0.1), the
    implementation is complete (all four extensions), maintained (2026-07), BSD, and cached.
@@ -426,7 +426,7 @@ a headless-build patch would be part of that packaging cost.)
    (§5.3) — pattern, not code.
 6. **ILLIXR's topic framing** for the service interface: mapping input = subscription to
    {frames, IMU, poses(+features), marg-data}, not a bespoke API (§6).
-7. **ORB-SLAM3 + Pangolin packaged in the spatial-os flake anyway** — not for production, but as
+7. **ORB-SLAM3 + Pangolin packaged in the Mura flake anyway** — not for production, but as
    the evaluation baseline and reloc-behavior reference (doc 23 depends on studying it live);
    bounded cost, GPL is irrelevant for local evaluation.
 
@@ -482,7 +482,7 @@ defensible GPL-in-Monado-process position (§8). Persistence exists but is the w
 fires (§5.1) — the boot-reloc UX problem (doc 23) is not actually solved by adopting it.
 
 **Net:** the code evidence is lopsided. Path (b)'s one real asset — integrated maturity — is
-undercut by the fact that honoring spatial-os's core frame contract requires forking exactly the
+undercut by the fact that honoring Mura's core frame contract requires forking exactly the
 part of ORB-SLAM3 that makes it integrated. Path (a)'s gaps are all constructive (build the
 service), sit on maintained BSD code with a zero-cost package, and every piece studied here
 (marg queue, NfrMapper, RPGO, mTcp pattern) shortens them. The ADR should choose **layered**,

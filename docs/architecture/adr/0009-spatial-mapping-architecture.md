@@ -88,7 +88,7 @@ architectures were studied at code level:
   basalt-monado egress patch (+upstream conversation), the mapping+anchor service, the store, the
   boot-reloc flow, the geometry service, and the Monado `XR_EXT_spatial_*` implementation
   (flagship upstream contribution).
-- The device contract gains `spatial.xr.mapping.*` (enable, `depthAssist` policy axis,
+- The device contract gains `mura.xr.mapping.*` (enable, `depthAssist` policy axis,
   persistence/boundary toggles).
 - GPL code never enters the Monado process; the mapping service's IPC boundary is the
   architectural license boundary (legal review still due, see Rationale).

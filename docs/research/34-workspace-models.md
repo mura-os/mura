@@ -334,7 +334,7 @@ Extending doc 30 A2 (not repeating it): how each *workspace model* interacts wit
   GNOME has no session restore (doc 30 A2.2) — internally consistent: both halves ephemeral.
 - **COSMIC:** persists container existence/identity (pinned workspaces, §3) but not contents —
   the halfway point. Its ext-workspace `id` discipline is the wire contract for that split.
-- **spatial-os:** anchored places are the *strong* version of COSMIC's half — the place, its
+- **Mura:** anchored places are the *strong* version of COSMIC's half — the place, its
   anchor binding, and each member window's transform survive reboot in compositor/mapping state
   (mapping M1 "shell pins windows" is the intra-session mechanism; M2 adds the store —
   [spatial-mapping.md §11](../architecture/spatial-mapping.md)); doc 30 A2.3 already fixes the
@@ -353,7 +353,7 @@ Extending doc 30 A2 (not repeating it): how each *workspace model* interacts wit
     place-scoped restore inherits exactly the ambiguity that killed Activities subsessions
     (§1.2). Exclusive membership (mutter-style, §2) keeps restore well-defined.
 
-## 8. Mapping to spatial-os
+## 8. Mapping to Mura
 
 Evidence-to-options mapping only; the design decision belongs to a future design doc + ADR.
 

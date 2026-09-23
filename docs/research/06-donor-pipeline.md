@@ -1,10 +1,10 @@
-# Donor firmware ingestion pipeline for spatial-os
+# Donor firmware ingestion pipeline for Mura
 
 **Research date:** 2026-09-22
 
 ## 1. Purpose
 
-spatial-os targets standalone VR headsets whose boot chains, kernels, and hardware-enablement
+Mura targets standalone VR headsets whose boot chains, kernels, and hardware-enablement
 blobs are only available inside official vendor firmware images. The build system must therefore
 treat those vendor images — "donors" — as pinned build inputs: acquired reproducibly, verified by
 hash, dissected into named artifacts by pure derivations, and consumed by image-assembly
@@ -13,7 +13,7 @@ prior-art sources available locally (the project owner's TRIMUI Brick appliance,
 Frame RAUC/casync release archive, and robotnix's Pixel vendor-blob ingestion), catalogs the
 Android image-format zoo a donor importer must handle, analyzes the metadata-preservation
 problem the Nix store creates, and proposes a concrete donor-import contract. It feeds directly
-into the donor-pipeline part of the spatial-os build architecture; section 5 is the
+into the donor-pipeline part of the Mura build architecture; section 5 is the
 implementable core.
 
 Terminology: a **donor** is a complete official vendor firmware artifact (factory image, OTA,
@@ -91,7 +91,7 @@ allowSubstitutes = false;
 ```
 
 with the comment "Keep private donor-containing outputs off public caches unless rights are
-audited" (`nix/sd-image.nix` lines 4–6). This is a load-bearing detail for spatial-os: any
+audited" (`nix/sd-image.nix` lines 4–6). This is a load-bearing detail for Mura: any
 derivation whose output embeds donor bytes must not be pushed to a public binary cache.
 
 #### 2.1.4 `nix/clean-image.nix`: from transplant to assembled image
@@ -185,7 +185,7 @@ donor-containing outputs; (8) allowlisted, size-bounded, setuid-stripping vendor
 
 ### 2.2 Steam Frame / SteamOS RAUC+casync archive (local, observed layout)
 
-Path: `/run/media/j/tinystore/experiments/spatial-os/references/archive-steam-frame/`. This is an
+Path: `references/archive-steam-frame/`. This is an
 offline archive of one Valve `deckard` SteamOS VR release, produced by the accompanying
 `archive-steam-frame.sh` inside a pinned dev shell (`flake.nix` provides `curl`, `squashfs-tools`,
 `desync`, `rauc`, `cacert`).
@@ -247,19 +247,19 @@ Key observations:
   refuses to silently promote an unverified extraction to verified status
   (`archive-steam-frame.sh` lines 89–115).
 
-**Implications for spatial-os**: (1) SteamOS-style donors are the *easiest* class to ingest —
+**Implications for Mura**: (1) SteamOS-style donors are the *easiest* class to ingest —
 public HTTPS URLs suitable for `fetchurl`, a tiny signed manifest, and chunk-level fetching that
 allows caching only what changed between releases; the parse stage is `unsquashfs` (in nixpkgs)
 plus `desync` (in nixpkgs) with no Android tooling at all. (2) RAUC+casync is a strong candidate
-for spatial-os's *own* update mechanism: A/B slots via RAUC, `format=plain` bundles carrying
+for Mura's *own* update mechanism: A/B slots via RAUC, `format=plain` bundles carrying
 `.caibx` indexes, chunks served from a dumb HTTPS store, device-side seeding from the currently
 installed slot. All required tools (`rauc`, `desync`, `casync`) are in nixpkgs, and the bundle
 format is simple enough to generate from a Nix-built rootfs image derivation. The main open cost
-is deterministic chunking if spatial-os wants reproducible chunk stores (section 6).
+is deterministic chunking if Mura wants reproducible chunk stores (section 6).
 
 ### 2.3 robotnix vendor ingestion (local)
 
-Path: `/run/media/j/tinystore/experiments/spatial-os/references/robotnix`. Only the donor/vendor
+Path: `references/robotnix`. Only the donor/vendor
 ingestion machinery is covered here.
 
 - **Acquisition is `fetchurl`, not `requireFile`**: Google factory images are publicly
@@ -287,7 +287,7 @@ ingestion machinery is covered here.
 - **The extraction toolchain betrays the format handling**: the module adds `e2fsprogs` to
   `envPackages` with the comment "adevtool uses e2fsprogs `debugfs` to extract the vendor ext4
   images" (`modules/adevtool/default.nix` lines 73–79) — i.e. root-less ext4 extraction via
-  `debugfs`, the same technique proposed for spatial-os in section 3/4.
+  `debugfs`, the same technique proposed for Mura in section 3/4.
 - **Metadata maintenance is automated**: `flavors/grapheneos/update.sh` regenerates lockfiles per
   GrapheneOS tag, prefetches yarn hashes, and runs a patched adevtool
   (`adevtool-show-metadata-json.patch`) in a metadata-only mode that *prints* the
@@ -297,13 +297,13 @@ ingestion machinery is covered here.
 **Reusable patterns**: `fetchurl` + committed per-device JSON hash records for public donors;
 pinning the extractor (and its language-ecosystem deps) with the same rigor as the donor;
 verify-once-in-Nix then `--noVerify` inside the sandbox; `debugfs`-based unprivileged ext4
-extraction. **Anti-pattern for spatial-os**: extraction buried inside a monolithic build
+extraction. **Anti-pattern for Mura**: extraction buried inside a monolithic build
 derivation — robotnix can afford this because the AOSP build consumes the blobs in place, but
-spatial-os wants separately cacheable, separately reviewable artifact derivations.
+Mura wants separately cacheable, separately reviewable artifact derivations.
 
 ## 3. The format zoo
 
-Donor artifacts spatial-os must expect, given the device landscape (Quest 1 `monterey`, Lynx R1,
+Donor artifacts Mura must expect, given the device landscape (Quest 1 `monterey`, Lynx R1,
 Galaxy XR, Play For Dream MR — Android-based; Steam Frame — SteamOS; see
 `docs/research/07-device-landscape.md`):
 
@@ -332,7 +332,7 @@ Galaxy XR, Play For Dream MR — Android-based; Steam Frame — SteamOS; see
 Summary: **nixpkgs already covers nearly the entire zoo** via `android-tools` (which bundles
 `simg2img`, `lpdump`/`lpunpack`, `mkbootimg`/`unpack_bootimg`/`repack_bootimg`, `avbtool`,
 `mkdtboimg`), `payload-dumper-go`, `extract-dtb`, `erofs-utils`, `e2fsprogs`, `squashfs-tools`,
-`rauc`, `desync`, `qdl`, `avbroot`. The gaps spatial-os would need to package or vendor:
+`rauc`, `desync`, `qdl`, `avbroot`. The gaps Mura would need to package or vendor:
 `magiskboot` (exists in NUR; useful as a robust one-tool fallback but not strictly required given
 `unpack_bootimg` + `payload-dumper-go`), AOSP `deapexer` (trivially replaced by `unzip` +
 filesystem tools), and `bkerler/edl` (research/rescue only, not a build input). An
@@ -370,7 +370,7 @@ Pros: lossless by construction; trivially hashable and diffable against vendor m
 (`avbtool verify_image` still works); matches what flashing tools want; AVB metadata remains
 valid for pass-through partitions. Cons: coarse granularity (a one-file change re-stores
 gigabytes); opaque to Nix-level composition; runtime mounting costs loop devices and prevents
-cherry-picking single blobs into the spatial-os rootfs closure.
+cherry-picking single blobs into the Mura rootfs closure.
 
 ### 4.3 Representation (b): contents + explicit metadata manifest
 
@@ -382,7 +382,7 @@ artifacts when present. Consumers that need to *rebuild* an Android-valid filesy
 manifest to `mke2fs.android` + `e2fsdroid` (which accept fs_config/file_contexts inputs) or a
 SELinux-enabled `mkfs.erofs --file-contexts=…`.
 
-Pros: fine-grained — individual blobs become first-class store paths usable in the spatial-os
+Pros: fine-grained — individual blobs become first-class store paths usable in the Mura
 rootfs closure; enables allowlisting (brick `runtime_archive.py` pattern) and per-file license
 tracking; small rebuild deltas. Cons: the manifest generator becomes trust-critical (a bug loses
 metadata invisibly); re-assembly reintroduces filesystem-image nondeterminism; two artifacts
@@ -390,10 +390,10 @@ metadata invisibly); re-assembly reintroduces filesystem-image nondeterminism; t
 
 ### 4.4 Recommendation: hybrid, blob-default
 
-spatial-os is **not** rebuilding Android, which changes the calculus: for the vast majority of
+Mura is **not** rebuilding Android, which changes the calculus: for the vast majority of
 consumed artifacts (kernel `Image`, DTBs, `lib/firmware` files, GPU/DSP blobs copied into a
 Wayland Linux rootfs), Android's fs_config/SELinux metadata is *irrelevant at destination* —
-spatial-os assigns its own ownership and labels. What matters is byte-exact content plus a
+Mura assigns its own ownership and labels. What matters is byte-exact content plus a
 *record* of the original metadata for audit. Therefore:
 
 1. **Default: representation (a).** Every parse-stage output is a verbatim partition blob,
@@ -408,7 +408,7 @@ spatial-os assigns its own ownership and labels. What matters is byte-exact cont
    to write a modified vendor partition back to a stock-Android slot; if that arises, use
    `mke2fs.android`/`e2fsdroid` with the recorded manifest, and treat it as its own gated stage.
 
-## 5. Proposed donor-import contract for spatial-os
+## 5. Proposed donor-import contract for Mura
 
 Five stages, each a separate derivation (or fixed-output derivation) with declared inputs and
 outputs. Stage boundaries are chosen so that everything after `acquire` is pure and offline, and
@@ -481,7 +481,7 @@ acquire ──▶ identify ──▶ parse ──▶ extract ──▶ qualify �
     manifest) → `desync extract -s <chunk snapshot> rootfs.img.caibx rootfs.img` →
     `desync verify-index`.
   - Samsung `.tar.md5` → `tar` → `lz4 -d` per member → standard per-partition handling.
-  - Whole-disk GPT images → a spatial-os port of brick `image_tool.py inspect`/`extract`
+  - Whole-disk GPT images → a Mura port of brick `image_tool.py inspect`/`extract`
     (CRC-verified primary+backup GPT, bounds/overlap/duplicate checks, regular-files-only;
     `tools/image_tool.py` lines 74–150) — this tool should be adopted nearly verbatim.
 - All parse derivations verify what they produce: sizes and hashes go into the report; where the
@@ -530,7 +530,7 @@ fields + robotnix `vendor_imgs/<device>.json`, unified):
 ```nix
 {
   # Identity
-  device = "lynx-r1";                 # spatial-os device codename
+  device = "lynx-r1";                 # Mura device codename
   vendor = "lynx";
   buildId = "1.1.2-20250114";         # vendor's release identifier
   class = "android-factory";          # android-factory | android-ota | rauc-casync |
@@ -605,7 +605,7 @@ mechanically; only `contract` requires human action.
   caches and can change bytes. Mitigation: `parse-report.json` records tool names + versions;
   golden-hash tests per donor (assert the sha256 of each extracted partition) turn a silent
   behavior change into a loud diff. robotnix pins even the extractor's yarn dependency tree
-  (`yarn_hashes.json`) — the equivalent discipline applies if spatial-os ever vendors adevtool-
+  (`yarn_hashes.json`) — the equivalent discipline applies if Mura ever vendors adevtool-
   style tooling.
 - **Extraction determinism**: blob-level operations (`dd`-style GPT extraction, `simg2img`,
   `lpunpack`, `desync extract`) are deterministic — output bytes are fully determined by input
@@ -617,7 +617,7 @@ mechanically; only `contract` requires human action.
 - **Compression nondeterminism**: never re-compress in the donor pipeline. Store extracted
   artifacts uncompressed (or verbatim as delivered); decompression (`lz4 -d`, xz in
   payload ops, zstd in `.cacnk` chunks) is deterministic, re-compression (multithreaded xz/zstd,
-  gzip headers) is not. Where spatial-os *builds* compressed artifacts (its own SquashFS/EROFS
+  gzip headers) is not. Where Mura *builds* compressed artifacts (its own SquashFS/EROFS
   rootfs), copy brick's normalization: `mksquashfs … -noappend -all-root -no-xattrs -mkfs-time
   $SOURCE_DATE_EPOCH -all-time $SOURCE_DATE_EPOCH -processors 1` (`nix/appliance.nix`
   lines 118–122) — note `-processors 1`, because parallel compressors can produce
@@ -626,7 +626,7 @@ mechanically; only `contract` requires human action.
   UUIDs, volume IDs, hash seeds, and fake time (`E2FSPROGS_FAKE_TIME`, `-U`, `-E hash_seed=…`,
   `-i <volid>` — `nix/clean-image.nix` lines 17, 63–77); and verify by independent rebuild +
   byte comparison, per `docs/architecture.md` lines 108–111. mtools FAT writes carry timestamp
-  nondeterminism (brick README flags this as an open item) — avoid mtools writes in spatial-os's
+  nondeterminism (brick README flags this as an open item) — avoid mtools writes in Mura's
   pipeline or normalize afterwards.
 - **Fixed-output-derivation trust**: an FOD's hash pins bytes but not availability. Public
   vendor URLs rot (Meta publishes latest-only; Google deletes old factory images eventually).
@@ -642,27 +642,27 @@ mechanically; only `contract` requires human action.
   them requires the previous full image and bit-exact application. Policy: full images only;
   the identify stage rejects payloads whose manifest contains source ops.
 
-## 7. What spatial-os should adopt / reject
+## 7. What Mura should adopt / reject
 
 **From the brick appliance — adopt (most of it):** `requireFile` with instructive messages;
 single reviewed data file per donor holding all hashes and gates; contract-as-data hash-bound to
 the donor with mandatory review notes; null-propagated output gating; transplant-before-clean-
-image staging (for spatial-os: "replace one payload inside a copied stock image" as the first
+image staging (for Mura: "replace one payload inside a copied stock image" as the first
 boot-attempt strategy on each device, graduating to assembled images); read-back preservation
 verification; regular-files-only tooling with exclusive-create outputs; `allowSubstitutes =
 false` on donor-containing outputs; the GPT inspector nearly verbatim. **Reject/adapt:** the
-single-donor, single-board scale — spatial-os needs the manifest schema of section 5.6 and a
+single-donor, single-board scale — Mura needs the manifest schema of section 5.6 and a
 stage-per-derivation graph rather than brick's two hand-written image derivations; and brick's
-allowlists are hardcoded in the tool (`runtime_archive.py` lines 12–17) where spatial-os should
+allowlists are hardcoded in the tool (`runtime_archive.py` lines 12–17) where Mura should
 move them into per-donor manifest data.
 
 **From the Steam Frame archive — adopt:** the archive-first posture (snapshot bundle + chunk
 store, then operate fully offline); `desync`-based chunk handling; treating vendor sidecar
 metadata (`manifest.json`) as the identity source; opt-in signature verification that never
-silently downgrades. Strongly consider RAUC+casync for spatial-os's own updates: single-slot
+silently downgrades. Strongly consider RAUC+casync for Mura's own updates: single-slot
 `format=plain` bundles with `.caibx` indexes are simple, all tooling is in nixpkgs, and chunk
 stores give cheap delta updates without delta-payload complexity. **Reject:** shipping only a
-rootfs slot — spatial-os on Android-boot devices must also manage boot/dtbo/vbmeta slots, so its
+rootfs slot — Mura on Android-boot devices must also manage boot/dtbo/vbmeta slots, so its
 RAUC manifests will be multi-image; and the archive script's bash monolith should become
 derivations.
 
@@ -670,26 +670,26 @@ derivations.
 public donors; automated metadata regeneration (`update.sh` pattern) so pin records are produced
 by tooling, not typed; verify-once-in-Nix then trust inside the sandbox; `debugfs`-based
 unprivileged ext4 extraction. **Reject:** running extraction inside the consuming build
-derivation — spatial-os wants artifact sets as independent, cacheable, inspectable store paths;
-and adevtool itself (Pixel-specific device knowledge; spatial-os's per-device knowledge lives in
+derivation — Mura wants artifact sets as independent, cacheable, inspectable store paths;
+and adevtool itself (Pixel-specific device knowledge; Mura's per-device knowledge lives in
 the donor manifest instead).
 
 ## 8. Open questions
 
 1. **Quest/Meta donor acquisition path**: Meta serves latest-only updates via its updater;
    historical images exist only on community mirrors (see `07-device-landscape.md`). Is
-   `requireFile` against operator-archived images the permanent posture, or should spatial-os
+   `requireFile` against operator-archived images the permanent posture, or should Mura
    maintain its own private archival store keyed by the manifest hashes?
 2. **Chunk-store snapshot hashing**: hashing a `.castr` directory as a NAR-FOD works but couples
    the hash to desync's on-disk layout. Is a content-defined alternative (hash of the sorted
    chunk-ID list + per-chunk hashes, i.e. the `chunks_details.json` shape) worth the custom
    fetcher complexity?
-3. **AVB re-signing scope**: for unlocked devices spatial-os can disable verification or sign
+3. **AVB re-signing scope**: for unlocked devices Mura can disable verification or sign
    with its own keys (`avbtool`/`avbroot` are packaged). Which target devices require a valid
    self-signed vbmeta chain versus tolerating `vbmeta` with the disable-verification flag, and
    does that belong in the donor contract or the (separate) boot-chain architecture document?
 4. **Manifest metadata fidelity**: is recording SELinux labels/capabilities in `metadata.json`
-   ever load-bearing for spatial-os (e.g. a future containerized-Android compatibility layer
+   ever load-bearing for Mura (e.g. a future containerized-Android compatibility layer
    running vendor HALs), which would upgrade representation (b) from audit-only to
    boot-critical and demand test coverage of the manifest generator?
 5. **Incremental re-qualification**: when a donor is bumped to a new `buildId`, which contract
@@ -701,5 +701,5 @@ the donor manifest instead).
    pinned kernel-source tree actually corresponds to the extracted `Image` (vermagic/config
    comparison), and is that an identify-stage check or a qualify-stage contract fact?
 7. **Steam Frame boot/firmware slots**: this bundle updates only `rootfs`. What updates the
-   ESP/bootloader/firmware partitions on the Frame, and does spatial-os need to ingest a second,
+   ESP/bootloader/firmware partitions on the Frame, and does Mura need to ingest a second,
    different Valve artifact class to control the full boot chain?

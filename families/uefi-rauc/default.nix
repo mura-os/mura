@@ -14,8 +14,8 @@
 # Frame-scoped by design (design-backlog standing rule): no speculative generality.
 { lib, config, pkgs, modulesPath, ... }:
 let
-  cfg = config.spatial;
-  compatible = "spatial-os-${cfg.device.codename}";
+  cfg = config.mura;
+  compatible = "mura-${cfg.device.codename}";
 
   toplevel = config.system.build.toplevel;
   kernelParamsCommon = lib.concatStringsSep " " ([
@@ -24,21 +24,21 @@ let
   ] ++ config.boot.kernelParams);
 
   bootEntry = slot: pkgs.writeText "entry-${slot}.conf" ''
-    title spatial-os (slot ${lib.toUpper slot})
-    linux /EFI/spatial/Image
-    initrd /EFI/spatial/initrd
+    title Mura (slot ${lib.toUpper slot})
+    linux /EFI/mura/Image
+    initrd /EFI/mura/initrd
     options root=PARTLABEL=rootfs_${slot} rauc.slot=${lib.toUpper slot} ${kernelParamsCommon}
   '';
 
   # RAUC custom bootloader backend (interface: rauc calls with
   # get-primary | set-primary <bootname> | get-state <bootname> | set-state <bootname> good|bad).
   # Primary selection = systemd-boot `default` line in /esp/loader/loader.conf;
-  # slot state lives in /esp/loader/spatial-slot-state. steamos-bootconf shape, minimal.
+  # slot state lives in /esp/loader/mura-slot-state. steamos-bootconf shape, minimal.
   bootconf = pkgs.writeShellApplication {
-    name = "spatial-bootconf";
+    name = "mura-bootconf";
     text = ''
       LOADER=/esp/loader/loader.conf
-      STATE=/esp/loader/spatial-slot-state
+      STATE=/esp/loader/mura-slot-state
       cmd="''${1:-}"; slot="''${2:-}"; val="''${3:-}"
       to_entry() { case "$1" in A) echo a.conf ;; B) echo b.conf ;; *) echo "unknown slot $1" >&2; exit 1 ;; esac; }
       case "$cmd" in
@@ -56,7 +56,7 @@ let
           tmp=$(mktemp); { grep -v "^$slot=" "$STATE" || true; echo "$slot=$val"; } > "$tmp"; cat "$tmp" > "$STATE"; rm -f "$tmp" ;;
         get-current)
           sed -n 's/.*rauc\.slot=\([AB]\).*/\1/p' /proc/cmdline ;;
-        *) echo "usage: spatial-bootconf get-primary|set-primary S|get-state S|set-state S good|bad|get-current" >&2; exit 1 ;;
+        *) echo "usage: mura-bootconf get-primary|set-primary S|get-state S|set-state S good|bad|get-current" >&2; exit 1 ;;
       esac
     '';
   };
@@ -66,7 +66,7 @@ let
   testCert = pkgs.runCommand "rauc-test-cert" { nativeBuildInputs = [ pkgs.openssl ]; } ''
     mkdir -p $out
     openssl req -x509 -newkey rsa:2048 -nodes -keyout $out/key.pem -out $out/cert.pem \
-      -days 3650 -subj "/O=spatial-os/CN=spatial-os TEST signing (never for release)"
+      -days 3650 -subj "/O=mura/CN=mura TEST signing (never for release)"
   '';
 in
 {
@@ -76,7 +76,7 @@ in
   imports = [ "${modulesPath}/image/repart.nix" ];
   image.repart = {
     enable = true;
-    name = "spatial-${cfg.device.codename}";
+    name = "mura-${cfg.device.codename}";
     split = true; # emit per-partition files too; the rootfs one feeds the RAUC bundle
     # zstd both artifacts: raw disk sparseness does not survive NAR transfer from
     # the remote builder; compressed, the mostly-empty 33G image moves as ~a few GB.
@@ -95,9 +95,9 @@ in
         contents = {
           "/EFI/BOOT/BOOTAA64.EFI".source =
             "${pkgs.systemd}/lib/systemd/boot/efi/systemd-bootaa64.efi";
-          "/EFI/spatial/Image".source =
+          "/EFI/mura/Image".source =
             "${config.system.build.kernel}/${config.system.boot.loader.kernelFile}";
-          "/EFI/spatial/initrd".source =
+          "/EFI/mura/initrd".source =
             "${config.system.build.initialRamdisk}/${config.system.boot.loader.initrdFile}";
           "/loader/loader.conf".source = pkgs.writeText "loader.conf" ''
             default a.conf
@@ -167,12 +167,12 @@ in
     options = [ "nofail" ];
   };
   # Per-unit persistent state. Read-write: per-unit state durability is a contract
-  # requirement (device-contract `spatial.xr.calibration.paths`, overview invariant 4)
+  # requirement (device-contract `mura.xr.calibration.paths`, overview invariant 4)
   # — the earlier `ro` mount was donor-mirroring that couldn't survive first contact
   # with the lock/PIN/calibration design (PIN hashes, user calibration, and the
   # provisioning marker all live here; docs/architecture/first-run-onboarding.md).
   #
-  # /persist/spatial subtree classes (first-run-onboarding.md §state classes —
+  # /persist/mura subtree classes (first-run-onboarding.md §state classes —
   # factory reset treats each differently, never the tree as one blob):
   #   factory/    factory calibration — survives factory reset
   #   identity/   device keys — survive reset; regenerated only by re-provisioning
@@ -184,37 +184,37 @@ in
     fsType = "ext4";
     options = [ "nofail" ];
   };
-  # /var/lib/spatial is the contract-visible path; it binds into /persist so it
+  # /var/lib/mura is the contract-visible path; it binds into /persist so it
   # survives A/B slot switches. The bind mount *pulls in* the setup service
   # (x-systemd.requires — ordering alone is not a dependency); the service creates
   # the directory skeleton, which is what makes this work after a factory reset
   # (an image-seeded directory would not).
-  fileSystems."/var/lib/spatial" = {
-    device = "/persist/spatial";
+  fileSystems."/var/lib/mura" = {
+    device = "/persist/mura";
     fsType = "none";
     options = [
       "bind"
       "nofail"
-      "x-systemd.requires=spatial-persist-setup.service"
-      "x-systemd.after=spatial-persist-setup.service"
+      "x-systemd.requires=mura-persist-setup.service"
+      "x-systemd.after=mura-persist-setup.service"
     ];
   };
-  systemd.services.spatial-persist-setup = {
-    description = "Create the /persist/spatial state skeleton";
+  systemd.services.mura-persist-setup = {
+    description = "Create the /persist/mura state skeleton";
     unitConfig.RequiresMountsFor = "/persist";
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
     };
     script = ''
-      install -d -m 0750 /persist/spatial
-      install -d -m 0750 /persist/spatial/factory
-      install -d -m 0700 /persist/spatial/identity
-      install -d -m 0700 /persist/spatial/enrollment
-      install -d -m 0750 /persist/spatial/state
+      install -d -m 0750 /persist/mura
+      install -d -m 0750 /persist/mura/factory
+      install -d -m 0700 /persist/mura/identity
+      install -d -m 0700 /persist/mura/enrollment
+      install -d -m 0750 /persist/mura/state
       # userdb class (multi-user profile; multi-user.md §1.1): world-traversable —
       # /etc/passwd symlinks here and getpwuid is universal, so it cannot live under
-      # the 0750 spatial/ tree. File perms (passwd/group 0644, shadow 0000) are
+      # the 0750 mura/ tree. File perms (passwd/group 0644, shadow 0000) are
       # userborn's; the initrd-early mount + RequiresMountsFor wiring lands with the
       # multi-user profile module.
       install -d -m 0755 /persist/userdb
@@ -240,7 +240,7 @@ in
     statusfile=/tmp/rauc.status
 
     [handlers]
-    bootloader-custom-backend=${bootconf}/bin/spatial-bootconf
+    bootloader-custom-backend=${bootconf}/bin/mura-bootconf
 
     [keyring]
     path=/etc/rauc/keyring.pem
@@ -282,7 +282,7 @@ in
         filename=rootfs.img
       '';
     in
-    pkgs.runCommand "spatial-${cfg.device.codename}-bundle"
+    pkgs.runCommand "mura-${cfg.device.codename}-bundle"
       { nativeBuildInputs = [ pkgs.rauc pkgs.zstd pkgs.squashfsTools ]; } ''
       mkdir -p bundle $out
       split="${config.system.build.image}/${config.image.baseName}.rootfs_a.raw"
@@ -293,6 +293,6 @@ in
       fi
       install -m 0644 ${bundleManifest} bundle/manifest.raucm
       rauc bundle --cert=${testCert}/cert.pem --key=${testCert}/key.pem \
-        bundle $out/spatial-${cfg.device.codename}.raucb
+        bundle $out/mura-${cfg.device.codename}.raucb
     '';
 }

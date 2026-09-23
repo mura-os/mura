@@ -414,7 +414,7 @@ fitting (tracker.py:59–63: `left_iris_flame`, `right_iris_flame`, `left_iris_m
 
 ---
 
-## 7. Adopt / Reject / Open Questions for spatial-os
+## 7. Adopt / Reject / Open Questions for Mura
 
 Given the constraints: the OS owns the **asset format + driver + runtime** (enrollment is
 an offline desktop tool); working hypothesis is **semantic controls (blendshapes + gaze +

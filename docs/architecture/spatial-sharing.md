@@ -1,4 +1,4 @@
-# spatial-os architecture: spatial sharing
+# Mura architecture: spatial sharing
 
 **Status:** design note (no ADR yet; ratification follows the first implementation spikes).
 **Date:** 2026-09-22. Synthesizes [17-sharing-capture-stack](../research/17-sharing-capture-stack.md),

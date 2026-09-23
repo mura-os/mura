@@ -14,13 +14,13 @@ Linux-PAM (not only the four POSIX styles); `$XDG_RUNTIME_DIR` (basedir spec) fo
 - **Login (multi-user profile): greetd's session worker is the only PAM authority.** The zxr
   `--greeter` mode is an unprivileged greetd client: it renders greetd `auth_message` prompts and
   relays responses over `$GREETD_SOCK` (`create_session` → `post_auth_message_response` →
-  `start_session`). It never spawns `spatial-authd`, never links PAM, and performs no account,
+  `start_session`). It never spawns `mura-authd`, never links PAM, and performs no account,
   credential, or session management — greetd owns the entire login lifecycle.
-- **In-session lock: `spatial-authd` is the lock's PAM helper.** One helper process per unlock
-  conversation, for the `spatial-lock` PAM service only (auth stack; no session management —
+- **In-session lock: `mura-authd` is the lock's PAM helper.** One helper process per unlock
+  conversation, for the `mura-lock` PAM service only (auth stack; no session management —
   the session already exists).
 
-## 2. `spatial-authd`: the lock conversation
+## 2. `mura-authd`: the lock conversation
 
 ### 2.1 Process and framing
 
@@ -33,7 +33,7 @@ carries `"nonce"`; a message with a stale nonce is ignored (§2.4).
 
 ### 2.2 The PAM call sequence (helper side)
 
-`pam_start("spatial-lock", user, conv, &h)` → `pam_authenticate` (with `PAM_DISALLOW_NULL_AUTHTOK`)
+`pam_start("mura-lock", user, conv, &h)` → `pam_authenticate` (with `PAM_DISALLOW_NULL_AUTHTOK`)
 → `pam_acct_mgmt` → `pam_end`. No `pam_setcred`, no `pam_open_session`. The helper installs a
 fail-delay callback (`pam_set_item(PAM_FAIL_DELAY, …)`); `delay_ms` reported on failure is the
 maximum delay requested through that callback during the conversation, measured by authd — never
@@ -104,7 +104,7 @@ composition sampled zero client buffers) → `SetLockedHint(true)` / suspend-rea
 
 ## 4. The session event surface
 
-`org.spatialos.Session1` on the **session bus** (aligned with
+`org.mura.Session1` on the **session bus** (aligned with
 [settings-schema.md](settings-schema.md); the bus does not exist in greeter mode — greeter-time
 tooling has no Session1 to talk to, by design):
 
@@ -119,9 +119,9 @@ tooling has no Session1 to talk to, by design):
 capture/injection; the places store; perception beyond the IMU tier (cameras off pre-auth).
 **Enabled**: the OpenXR loop on IMU-only tracking; per-unit calibration from system state; the
 built-in auth scene (internal, not a client); the greetd client conversation of §1, with sessions
-enumerated from the module system (`spatial.xr.shell` values); and — on the multi-user profile
+enumerated from the module system (`mura.xr.shell` values); and — on the multi-user profile
 only (amendment per [ADR 0018](../docs/architecture/adr/0018-multi-user-accounts.md) decision 9)
-— exactly **one** `spatial-provisiond` conversation, *create-guest*: gated server-side on the
+— exactly **one** `mura-provisiond` conversation, *create-guest*: gated server-side on the
 root-owned owner-grant flag, answered with a single-use token consumed by the guest PAM gate
 ([multi-user.md §4](../docs/architecture/multi-user.md)). No other provisiond conversation is
 reachable from greeter mode. **Exit**: on `start_session`

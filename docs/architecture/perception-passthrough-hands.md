@@ -91,7 +91,7 @@ flowchart LR
 ### Anti-wobble (the actual quality battle)
 
 "Wobble" is a temporal artifact of spatial depth error; the corpus spends more code here than on
-accuracy ([13 §4](../research/13-passthrough.md)). spatial-os adopts the full set: confidence-gated
+accuracy ([13 §4](../research/13-passthrough.md)). Mura adopts the full set: confidence-gated
 **reprojected** temporal depth filtering with geometric rejection **and depth-dependent history
 length** (near hands: short memory ≤0.2 s; far walls: long); joint-bilateral upsampling guided by
 full-res luma with taps rejected across depth edges; Sobel depth-discontinuity **snapping** so
@@ -235,11 +235,11 @@ contract where a shipping decision would hit them.
 3. **Non-blocking publication.** Both services publish latest-complete; the display path never awaits.
 4. **Calibration-versioned; per-device geometry is a contract input.** Camera↔eye offset, baseline,
    camera-vs-display FOV, rolling-shutter, IR illumination, and which camera is the matte source all
-   belong in the typed `spatial.*` device contract, not in compositor constants.
+   belong in the typed `mura.*` device contract, not in compositor constants.
 
 ## Contract surface (additions)
 
-Minimal typed options under `spatial.xr.passthrough.*`, consistent with this design (stubs now;
+Minimal typed options under `mura.xr.passthrough.*`, consistent with this design (stubs now;
 semantics tracked in the design backlog):
 
 - `enable` (bool), `latencyMode` (enum `low-latency` | `high-quality`, default `low-latency`),
@@ -249,7 +249,7 @@ semantics tracked in the design backlog):
   `automatic`, default `automatic`) — the per-client-overridable shell default.
 
 Per-device camera geometry (offset, baseline, FOV, matte-source camera, IR/exposure notes) extends
-`spatial.adaptation.camera` / the device contract.
+`mura.adaptation.camera` / the device contract.
 
 ## Metrics and sequencing
 

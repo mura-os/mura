@@ -1,16 +1,16 @@
 # 37-accessibility-atspi — Accessibility: AT-SPI2/Newton architecture and the XR mapping
 
-**Status:** research complete; architecture input, not an implementation decision. **Date:** 2026-09-23. **Question:** how would AT-SPI be used or extended in spatial-os?
+**Status:** research complete; architecture input, not an implementation decision. **Date:** 2026-09-23. **Question:** how would AT-SPI be used or extended in Mura?
 
 ## Executive answer
 
-AT-SPI2 is the shipping Linux desktop accessibility substrate, and spatial-os should adopt it before inventing an XR replacement. Applications expose semantic widget trees over a dedicated D-Bus accessibility bus; Orca consumes names, roles, states, text, focus, relations, and actions and turns them into speech or Braille ([S1], [S2]).
+AT-SPI2 is the shipping Linux desktop accessibility substrate, and Mura should adopt it before inventing an XR replacement. Applications expose semantic widget trees over a dedicated D-Bus accessibility bus; Orca consumes names, roles, states, text, focus, relations, and actions and turns them into speech or Braille ([S1], [S2]).
 That application path is independent of X11 versus Wayland; Wayland does, however, remove global geometry and unrestricted global input from clients, making the compositor necessary for cross-window accessibility context ([S12], [S17], [S18]).
 
 “Newton” is GNOME's experimental Wayland-native successor architecture. It uses AccessKit's serialized, push-updated trees: apps attach accessibility updates to surface commits, the compositor supplies trusted surface focus/identity, and assistive technologies query local cached trees instead of repeatedly walking remote D-Bus objects ([S9]–[S11]).
 
 As of September 2026, Newton is **not a shipping replacement**. Its end-to-end Wayland, Mutter, Orca, and consumer-library path remains prototype/unmerged.
-GTK 4.18 merged an AccessKit backend, but GTK's February 2026 report says Linux still defaults to AT-SPI and GTK-side AccessKit work has seen little movement ([S9], [S13], [S14]). Newton therefore changes the seam spatial-os should preserve, not the initial adoption answer:
+GTK 4.18 merged an AccessKit backend, but GTK's February 2026 report says Linux still defaults to AT-SPI and GTK-side AccessKit work has seen little movement ([S9], [S13], [S14]). Newton therefore changes the seam Mura should preserve, not the initial adoption answer:
 
 1. ship AT-SPI2 and Orca now;
 2. make zxr's global accessibility bridge transport-neutral;
@@ -74,7 +74,7 @@ Modern GTK 4, Qt 5/6, and WebKit map their internal models directly to AT-SPI wi
 Qt's `QAccessible` bridge activates from AT-SPI status and is independent of whether Qt renders through Wayland or X11 QPA ([S8]).
 
 AccessKit already has a Rust Unix adapter that publishes an AccessKit tree as ordinary AT-SPI with `zbus` ([S11]). Using AccessKit in a Rust client today does **not** imply using Newton.
-This gives a smithay/Rust-leaning spatial-os app ecosystem a usable baseline before Newton ships.
+This gives a smithay/Rust-leaning Mura app ecosystem a usable baseline before Newton ships.
 
 ### 2.3 Accessible trees and interfaces
 
@@ -249,7 +249,7 @@ Its screen-reader documentation has described it as experimental, warning that a
 
 Transferable requirement: scene navigation, alternate pointing/activation, bounded motion, digital and surroundings magnification, and audio fallback when spatial hearing is unavailable are OS responsibilities.
 
-## 7. Mapping to spatial-os
+## 7. Mapping to Mura
 
 ### 7.1 Keep application content accessibility unchanged
 

@@ -1,5 +1,5 @@
 # dev-session — rung 1 of the development ladder (composition doc §7.1 / ADR 0006
-# dev mode): the spatial-os session as a plain window on your desktop, with Monado
+# dev mode): the Mura session as a plain window on your desktop, with Monado
 # running the simulated HMD. No VM, no image; iteration cost = process relaunch.
 #
 #   nix run .#dev-session               # nested session window + simulated Monado
@@ -20,7 +20,7 @@
 }:
 let
   swayConfig = writeText "dev-session-sway.cfg" ''
-    # spatial-os dev-session (nested). Alt is the modifier: the host WM usually
+    # Mura dev-session (nested). Alt is the modifier: the host WM usually
     # owns Super, and Alt chords pass into the nested window reliably.
     set $mod Mod1
     xwayland disable
@@ -38,7 +38,7 @@ writeShellApplication {
   text = ''
     usage() {
       cat <<USAGE
-    dev-session: spatial-os rung-1 dev loop (nested session + simulated-HMD Monado)
+    dev-session: Mura rung-1 dev loop (nested session + simulated-HMD Monado)
 
       --client       also launch xrgears inside the session (OpenXR smoke);
                      implies --mirror so you can see the XR view

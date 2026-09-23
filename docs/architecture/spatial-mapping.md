@@ -232,11 +232,11 @@ normative summary:
   geometry is never left in a stale local gauge. Cross-fades on plane updates per
   [22 §7](../research/22-dense-geometry-no-lidar.md).
 
-Per-device policy via `spatial.xr.mapping.depthAssist`
+Per-device policy via `mura.xr.mapping.depthAssist`
 (`none | flood-ir | active-ir-pattern | tof-sensor | android-backed`; named *assist* because
 `none` still means passive RGB stereo, not "no depth" — REVIEW-mapping M-17): controls the
 inferred-state budget and illuminator duty, **not** backend selection (that stays
-`spatial.xr.passthrough.depthBackend`). Steam Frame's IR is flood (SNR, not texture — blank walls
+`mura.xr.passthrough.depthBackend`). Steam Frame's IR is flood (SNR, not texture — blank walls
 still fail at night); Quest 3's dot projector is the no-LiDAR existence proof
 ([22 §6](../research/22-dense-geometry-no-lidar.md)).
 

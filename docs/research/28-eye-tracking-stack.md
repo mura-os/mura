@@ -34,7 +34,7 @@ recoverable in closed form in metric camera coordinates, and the pupil-center-to
 gaze after a short user calibration (guestrin-eizenman-2006-pccr). This is what shipping vendor
 stacks are: doc 25 documents illuminator rings around the eye cameras on every commercial target,
 and the PSVR2 firmware pipeline Monado consumes (§3.4) is PCCR-class. PCCR's price is **calibrated
-LED geometry per unit** — a per-device-port reverse-engineering cost spatial-os cannot assume it
+LED geometry per unit** — a per-device-port reverse-engineering cost Mura cannot assume it
 can pay on donor hardware where the illuminator positions are undocumented.
 
 **Glint-free 3D model fitting (Swirski lineage).** Uses only the pupil ellipse across many frames.
@@ -121,7 +121,7 @@ fine for *normalized* gaze, useless for metric IPD. Getting IPD out requires, pe
    variant `calibrate_hmd` takes **known `eye_translations`** as input instead
    (`gazer_3d/gazer_hmd.py:55-107`, with hardcoded ±33.35 mm fallbacks at lines 196-198). On a
    built-in headset the extrinsics are rigid and should be **per-unit calibration in system state**
-   (`/var/lib/spatial/`, ADR 0007 "calibration is system state, never `$HOME`") — with the twist
+   (`/var/lib/mura/`, ADR 0007 "calibration is system state, never `$HOME`") — with the twist
    that on IPD-motorized devices the eye cameras typically ride the lens tubes, so extrinsics are
    a *function of the IPD encoder position* (inference; per-target reality in doc 25).
 
@@ -218,7 +218,7 @@ another (`pye3d_plugin.py`), and gaze mapping as pluggable "gazers" — the 3D o
 eye-camera-to-scene-camera extrinsics from a calibration choreography and then maps both eyes'
 sphere centers + gaze normals into a common frame (`gazer_3d/gazer_headset.py`; per-eye
 `eye_center_3d` in world coordinates at lines 150-169). `GazerHMD3D` is the HMD specialization fed
-with **known eye translations** (`gazer_3d/gazer_hmd.py`) — the shape spatial-os inherits, except
+with **known eye translations** (`gazer_3d/gazer_hmd.py`) — the shape Mura inherits, except
 our "scene camera" is the device frame and the extrinsics come from unit calibration rather than
 choreography.
 
@@ -285,7 +285,7 @@ compositor and input system use, as `psvr2.c:188` does with its hw→monotonic o
 Monado-side placement is different and still strong: **the consumer is Monado itself** — the gaze
 pose must answer `get_tracked_pose(at_timestamp_ns)` inside the input pipeline, and the IPD result
 feeds `get_view_poses`/`eye_relation`, both Monado-internal; camera bring-up for a session-scoped
-BSP camera group already has its home in the frameserver (`spatial.adaptation.camera`); and the
+BSP camera group already has its home in the frameserver (`mura.adaptation.camera`); and the
 privacy boundary (clients get gaze *pose*, never eye images) falls out of the existing IPC design
 for free.
 
@@ -294,7 +294,7 @@ for free.
 Model an "ET system library" on the SLAM seam (`auxiliary/tracking/t_tracker_slam.cpp:54-87`,
 `VIT_SYSTEM_LIBRARY_PATH`, per 05 §3): Monado owns cameras and the device; a small C ABI takes
 frames and returns gaze + eyeball centers, letting implementations (classical, CNN, vendor blob) be
-swapped without rebuilding Monado. Attractive for the same reason VIT is (spatial-os will want
+swapped without rebuilding Monado. Attractive for the same reason VIT is (Mura will want
 per-device backends), but it means inventing and maintaining a *second* private plugin ABI on top
 of an internal seam whose own stability was already flagged as a co-pin risk (05 §11.4) — and
 unlike VIT there is no upstream constituency for it yet. This is a *refinement* of (a) — the
@@ -358,7 +358,7 @@ No precedent exists in the studied stacks (Monado drivers only *read* IPD sensor
 facts). Required shape (inference): a bounded, slow, encoder-fed positioner —
 `set_target_ipd_mm(v)` clamped to hardware range, `get_encoder_mm()`, `get_limits()`, move-complete
 signal, hardware-enforced travel limits. It belongs in the per-device Monado driver (it is a device
-control like `wmr_hmd`'s control packets), surfaced through the `spatial.adaptation` per-device
+control like `wmr_hmd`'s control packets), surfaced through the `mura.adaptation` per-device
 contract, never generic. During motion: **freeze the eye models** (`is_long_term_model_frozen` —
 the cameras may be moving with the lens tubes, so observations mid-travel are calibration-invalid),
 and re-resolve extrinsics at the new encoder position before unfreezing.
@@ -437,10 +437,10 @@ applied post-login exactly as ADR 0007 already specifies for per-user IPD prefer
 4. **NPU contention**: Mercury + depth backend + ET CNN on one HTP — the ADR 0008 BSP-unknowns
    list extends to ET; classical-vs-CNN front end may end up a per-device decision.
 5. **Gaze data privacy policy**: gaze is exposed per-client via an OpenXR extension the client must
-   enable — is that gating sufficient, or does spatial-os want an explicit per-app permission
+   enable — is that gating sufficient, or does Mura want an explicit per-app permission
    (Android-style `EYE_TRACKING` permission, as ALVR must request on Quest/Pico)?
 6. **Upstreaming**: does upstream Monado want a camera-based ET tracker + an ET plugin ABI
-   (option b), or does this remain a spatial-os patch series per the WiVRn pinning pattern
+   (option b), or does this remain a Mura patch series per the WiVRn pinning pattern
    (05 §9.2)?
 7. **Foveated-rendering latency budget**: gaze-to-photon for foveation is stricter than for
    interaction; whether the PuRe+pye3d path at 120 Hz meets it on target hardware is a
@@ -448,7 +448,7 @@ applied post-login exactly as ADR 0007 already specifies for per-user IPD prefer
    the `monado-galaxyxr` fork implements gaze-driven two-level `VK_KHR_fragment_shading_rate`
    foveation on Galaxy XR (12° full-rate disc; 68% vs 77% GPU busy measured), using the OEM QNN
    eye tracker ([31-kwin-vr §5](31-kwin-vr.md), [ADR 0013 §4](../architecture/adr/0013-kwin-vr-disposition.md));
-   where foveation *policy* lives in spatial-os remains undecided.
+   where foveation *policy* lives in Mura remains undecided.
 
 ### Recommended baseline (marked as ADR 0011 input, not a decision)
 

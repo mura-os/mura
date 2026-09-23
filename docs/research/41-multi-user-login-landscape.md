@@ -1,6 +1,6 @@
 # 41 — Multi-user login landscape: greeter mechanics, XR precedents, NixOS account durability
 
-**Question.** How should spatial-os do real multi-account + guest on an A/B image-based NixOS
+**Question.** How should Mura do real multi-account + guest on an A/B image-based NixOS
 headset: what do existing greeters/DMs actually do (enumeration, picker, last-user, guest
 lifecycle), what do the XR/appliance platforms ship, and which NixOS mechanism keeps runtime-
 created Unix accounts durable across A/B slot switches? Feeds
@@ -122,7 +122,7 @@ Real kernel-uid separation: `uid = userId × 100000 + appId` (`UserHandle`, `PER
 per-user CE/DE **encryption keys** (FBE; CE keys unlocked by the user's credential), per-user
 data roots (`/data/user/<id>` …), guest = a temporary secondary user (ephemeral by default, one
 at a time). Android proves an appliance can do real per-person uid + per-person crypto without
-a desktop identity stack. *Design note: spatial-os adopts the uid-separation half only —
+a desktop identity stack. *Design note: Mura adopts the uid-separation half only —
 per-account data-at-rest encryption (AOSP's CE-key half) is an explicit v1 non-goal in
 multi-user.md §1, with homed as its designated carrier.*
 [external: source.android.com multi-user + file-based encryption docs]
