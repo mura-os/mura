@@ -141,5 +141,6 @@
   "waynest": {"url": "https://github.com/verdiwm/waynest.git", "commit": "bce31ec654dfe59eaf23cd15867623e1cefc0f9c", "ref": "main", "cloned": "2026-09-23T13:58:28Z"},
   "weston": {"url": "https://gitlab.freedesktop.org/wayland/weston.git", "commit": "3c6ce8da64678ee0336aa41e0ca4ee3af91c9740", "ref": "main", "cloned": "2026-09-23T13:58:28Z"},
   "louvre": {"url": "https://github.com/CuarzoSoftware/Louvre.git", "commit": "e6f70863ffcd9b96df50504bdc9804c4ad1a53a7", "ref": "main", "cloned": "2026-09-23T13:58:28Z"},
-  "mir": {"url": "https://github.com/canonical/mir.git", "commit": "10d09077d715bfc5e67d634ce93b6c6e1221ba0e", "ref": "main", "cloned": "2026-09-23T13:58:28Z"}
+  "mir": {"url": "https://github.com/canonical/mir.git", "commit": "10d09077d715bfc5e67d634ce93b6c6e1221ba0e", "ref": "main", "cloned": "2026-09-23T13:58:28Z"},
+  "krdp": {"url": "https://invent.kde.org/plasma/krdp.git", "commit": "939a90779e5ec87b8bd8c0cd315ca62dc6b28b2a", "ref": "master", "cloned": "2026-09-23T14:12:00Z"}
 }

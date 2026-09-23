@@ -153,6 +153,9 @@ repos=(
   'xdg-specs|https://gitlab.freedesktop.org/xdg/xdg-specs.git|'
   'kwin|https://invent.kde.org/plasma/kwin.git|'
   'plasma-workspace|https://invent.kde.org/plasma/plasma-workspace.git|'
+  # krdp = KDE's RDP server: the proven KWin-adjacent buffer-consumption + libei input
+  # plumbing precedent cited by ADR 0014 M-B (producer-spec workstream, doc 40).
+  'krdp|https://invent.kde.org/plasma/krdp.git|'
   'mutter|https://gitlab.gnome.org/GNOME/mutter.git|'
   'gnome-shell|https://gitlab.gnome.org/GNOME/gnome-shell.git|'
   'cosmic-comp|https://github.com/pop-os/cosmic-comp.git|'
