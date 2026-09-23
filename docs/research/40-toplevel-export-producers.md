@@ -118,7 +118,9 @@ feedback has the honest zero-copy flag already (scanout-only,
 shared_ptr and reports consumer outcomes (one ~10-LOC accessor widening: `presentationFeedback()`
 is gated on the surface's primary output, `surface.cpp:509-515`).
 
-### 1.6 Interactive move: the fork's two "hard" patches disappear
+### 1.6 Interactive move: one hard patch dissolves; the other is relocated
+
+*(Revised per the KWin-persona review: the original "both dissolve" claim was half right.)*
 
 - The active move is globally identifiable (`workspace()->moveResizeWindow()`, consulted by the
   move filter at `input.cpp:679`), and **the cursor anchor already exists**:
@@ -129,10 +131,18 @@ is gated on the surface's primary output, `surface.cpp:509-515`).
   restores initial geometry (also wrong). R23 = a third finish mode, **~20–40 LOC**: teardown +
   signals, no epilogue. The fork instead forked the move state machine with `if (isVr)`
   (02db754, 97 LOC — the bitrot pattern Vlad rejected) because VR windows keep *living* in the
-  2D move machinery; delegation *ends* the move at the boundary, so the fork's other hard patch
-  (0448fdd, blocking output reassignment during moves, 41 LOC + 4 admitted residual bugs) is not
-  needed at all. This is the structural reason the export lands an order of magnitude smaller
-  than the VR MR.
+  2D move machinery; delegation *ends* the move at the boundary, so the move-machine fork
+  genuinely dissolves.
+- **The output-reassignment patch (0448fdd) does not dissolve — it is relocated and enlarged.**
+  A delegated window remains a live `Window` in KWin: unhandled, it would render at its parked
+  rectangle, be hit-testable by the local pointer (`findToplevel`), appear in alt-tab/taskbars,
+  and be moved/resized by output hotplug and `checkWorkspacePosition` for the *entire delegation
+  lifetime* (the fork suppressed this only during moves). The producer conformance spec §2.8
+  therefore defines the **parked-window model** as a normative obligation (not presented
+  locally, no local input, topology-frozen geometry, session-state exclusion, switcher policy),
+  and the KWin series carries it as its own core MR (~200–400 LOC, the hardest one) — a single
+  narrow window state (minimized-window analog plus geometry freeze) rather than scattered
+  `isVr` checks.
 - R24's recipe is verbatim in-tree: the xdg-toplevel-drag input filter moves the window under the
   cursor and starts an interactive move via `performMousePressCommand(Options::MouseMove, …)`
   (`input.cpp:2853-2882`), ends with `endInteractiveMoveResize()` + raise + focus (`:2629-2639`);
@@ -169,12 +179,13 @@ required.
 | R23 detach | ADAPT (epilogue-skip finish variant) | 20–40 | 150–250 |
 | R24 adopt | EXISTS (toplevel-drag recipe) | 0 | 150–250 |
 
-**Totals: core ≈ 250–450 LOC across six small patches** (bounds resolver, hovered-window
-resolver, position limiter, pacing ownership, move-finish variant, feedback accessor) **plus a
-~500 LOC standalone ext-foreign-toplevel-list implementation; plugin ≈ 3.5–5.5 kLOC.** Inside
-doc 32 §6.1's 5–8 kLOC envelope with *less* core surface than estimated (0.25–0.45 k vs
-0.5–1.0 k), chiefly because the release join and transactions are fully reusable. The 10-MR
-series shaped from this lives in [producers/kwin.md](../architecture/producers/kwin.md).
+**Totals (as revised by the KWin-persona review): core ≈ 450–800 LOC across seven patches**
+(bounds resolver, hovered-window resolver, position limiter, pacing ownership, move-finish
+variant, feedback accessor, **plus the delegated-window-state patch the original count missed**,
+~200–400) **plus a ~500 LOC standalone ext-foreign-toplevel-list implementation;
+plugin ≈ 4.2–6.2 kLOC.** Still inside doc 32 §6.1's envelope, chiefly because the release join
+and transactions are fully reusable. The 9-MR series shaped from this lives in
+[producers/kwin.md](../architecture/producers/kwin.md).
 
 ### 1.9 Master movement since the VR MR (code-state comparison)
 
@@ -234,11 +245,16 @@ paint (`meta-wayland-surface.c:898,1094-1097`). **No ext-foreign-toplevel-list**
   exported windows. Forced-target routing into `MetaWaylandSeat`/pointer/keyboard/touch is the
   largest genuinely NEW piece (~0.8–1.5 kLOC, input core). Serials/grabs stay native (R17 free);
   xdg-activation mints producer tokens (`meta-wayland-activation.c:38-121`).
-- **Pacing**: per-stage-view timerfd `FrameCallbackSource`s (`meta-wayland.c:222-346,440-482`)
-  and the `is_streaming` view-primacy exemption (obscured windows keep their callbacks,
-  `meta-surface-actor-wayland.c:90-153`) are exact templates for an export-keyed consumer-clock
-  source; fifo/commit-timing retargeting rides the same files. presentation-time v2 feedback
-  lists exist; a consumer-fed frame-info source is new.
+- **Pacing**: the correct template is the per-stage-view timerfd `FrameCallbackSource`
+  (`meta-wayland.c:222-346,440-482`) rekeyed to a consumer clock; the `is_streaming` view-primacy
+  exemption (`meta-surface-actor-wayland.c:90-153`) only proves obscured windows can keep
+  callbacks — dispatch stays on the local view clock (Mutter-persona correction). Callback lists
+  are spliced view-keyed at role-apply time, so the atomic owner switch intercepts there, and
+  fifo-v1 barrier clearing (view-transaction-driven) must be taken over for consumer-paced trees
+  or fifo clients hang. presentation-time v2 feedback lists exist; a consumer-fed frame-info
+  source is new. The per-surface `applied` signal has no transaction-complete boundary — the
+  protocol's atomic `done` needs a new hook in `meta-wayland-transaction.c` (core seam 6 in the
+  brief).
 - **Move**: side-effects live only in `end_grab_op` (`meta-window-drag.c:1795-1862`);
   **`meta_window_drag_end` is already the side-effect-free teardown** (`:385-424`) — R23 is a
   new entry point, not new suppression logic. Anchor data present (`:66,500-503`); active drag
@@ -340,10 +356,13 @@ multi-buffering), and **plane fds must be dup'd eagerly** because the source is 
    plugin (+~500 standalone foreign-toplevel-list); Mutter ≈ 5–9 k total, 0.7–1.5 k core;
    smithay reference ≈ 2–4 k. Doc 32 §6.1's 5–8 k envelope holds, with less core surface than
    estimated.
-4. **The structural KWin argument**: the VR fork's two unmergeable patches (move/resize fork,
-   output-reassignment blocking) are not shrunk — they are *dissolved*, because delegation ends
-   the 2D move at the boundary instead of keeping windows alive inside the 2D machinery. That is
-   the sentence to say to Vlad Zahorodnii.
+4. **The structural KWin argument, stated precisely** (revised per the KWin-persona review):
+   the move/resize fork *dissolves* (delegation ends the 2D move at the boundary), but the
+   output-reassignment problem is *relocated* into the delegated window's parked 2D state and
+   must be designed, not assumed away — conformance §2.8 defines it, and every producer carries
+   one narrow "delegated" window state instead of the fork's scattered mode checks. The honest
+   sentence for Vlad Zahorodnii is: one of your two hard patches disappears, the other becomes a
+   single window state we specify and test.
 5. **Privilege converges** on "trusted dedicated connection + per-global filter" (KWin
    `Display::createClient` identity checks; Mutter ServiceChannel caps; smithay/cosmic filter
    closures; wlroots display filter + security-context lookup). The conformance spec's §2.1
