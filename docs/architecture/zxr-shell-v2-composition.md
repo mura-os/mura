@@ -269,7 +269,13 @@ zxr's 2D tier satisfies these **by construction**, never by special case:
 5. **No window↔output binding exists** — both of the fork's genuinely invasive patches
    (move/resize, `outputAt(center)` reassignment across four window classes) are artifacts of
    output binding; zxr windows have world transforms and (optionally) place membership, never an
-   owning output.
+   owning output. The two sanctioned exception-*shapes* are presentation, not residency:
+   docked mode's per-output **presentation policy** ([ADR 0015](adr/0015-docked-desktop-mode.md)
+   — which windows present flat on the docked connector, fullscreen/direct-scanout there) and
+   virtual-screen quads (scene grouping) are both policy over the unchanged window model. The
+   KWin-style residency mutation never returns; monitor↔space and quad↔space drags reuse the
+   transition choreography mined in [31 §2.9](../research/31-kwin-vr.md) (edge-barrier detach,
+   cursor-anchor continuity, pick-UV pointer warp) as first-class policy in one process.
 
 Two operational requirements ride along from the same evidence: **XR-init preflight runs in a
 separate probe process with a same-GPU check** (runtime GPU must match the compositor's render

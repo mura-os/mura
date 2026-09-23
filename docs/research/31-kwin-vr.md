@@ -177,9 +177,11 @@ protocol-seam approach.
   so ordinary Plasma (panels, wallpaper, plasmashell) has somewhere to live — while a core patch
   makes the compositor **skip rendering** virtual outputs entirely (the plugin draws their windows
   itself as 3D objects).
-- **Follow mode** (`vrfollowmode.cpp`, 375 lines): moves the whole window group to keep the nearest
-  window inside a configured FOV with delay/speed/world-up parameters; suppressed while grabbing,
-  scrolling, hovering, or moving windows (`XrScene.qml:281-317`). Recenter/grab-all/realign
+- **Follow mode** (`vrfollowmode.cpp`, 375 lines): engages only when *every* visible window's
+  center is outside the configured start-FOV cone, then rotates the whole group to bring the
+  angularly closest window back in (two-threshold hysteresis; the full algorithm is §2.10);
+  delay/speed/world-up parameters; suppressed while grabbing, scrolling, hovering, or moving
+  windows (`XrScene.qml:281-317`). Recenter/grab-all/realign
   shortcuts; an auto-realign timer at start because Monado's local origin can jump 1–4 s after
   socket-activated startup (author's MR note, 2026-01).
 - **Session lock**: pure property consumption — every window/surface QML item binds
@@ -262,10 +264,171 @@ drag under the cursor at the landing point. The pointer warp is what makes re-en
 
 Transferable vocabulary for spatial-os: *edge-barrier detach* (margin-gated), *cursor-anchor
 continuity* (grab point pinned to the same content pixel across the transition), and *re-entry by
-pick-UV pointer warp*. In zxr's native model there is no output to escape, but the identical
-choreography applies to virtual-screen quads and — cross-process — to delegated foreign sessions,
-where the `vr` flip becomes a delegation handoff
+pick-UV pointer warp*. In zxr's native model there is no output to escape — with one amendment
+since docked desktop mode was decided: [ADR 0015](../architecture/adr/0015-docked-desktop-mode.md)
+gives zxr a real flat-composition output, so the equation becomes "an output to *present to*,
+never to *bind to*" (per-output presentation policy over the unchanged window model — ADR 0015's
+own wording; composition §7.3 constraint 5). The choreography above therefore applies three
+times, always as first-class policy rather than residency surgery: virtual-screen quads,
+monitor↔space drags in docked mode, and — cross-process — delegated foreign sessions, where the
+`vr` flip becomes a delegation handoff
 ([foreign-session-integration.md §3.7](../architecture/foreign-session-integration.md), R23/R24).
+
+### 2.10 Follow mode: the window-layout policy under head motion
+
+Follow mode is two coupled mechanisms, only one of which lives in `vrfollowmode.cpp`. **Position**
+is trivial: while `followCamera` is on, the root `allWindows` node is pinned to the head every
+frame (`allWindows.position = cam.scenePosition`, `XrScene.qml:273-279`), so the group can only
+ever be wrong in *orientation around the user*. **Orientation** is the `VrFollowMode` object
+(375 lines): per tracked node it computes camera-local horizontal/vertical angles to the node's
+**scene-position center** — `hAngle = |atan2(x,−z)|`, `vAngle = |atan2(y,−z)|`
+(`anglesToNode`, `vrfollowmode.cpp:224-237`) — window centers, not bounds. The two-threshold
+hysteresis the author described is verified exactly in `onFrame` (`vrfollowmode.cpp:281-314`):
+**inactive→active** only when *no* visible tracked node is inside the start-FOV cone
+(`anyNodeInFov`, `:239-250`) continuously for `delay` seconds (`m_lookAwayTime` accumulation);
+**active→inactive** when the *angularly closest* node (min `h²+v²`, `findClosestNode`,
+`:252-269`) enters the much smaller stop cone (`isNodeInStopFov`, `:271-279`). Engagement tests
+*any* window against start FOV; motion targets and stop-tests only the closest one.
+
+The transform is a **rigid rotation of the whole layout about the user's head**
+(`rotateTowardsNode`, `vrfollowmode.cpp:316-373`): `deltaRotation = rotationTo(toClosest,
+cameraForward)` with pivot = camera position; the `rotationTarget` is `allWindowsGrabHandle`,
+the single parent of every pseudo-output and VR window (`XrScene.qml:309, 319-434`; the header
+warns *"Tracked objects should be children of the rotationTarget or this will break"*,
+`vrfollowmode.h:20-25`) — relative layout is preserved by construction, distance by
+arc-interpolating the offset at constant radius (`:358-369`). Pitch is followed identically to
+yaw (the rotation is full 3D); roll follows head tilt only when `worldUpAlignment` is off — the
+group's facing is rebuilt with world-up or camera-up as the roll reference (`:346-352`; KCM
+tooltip: windows follow head tilt "when lying down", `FollowModeSetup.qml:83-84`). Easing is an
+exponential slerp, `t = min(1, dt·speed)` with `dt` clamped to 0.1 s, driven by a 16 ms `QTimer`
+rather than the XR frame loop (`vrfollowmode.cpp:19-20, 287-289, 355-356`) — **no absolute
+angular-velocity cap exists**; large corrections move fastest at onset. Engagement is suppressed
+(the `camera` binding nulls out) during auto-realign, headscroll, grab, move/resize, and the
+radial menu, and hover blocks *starting* but not *continuing* — *"Do not start movement When we
+hover something / But do not stop movement when we already started"* (`XrScene.qml:283-308`).
+Pseudo-outputs register at creation, windows register/unregister on the `vr`/`screen` state flip
+(`XrScene.qml:344, 410, 430`) — screen-resident windows follow only via their pseudo-output.
+
+KCM-exposed knobs (`kwinvr.kcfg:37-68`, page `FollowModeSetup.qml:107-218`): enabled-by-default
+(true), start FOV H/V (40°/20°, range 5–90°), stop FOV H/V (4°/4°, range 1°–startFOV), delay
+(0.5 s, 0–5 s), speed (2.0, 0.1–10), world-up alignment (off). The compiled-in defaults differ
+(50°/45°/5°/5°, speed 3.0, `vrfollowmode.h:104-109`) but config always overrides; a radial-menu
+"Follow" toggle flips it at runtime (`XrScene.qml:219-243`). The author's own MR update (2026-02)
+flags the policy-collision this creates: follow mode *"somewhat starts to conflict with 'Grab
+All' and 'Recenter': you can now continue to move your head to position all windows"* — three
+overlapping answers (automatic follow, manual grab-all, discrete recenter) to the same
+where-do-windows-go question, with only the suppression list above as arbitration.
+
+Transferable for spatial-os: follow mode is pure **window-management policy** — an ADR 0012 §2
+in-process policy module ([adr/0012](../architecture/adr/0012-de-modularity-spinout-seams.md))
+whose *motion* must run under the effects module's authority-owned comfort caps (max angular
+velocity/scale-rate — exactly what the fork's uncapped exponential slerp lacks). The reusable
+vocabulary is the two-threshold hysteresis (start-FOV engage, stop-FOV disengage, dwell delay),
+head-pivot rigid transform preserving relative layout, and the explicit suppression list against
+grabs/moves/menus; the unsolved part it demonstrates is arbitration between follow, grab-all,
+and recenter as competing layout authorities.
+
+### 2.11 Headgaze picking, hover, and focus policy
+
+The pick source is `Xray`, a child of the `XrCamera` offset by per-user calibration — default
+15 cm right, 10 cm down, 5 cm forward, rotated 4°/6° (`Xray.qml:17-21`; `kwinvr.kcfg:181-200`) —
+so the "headgaze" ray is a calibrated nose-pointer, not the view axis. Every head-pose change
+fires `updateAllPicks → XrView.rayPickAll` unthrottled (`VrPicking.qml:34-37, 67-73`).
+**Arbitration is pure ray order plus per-object veto**: `lastAllPicks` is Qt Quick 3D's
+distance-sorted all-hits list, and `processAllPicks` walks it front-to-back taking the first
+object that does not refuse via the `onPick(pickResult)` protocol (`VrPicking.qml:39-65`). There
+is *no* class-priority table — grab handles vs. decorations vs. window content vs. screen frames
+are arbitrated by which quad is geometrically in front; 2D HUD/OSD items resolve to their
+nearest 3D ancestor through the `parent3d` walk (`:91-116`); `isGrabHandlePicked` rescans the
+full list so a handle occluded by another window still counts when anything in its window is hit
+(`:118-135`). `VrHoverState` then casts the winner into one of six types (pseudo-output frame,
+two thumbnail kinds, Wayland surface, decoration, internal window) via a `StateGroup` producing
+an atomic `activePickHandler {target, client, geometry}` (`VrHoverState.qml:17-102`).
+
+The synthetic pointer has two derivations (`VrPointerHandler.qml:50-72`): in **picking** mode,
+pick UV → plane-local → global 2D through the handler's geometry (`uvToWindow2DCoordinates` plus
+the geometry origin, `:107-123`); in **move/resize** mode it switches to a ray–plane intersection
+against the moving window's plane, ppu-scaled into frame coordinates (`:29-46, 74-105`), so the
+drag keeps tracking after the ray leaves the window. Hover becomes KWin focus through one
+binding: `activeClient = movingResizing client ?? hovered client` is pushed into
+`KwinVrHoveredWindowResolver.hoveredWindow` (`VrPointerHandler.qml:137-146`), whose constructor
+installs the settable `HoveredWindowFinder` and calls `pointer()->update()` on every change
+(`kwinvrhoveredwindowresolver.cpp:15-34, 45-57`). Commit `07306c0` is what makes this possible:
+it replaces the hardcoded `input()->findToplevel(position())` inside
+`InputDeviceHandler::update()` with the callback (default lambda = the old behaviour). So
+**pointer hover follows the pick unconditionally** — the hovered window receives pointer events
+regardless of 2D stacking — while keyboard focus/activation still transitions on click through
+KWin's normal policy; hovering alone neither raises nor activates. The plugin's own 3D GUI is
+the exception: `KWinToQQuick3DInputBridge`, an Effects-priority `InputEventFilter`, retargets
+key/button/axis events into the scene's `QQuickDeliveryAgent` with the pick UV as synthetic
+mouse position (`VrPointerHandler.qml:125-135`; `kwintoqquick3dinputbridge.cpp:45-76, 232-248`).
+
+**Stabilization: none exists.** No smoothing, deadzone, hysteresis, debounce, or magnetism
+appears anywhere in the pick or pointer path; the 3D cursor binds the raw pick position directly
+(`VrCursorManager.qml:40-45`). The two mechanisms that look adjacent are not smoothing:
+`pointerInhibitDelay` swallows pointer *motion* for 100 ms after a button press so the click
+lands where you were looking (`kwinvrinputfilter.cpp:107-118`; `kwinvr.kcfg:209-214`), and
+`headScrollThreshold` (0.1°) gates scroll only. The MR users noticed precisely this hole: the
+UHD-600 tester's three requests were input smoothing for headgaze wobble, a configurable FOV
+culling margin, and snapping/magnetism to interactive elements; Tanja's complaint was the same
+head-wobble under raw headgaze. Daily-driven evidence, in other words, that a raw head ray
+demonstrably needs a stabilization layer this codebase never grew.
+
+Transferable for spatial-os: this is the **pluggable hover/focus policy** of composition §7.3
+constraint 1 ([zxr-shell-v2-composition.md](../architecture/zxr-shell-v2-composition.md)) working
+end-to-end — pick-derived hover with the resolver as the seam — and the veto-based front-to-back
+arbitration is a reusable shape for trusted chrome vs. content. The gap is equally normative: gaze
+stabilization (filtering, dwell, target magnetism) is a *requirement* on the input-authority row
+([component-registry.md §4](../architecture/component-registry.md)), not an optional nicety —
+three independent testers asked for it on the only shipping headgaze desktop.
+
+### 2.12 Virtual-screen lifecycle
+
+A virtual screen is a **real KWin backend output**. `KwinVirtualScreenHandle` calls
+`outputBackend()->createVirtualOutput(name, description, size, scale)` and removes it in its
+destructor (`kwinvirtualscreenhandle.cpp:71-85, 29-36`); after (re)creation it pushes an
+`OutputConfiguration` changeset — a custom `Preferred|Custom` modeline at pixel size/refresh,
+scale, enabled — through `Workspace::applyOutputConfiguration` (`:87-109`, version-forked for
+the 6.6.80 modeline API change, `:14-19`). Recreation happens only when size or name change;
+refresh/scale updates re-apply in place (`:60-85`). Exactly one handle is instantiated inside
+`XrScene`, named `"T"`/"Virtual Screen" (`XrScene.qml:49-58`): it is born with the QML engine on
+VR activation and dies with it, so the virtual output exists only during a VR session — to the
+rest of Plasma it is an ordinary monitor hotplug. The changeset never sets a 2D layout position;
+that is left to KWin's normal output configuration under the stable name.
+
+Sizing has a deliberate double bookkeeping (`kwinvr.kcfg:13-36`; KCM `VirtualDisplaySetup.qml`):
+the *output* is sized in logical pixels × integer scale at a refresh rate (defaults 1440×900,
+scale 1, 60 Hz), while the *quad in space* is sized by `ppu` — pixels per **centimeter**, default
+20 — and placed at `distance` (default 100 cm). Physical size = geometry/ppu
+(`KwinPseudoOutputMirror.qml:25`; the KCM live-derives it, `VirtualDisplaySetup.qml:94-122`), so
+the default virtual screen is a 72×45 cm panel at 1 m. 3D placement is per-session only: a
+`SpaceAllocator3D` free-position search at creation (`XrScene.qml:336-346`); nothing spatial
+persists across sessions. What core commit `379a24d` skips is exactly the **2D output render
+pass**: it marks `DrmVirtualOutput` with `virtualOutput = true` and gates only `renderLayer()` in
+`Compositor::composite` — damage collection and the render loop keep running, but the output's
+framebuffer is never painted, because nothing reads it: the plugin imports each window's client
+buffers directly (§2.3) and draws them on the pseudo-output quad. The output exists to give
+Plasma somewhere to live (panels, wallpaper, plasmashell) and windows valid 2D coordinates.
+Windows enter and leave it by the §2.9 mechanics — the `"screen"` state parents each window to
+its output's `KwinPseudoOutputMirror` at the frame-geometry offset and the `vr` flip removes it
+(`XrScene.qml:413-432`); the mirror's `uvToGlobal2DCoordinates` is the reattach pointer-warp
+target (`KwinPseudoOutputMirror.qml:34-39`). The author's stance on the physical variant is on
+record in the MR: real displays *"are only useful when you want to show something to a person
+nearby… In VR you manipulate individual windows"* — screens are the compatibility artifact,
+windows the real model.
+
+Transferable for spatial-os — two consumers, one inversion. (a) The **virtual-screen-quad compat
+artifact** (registry shell/authority; the "nested compositor as one quad" row in
+[foreign-session-integration.md §2](../architecture/foreign-session-integration.md), and
+spatial-sharing §2.2's persistent named window-set): same one-model-two-presentations shape, but
+as pure composition policy over the window model — no fake connector, no skip-rendering patch,
+because windows are never double-booked to an output. (b)
+[ADR 0015](../architecture/adr/0015-docked-desktop-mode.md)'s docked flat-composition output is
+the **inverse case**: a *real* connector receives a flat presentation of windows that live in
+space, where the fork fabricates a *fake* connector so 2D machinery keeps working. ADR 0015's
+rule — "per-output **presentation policy** … never as ownership in the model" — answers both
+directions at once; `379a24d` has no analog for us because our flat presentations
+(docked, spectate/mirror) are deliberately rendered, not suppressed.
 
 ## 3. The core-patch surface
 
@@ -290,7 +453,7 @@ authority-plane subsystem ([desktop-environment.md §3](../architecture/desktop-
 | `39a0dc5` window: offscreen rendering fixes | frame callbacks / `framePainted` when a window is visible but outside every output | VR windows must keep receiving frame callbacks | low (25 LOC), fixes real core assumptions | Composition engine (window-local textures) |
 | `136855f` leasable-output mechanism + persistence | `leasable` flag on outputs, persisted; leasable desktop outputs offered via `wp_drm_lease_v1`, removed from workspace while leased | AR glasses are desktop connectors; Monado needs the panel in direct mode | **high** (18 files, 182 LOC across drm backend, lease protocol, output config store, kscreen integration) — the change KDE rejects on technical grounds | Output paths (spatial-os: Monado owns the HMD; lease consumed by Monado on dev profile per ADR 0006 — we never lease *desktop* outputs) |
 | `3ec9802` drm: disable non-primary planes before lease | clears hw cursor etc. before handing the connector over | stale cursor plane stays visible for the lessee | low (23 LOC, drm backend) | Output paths (Monado-side concern for us) |
-| `379a24d` compositor: skip virtual-output rendering | virtual outputs get no render loop | plugin renders those windows itself; avoids double work | low (9 LOC) | (no analog: our virtual outputs — spectate/mirror — are deliberately rendered, doc 17) |
+| `379a24d` compositor: skip virtual-output rendering | gates only the `renderLayer()` call in `Compositor::composite` for virtual outputs — damage collection and frame pacing keep running (§2.12) | plugin samples client buffers directly; avoids double work | low (9 LOC) | (no analog: our virtual outputs — spectate/mirror — are deliberately rendered, doc 17) |
 | `d58ceea` pointer-lock toggle in window menu | user-facing unlock for pointer-constrained apps | games grabbing the pointer must be escapable without a real screen edge | low (49 LOC, useractions) | Input subsystem (constraint policy) |
 | `15720da` `EglContext::s_currentContext` thread_local | makeCurrent from Qt's render thread | async render thread shares KWin's EGL machinery | trivial (2 LOC) but a real threading-model statement | Composition engine (renderer threading) |
 | `88ef787` eglbackend: drm format filter | pluggable filter on the formats advertised via linux-dmabuf | clients must not commit formats Qt RHI can't import | low (52 LOC) | Protocol server (dmabuf feedback; our compositor negotiates its own format table) |
