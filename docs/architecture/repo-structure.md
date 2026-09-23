@@ -41,7 +41,10 @@ devices/
 pkgs/                          # overlay: XR components, kernels, tools (nixpkgs-xr pulled as input)
 patches/                       # patch sets, organized per upstream + per donor build (see below)
 protocols/                     # spatial-os Wayland protocol XMLs (zxr-shell-v2, the zext
-                               # shell-integration family incl. zext-toplevel-export) + governance notes
+                               # shell-integration family incl. zext-toplevel-export) + governance
+                               # notes + CONVENTIONS.md; CI: wayland-scanner + xmllint (tests/protocols.nix)
+specs/                         # normative non-Wayland contracts (IPC framings, storage formats,
+                               # D-Bus/PipeWire interfaces) — the peer of protocols/
 tests/                         # eval assertions, VM tests, reproducibility + hardware tests
 contracts/                     # reviewed, hash-bound donor contracts (the qualify-stage gate)
 docs/

@@ -103,6 +103,8 @@
           formatting = treefmtEval.${system}.config.build.check self;
           # Device-contract typing + cross-field assertions (pure eval).
           contract = import ./tests/contract.nix { inherit nixpkgs system; };
+          # protocols/*.xml: well-formed + wayland-scanner generates cleanly.
+          protocols = import ./tests/protocols.nix { inherit nixpkgs system; };
           # End-to-end smoke check: the virtual-headset VM builds.
           virtual-headset-vm = self.packages.${system}.virtual-headset-vm;
         };

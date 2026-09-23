@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="zxr_layer_anchoring_v1">
+  <copyright>
+    Copyright © 2026 the spatial-os authors
+
+    SPDX-License-Identifier: MIT
+  </copyright>
+
+  <interface name="zxr_layer_anchoring_v1" version="1">
+    <description summary="stub: claimed by the specification workstream">
+      STUB — claimed by the specification workstream (wave 4). Defines no real
+      interface yet; fields are enumerated in the owning design docs.
+    </description>
+    <request name="destroy" type="destructor">
+      <description summary="destroy the object"/>
+    </request>
+  </interface>
+</protocol>

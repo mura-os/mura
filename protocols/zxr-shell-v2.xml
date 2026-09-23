@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="zxr_shell_v2">
+  <copyright>
+    Copyright © 2019 Drew DeVault, Simon Ser (zxr-shell-unstable-v1)
+    Copyright © 2026 the spatial-os authors
+
+    SPDX-License-Identifier: MIT
+  </copyright>
+
+  <interface name="zxr_shell_v2" version="1">
+    <description summary="stub: claimed by the specification workstream">
+      STUB — claimed by the specification workstream (wave 1). The credited
+      continuation of zxr-shell-unstable-v1 (wxrc) and Motorcar; design in
+      docs/architecture/zxr-shell-v2-composition.md and ADR 0006. This stub
+      exists to claim the filename and keep the protocols CI check green; it
+      defines no real interface yet.
+    </description>
+    <request name="destroy" type="destructor">
+      <description summary="destroy the shell object"/>
+    </request>
+  </interface>
+</protocol>
