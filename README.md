@@ -38,8 +38,10 @@ Three loops, cheapest first — pick by what you're changing:
 **Rung 1 — `nix run .#dev-session`** (compositor/shell/XR work; iteration = process relaunch).
 The spatial session as a plain window on your desktop: a nested Wayland compositor (sway until
 zxr M1; Alt+Return = terminal, Alt+Shift+E = quit) plus Monado running the **simulated HMD**
-(`XR_RUNTIME_JSON` exported inside the session). Flags: `--client` (xrgears OpenXR smoke),
-`--rotate` (canned head motion), `--controllers`, `--no-monado`, `--verbose`. No VM, no image.
+(`XR_RUNTIME_JSON` exported inside the session; windowless null compositor by default). Flags:
+`--client` (xrgears OpenXR smoke — adds Monado's mirror window showing the composited XR view),
+`--mirror`/`--no-mirror`, `--rotate` (canned head motion), `--controllers`, `--no-monado`,
+`--verbose`. No VM, no image.
 
 **Rung 2 — `nix run .#virtual-headset-vm`** (module/system integration; iteration = incremental
 rebuild, no image assembly — the VM shares the host `/nix/store`). Boots in seconds under KVM

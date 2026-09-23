@@ -40,7 +40,10 @@ writeShellApplication {
       cat <<USAGE
     dev-session: spatial-os rung-1 dev loop (nested session + simulated-HMD Monado)
 
-      --client       also launch xrgears inside the session (OpenXR smoke)
+      --client       also launch xrgears inside the session (OpenXR smoke);
+                     implies --mirror so you can see the XR view
+      --mirror       show Monado's XR output window (black until a client renders)
+      --no-mirror    force the windowless null compositor even with --client
       --rotate       simulated HMD follows a canned rotation (SIMULATED_ROTATE)
       --controllers  add simulated left/right controllers
       --no-monado    session only, no XR runtime
@@ -49,9 +52,11 @@ writeShellApplication {
     USAGE
     }
 
-    client=0 rotate=0 controllers=0 monado_on=1 verbose=0
+    client=0 rotate=0 controllers=0 monado_on=1 verbose=0 mirror=auto
     for a in "$@"; do case "$a" in
       --client) client=1 ;;
+      --mirror) mirror=1 ;;
+      --no-mirror) mirror=0 ;;
       --rotate) rotate=1 ;;
       --controllers) controllers=1 ;;
       --no-monado) monado_on=0 ;;
@@ -59,6 +64,7 @@ writeShellApplication {
       --help) usage; exit 0 ;;
       *) echo "dev-session: unknown flag $a" >&2; usage; exit 1 ;;
     esac; done
+    [ "$mirror" = auto ] && mirror=$client
 
     # Preflight: we nest inside an existing graphical session.
     if [ -z "''${WAYLAND_DISPLAY:-}" ] && [ -z "''${DISPLAY:-}" ]; then
@@ -92,6 +98,14 @@ writeShellApplication {
         # We manage lifetime; monado's stdin-watching mainloop must not (it
         # epoll-fails on a non-terminal stdin — ipc_server_process.c).
         export XRT_NO_STDIN=true
+        if [ "$mirror" = 0 ]; then
+          # Windowless null compositor: no black "XR output" window when nothing
+          # renders (target_instance.c: XRT_COMPOSITOR_NULL).
+          export XRT_COMPOSITOR_NULL=true
+          echo "[monado] mirror window off (null compositor); use --mirror to see XR output"
+        else
+          echo "[monado] mirror window on: the extra window shows the composited XR view"
+        fi
         [ "$rotate" = 1 ] && export SIMULATED_ROTATE=true
         if [ "$controllers" = 1 ]; then
           export SIMULATED_LEFT=simple SIMULATED_RIGHT=simple
