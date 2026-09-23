@@ -47,8 +47,14 @@ Per [17](../research/17-sharing-capture-stack.md), the adoption path is cheap an
   xdpw/COSMIC shape, consistent with ADR 0012's seam model. The Mutter-style private
   compositor-API chooser is rejected: it would move consent *presentation* into the authority
   plane, which ADR 0012 reserves for consent *enforcement* only (which buffers a session may
-  reach). zxr renders the picker's surfaces like any privileged shell client and enforces the
+  reach).   zxr renders the picker's surfaces like any privileged shell client and enforces the
   outcome; the picker's UX design remains open (registry consent-picker row stays partial).
+  Hardened by the commercial evidence ([36 §5](../research/36-vr-shell-interaction-patterns.md):
+  both Quest and visionOS render permission UI in the compositor trust domain and withdraw app
+  input while it shows): while the picker is displayed, zxr treats its surfaces as
+  lock-grade (unspoofable placement, no app occlusion) and **withdraws input from the requesting
+  app** — the separate-client placement stands, but its surfaces get trusted-surface treatment,
+  never ordinary-client treatment.
 - **SpatialCast** extends the portal bitmask additively: `XR_VIEW = 8` (spectate),
   `APP_VOLUME = 16` (mode-3 transport), `WORKSPACE = 32` (a session handle, not pixels), with
   vendor-scoped restore data and per-type consent language (§6).

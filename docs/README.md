@@ -48,6 +48,12 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [30-wayland-de-anatomy-protocol-seams.md](research/30-wayland-de-anatomy-protocol-seams.md) — privileged Wayland protocol inventory (ext-workspace, foreign-toplevel, layer-shell, capture…), KWin/COSMIC mechanism-vs-policy factoring, per-spin-out verdicts
 - [31-kwin-vr.md](research/31-kwin-vr.md) — code study of the KWin VR fork (MR !8671): plugin architecture, the WM-core patch seams, the Qt/XWayland patch-carry surface, the Monado galaxyxr Galaxy XR bring-up, maintainer objections mapped
 - [32-toplevel-export-prior-art.md](research/32-toplevel-export-prior-art.md) — prior art for per-toplevel zero-copy delegation: buffer lifetime/sync (waypipe, syncobj), consumer pacing, popup/input contracts, per-DE producer feasibility, governance path, R1–R22 requirements
+- [33-steam-frame-donor.md](research/33-steam-frame-donor.md) — Steam Frame donor: reconstruction audit, system inventory, pre-hardware inference (first real donor through the pipeline)
+- [34-workspace-models.md](research/34-workspace-models.md) — workspace/places models: KWin two-axis, GNOME dynamic, COSMIC pinned, niri topology, ext-workspace mechanics, visionOS/Horizon/Android XR precedents, session persistence
+- [35-settings-config-models.md](research/35-settings-config-models.md) — settings models: GSettings/dconf, KConfig, cosmic-config, image-based-OS precedent, the NixOS schema-from-options interplay (constraint 9)
+- [36-vr-shell-interaction-patterns.md](research/36-vr-shell-interaction-patterns.md) — comparative VR-shell patterns (placement, launcher, notifications, consent, boundary, keyboard, recenter) across six OSS shells + three commercial platforms, scored against composition constraints 6–9
+- [37-accessibility-atspi.md](research/37-accessibility-atspi.md) — AT-SPI2 anatomy, Newton/AccessKit 2026 status, the XR mapping (compositor a11y duties, dwell/motor overlap, reduced-motion caps, the spatial-semantics gap)
+- [38-desktop-linux-security-landscape.md](research/38-desktop-linux-security-landscape.md) — how desktop Linux security composes (PAM/polkit/portals/sandboxing/MAC/NixOS) + the consolidated index of every decided spatial-os security control
 
 ## Architecture (`architecture/`)
 
@@ -63,6 +69,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [avatar-persona.md](architecture/avatar-persona.md) — Persona avatars: enrollment/asset/driver/runtime decomposition, control-interface + asset-format specs, kill-gates
 - [desktop-environment.md](architecture/desktop-environment.md) — the DE plane model (system/authority/perception/shell/service), mechanism/policy/presentation rule, XR redefinitions, component dependency graph
 - [foreign-session-integration.md](architecture/foreign-session-integration.md) — foreign 2D sessions as per-toplevel floating windows: the client-integration taxonomy, the toplevel export/delegation seam (maintainer provenance, buffers/pacing/popups/input), `protocols/zext-toplevel-export-v1.xml`
+- [budgets.md](architecture/budgets.md) — the global frame/compute/power/thermal partition across planes + the budget-impact standing rule (overview invariant 9)
 - [component-registry.md](architecture/component-registry.md) — the master component inventory: 6 planes, evidence-based status (specified/partial/missing), the gap list
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects

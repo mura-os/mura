@@ -15,8 +15,9 @@ writeShellApplication {
     mkdir -p "$work"
     case "$img" in
       *.zst) zstd -d --sparse -f "$img" -o "$work/disk.raw" ;;
-      *)     cp --sparse=always -f "$img" "$work/disk.raw" && chmod +w "$work/disk.raw" ;;
+      *)     cp --sparse=always -f "$img" "$work/disk.raw" ;;
     esac
+    chmod +w "$work/disk.raw"
 
     fw=${qemu}/share/qemu/edk2-aarch64-code.fd
     varstore="$work/efivars.fd"

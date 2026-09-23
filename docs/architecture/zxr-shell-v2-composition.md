@@ -290,16 +290,22 @@ missed. zxr treats them as normative from the first interaction milestone:
 
 6. **No uncapped autonomous motion.** Any policy that moves content without a direct user grab
    (follow mode, summon, restore-to-place, docked re-layout) runs under authority-owned comfort
-   caps — maximum angular velocity/acceleration relative to the head — and is interruptible by
-   any user input. Evidence: the fork's follow mode rotates the entire window group with an
-   exponential slerp and *no velocity cap* (31 §2.10); the caps live in the effects/animation
-   module's authority tier (ADR 0012 §2), where no policy or plugin can exceed them.
+   caps — stated precisely as a **velocity clamp over exponential easing** (every surveyed
+   implementation eases exponentially; what goes unbounded is onset velocity — [36 §9](../research/36-vr-shell-interaction-patterns.md))
+   — and is interruptible by any user input. Evidence: the fork's follow mode rotates the entire
+   window group with *no velocity cap* (31 §2.10), and the two shells shipping uncapped follow
+   are exactly the two with documented user pain (36 §9); the caps live in the effects/animation
+   module's authority tier (ADR 0012 §2). Scope note: the caps govern *large surfaces*; hard
+   head-locking small transient OSDs/toasts is universal cross-ecosystem practice and exempt
+   (36 §9).
 7. **Gaze/ray input is stabilized before it is arbitrated.** A stabilization stage (deadzone +
-   smoothing + dwell, with target magnetism as a policy option) sits between the pose source and
-   hit arbitration; and arbitration is *class-aware* (interaction affordances vs. content vs.
-   presentation surfaces), not purely distance-ordered. Evidence: the fork ships raw
-   distance-ordered picking with zero stabilization in code, against three independent user
-   requests for smoothing, magnetism, and culling margin (31 §2.11).
+   smoothing + dwell, with target magnetism as a policy option, and **event-time compensation** —
+   replaying the pointer pose from click-onset time to cancel press-shake, xrdesktop's
+   on-by-default precedent, 36 §9) sits between the pose source and hit arbitration; and
+   arbitration is *class-aware* (interaction affordances vs. content vs. presentation surfaces),
+   not purely distance-ordered. Evidence: the fork ships raw distance-ordered picking with zero
+   stabilization in code, against three independent user requests for smoothing, magnetism, and
+   culling margin (31 §2.11).
 8. **Interacting spatial policies share one arbitration state machine.** Follow/grab/recenter/
    summon/docked-presentation are states of one explicit machine with defined precedence, not
    ad-hoc mutual-suppression flags. Evidence: the fork's author acknowledges follow mode
