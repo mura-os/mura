@@ -43,6 +43,7 @@ treat them by class, never the tree as one blob:
 | `identity/` | device keys, attestation material | survives | survives; regenerated only by explicit re-provisioning |
 | `enrollment/` | PIN hash, user credentials, user calibration (§5), the provisioning marker | survives | **wiped** |
 | `state/` | update/migration bookkeeping, quarantine records | survives | reset per settings-schema policy |
+| `/persist/userdb/` (multi-user profile; **its own class**, beside `spatial/` — dir 0755, passwd/group 0644, shadow 0000; see [multi-user.md §1.1/§6](multi-user.md)) | userdb | survives | all human rows removed; owner recreated by OOBE |
 | machine-id | `/etc/machine-id`, persisted here and committed **before D-Bus/logind start** | **survives** (one identity per unit, not per slot) | **rotated** — privacy; machine identity is not hardware identity |
 
 Per-user preferences and remembered state stay in `$XDG_CONFIG_HOME` / `$XDG_STATE_HOME` on
@@ -129,7 +130,11 @@ incomplete step if interrupted:
 1. **Language/locale** → settings store (session + per-unit preference).
 2. **Wi-Fi** → NetworkManager. Offline continue is allowed; updates and account-layering (out
    of scope here) simply wait.
-3. **Owner display identity** — display name only; the Unix account is fixed (§1).
+3. **Owner identity** — on the appliance profile: display name only, the Unix account is
+   fixed (§1). On the **multi-user profile**: this step *creates the owner account* through
+   provisiond's add-account path — the first, self-authorizing conversation, whose bootstrap
+   authorization is the provisioning-marker-absent state itself (there is no owner PIN yet to
+   re-enter; multi-user.md §1).
 4. **PIN enrollment** — doc 12 option (b): `pam_spatial_pin` verifies an argon2 hash in
    `enrollment/`; provisiond writes it. The lock-screen PIN pad and this enrollment share the
    digit-pad scene component (session-auth §2.3's `style=secret` fast path).

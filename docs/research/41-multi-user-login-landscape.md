@@ -81,8 +81,11 @@ lazily *when the guest session starts* and deletes it when the session stops
 authenticates as guest with immediate `PAM_SUCCESS`, but the session still opens through a PAM
 **autologin service** so a real PAM session/environment exists (`src/seat.c:1138-1143`).
 Confinement hooks: a wrapper binary exists solely so MAC policy can target guest sessions.
-SDDM's `SwitchToGuest` is an unimplemented stub. Verdict: LightDM's add/remove-script lifecycle
-+ autologin-PAM-service shape is the proven template for appliance guest mode.
+SDDM's `SwitchToGuest` is an unimplemented stub. Verdict, precisely scoped: LightDM's
+add/remove-script **lifecycle** and its real-PAM-session requirement are the proven template;
+its **auth mechanics do not transfer** — the autologin-service selection lives in LightDM's
+daemon, a seam greetd deliberately lacks, so a greetd-based guest needs its own gated PAM
+branch (multi-user.md §4 is that translation).
 
 ---
 
@@ -109,7 +112,9 @@ own* phone since visionOS 26, or kept on-device 30 days for one repeat guest); O
 Pay/Persona blocked; approval-from-phone **auto-starts view mirroring** — supervision is part of
 the flow, not an option. Honest fine print: the guest sees the owner's data inside any allowed
 app — app gating, not a data universe. [external: support.apple.com 117742, 123024;
-apple.com/legal/privacy/data/en/guest-user]
+apple.com/legal/privacy/data/en/guest-user] *Design note: multi-user.md §4 adopts the transient
+calibration and the don-window/auto-cancel, and records its deltas (standing toggle permitted;
+grace-resumable doff; supervision optional rather than flow-mandatory) explicitly.*
 
 ### 2.3 AOSP multi-user: the substrate the headsets inherit
 
@@ -117,7 +122,10 @@ Real kernel-uid separation: `uid = userId × 100000 + appId` (`UserHandle`, `PER
 per-user CE/DE **encryption keys** (FBE; CE keys unlocked by the user's credential), per-user
 data roots (`/data/user/<id>` …), guest = a temporary secondary user (ephemeral by default, one
 at a time). Android proves an appliance can do real per-person uid + per-person crypto without
-a desktop identity stack. [external: source.android.com multi-user + file-based encryption docs]
+a desktop identity stack. *Design note: spatial-os adopts the uid-separation half only —
+per-account data-at-rest encryption (AOSP's CE-key half) is an explicit v1 non-goal in
+multi-user.md §1, with homed as its designated carrier.*
+[external: source.android.com multi-user + file-based encryption docs]
 
 ### 2.4 Steam Deck: the counter-example, confirmed
 
@@ -137,18 +145,36 @@ merging declared config with the **slot-local existing files** plus `/var/lib/ni
 (which hold name→id memory only, never full records). Therefore: with `mutableUsers = true`,
 imperative accounts survive rebuilds *on the same slot* but **die on an A/B slot switch** — the
 new slot regenerates from declared config alone. Plain `mutableUsers = true` is a trap for this
-image model. [external: nixpkgs update-users-groups.pl]
+image model — and, precisely stated, **the trap is the Perl script's regeneration semantics,
+not the option value**: under userborn with persisted files (§3.2) the multi-user profile
+*requires* `mutableUsers = true`, and that arrangement is safe. [external: nixpkgs
+update-users-groups.pl]
 
 ### 3.2 userborn: the mechanism that makes persistence first-class
 
 `services.userborn` (Rust replacement for the Perl script, in nixpkgs) manages all users
-declaratively with proper diffing (previous-generation JSON, so imperative edits are
-distinguishable), and — decisive for us — **`passwordFilesLocation`**: the entire
+declaratively with diffing, and — decisive for us — **`passwordFilesLocation`**: the entire
 `passwd`/`shadow`/`group` database is written to a chosen directory and symlinked from `/etc`
 (subid files bind-mounted). Point it at persist-backed state and **the whole account database,
 including provisiond-created accounts and PIN-password changes, survives slot switches by
 construction**. Its `static = true` mode is asserted incompatible with switchable systems — not
-our case. [external: github.com/nikstur/userborn; nixpkgs userborn.nix]
+our case. Three caveats the module source makes explicit (red-team-verified, load-bearing for
+[multi-user.md §1.1](../architecture/multi-user.md)):
+
+- **Imperative rows survive only in mutable mode** (`USERBORN_MUTABLE_USERS`); in immutable
+  mode userborn *drains* any user absent from the declared config (shell → `nologin`, password
+  locked) and its `ExecStartPost` **remounts the password files read-only** — provisiond could
+  neither keep nor write accounts.
+- **Unit ordering:** `userborn.service` has `DefaultDependencies=false`,
+  `Before=sysinit.target`, no `RequiresMountsFor=` on its location, and an `ExecStartPre`
+  `mkdir -p` — pointing `passwordFilesLocation` at a late mount silently creates a root-slot
+  decoy database. The mount must be initrd-early plus a `RequiresMountsFor` drop-in.
+- **userborn's own diff state is slot-local** (`/var/lib/userborn/previous-userborn.json`,
+  a store symlink): after a slot switch the previous-config pointer dangles. Mild consequence
+  (a declared-user removal between generations may not drain on the other slot), accepted and
+  recorded in multi-user.md §1.1.
+
+[external: github.com/nikstur/userborn; nixpkgs userborn.nix]
 
 ### 3.3 systemd-homed: architecturally ideal, NixOS-immature
 

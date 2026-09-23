@@ -212,6 +212,12 @@ in
       install -d -m 0700 /persist/spatial/identity
       install -d -m 0700 /persist/spatial/enrollment
       install -d -m 0750 /persist/spatial/state
+      # userdb class (multi-user profile; multi-user.md §1.1): world-traversable —
+      # /etc/passwd symlinks here and getpwuid is universal, so it cannot live under
+      # the 0750 spatial/ tree. File perms (passwd/group 0644, shadow 0000) are
+      # userborn's; the initrd-early mount + RequiresMountsFor wiring lands with the
+      # multi-user profile module.
+      install -d -m 0755 /persist/userdb
     '';
   };
 

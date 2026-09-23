@@ -119,7 +119,12 @@ tooling has no Session1 to talk to, by design):
 capture/injection; the places store; perception beyond the IMU tier (cameras off pre-auth).
 **Enabled**: the OpenXR loop on IMU-only tracking; per-unit calibration from system state; the
 built-in auth scene (internal, not a client); the greetd client conversation of §1, with sessions
-enumerated from the module system (`spatial.xr.shell` values). **Exit**: on `start_session`
+enumerated from the module system (`spatial.xr.shell` values); and — on the multi-user profile
+only (amendment per [ADR 0018](../docs/architecture/adr/0018-multi-user-accounts.md) decision 9)
+— exactly **one** `spatial-provisiond` conversation, *create-guest*: gated server-side on the
+root-owned owner-grant flag, answered with a single-use token consumed by the guest PAM gate
+([multi-user.md §4](../docs/architecture/multi-user.md)). No other provisiond conversation is
+reachable from greeter mode. **Exit**: on `start_session`
 acknowledgment, tear down the Monado session and exit 0 (greetd's exit-then-start sequencing owns
 the DRM handoff). **Docked** (ADR 0015): the auth scene additionally presents flat on the
 external connector; identical conversation.

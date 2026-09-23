@@ -503,15 +503,27 @@ in
             '';
           };
           uidRange = mkOption {
-            type = types.attrsOf types.int;
-            default = {
-              min = 1000;
-              max = 1099;
+            type = types.submodule {
+              options = {
+                min = mkOption {
+                  type = types.ints.unsigned;
+                  default = 1000;
+                  description = "Lowest human-account UID the greeter picker enumerates.";
+                };
+                max = mkOption {
+                  type = types.ints.unsigned;
+                  default = 1099;
+                  description = "Highest human-account UID the greeter picker enumerates.";
+                };
+              };
             };
+            default = { };
             description = ''
               The UID window the greeter picker enumerates (NSS iteration, SDDM/tuigreet
-              pattern — multi-user.md §2). The greeter and guest system users live outside
-              it by construction.
+              pattern — multi-user.md §2). Guest uids come from a dedicated sub-range
+              above it (multi-user.md §1.1) and the greeter system user sits outside it
+              by construction. Must fit inside userborn's normal-user band and hold at
+              least maxAccounts uids (assertions below).
             '';
           };
         };
@@ -627,6 +639,27 @@ in
       # ADR 0018: the guest tile lives in the greeter scene and is owner-granted there.
       assertion = !cfg.xr.session.guest.enable || cfg.xr.session.multiUser.enable;
       message = "spatial.xr.session.guest.enable requires spatial.xr.session.multiUser.enable (the guest tile is a greeter-scene affordance; ADR 0018 / multi-user.md §4).";
+    }
+    {
+      # ADR 0018/multi-user.md §1.1: add-account and the owner OOBE both run through
+      # provisiond, so multi-account requires an onboarding placement explicitly (not
+      # merely transitively via the greeter assertion).
+      assertion = !cfg.xr.session.multiUser.enable || cfg.xr.session.provisioning.mode != "none";
+      message = "spatial.xr.session.multiUser.enable requires spatial.xr.session.provisioning.mode != \"none\" (accounts are created only through spatial-provisiond; ADR 0018).";
+    }
+    {
+      # multi-user.md §1.1: the uid window must be well-formed, hold the account cap,
+      # and sit inside userborn's normal-user band (1000-29999).
+      assertion =
+        !cfg.xr.session.multiUser.enable
+        || (
+          cfg.xr.session.multiUser.uidRange.min <= cfg.xr.session.multiUser.uidRange.max
+          && (cfg.xr.session.multiUser.uidRange.max - cfg.xr.session.multiUser.uidRange.min + 1)
+          >= cfg.xr.session.multiUser.maxAccounts
+          && cfg.xr.session.multiUser.uidRange.min >= 1000
+          && cfg.xr.session.multiUser.uidRange.max <= 29999
+        );
+      message = "spatial.xr.session.multiUser.uidRange must satisfy min <= max, hold at least maxAccounts uids, and sit within 1000-29999 (userborn's normal-user band; multi-user.md §1.1).";
     }
     {
       # A lockable session needs a runtime to compose the lock scene over.

@@ -32,11 +32,14 @@ blocking.
 2. **PIN = doc 12 option (b), ratified.** A dedicated `pam_spatial_pin` module verifies an
    argon2-hashed PIN stored in the `enrollment/` state class — the device-unlock credential is
    layered above the account password (Android/visionOS layering), and the account password
-   stays strong. **PAM wiring:** `pam_spatial_pin` is wired into
+   stays strong. **PAM wiring (appliance profile):** `pam_spatial_pin` is wired into
    `security.pam.services.spatial-lock` only; greetd's login stack stays standard
    account-password, with owner-password-is-PIN (doc 12 option (a)) recorded as the appliance
    bridge until `pam_spatial_pin` ships. Both stacks are declared through NixOS modules, never
-   hand-edited. This closes ADR 0007's open question.
+   hand-edited. This closes ADR 0007's open question. *Amended by
+   [ADR 0018](0018-multi-user-accounts.md) decision 8: on the multi-user profile,
+   `pam_spatial_pin` additionally joins greetd's login stack (members authenticate by PIN),
+   under the multi-user.md §3 input contract.*
 3. **OOBE placement: dispatcher-gated `zxr --oobe`, split from its authority.** greetd's
    `default_session` (multi-user) / `initial_session` (appliance) runs a dispatcher that selects
    `zxr --oobe` while provisioning is incomplete, `zxr --greeter` otherwise (greetd cannot

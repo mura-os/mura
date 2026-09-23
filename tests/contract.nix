@@ -109,6 +109,21 @@ let
     };
   };
 
+  # multi-user.md §1.1: a malformed uid window must fail (min > max).
+  multiUserBadUidRange = {
+    imports = [ validDevice ];
+    config = {
+      spatial.xr.shell = "zxr";
+      spatial.xr.session.greeter = "zxr-greeter";
+      spatial.xr.session.provisioning.mode = "greeter-gated";
+      spatial.xr.session.multiUser.enable = true;
+      spatial.xr.session.multiUser.uidRange = {
+        min = 1099;
+        max = 1000;
+      };
+    };
+  };
+
   # ADR 0018: guest without multiUser must fail (greeter-scene affordance).
   guestWithoutMultiUser = {
     imports = [ validDevice ];
@@ -188,6 +203,7 @@ let
     guestWithoutMultiUserFails = !assertsPass (evalContract guestWithoutMultiUser);
     multiUserDefaultOff = eval.config.spatial.xr.session.multiUser.enable == false;
     multiUserCapDefaultFour = eval.config.spatial.xr.session.multiUser.maxAccounts == 4;
+    multiUserBadUidRangeFails = !assertsPass (evalContract multiUserBadUidRange);
     # Lock triggers default sensibly.
     lockDefaultsOn = eval.config.spatial.xr.session.lock.enable == true;
     # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.
