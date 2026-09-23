@@ -229,7 +229,9 @@ v2 does not inherit their era's shortcuts, not to diminish them.
   The XML stays a pure wire contract (§3 register rule).
 - **Deviations in `zext-toplevel-export-v1.xml` as written** (recorded, deliberately not yet
   fixed while the draft iterates):
-  1. Attribution is "the spatial-os authors" (:4) — not a real name (§2).
+  1. ~~Attribution is "the spatial-os authors" (:4) — not a real name (§2).~~ *Fixed 2026-09-23:
+     all zxr/zext files attribute Jarrad Hope (sole author), stacked over lineage lines where
+     prior work is continued.*
   2. No RFC 2119 boilerplate (§2).
   3. Symbolic uints without `<enum>`s throughout: `node.role` "toplevel | subsurface | popup"
      (:154), `denied.reason` (:157-165), `fallback.kind` (:266), `regions.kind` (:254),
