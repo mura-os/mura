@@ -5,6 +5,11 @@ Development workflow (the three dev loops, one command each): [README.md §Devel
 A Nix-built, NixOS-based, Wayland-based Linux XR distribution targeting many standalone VR headsets,
 producing reproducible flashable images from pinned vendor firmware ("donor") inputs.
 
+**The ethos rule** ([overview.md invariant 10](architecture/overview.md), binding agent rules in
+[AGENTS.md](../AGENTS.md)): this is a Linux PC in headset form — Free Software, no walled gardens,
+the wearer is the administrator. Standard Linux mechanisms are the default answer to solved
+problems; consumer XR platforms are anti-patterns unless cited strictly for mechanism.
+
 **Grounding rule:** every design grounds its vocabulary in the applicable freedesktop/XDG
 specification before inventing terms — and states *which* "XDG" it means (the CDG spec family,
 the `xdg_*` Wayland protocol namespace, or xdg-desktop-portal; the three-way trap is

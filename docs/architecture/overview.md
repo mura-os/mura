@@ -187,3 +187,11 @@ These fall out of the research and hold across every document:
    partition is owned by [budgets.md](budgets.md), every new ADR/design doc carries a
    budget-impact statement (its standing rule), and the frame path is a whitelist — this is
    near-embedded development and efficiency is an invariant, not a pass.
+10. **The user owns the device.** Free Software, libre, no walled gardens — this project
+    exists because every shipping headset is closed. Every capability the hardware has is
+    exposed to its administrator; the wearer *is* the administrator; no session carries
+    ambient root, and no role exists above ordinary Unix (wheel + polkit). Policy defaults
+    never remove a power user's choice: encryption, accounts, root access, and software
+    sources are the user's, not the vendor's. Consumer XR platforms are design
+    **anti-patterns** unless cited strictly for mechanism/measurement — "a closed platform
+    does X" is never, by itself, a reason to do X. Binding agent rules: [AGENTS.md](../../AGENTS.md).
