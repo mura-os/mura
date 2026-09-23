@@ -488,6 +488,24 @@ The following requirements are the direct input to `protocols/zext-toplevel-expo
 21. **R21 — Privacy/policy.** Producer may redact/deny lock, protected, private, cursor, decoration, or internal surfaces (§1, §6).
 22. **R22 — Two zero-copy meanings.** Never promise/set `wp_presentation.zero_copy` merely because no intermediate allocation exists (§3).
 
+*Added by the transition-mechanics review ([31 §2.9](31-kwin-vr.md);
+[foreign-session-integration.md §3.7](../architecture/foreign-session-integration.md)):*
+
+23. **R23 — Detach handoff.** The consumer may request delegation of the toplevel *currently in
+    interactive move* on the producer (identified via the producer's active move-grab, not a
+    handle guess); the producer ends its move without placement side-effects (no
+    electric-border/tiling/output snap) and the handoff carries the **cursor-anchor point**
+    (surface-local position under the cursor at handoff) so the consumer's spatial grab keeps the
+    same content pixel under the ray. Precedent: `xdg-toplevel-drag-v1`'s attach-toplevel-to-drag
+    semantics, single-compositor.
+24. **R24 — Adopt with placement.** The consumer may end a delegation with a landing hint —
+    target output, surface-local/global 2D coordinates (from the consumer's pick UV on the
+    session quad), and a resume-move flag; the producer warps its pointer accordingly and, if
+    resuming, continues its interactive move ("final position as if `xdg_toplevel.move` ended",
+    per xdg-toplevel-drag). Only *delegated* toplevels can be adopted: a consumer-native client
+    can never enter the producer's session (its connection belongs to the consumer) — a
+    product-semantics asymmetry single-compositor implementations (KWin VR) do not have.
+
 **Bottom line.** KWin/Smithay buffer refs, syncobj, foreign-toplevel identity, KWin VR's popup/input
 seams, and Mutter's per-window EIS mapping exist. Missing is one contract joining them under
 consumer-driven presentation and producer-retained shell authority.

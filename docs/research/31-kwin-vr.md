@@ -226,6 +226,47 @@ tester ran it on an Intel **UHD 600** (Celeron N4120, 12 EU) over WiVRn to a Que
 "smooth enough to be usable" (MR, 2026-05). The missing multiview piece on AMD is a **closed Draft**
 "hacked" radeonsi patch ([mesa!40629](https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/40629)).
 
+### 2.9 Transition mechanics: dragging windows between screen and space
+
+*(Added after initial review — the one interaction the study under-documented.)* The signature
+UX — click-drag a window out of a desktop screen into VR space and back — is implemented in
+`src/plugins/vr/qml/VrWindowManipulation.qml` on one structural insight: **KWin's interactive
+move never ends across the transition**. The central move/resize state machine keeps running the
+whole way (which is exactly why core patches `02db754`/`0448fdd` must fork its update path and
+suppress `outputAt(center)` reassignment); the plugin piggybacks on it in both directions.
+
+**Detach (screen → space): an edge barrier.** While a *non-VR* window is in interactive move, a
+`VrBarrierConstraint` is attached to the pointer handler with `bounds =` the window's output
+geometry and a configurable `windowDetachMargin` (default **80 px**;
+`VrWindowManipulation.qml:26-44`). The 2D move proceeds normally inside the screen; when the
+ray-driven cursor exceeds the margin beyond the output bounds, `onBeyondMargin` fires
+`detachWindowToVR()` (`:197-230`), which: (1) 3D-grabs the window node (`xray.grabAndAlign`) —
+*before* any property flip, while the node is still parented to the screen's
+`KwinPseudoOutputMirror`; (2) restores **cursor-anchor continuity** — it maps the 2D cursor's
+position inside the window to a 3D point on the plane (via pixels-per-unit) and rotates the
+grabbed node around the camera so the ray points at that same content pixel
+(`alignGrabbedWindowToRayAtCursor`, `:104-176`; fullscreen windows use the normalized
+cursor position saved at move start); (3) only then sets `window.vr = true` (the `5dd778f`
+Q_PROPERTY), reparenting it out of the screen and out of 2D rendering; (4) niceties: 2D-moves the
+window to the output origin so X11 apps place popups sanely, and re-applies the pre-drag
+maximize mode in space.
+
+**Reattach (space → screen): ray-pick + pointer warp.** While a grabbed VR window moves, every
+pick update checks whether the ray hits a screen quad (`VrScreenFrame` →
+`KwinPseudoOutputMirror`; `rayPickPseudoOutput`, `:178-195`). On hit (`lookForScreenToPut`,
+`:232-253`): the pick's **UV coordinate on the quad is converted to global 2D coordinates and the
+synthetic pointer is warped there** (`kwinInput.pointerPosition = uvToGlobal2DCoordinates(uv)`),
+the window is sent to that output (`Workspace.sendClientToScreen`), the 3D grab releases, and
+`window.vr = false` — at which point the still-running interactive move resumes as an ordinary 2D
+drag under the cursor at the landing point. The pointer warp is what makes re-entry continuous.
+
+Transferable vocabulary for spatial-os: *edge-barrier detach* (margin-gated), *cursor-anchor
+continuity* (grab point pinned to the same content pixel across the transition), and *re-entry by
+pick-UV pointer warp*. In zxr's native model there is no output to escape, but the identical
+choreography applies to virtual-screen quads and — cross-process — to delegated foreign sessions,
+where the `vr` flip becomes a delegation handoff
+([foreign-session-integration.md §3.7](../architecture/foreign-session-integration.md), R23/R24).
+
 ## 3. The core-patch surface
 
 The fork = upstream master + **20 core commits** + the plugin commit. This is empirical evidence of

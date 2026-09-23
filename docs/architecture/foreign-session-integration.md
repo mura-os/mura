@@ -123,6 +123,35 @@ export: input is cancelled, outstanding buffers are released only after fenced G
 completes, and the consumer's scene node despawns. The producer never blocks its event loop on
 the consumer.
 
+### 3.7 Mid-drag transitions: session quad ↔ space (R23, R24)
+
+The signature interaction KWin VR proved ([31 §2.9](../research/31-kwin-vr.md) — edge-barrier
+detach at a configurable margin, cursor-anchor continuity, re-entry by pick-UV pointer warp),
+recast across the process boundary:
+
+- **Drag out.** The user drags a window *inside* a session quad (zxr forwards input over §3.5;
+  the producer runs its ordinary 2D interactive move). zxr owns the ray and the quad geometry,
+  so zxr detects the barrier condition — move-grab active and the ray beyond the quad edge by a
+  margin — and issues the **detach handoff (R23)**: the producer exports that toplevel mid-move
+  (ending its own move with no placement side-effects) and the handoff carries the cursor-anchor
+  point, so zxr's spatial grab keeps the same content pixel under the ray. From that moment the
+  window is an ordinary delegated toplevel floating in space.
+- **Drag back.** zxr's ray hits a session quad while carrying a delegated window: zxr ends the
+  delegation with a **landing placement (R24)** — target output plus 2D coordinates derived from
+  the pick's UV on the quad, resume-move flag set; the producer warps its pointer there and
+  continues its interactive move (KWin's implementation is nearly verbatim what the fork already
+  does single-process: `sendClientToScreen` + pointer position). The window is back under the
+  producer's WM authority.
+- **The asymmetry to design for**: only *delegated* toplevels round-trip. A zxr-native client
+  dragged onto a session quad cannot enter that session — no protocol can transplant a live
+  Wayland connection between compositors. Native windows dropped on a quad are placed in front
+  of it (with a visual cue), never into it. Single-compositor implementations (KWin VR) don't
+  have this asymmetry; ours is structural and the UX must communicate it.
+
+`xdg-toplevel-drag-v1` (staging) is the semantic precedent for both halves *within* each
+compositor — attach-toplevel-to-drag, dock/undock via drop targets, "final position as if move
+ended" — and producers that already implement it have most of the machinery R23/R24 ask for.
+
 ## 4. What this seam is not
 
 - **Not capture/sharing.** Modes 1–3 and 5 of [spatial-sharing.md](spatial-sharing.md) are

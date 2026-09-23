@@ -47,6 +47,22 @@
       <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
     </request>
 
+    <request name="detach_drag">
+      <description summary="mid-move detach handoff (R23)">
+        Requests delegation of the toplevel currently held in the producer's
+        interactive move on the given seat (identified by the producer's
+        active move-grab — never by handle guessing). The producer ends its
+        move with no placement side-effects (no electric borders, tiling, or
+        output snap) and announces the export on the returned tree, beginning
+        with an anchor event carrying the surface-local cursor-anchor point so
+        the consumer's spatial grab keeps the same content pixel under the
+        ray. Fails (denied: no_active_move) if no interactive move is active.
+        Semantic precedent: xdg-toplevel-drag-v1's attach-toplevel-to-drag.
+      </description>
+      <arg name="id" type="new_id" interface="zext_exported_tree_v1"/>
+      <arg name="seat_name" type="string" summary="producer seat identifier"/>
+    </request>
+
     <request name="destroy" type="destructor">
       <description summary="destroy the manager"/>
     </request>
@@ -83,6 +99,35 @@
         per the R20 lifecycle rules.
       </description>
     </request>
+
+    <request name="adopt" type="destructor">
+      <description summary="end delegation with landing placement (R24)">
+        Ends the delegation, handing the toplevel back to the producer's WM
+        authority with a landing hint: producer output (by name), global 2D
+        coordinates (typically derived from the consumer's pick UV on the
+        session surface), and whether to resume an interactive move at that
+        position (producer warps its pointer accordingly; "final position as
+        if xdg_toplevel.move ended", per xdg-toplevel-drag-v1). Only delegated
+        toplevels can be adopted — a consumer-native client can never enter
+        the producer's session (its connection belongs to the consumer).
+        Buffer/lifecycle teardown follows the R20 rules after the producer
+        acknowledges via denied(gone) semantics on outstanding nodes.
+      </description>
+      <arg name="output_name" type="string"/>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="resume_move" type="uint" summary="0 or 1"/>
+    </request>
+
+    <event name="anchor">
+      <description summary="cursor-anchor point at detach handoff (R23)">
+        Sent once, before the first commit, on trees created by detach_drag:
+        the surface-local position that was under the cursor at handoff, for
+        grab continuity on the consumer side.
+      </description>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+    </event>
 
     <request name="set_bounds">
       <description summary="consumer-owned placement bounds (R15)">
