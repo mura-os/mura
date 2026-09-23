@@ -98,6 +98,12 @@ boundary and hardware substrate for iris auth are specified in
   idle-past-lock, explicit lock, suspend/resume, and boot → re-auth. Presence never *unlocks* without
   a biometric ("a head is here" ≠ "the owner"). Serve `ext-idle-notify-v1`, honor
   `zwp_idle_inhibit_v1`.
+  *Amended 2026-09-23 ([ADR 0015](0015-docked-desktop-mode.md)):* the ladder gains a **docked
+  branch** — doff while a docked output is active enters the quiescence ladder (XR stack down,
+  flat output live) instead of blank-and-grace; whether it also locks the docked presentation is
+  the `lockOnDoffWhileDocked` policy, and the ordinary idle-to-lock ladder still applies to the
+  docked output. The greeter and lock scenes gain a flat presentation on the docked monitor.
+  Invariants I1–I3 are untouched: locked means locked on every presentation.
 - **Boot splash:** no Plymouth on the appliance HMD (a full-panel undistorted splash is visually
   broken through lenses); dark panels or, as a stretch goal, a static per-eye *pre-distorted* logo
   driven from system-state calibration. The boot-locked compositor is the first legible UI; anything

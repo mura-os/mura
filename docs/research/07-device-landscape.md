@@ -324,6 +324,29 @@ Status terms above are deliberately narrow: “root” means control after the v
 - Never transplant `devinfo`, `unlock_token`, identity, attestation, or calibration data between units.
 - Because there is no safe flash/recovery path after a boot-chain mistake, donor collection must be read-only and versioned. The FreeXR warning that [EDL reflashing is unavailable without authenticated keys](https://github.com/FreeXR/eureka_panther-adreno-gpu-exploit-1) should be treated as a hard build-system safety constraint.
 
+## External video-out capability (docked-mode fact, verified 2026-09-23)
+
+Per-device evidence for the `spatial.hardware.externalDisplay` contract fact
+([ADR 0015](../architecture/adr/0015-docked-desktop-mode.md) — mirror tier and docked desktop
+mode both gate on it):
+
+| Device | Video out over USB-C | Evidence |
+|---|---|---|
+| Quest 3 | **Yes — DP alt-mode, vendor-supported.** Wired mirroring auto-starts on connect; tested cable combos published; HDMI needs an *active* DP→HDMI adapter; no audio; DRM content blanked; **passthrough is included in the mirror** | [Meta's official casting-by-cable doc](https://www.meta.com/help/quest/1561768654489777/) |
+| Samsung Galaxy XR | **Yes — community-verified out**, officially undocumented. USB-C→HDMI adapter mirroring confirmed by a tester; Samsung's own docs describe the port as data/peripherals-only (and no charging) | [user test report](https://www.reddit.com/r/Galaxy_XR/comments/1t3kjoy/is_a_hardwire_video_connection_possible_on_galaxy/), [Samsung port doc](https://www.samsung.com/us/support/troubleshoot/TSG10007584/), [port discovery](https://www.androidauthority.com/samsung-galaxy-xr-usbc-3610592/) |
+| Lynx R1 | **Reported DP alt-mode** (USB-C 3.1 Gen1), direction unconfirmed; official docs only document scrcpy screen-sharing | [VR/AR wiki spec](https://vrarwiki.com/wiki/Lynx_R1), [Lynx screen-sharing doc](https://portal.lynx-r.com/documentation/view/sharing-your-screen?version=1) |
+| Valve Steam Frame | **No.** Rear USB-C is USB 2.0 (data + 45 W charge) — no alt-mode; front expansion is MIPI/PCIe, not display | [spec digest](https://steamhardware.io/steam-frame/specs/), [UploadVR announcement](https://www.uploadvr.com/valve-steam-frame-official-announcement-features-details/) |
+| Oculus Quest 1 | **No** — Meta scopes wired external-display mirroring to Quest 3-class headsets; Quest 1 has no DP alt-mode path | [Meta doc scope](https://www.meta.com/help/quest/1561768654489777/) |
+| Play For Dream MR | **Unknown** — no public port capability documentation located | — |
+
+Notes for ADR 0015: Meta's behaviour is the mirror-tier prior art (hotplug → auto-mirror, DRM
+blanking, no audio) *except* that Meta mirrors passthrough by default — spatial-os's capture
+taxonomy default is the opposite (passthrough excluded unless consented,
+[spatial-sharing.md §2.2](../architecture/spatial-sharing.md)). The Galaxy XR result means the
+flagship docked-mode target has working silicon for it; Steam Frame, the strongest near-term
+Linux target, can never dock over its port — docked mode must remain an optional, fact-gated
+feature, never assumed.
+
 ## Implications for the build system
 
 spatial-os needs at least two image families. Quest 1, Lynx, Galaxy XR, Play For Dream, and eventually Quest 3 require Android/Qualcomm-aware artifacts: raw `Image`/DTB assembly where possible, Android boot-image packing for each verified header version, AVB metadata policy, A/B slot handling, and optional `vendor_boot`/dynamic-partition support. Steam Frame instead needs an EFI/UEFI and RAUC-oriented target capable of producing signed A/B rootfs updates and, once its actual boot map is confirmed, the appropriate ESP/UKI or Valve-specific boot payload.

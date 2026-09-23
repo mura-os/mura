@@ -168,6 +168,22 @@ Monado-side eye-tracking service (gaze via `XR_EXT_eye_gaze_interaction`, rotati
 per-device rows — *IPD source*, *eye-camera access class*, *ET capability*, *iris auth* — with
 current values in [research/29](../research/29-eye-hardware-ipd-per-target.md).
 
+### `spatial.hardware.externalDisplay` and docked mode (ADR 0015)
+
+`spatial.hardware.externalDisplay` ∈ `none | dp-altmode | usb-display` declares whether the
+device's USB-C port can drive an external display (doc-ahead-of-implementation; verified
+per-device values in [research/07 §External video-out](../research/07-device-landscape.md):
+Quest 3 `dp-altmode` vendor-supported, Galaxy XR `dp-altmode` community-verified, Lynx R1
+reported-unverified, Steam Frame and Quest 1 `none`). It gates the mirror tier and docked desktop
+mode of [adr/0015-docked-desktop-mode.md](adr/0015-docked-desktop-mode.md), whose session policy
+surface is `spatial.xr.session.docked.*` (doc-only until packaging):
+
+| Option | Type | Notes |
+|---|---|---|
+| `spatial.xr.session.docked.enable` | bool | offer docked desktop mode when the fact permits |
+| `spatial.xr.session.docked.lockOnDoffWhileDocked` | bool (default false) | whether doff-while-docked also locks the flat presentation (ADR 0007 amendment) |
+| `spatial.xr.session.docked.deepIdleAfter` | nullOr seconds | soft→deep quiescence timer; deep idle stops Monado + perception units |
+
 ### `spatial.qualification.*` — required functionality and tests
 
 | Option | Type | Notes |

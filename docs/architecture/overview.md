@@ -100,7 +100,9 @@ before any user session exists, per-unit calibration is system state (not `$HOME
 tiered (IMU-only pre-auth, full 6DoF with the session). The decision, the doff/don/idle re-auth
 policy, and the lock-as-composition-policy model are in
 [adr/0007-session-greeter-lock.md](adr/0007-session-greeter-lock.md), selected via
-`spatial.xr.session.*`.
+`spatial.xr.session.*`. On devices whose USB-C can drive a monitor, the same session also offers
+**docked desktop mode** — flat presentation on the external display with the XR stack quiesced
+while doffed ([adr/0015-docked-desktop-mode.md](adr/0015-docked-desktop-mode.md)).
 
 Realized as NixOS modules under `modules/os/` (distro policy) and `modules/xr/` (runtime + session).
 

@@ -185,6 +185,14 @@ Legacy `wlr-screencopy` tools (`grim`) stay per [17 §8.5](../research/17-sharin
 add only on demonstrated need. `post-distortion` capture, if ever exposed, lives behind a debug
 flag on the device profile, not in the tool.
 
+**Scanout realization.** Mirroring to a *physically attached* display
+([ADR 0015](adr/0015-docked-desktop-mode.md)'s mirror tier) is the scanout realization of these
+same cells — `full-scene × head-view (mono)` or `window-set × flat-composition` presented on the
+external DRM connector directly, not encoded through a capture stream. The taxonomy governs the
+semantics either way: the passthrough-exclusion default and the active-share badge duty apply
+when presenting to a room, and the docked output itself participates in capture as an ordinary
+`MONITOR` source.
+
 ## 3. Mode 4: share-the-app (protocol proxying) — the default for remote 2D apps
 
 Mode 4 covers *remote/VM apps*. The adjacent local case — a foreign 2D compositor's **session**

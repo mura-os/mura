@@ -173,7 +173,7 @@ decomposes into **named subsystems**, each with a registry row:
 | Protocol server | core globals, `xdg-shell`, `zxr-shell-v2`, privileged globals + per-connection filtering | specified (ADR 0006) |
 | Window + space model, WM policy | lifecycle, placement, stacking, states, rules; places | window model partial; space model missing |
 | Input subsystem | seats, ray/6DoF/keyboard routing, focus, activation, shortcut interception, grabs | focus/activation missing |
-| Output paths | the OpenXR loop (Monado owns the HMD display — no desktop-style modesetting) and the desktop dev window; `wlr-output-management` for non-HMD heads | specified (composition §7) |
+| Output paths | the OpenXR loop (Monado owns the HMD display — no desktop-style modesetting), the desktop dev window, and the docked flat-composition output (ADR 0015); `wlr-output-management` for non-HMD heads | dev + XR specified (composition §7); docked missing |
 | Scene graph | surface→world transforms, decoration nodes, damage tracking | implicit in composition doc — no explicit design |
 | Composition engine (narrow-sense "compositor") | sort-last colour+depth → one OpenXR projection layer; frame scheduling | specified (composition §2–§5, §7.4) |
 | Effects / animation module | open/close/move transitions under authority-owned comfort caps | missing |
@@ -286,6 +286,7 @@ still speak of outputs and surfaces), but the semantics shift:
 | Desktop icons | None. The environment is not an icon surface; app icons live in the launcher — a phone-style grid / "start menu" scene (ADR 0012's desktop-icons non-goal). |
 | System tray | A StatusNotifierItem (SNI) host in the panel — apps shipping SNI render as typed badges on panel surfaces (ADR 0012 decision; COSMIC precedent). There is no free-floating XR tray. |
 | Session restore | Places persist *where* windows belong (ADR 0009 anchors); the restore manager owns *relaunching* apps into them after login, over the `xdg-session-management-v1` seam (§2 trap 5, §6.3). |
+| Docked mode | **The same session, flat presentation — not a different desktop** ([ADR 0015](adr/0015-docked-desktop-mode.md)): with `spatial.hardware.externalDisplay`, zxr scans a flat-composition output onto the monitor; doff-while-docked quiesces the XR stack (perception off, cadence off, damage-driven 2D) instead of locking; don returns the same windows to space. |
 
 Desktop concepts with **no XR analog** (do not build them): physical multi-monitor arrangement
 UIs, cursor themes as a user-facing concern (the "cursor" is a ray/fingertip; shape feedback is
@@ -342,8 +343,11 @@ plane. Everything else in the graph descends from one or more of these:
 
 ```text
 [A] compositor core (protocol server · Vulkan renderer · frame scheduling)
- ├─ output paths — two alternatives; neither requires the other
+ ├─ output paths — three alternatives; none requires another
  │   ├─ desktop-window dev output            (any desktop; no HMD, no Monado)
+ │   ├─ docked flat-composition output ──► external DRM connector
+ │   │      (gated on [build] spatial.hardware.externalDisplay — ADR 0015;
+ │   │       damage-driven; carries the quiescence ladder when doffed)
  │   └─ OpenXR loop ──► [P] Monado ──► [build] device adaptation
  │        └──► [S] per-unit calibration state
  │        (every node marked "HMD-only" below requires this path)

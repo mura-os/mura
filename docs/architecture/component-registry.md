@@ -65,6 +65,7 @@ critical path).
 | Boot splash (per-eye pre-distorted) | pres | separate early-boot component | none-yet (KMS, from system-state calibration) | **partial** | ADR 0007 §Cross-cutting: no Plymouth; dark panels default, pre-distorted logo a stretch goal; no design beyond that ([research/12](../research/12-lock-screens-and-appliance-login.md) §7) |
 | Per-unit calibration state (`/var/lib/spatial/`) | mech | system state (not a process) | filesystem contract | **specified** | ADR 0007 §Cross-cutting; [device-contract.md](device-contract.md) `spatial.xr.calibration.paths`, `protectedPartitions` |
 | Update agent (slot switch, mark-successful, readiness gating) | mech+policy | separate daemon / oneshot units | RAUC D-Bus / `qbootctl`-class slot ioctls | **specified** | [images-and-updates.md](images-and-updates.md) §Updates + §Health-gated success; `spatial.qualification.readinessCheck` (doc; not yet in lib/contract) |
+| Docked-mode policy + quiescence ladder (dock detect, docked presence branch, soft/deep idle target switching, don-resume) | policy | systemd targets + in-compositor state | systemd target subset of `spatial-session.target`; socket-activated Monado; `XR_EXT_user_presence` + DRM hotplug | **missing** | ladder and policy decided by [adr/0015](adr/0015-docked-desktop-mode.md) (amending ADR 0007's doff ladder); `spatial.xr.session.docked.*` doc-only; no implementation design |
 
 ## 3. Authority plane (the zxr compositor)
 
@@ -104,6 +105,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Colour pipeline (colour-management/-representation service, panel calibration application, sRGB/linear composition policy, passthrough↔rendered matching) | mech | in-compositor | `color-management-v1` + `color-representation-v1` (staging, in pinned wayland-protocols) | **missing** | no doc found; composition §2 fixes depth encoding but not colour; per-device panel calibration is a build-plane fact with no runtime owner; seam evidence in doc 30 addendum |
 | Effects / animation module (open/close/move/switch transitions under comfort caps) | policy+pres | in-compositor (plugin seam) | in-process plugin API (KWin-effects precedent) | **missing** | no doc found; XR comfort makes sudden large-surface motion a safety concern, not eye-candy; ADR 0012 places it in-process |
 | Session-restore mechanism (server side: session identity, toplevel state restore) | mech | in-compositor | `xdg-session-management-v1` (staging, in pinned wayland-protocols) | **missing** | no doc found; the relaunch half is the service-plane restore manager (§6); split per [desktop-environment.md §2](desktop-environment.md) trap 5 |
+| Docked flat-composition output path (external DRM connector scanout; per-output presentation policy incl. fullscreen/direct scanout; mirror-tier cells) | mech+policy | in-compositor | DRM/KMS on `spatial.hardware.externalDisplay`; capture-taxonomy cells ([spatial-sharing §2.2](spatial-sharing.md)) | **missing** | decided by [adr/0015](adr/0015-docked-desktop-mode.md) (B3 + mirror tier; B2 rejected); no component design; per-device facts verified in research/07 §External video-out |
 
 ## 4. Perception plane
 
@@ -174,7 +176,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 | Default apps / MIME associations | policy | separate config/service | `mimeapps.list`, `org.freedesktop.portal.OpenURI` | **missing** | no doc found |
 | Accessibility (AT-SPI or successor, magnification, high-contrast, motor alternatives in 3D) | mech+policy+pres | none decided | none-yet | **missing** | no doc found — nothing exists anywhere in `docs/` |
 | Audio policy/routing (device roles, per-app routing, spatial audio, HRTF) | mech+policy | separate daemon (PipeWire session manager — WirePlumber-class) | PipeWire | **missing** | no doc found beyond hardware facts: `spatial.adaptation.audio.backend = native (PipeWire)` (device-contract §adaptation) and "Common services: audio" in overview.md's diagram — a label, not a design |
-| Power/thermal policy (suspend sequencing, thermal governors, performance profiles) | mech+policy | separate daemon | logind/upower D-Bus | **missing** | no doc found. The *idle/doff* half is specified in-compositor (ADR 0007); system suspend is referenced only as a lock trigger (`lock.triggers = [ "suspend" ]`); nothing owns thermal/perf policy despite sustained-thermal being a qualification test (device-contract §tiers) |
+| Power/thermal policy (suspend sequencing, thermal governors, performance profiles) | mech+policy | separate daemon | logind/upower D-Bus | **missing** | no doc found. The *idle/doff* half is specified in-compositor (ADR 0007); system suspend is referenced only as a lock trigger (`lock.triggers = [ "suspend" ]`); nothing owns thermal/perf policy despite sustained-thermal being a qualification test (device-contract §tiers). Second customer: docked idle-depth selection (soft vs deep, on-external-power bias — [adr/0015](adr/0015-docked-desktop-mode.md)) |
 | Display/runtime configuration (refresh rate switching, render scale, FOV overrides) | mech+policy | none decided | none-yet | **missing** | no doc found. The contract declares hardware *facts* (`spatial.hardware.panel.{width,height,refresh}`); no runtime component lets a user or policy change render scale/refresh; foveation latency budget open in ADR 0011 |
 | Recentering / reference-space reset UX ownership | mech+policy | none decided | `XrEventDataReferenceSpaceChangePending` (reserved) | **missing** | no doc found. spatial-mapping §3 reserves the event for "genuine LOCAL/STAGE redefinition" but no component owns the recenter gesture/command |
 | Session restore manager (relaunch apps after login; bind restored windows to places) | mech+policy | separate daemon | `xdg-session-management-v1` (compositor side, §3) + .desktop database + space-model place IDs | **missing** | no doc found; the protocol deliberately excludes relaunching — a manager must own it (doc 30 addendum); XR-amplified: anchored places persist placement, nothing relaunches into them |
@@ -296,6 +298,10 @@ doc 30's addenda for the evidence):
     XR amplification (places persist placement; nothing relaunches apps into them).
 27. **SNI host** (shell, §5) — StatusNotifierItem compatibility, hosted in the panel per
     ADR 0012's decision; presentation design missing.
+28. **Docked desktop mode, both rows** (authority §3 + system §2) — the docked
+    flat-composition output path and the quiescence-ladder policy; architecture decided by
+    ADR 0015 (B3 + mirror tier, fact-gated on `spatial.hardware.externalDisplay`), component
+    design missing.
 
 (The same review upgraded two implicit subsystems to explicit **partial** rows in §3: the scene
 graph and decoration policy.)
@@ -376,13 +382,13 @@ Counts by status (rows in §2–§7 tables):
 
 | Plane | specified | partial | missing | total |
 |---|---|---|---|---|
-| System | 7 | 4 | 0 | 11 |
-| Authority | 20 | 6 | 5 | 31 |
+| System | 7 | 4 | 1 | 12 |
+| Authority | 20 | 6 | 6 | 32 |
 | Perception | 17 | 6 | 0 | 23 |
 | Shell | 3 | 8 | 8 | 19 |
 | Service | 1 | 3 | 16 | 20 |
 | Build | 7 | 8 | 0 | 15 |
-| **Total** | **55** | **35** | **29** | **119** |
+| **Total** | **55** | **35** | **31** | **121** |
 
 The shape is stark and expected: the authority and perception planes are deeply specified (the
 ADR work to date), the build plane is specified-but-stubbed by deliberate policy (the Lynx-spike
