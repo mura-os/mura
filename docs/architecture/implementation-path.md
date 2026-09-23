@@ -13,24 +13,46 @@ evidence [research/39](../research/39-compositor-base-landscape.md)).
 first real frame-path measurements (GPU time, missed `xrWaitFrame` deadlines) that seed the
 class-V (VM) budget column with data instead of estimates.
 
-## 1. Why the greeter is the first shippable target
+## 1. Why the restricted modes are the first shippable target
 
-The strategic observation this path is built around: **`zxr --greeter` is the cheapest real
-compositor milestone**, because ADR 0007 *disables* the client Wayland listening socket in
-greeter mode ([specs/session-auth.md §5](../../specs/session-auth.md)). The greeter needs the
-OpenXR loop, the Vulkan renderer, an internal (non-client) auth scene, input, and a greetd IPC
+The strategic observation this path is built around: **zxr's restricted modes are the cheapest
+real compositor milestone**, because ADR 0007 *disables* the client Wayland listening socket in
+them ([specs/session-auth.md §5](../../specs/session-auth.md)). A restricted mode needs the
+OpenXR loop, the Vulkan renderer, an internal (non-client) scene, input, and a greetd IPC
 client — and none of the 2D client tier, no protocol server, no window model, no Xwayland. Every
 one of those pieces is also the irreducible core of the session compositor, so nothing built for
-the greeter is throwaway. Meanwhile the harnesses already exist: rung 1 (`nix run .#dev-session`)
-runs a nested session against simulated-HMD Monado on the desktop, and rung 2
-(`nix run .#virtual-headset-vm`) boots a full NixOS VM with virgl and an in-guest Monado socket
-([README §Development](../../README.md)). The dev-session package was built with exactly this
-swap in mind: "The nested compositor is sway until zxr's M1 lands; swap COMPOSITOR_CMD then"
+them is throwaway. There are two siblings on this rung, and which one a user meets first is
+**profile-dependent**:
+
+- **`zxr --greeter`** — the every-boot login scene (multi-user profile). The first *build*
+  target (G1): it has the fewest dependencies (a fake greetd suffices; no provisiond, no
+  network step).
+- **`zxr --oobe`** — the first-run onboarding wizard
+  ([first-run-onboarding.md](first-run-onboarding.md)), the same scene machinery plus the
+  wizard ladder, `spatial-provisiond`, and the Wi-Fi step. It extends G1's core; it never
+  precedes it in the build order.
+
+Meanwhile the harnesses already exist: rung 1 (`nix run .#dev-session`) runs a nested session
+against simulated-HMD Monado on the desktop, and rung 2 (`nix run .#virtual-headset-vm`) boots a
+full NixOS VM with virgl and an in-guest Monado socket ([README §Development](../../README.md)).
+The dev-session package was built with exactly this swap in mind: "The nested compositor is sway
+until zxr's M1 lands; swap COMPOSITOR_CMD then"
 ([pkgs/dev-session](../../pkgs/dev-session/default.nix)).
 
-The end state of the greeter track — **G2** — is the first thing that *feels* like spatial-os:
-the VM powers on and lands in an XR auth scene with zero manual steps, and login hands off to a
-real session. Everything after that is widening the session, not proving the system.
+**The first-profile question, settled** (this paragraph reconciles G2 with
+first-run-onboarding §7): the **appliance profile is the first *shipped* profile** — autologin
+as the fixed owner, the OOBE as first session content, no greeter at all; the Steam Deck model
+the whole account design (ADR 0017) is built on. **G2 remains the first *greeter* milestone**,
+not the first profile: it deliberately exercises the multi-user path (real greetd → dispatcher →
+greeter → session) in the VM with enrollment pre-seeded by the test fixture, because that is the
+path with the hard ordering problems (device release, PAM authority, dispatcher) worth proving
+early. The two claims are about different axes — what ships first (appliance) vs what the G-track
+verifies first (the greeter chain) — and both stand.
+
+The end state of the greeter track — **G2** — is still the first thing that *feels* like
+spatial-os: the VM powers on and lands in an XR auth scene with zero manual steps, and login
+hands off to a real session. Everything after that is widening the session, not proving the
+system.
 
 ## 2. The boot chain, stage by stage
 

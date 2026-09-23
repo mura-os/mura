@@ -147,10 +147,14 @@ is reset — on an appliance the final fallback is recovery/wipe, not a root she
 
 Steam Deck model: `spatial.xr.session.autoLogin = "owner"`, no greeter, and F2 runs as the
 *first session content* instead of pre-login — same wizard, same provisiond authority, same
-marker; the dispatcher's decision simply happens inside the session start. This is the profile
-the rung-2 VM exercises first, and it requires none of the multi-user machinery. The multi-user
-greeter-gated variant (§4.1) is the general case. A companion-phone enrollment tool is recorded
-as an open alternative (not designed; the provisiond socket is the natural seam for it).
+marker; the dispatcher's decision simply happens inside the session start. This is the **first
+shipped profile** and requires none of the multi-user machinery. It is *not* what the G-track
+verifies first: G2 deliberately exercises the multi-user greeter chain in the rung-2 VM with
+fixture-seeded enrollment, because that path holds the hard ordering problems — the two "firsts"
+are different axes, reconciled in [implementation-path.md §1](implementation-path.md). The
+multi-user greeter-gated variant (§4.1) is the general case. A companion-phone enrollment tool
+is recorded as an open alternative (not designed; the provisiond socket is the natural seam for
+it).
 
 ## 8. Conformance checks
 
