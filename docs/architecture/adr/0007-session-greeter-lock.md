@@ -143,7 +143,11 @@ boundary and hardware substrate for iris auth are specified in
 Carried from [11 §10](../../research/11-display-managers-greeters.md) and
 [12 §8](../../research/12-lock-screens-and-appliance-login.md): HMD device-release latency across the
 greeter→session handoff (USB re-enumeration); Monado's actual `XR_EXT_user_presence` coverage per
-target (qualification-matrix item); PIN storage/enrollment UX (owner-password-is-PIN vs
-`pam_spatial_pin`); grace-window default and any "same head re-donned" heuristic (needs a
-privacy/security review); logind vs seatd on the appliance image; and whether the desktop profile's
-`ext-session-lock-v1` support should extend to third-party headset lockers.
+target (qualification-matrix item); grace-window default and any "same head re-donned" heuristic
+(needs a privacy/security review); logind vs seatd on the appliance image (**default resolved to
+logind** at implementation-path B2, forced at G2; seatd stays an appliance-minimization option);
+and whether the desktop profile's `ext-session-lock-v1` support should extend to third-party
+headset lockers. *PIN storage/enrollment UX is **closed** by
+[ADR 0017](0017-first-run-provisioning.md): option (b) `pam_spatial_pin` (argon2 hash in the
+`enrollment/` state class, enrolled through `spatial-provisiond` at OOBE), with
+owner-password-is-PIN as the recorded appliance bridge.*
