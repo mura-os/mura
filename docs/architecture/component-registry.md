@@ -247,7 +247,11 @@ starts from evidence rather than zero.
 
 1. **Spatial-workspace / space model** (authority, §3) — the largest structural gap: sharing
    mode 5 replicates a placement graph, and mapping M1 pins windows to anchors, but nothing
-   defines local workspaces/rooms/spaces or their lifecycle.
+   defines local workspaces/rooms/spaces or their lifecycle. *Evidence base now exists:*
+   [research/34](../research/34-workspace-models.md) (COSMIC pinned-workspaces = closest
+   mechanism precedent; visionOS 26 room-locked restoration = closest semantics; a second
+   Activities-style axis rejected on Plasma's own cardinality post-mortem; the open question is
+   what "active/switch" means when switching is a physical walk — §8). Design doc still to write.
 2. **Focus/activation authority + xdg-activation** (authority/service, §3/§6) — composition §7.3
    requires "focus/activation" with no design; launcher and notification flows are blocked on it.
 3. **App launcher** (shell) — no doc found.
