@@ -40,6 +40,8 @@ devices/
   <vendor>-<model>/            # device contract, donor manifest, kernel cfg, patches, tests, contract file
 pkgs/                          # overlay: XR components, kernels, tools (nixpkgs-xr pulled as input)
 patches/                       # patch sets, organized per upstream + per donor build (see below)
+protocols/                     # spatial-os Wayland protocol XMLs (zxr-shell-v2, the zext
+                               # shell-integration family incl. zext-toplevel-export) + governance notes
 tests/                         # eval assertions, VM tests, reproducibility + hardware tests
 contracts/                     # reviewed, hash-bound donor contracts (the qualify-stage gate)
 docs/
