@@ -108,6 +108,13 @@ spatial semantics ([30 §6](../../research/30-wayland-de-anatomy-protocol-seams.
    deliberately **XR-agnostic** and carries explicit upstream intent (`xx_`/`ext_` path); zxr is
    its consumer, foreign 2D compositors its producers
    ([foreign-session-integration.md](../foreign-session-integration.md)).
+7. spatial accessibility semantics (`zext-a11y`, reserved by
+   [spatial-a11y.md](../spatial-a11y.md)) — read-only spatial context (window poses/relations,
+   place membership/currency per [places-model.md](../places-model.md), gaze context under the
+   ADR 0011 privacy posture, boundary state) plus privileged navigation verbs, for allow-listed
+   assistive clients; carrier may become an AccessKit payload if Newton matures (upstream-intent
+   posture per ADR 0014's mold). Item 1's workspace extension fields are refined by
+   places-model §6.
 
 Rule: upstream base object + zxr extension; never silently give a 2D protocol's words new wire
 meanings. Candidates for upstreaming follow COSMIC's path (their workspace protocol became

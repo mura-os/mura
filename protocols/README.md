@@ -9,6 +9,8 @@ Home of spatial-os's Wayland protocol XMLs — the `zxr` / `zext` families. Decl
 |---|---|---|
 | `zext-toplevel-export-v1.xml` | Per-toplevel zero-copy export/delegation between compositors (foreign 2D sessions → floating windows in zxr) | experimental draft — design in [foreign-session-integration.md](../docs/architecture/foreign-session-integration.md), requirements R1–R22 in [research/32](../docs/research/32-toplevel-export-prior-art.md), strategy in [ADR 0014](../docs/architecture/adr/0014-toplevel-delegation-protocol.md) |
 | `zxr-shell-v2.xml` | The 3D-client shell protocol (views, colour+depth, input) | not yet drafted — design lives in [zxr-shell-v2-composition.md](../docs/architecture/zxr-shell-v2-composition.md) and [ADR 0006](../docs/architecture/adr/0006-compositor-strategy.md) |
+| `zext-a11y` (name reserved) | Spatial accessibility semantics for assistive clients (window poses/relations, place membership + currency, gaze/ray context, boundary state, privileged navigation verbs) | design-note stage — surface fixed in [spatial-a11y.md](../docs/architecture/spatial-a11y.md); carrier (zxr protocol vs AccessKit payload) deferred to Newton/AccessKit maturity |
+| zxr workspace extension (name reserved) | Place kind/anchor/transform/preview/entry-policy-presence beside `ext-workspace-v1` | design stage — fields enumerated in [places-model.md §6](../docs/architecture/places-model.md); drafted after `zxr-shell-v2.xml` |
 
 ## Namespace and governance posture
 
