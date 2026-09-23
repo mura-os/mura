@@ -354,3 +354,216 @@ wired (doc 09 resolves whether GL-on-OpenXR is still viable at all in 2026).
 - The reusable, durable assets are the **zxr protocol** (to be revised per doc 10's `zxr-shell-v2`
   proposal) and the **thesis design** (Part 1) — plus WayVR/wxrd as proof that the 2D-windows-in-VR
   tier needs no new protocol and can ship first while the 3D-windowing protocol is rebuilt.
+
+---
+
+## Part 3 — Protocol inventory for the v2 draft (added 2026-09-23, specification workstream)
+
+Drafting brief for `protocols/zxr-shell-v2.xml`. This section turns Parts 1–2, the three ancestor
+protocol files, and the repo's committed requirements
+(`docs/architecture/zxr-shell-v2-composition.md` §2/§5/§7.2/§7.4/§8,
+`docs/research/10-xr-wayland-protocol-comparison.md` §4.5,
+`docs/architecture/adr/0006-compositor-strategy.md` §The protocol) into a keep/rework/drop/add map.
+"Wired" verdicts are per Part 2 §2.1 against `references/wxrc/src/xr-shell-protocol.c`.
+
+### 3.1 v1 inventory — every interface and message
+
+Source: `references/wxrc/protocol/zxr-shell-unstable-v1.xml`. Note the protocol element itself is
+named `xr_shell_unstable_v1` (no `z`); only interfaces carry the `zxr_` prefix, and the protocol
+description is literally "TODO: Describe overall protocol here".
+
+| v1 construct | Purpose | Wired in wxrc? | v2 verdict |
+|---|---|---|---|
+| `zxr_view_v1` (global) | one perspective (eye/view); N globals generalize motorcar's per-eye viewpoint | yes — one `wl_global` per OpenXR view (`xr-shell-protocol.c:271-289`) | **KEEP** — the N-view model is v1's best idea (ADR 0006 §The protocol "keep"); gains resolution/fov/projection events and a real removal lifecycle |
+| `zxr_view_v1.destroy` | client releases the view | handler is an empty `// TODO` (`xr-shell-protocol.c:239-242`) | **KEEP** (trivial destructor) |
+| `zxr_shell_v1` (global) | entry point: buffer factory + role assignment | yes (`xr-shell-protocol.c:390-393`) | **KEEP** — becomes the negotiation root (transport tiers, depth encoding — composition §5) |
+| `zxr_shell_v1.get_xr_surface(surface)` | assign the XR role to a `wl_surface` | yes (`:356-388`) — but with `// TODO: surface destroy listener` | **KEEP** — role factory survives verbatim in concept |
+| `zxr_shell_v1.create_composite_buffer` | make an empty per-view buffer collection | yes (`:220-237`) | **REWORK** — becomes creation of a negotiated buffer *pool/slot* (composition §7.2 `acquire_reusable_slot`), not an untyped collection |
+| `zxr_surface_v1` | the 3D surface role; 2D buffer attach is a protocol error | yes (`:344-388`); the `invalid_buffer` error is defined but no enforcement exists in the shell module | **KEEP** (rework details) — gains bounds/clipping state, configure/ack lifecycle, a world-transform event, real errors |
+| `zxr_surface_v1.get_surface_view(view)` | per-(surface,view) object | yes (`:316-343`) | **REWORK** — the surface×view addressing survives (per-view render targets need it), but the object's one job changes (below) |
+| `zxr_surface_view_v1` | carrier of per-view state | yes; resource created with a **NULL implementation** — the interface has no requests at all (`:339`), not even a destructor | **REWORK** — survives only as per-view target addressing; loses its single event |
+| `zxr_surface_view_v1.mvp_matrix` (event) | server pushes one folded model·view·projection per surface×view | yes — sent per frame (`main.c:332-352` → `xr-shell-protocol.c:298-314`) | **DROP** — the fold is v1's documented regression (doc 10 §4.1); replaced by motorcar's split delivered in the atomic frame snapshot (§3.4 item 6) |
+| `zxr_composite_buffer_v1` | N per-view 2D buffers under one handle; coord space (-1,-1)..(1,1) | attach/lookup wired via a custom `wlr_buffer_impl` (`:123-183,441`) | **REWORK** — the *typed colour+depth per view* concept is the T1 core (composition §2) and survives; the container semantics change wholesale |
+| `…buffer_type` enum (`pixel_buffer`, `depth_buffer`) | typed buffers — v1's second-best idea | types accepted (`:139-145`) but **depth is never consumed**: the renderer fetches only `PIXEL_BUFFER` and draws a flat quad (Part 2 §2.1; `render.c:331-356`) | **KEEP** — extended with depth-encoding metadata (§3.4 item 2) |
+| `…attach_buffer(view, wl_buffer?, type)` | attach/update/clear one buffer per (view,type) | yes (`:132-183`), incl. null-detach | **REWORK** — per-buffer trickle attach violates composition §7.2's atomicity ("never four buffers … hoping their commits line up"); becomes population of a slot submitted atomically |
+| `…get_wl_buffer` | wrap the collection as a `wl_buffer` for `wl_surface.attach` | yes (`:190-205`) — the wrapper is why wxrc needed the now-removed `wlr_buffer_register_implementation` API (Part 2 §2.5) | **DROP** — atomic `submit_spatial_frame(frame_id, slot)` (composition §7.2) replaces the attach-a-wrapper lifecycle; the indirection was also the biggest source of v1's implementation coupling |
+| `error` enums (surface + composite buffer, both `invalid_buffer`) | 2D-buffer-on-XR-surface; bad attach | attach-type check only (`:139-145`) | **REWORK** — into a real error taxonomy (§3.4 item 11) |
+
+**v1's own TODO comments — the protocol knew its gaps.** All in
+`references/wxrc/protocol/zxr-shell-unstable-v1.xml`:
+
+1. "TODO: Describe overall protocol here" — no normative overview at all.
+2. `zxr_view_v1`'s description ends mid-sentence: "If a view global is removed and the client" —
+   view removal was never specified; worse, `attach_buffer`'s text references a
+   **`zxr_view_v1.finished` event that does not exist** in the file. View lifecycle is a hole, not
+   just a TODO.
+3. `<!-- TODO: Resolution event (and subpixel?) -->` on `zxr_view_v1` — clients can't size buffers.
+4. `<!-- TODO: Explain what a model view projection matrix is? -->` on `mvp_matrix`.
+5. `<!-- TODO: From which view's perspective? -->` on the composite-buffer coordinate space — the
+   (-1,-1)..(1,1) space is undefined for stereo.
+6. The trailing block: "Add better timing information? Prepare frames in advance? Map OpenXR more
+   closely onto this protocol", "3D geometry buffers, e.g. glTF", "2D buffers with left/right
+   views, for e.g. 3D movies".
+
+Items 2, 3, 5, 6(timing) are obligations on v2; 6(glTF) is an explicit non-goal (§3.6).
+
+### 3.2 Motorcar concepts to resurrect (that v1 dropped)
+
+From `references/motorcar/src/protocol/motorcar.xml`, mapped to composition-doc needs:
+
+- **The model/view/projection split** — `motorcar_viewpoint.view_matrix` (per frame) +
+  `projection_matrix` (on change), with the window's model transform a separate
+  `motorcar_surface.transform_matrix` event. This is composition §2 constraint 1 verbatim
+  (`clip = P_e · V_e · T_i`, compositor-owned P/V, per-app T): the split is what makes every
+  client's depth *comparable*, so it is a T1 correctness requirement, not a style preference.
+- **Cuboid/portal clipping** — the `clipping_mode` enum on `get_motorcar_surface`. Composition §2
+  constraint 3 makes clipping cooperative *and* enforced (early visibility resolve is lossy, so
+  clipping must precede submission); doc 10 §4.5 Q4 makes it normative for depth trust. v1 has no
+  clipping at all.
+- **3D size negotiation** — `request_size_3d`/`set_size_3d` (compositor requests, client chooses a
+  fitting size). Resurrected through zwin's configure/ack serial idiom (§3.3); feeds composition
+  §7.2's "window bounds" in the frame snapshot and §8's resolution/bandwidth concern.
+- **6DoF pointer input** — `motorcar_six_dof_pointer` (enter/leave/motion/button with vec3 position
+  + 3×3 orientation, surface-local). v1 defines *no* input; a shell cannot be built on it as
+  written (doc 10 §4.1). ADR 0006 restores this alongside the ray device.
+- **The depth-compositing opt-in** (`enable_depth_compositing` arg) — resurrect as *negotiation*
+  rather than a boolean: in v2, depth is mandatory for the 3D tier but its format/encoding is
+  negotiated (composition §5).
+- **Do not resurrect:** `view_port` (the packed depth-viewport hack is protocol-visible EGL
+  archaeology — Part 1 §1.5; dmabuf+syncobj retires it, ADR 0006), and the implicit double-wide
+  stereo buffer layout (superseded by per-view typed buffers; an optional multiview/array layout
+  returns only as a negotiated capability, §3.4 item 12).
+
+### 3.3 zwin lessons (`references/zwin/protocol/`)
+
+**Adopt:**
+
+- **The `wl_pointer`-shaped ray** (`zwin.xml` `zwn_ray`): enter/leave/motion (origin+direction
+  vec3), button, and the *complete* axis suite (axis/axis_source/axis_stop/axis_discrete) plus a
+  `frame` grouping event — the most portable input design in the lineage (doc 10 §4.2), and the
+  second seat capability beside the 6DoF pointer (ADR 0006).
+- **Seat capability advertisement** (`zwn_seat.capabilities` bitfield) — matches how v2 must
+  advertise ray vs 6DoF vs future hand input.
+- **xdg-shell idioms on the 3D shell surface** (`zwin-shell.xml` `zwn_bounded`):
+  `configure(half_size, serial)` + `ack_configure`, `set_title`, `move(seat, serial)` — the
+  serial-acknowledged state dance v2's bounds negotiation should borrow, and the shape (bounded vs
+  expansive) that maps onto cuboid vs unbounded windows.
+- **Craft lesson:** zwin's descriptions are mostly bare documentation URLs (`zwn_compositor`'s
+  summary is a GitHub link). v2's XML must be normative and self-contained.
+
+**Avoid:**
+
+- **The protocol-per-graphics-API coupling** — `zwin-gles-v32.xml` hardcodes *OpenGL ES 3.2 itself*
+  into the wire: `zwn_gl_shader.type` uses raw GL enum values (0x8830/0x8831), `zwn_gl_texture.image_2d`
+  takes GL format/type ints, `zwn_gl_base_technique` serializes draw calls. Any GL version bump or
+  non-GL client is a new protocol. Our negotiated-transport design (composition §5) is the direct
+  counter: the wire fixes *meaning* (colour, depth encoding, sync points) and negotiates
+  format/modifier/handle-type per client — GL, Vulkan, and CPU clients ride the same interfaces.
+  This is the single most instructive mistake in the corpus (§3.7c).
+- **The parallel object world** — zwin re-implements shm (`zwn_shm`/`zwn_shm_pool`/`zwn_buffer`)
+  because its buffers carry vertex/shader data, not pixels. v2 stays on `wl_buffer`/linux-dmabuf
+  precisely so it inherits the ecosystem (doc 10 §4.2 "Wayland extended by one role").
+- **Client-uploaded hit-test regions** — `zwn_region.add_cuboid/add_sphere` (with its own
+  `FIXME: hierarchical node` admitting it was underpowered). Hit-test geometry stays
+  compositor-derived from surface bounds (ADR 0006), unless a real need appears (doc 10 §4.5 Q3).
+
+### 3.4 The v2 requirements matrix
+
+Each contract item from composition §7.2/§7.4 and each open question from composition §8 /
+doc 10 §4.5, against the ancestor construct that addresses it:
+
+| # | v2 requirement (source) | v1 | motorcar | zwin | v2 disposition |
+|---|---|---|---|---|---|
+| 1 | Typed colour+depth pair per view (composition §7.2) | `zxr_composite_buffer_v1.buffer_type` — right types, dead depth path, non-atomic attach | depth packed into a colour viewport (hack) | n/a (server renders) | REWORK v1: typed per-view images in an atomically-submitted slot |
+| 2 | Depth *encoding* negotiation — reversed-Z, near/far, normalization (composition §2 c.2, §8) | none | none | none | **NEW** — copy `XrCompositionLayerDepthInfoKHR`'s metadata shape (minDepth/maxDepth/nearZ/farZ) |
+| 3 | Explicit sync, syncobj timeline points (composition §5) | none — v1 predates syncobj | none | none | **NEW** — `wp_linux_drm_syncobj_v1` points per slot; wire vocabulary already exists in-repo: `protocols/zext-toplevel-export-v1.xml` `attach`/`release_buffer` (timeline fd + point_hi/point_lo) |
+| 4 | Transport tiers: dmabuf / opaque-fd / shm-CPU, allocation ownership (composition §5) | implicit `wl_buffer` only | implicit EGL double-wide | own shm stack (anti-pattern) | **NEW** — formats/modifiers feedback + tier + allocator negotiation at the shell root |
+| 5 | Frame timing: snapshot, predicted display time, commit cutoff (composition §7.4) | none — the trailing TODO | thesis §7.3.2 discussion only, nothing on the wire | `zwn_virtual_object.frame(wl_callback)` — 2D pacing, no prediction | **NEW** — share vocabulary with `zext_export_pacing_v1`: `frame(display_time, period_ns, cutoff_ns)` + `presented`/`discarded` feedback |
+| 6 | View/projection delivery (composition §2 c.1, §7.2) | folded `mvp_matrix` per surface×view — DROP | `view_matrix`/`projection_matrix` split per viewpoint — RESURRECT | clients never see a camera | split matrices delivered **inside the atomic frame snapshot**, paired with frame id (see §3.7d) |
+| 7 | Size/bounds negotiation (composition §7.2 "bounds") | none — dropped | `request_size_3d`/`set_size_3d` | `configure/ack_configure` serial idiom | RESURRECT motorcar semantics in zwin's idiom |
+| 8 | Clipping modes, enforced (composition §2 c.3; doc 10 §4.5 Q4) | none | `clipping_mode` cuboid/portal | bounded/expansive shell types | RESURRECT — enum + normative out-of-bounds behavior (clamp vs error must be decided in the draft) |
+| 9 | Ray + 6DoF input (ADR 0006; v1 dropped motorcar's!) | none | `motorcar_six_dof_pointer` | `zwn_ray` + seat capabilities | **NEW interfaces** synthesized from both, as two seat capabilities |
+| 10 | Surface roles + lifecycle (composition §7.2) | role factory + 2D-buffer error KEEP; but no destructors on surface/surface-view, dangling `finished` reference, no destroy listener in wxrc | one-motorcar-surface-per-wl_surface rule | `role`/`invalid_state` errors, `unconfigured` | REWORK — full lifecycle: destructors everywhere, view add/remove events, mapped/unmapped states |
+| 11 | Error conditions | two enums, both `invalid_buffer` | **zero** error enums | per-interface typed errors | **NEW taxonomy** — per interface; typed denial precedent in `zext_exported_tree_v1.denied` |
+| 12 | Multiview/layout option (v1 TODO "left/right views"; composition §8 bandwidth) | TODO only | double-wide layout convention | n/a | per-view images primary; a packed/array layout only as a negotiated capability, never the base contract |
+
+Doc 10 §4.5's remaining questions land as follows: Q1 (pacing across clients) is item 5 plus the
+composition §7.4 scheduling rule; Q2 (2D toplevel → 3D placement) is **out of v2** — an
+`xdg_toplevel` needs no XR interface (ADR 0006 "free 2D"), placement is compositor policy and the
+places model; Q3 (geometry on the wire) is a non-goal (§3.6); Q4 is item 8; Q5 (depth-dmabuf driver
+matrix) is item 4's negotiate-and-fall-back, per composition §5.
+
+### 3.5 Naming continuity
+
+The draft should read as v1 grown up. Proposal:
+
+- **Survive with a version bump:** `zxr_shell_v1` → `zxr_shell_v2`; `zxr_view_v1` → `zxr_view_v2`;
+  `zxr_surface_v1` → `zxr_surface_v2`. These three carry the lineage's identity (the user
+  co-authored them; ADR 0006 names the family) and their concepts survive intact.
+- **Fix the protocol element name:** v1's `<protocol name="xr_shell_unstable_v1">` lacks the `z`
+  its own interfaces carry; v2 uses `zxr_shell_v2` consistently (the `z`/version conventions in
+  v1's own description text apply — drop them only at stabilization).
+- **Renames justified by changed semantics:** `zxr_composite_buffer_v1` → a pool/slot pair (e.g.
+  `zxr_buffer_pool_v2` + a slot/submission object): "composite buffer" described a `wl_buffer`
+  wrapper that no longer exists once submission is an atomic frame request (§3.1). Keeping the old
+  name would promise the old lifecycle. `zxr_surface_view_v1` → keep the name `zxr_surface_view_v2`
+  only if the surface×view object survives as target addressing; if per-view targets are expressed
+  purely inside the slot, drop the interface rather than keep a hollow name.
+- **New interfaces take v1's naming shape, not motorcar's or zwin's:** `zxr_frame_v2` (timing
+  snapshot), `zxr_pointer_6dof_v2` and `zxr_ray_v2` (seat capabilities), `zxr_seat_v2` if the seat
+  extension point is ours. Event/arg vocabulary for pacing and sync copies the sibling
+  `protocols/zext-toplevel-export-v1.xml` (`display_time_hi/lo`, `period_ns`, `cutoff_ns`,
+  `presented`/`discarded`, timeline-fd + `point_hi/lo`) so the two spatial-os protocols read as one
+  family where semantics overlap.
+- **Vocabulary continuity from motorcar** where concepts return: `clipping_mode` with `cuboid` and
+  `portal` entries keeps the thesis terminology (Part 1 §1.3) that the whole doc set already uses.
+
+### 3.6 Explicit non-goals for v2 (deferred, with rationale)
+
+- **Transparency tiers T2+** — ordered per-pixel samples / deferred stochastic profiles are
+  additive negotiated capabilities by design (composition §1, §3); the T1 opaque contract must ship
+  and stabilize first. The draft reserves capability negotiation but defines no T2 interfaces.
+- **Geometry on the wire** — v1's glTF TODO is *rejected*, not deferred-by-default: the lineage's
+  value is exactly that geometry never crosses the wire (composition §2; doc 10 §4.5 Q3). An asset-
+  reference sidecar, if ever, is a separate protocol.
+- **Per-client reprojection** — composition §3's T3 honesty rule: the compositor never silently
+  reuses a stale eye-space depth image; slow clients get current-frame-or-placeholder (§7.4). A
+  declared-reprojection-validity capability is future work.
+- **Places/workspace semantics** — v2 surfaces get *world transforms* (the model-transform event);
+  parenting to typed frames, place membership, and reparent verbs are
+  `docs/architecture/places-model.md` §2's layer, exposed via ext-workspace plus a **separate zxr
+  workspace extension whose XML explicitly follows zxr-shell-v2's drafting** (places-model §9).
+  The boundary: v2 says *where a surface is*; places says *what it belongs to*.
+- **A11y semantics** — deferred to the zext-a11y workstream; v2 must merely not preclude it.
+- Also out (composition §7.5): unmodified-app interception, multi-GPU, curved panels (a
+  presentation policy, not surface state).
+
+### 3.7 Summary for the drafting brief
+
+- **(a) v1 verdict counts:** interfaces — 3 KEEP (`zxr_shell`, `zxr_view`, `zxr_surface`),
+  2 REWORK (`zxr_surface_view`, `zxr_composite_buffer`), 0 DROP. Messages — 2 KEEP (`view.destroy`,
+  `get_xr_surface`), 3 REWORK (`create_composite_buffer`, `get_surface_view`, `attach_buffer`),
+  2 DROP (`mvp_matrix`, `get_wl_buffer`). Nothing in v1 is conceptually dead — but only two of its
+  seven messages survive unchanged, and its two DROPs are exactly its two 2019 shortcuts (the
+  folded MVP and the buffer-wrapper indirection).
+- **(b) The single biggest v1 gap composition requires v2 to fill:** the **atomic frame contract**
+  — composition §7.2's non-negotiable "both eyes, both colour and depth, and their view metadata
+  are one atomic submission" bound to §7.4's predicted-display-time/cutoff loop, with explicit
+  sync. v1 has *none* of this: per-buffer trickle attach, no timing (its own trailing TODO), no
+  sync primitive (it predates syncobj), and "latest matrix" racing "latest colour" by construction.
+  Input is the biggest *feature* gap, but the frame contract is the gap that makes T1 correctness
+  impossible without it.
+- **(c) The zwin mistake most worth documenting as avoided:** `zwin-gles-v32.xml`'s
+  graphics-API-and-version-in-the-wire coupling (raw GL enums as protocol args, a GLES-3.2
+  interpreter as the compositor). v2's transport tiers (composition §5) exist precisely so the
+  protocol fixes meaning and negotiates transport — a GL client, a Vulkan client, and a CPU client
+  on one wire contract (composition §5's acceptance test).
+- **(d) The conflict the draft must resolve:** **matrix delivery channel.** Doc 10 §4.4 (and ADR
+  0006 following it) restores motorcar's split as *events on the view global* — `view_matrix` per
+  frame, `projection_matrix` on change, free-running. Composition §7.2 forbids exactly that
+  pairing pattern: per-view P·V must arrive *inside the atomic frame snapshot*, tied to a frame id
+  — "never 'latest matrix' paired with 'latest colour'". The draft has to pick the snapshot model
+  (motorcar's *split* survives; motorcar's *delivery channel* does not), leaving view-global events
+  only for slow-changing capability state (resolution, fov). The related soft tension — doc 10
+  §4.5 Q1 floats "reprojected stale colour+depth" for slow clients, which composition §3/§7.4
+  categorically forbids — should be resolved in the draft's timing section in composition's favor.
