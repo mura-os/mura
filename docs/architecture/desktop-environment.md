@@ -171,7 +171,7 @@ decomposes into **named subsystems**, each with a registry row:
 | Subsystem | What it owns | Registry evidence |
 |---|---|---|
 | Protocol server | core globals, `xdg-shell`, `zxr-shell-v2`, privileged globals + per-connection filtering | specified (ADR 0006) |
-| Window + space model, WM policy | lifecycle, placement, stacking, states, rules; places | window model partial; space model missing |
+| Window + space model, WM policy | lifecycle, placement, stacking, states, rules; places = the typed frame graph ([places-model.md](places-model.md), ADR 0016) | window model partial; space model **specified** |
 | Input subsystem | seats, ray/6DoF/keyboard routing, focus, activation, shortcut interception, grabs | focus/activation missing |
 | Output paths | the OpenXR loop (Monado owns the HMD display — no desktop-style modesetting), the desktop dev window, and the docked flat-composition output (ADR 0015); `wlr-output-management` for non-HMD heads | dev + XR specified (composition §7); docked missing |
 | Scene graph | surface→world transforms, decoration nodes, damage tracking | implicit in composition doc — no explicit design |
@@ -239,7 +239,9 @@ in front of the user is presentation — an ordinary shell client consuming the 
 list and issuing activation requests; the compositor remains the authority that actually
 transfers focus (and honors `xdg-activation` semantics so focus stealing stays impossible).
 
-**Spaces (workspaces).** The *space model* — which spatial places exist, which windows belong to
+**Spaces (workspaces).** *(Now designed: [places-model.md](places-model.md)/ADR 0016 — typed
+frame graph, decomposed currency; "which is active" is per-consumer, never one bit.)* The *space
+model* — which spatial places exist, which windows belong to
 each, which is active — is authority-plane state, exactly as a desktop workspace model is
 compositor state; in spatial-os a place is additionally **anchored**: bound to a mapping-service
 anchor so "the kitchen workspace" relocalizes with the room (ADR 0009's map/local frame contract —
@@ -276,7 +278,7 @@ still speak of outputs and surfaces), but the semantics shift:
 | Desktop concept | spatial-os meaning |
 |---|---|
 | Output / monitor | No physical output a client should reason about. The compositor composes into stereo eye views; for layer-shell/pager purposes it may expose *virtual* outputs (the desktop-mirror window, a spectate view — doc 17's output sources). Output-anchored semantics ("top edge of the screen") are reinterpreted against *reference frames* (head-locked, world-anchored, hand/wrist-locked). |
-| Workspace | A **place**: a named set of windows bound to a spatial anchor (room-scale) or a portable layout (head-relative), persisted and relocalized by the mapping service (ADR 0009). Workspace *switch* may be a physical walk, a teleport, or a summon. |
+| Workspace | A **place**: a named set of windows parented to a typed reference frame (map anchor, head, hand, docked plane — [places-model.md](places-model.md)/ADR 0016), persisted when pinned and relocalized by the mapping service (ADR 0009). Workspace *switch* may be a physical walk, a teleport, or a summon — "active" is decomposed per consumer, and location events offer, never yank. |
 | Window decoration | 3D chrome: grab handles, move/rotate/resize affordances, close, and a title/badge — hit-tested by the compositor, themed by a decoration module. 2D-tier windows keep `xdg-decoration` negotiation. |
 | Panel / dock / bar | A world- or body-anchored quad (wrist panel, desk dock) built on layer-shell semantics with anchor reinterpretation (see above). Exclusive zones make no sense on a sphere; reserved space becomes reserved *solid angle* per reference frame. |
 | OSD | A head-locked, gaze-comfortable transient (volume, brightness, IPD readout during motor moves — ADR 0011's motor events are the canonical OSD trigger). |
@@ -366,7 +368,8 @@ plane. Everything else in the graph descends from one or more of these:
  │   │   │   │      plugin (in-process seam)
  │   │   │   └─ EIS injection server ──► [V] portal RemoteDesktop session
  │   │   ├─ session-restore mechanism (xdg-session-management-v1 server side)
- │   │   ├─ space model ("places") ┄┄► [P] mapping/anchor service
+ │   │   ├─ space model ("places" — typed frame graph, places-model.md/ADR 0016)
+ │   │   │      ┄┄► [P] mapping/anchor service
  │   │   │      (local, non-anchored places work without mapping;
  │   │   │       anchored/persistent places do not)
  │   │   └─ Xwayland integration (WM glue for rootless X clients)

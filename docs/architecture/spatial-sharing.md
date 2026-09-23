@@ -289,6 +289,10 @@ the right template and the deltas are precise:
 
 ## 5. Mode 5: workspace join
 
+*(The join unit and replication schema are now owned by the places model: a joined workspace is a
+**place**, and what replicates is its membership + transforms — [places-model.md §7](places-model.md),
+ADR 0016; the shared frame's currency exclusions are rule C7 there.)*
+
 A small **authoritative placement graph**, not media: per shared app — owner, room transform,
 bounds, viewers, controller lease, representation mode. One host is authoritative for room
 placement; each app's owner is authoritative for its state. Rights are split (**view / control /

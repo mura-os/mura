@@ -268,7 +268,8 @@ zxr's 2D tier satisfies these **by construction**, never by special case:
    move/resize state machine for lacking this.
 5. **No window↔output binding exists** — both of the fork's genuinely invasive patches
    (move/resize, `outputAt(center)` reassignment across four window classes) are artifacts of
-   output binding; zxr windows have world transforms and (optionally) place membership, never an
+   output binding; zxr windows have world transforms and (optionally) place membership — now
+   defined by the typed frame graph of [places-model.md](places-model.md)/ADR 0016 — never an
    owning output. The two sanctioned exception-*shapes* are presentation, not residency:
    docked mode's per-output **presentation policy** ([ADR 0015](adr/0015-docked-desktop-mode.md)
    — which windows present flat on the docked connector, fullscreen/direct-scanout there) and

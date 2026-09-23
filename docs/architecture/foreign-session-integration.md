@@ -135,7 +135,9 @@ recast across the process boundary:
   margin — and issues the **detach handoff (R23)**: the producer exports that toplevel mid-move
   (ending its own move with no placement side-effects) and the handoff carries the cursor-anchor
   point, so zxr's spatial grab keeps the same content pixel under the ray. From that moment the
-  window is an ordinary delegated toplevel floating in space.
+  window is an ordinary delegated toplevel floating in space — i.e. a member of a place in the
+  frame graph ([places-model.md](places-model.md); delegated members are restore *slots* per its
+  §7).
 - **Drag back.** zxr's ray hits a session quad while carrying a delegated window: zxr ends the
   delegation with a **landing placement (R24)** — target output plus 2D coordinates derived from
   the pick's UV on the quad, resume-move flag set; the producer warps its pointer there and

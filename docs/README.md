@@ -70,6 +70,8 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [desktop-environment.md](architecture/desktop-environment.md) — the DE plane model (system/authority/perception/shell/service), mechanism/policy/presentation rule, XR redefinitions, component dependency graph
 - [foreign-session-integration.md](architecture/foreign-session-integration.md) — foreign 2D sessions as per-toplevel floating windows: the client-integration taxonomy, the toplevel export/delegation seam (maintainer provenance, buffers/pacing/popups/input), `protocols/zext-toplevel-export-v1.xml`
 - [budgets.md](architecture/budgets.md) — the global frame/compute/power/thermal partition across planes + the budget-impact standing rule (overview invariant 9)
+- [places-model.md](architecture/places-model.md) — the places model: typed reference-frame graph (XrSpace-grounded), attachment constraints, per-place layout, decomposed currency with the C1–C7 reconciliation rules, entry policies, protocol/restore/docked/mode-5 bindings
+- [spatial-a11y.md](architecture/spatial-a11y.md) — spatial accessibility design note: AT-SPI2 baseline, zxr's compositor duties, the `zext-a11y` spatial-semantics reservation, allow-list posture
 - [component-registry.md](architecture/component-registry.md) — the master component inventory: 6 planes, evidence-based status (specified/partial/missing), the gap list
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
@@ -87,6 +89,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0013](architecture/adr/0013-kwin-vr-disposition.md) KWin VR disposition (not the backbone; design donor for the 2D tier; `kwin-vr` reserved as optional session; galaxyxr fork into Galaxy XR evidence)
   - [0014](architecture/adr/0014-toplevel-delegation-protocol.md) toplevel delegation protocol (specify upstream-shaped `zext-toplevel-export-v1` now; consumer-first, smithay → KWin MR → wayland-protocols; GNOME post-standardization)
   - [0015](architecture/adr/0015-docked-desktop-mode.md) docked desktop mode (mirror tier + same-session flat presentation on external displays; quiescence ladder to 2D-compositor power; fact-gated on `spatial.hardware.externalDisplay`)
+  - [0016](architecture/adr/0016-places-model.md) places model (typed frame graph; exclusive+overlay membership; decomposed currency — no active bit; groups = frames; transient+pin lifecycle; no second axis)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the base architecture
 - [design-backlog.md](architecture/design-backlog.md) — disposition of the base review (fixed now vs.
   deferred to the Lynx spike / pre-release design)

@@ -426,6 +426,11 @@ reject-after-first-commit rule, doc 30 A2.2, applies unchanged).
 
 ### 8.5 The open questions the design doc must answer
 
+*Status (2026-09-23): all five answered in [ADR 0016](../architecture/adr/0016-places-model.md) /
+[places-model.md](../architecture/places-model.md) — exclusive+overlay cardinality; decomposed
+currency (no single active bit); groups = reference frames; transient+pin-to-persist lifecycle
+with entry policy; no second axis.*
+
 1. **Membership cardinality.** Exactly-one-place (mutter), set-of-places (KWin), or
    one-place-plus-sticky (COSMIC)? Restore and mode-5 both get simpler with exclusivity (§7);
    follow-me/head-relative windows need a sticky escape hatch either way. What is the XR meaning
