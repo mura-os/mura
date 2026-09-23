@@ -1,6 +1,8 @@
 # The implementation path: from boot forward to the XR greeter, then the session
 
-**Status:** accepted plan of record (2026-09-23).
+**Status:** accepted plan of record (2026-09-23; rev 2 same day — the boot-to-desktop coverage
+review absorbed: stages B1a/B1b/B6a/B9, the F-track from
+[first-run-onboarding.md](first-run-onboarding.md), and the lifecycle section).
 **What this is:** the ordered build path from power-on to a zxr session, derived from the
 dependency graph ([desktop-environment.md §6](desktop-environment.md)) — not a replacement for
 it. Rungs are ordered only where a hard dependency exists; everything else is a parallel track.
@@ -38,13 +40,19 @@ stages marked ▲ are forced decisions this path surfaces.
 | # | Stage | Exists today | To build |
 |---|---|---|---|
 | B1 | Firmware → bootloader → initrd | per-family (uefi-rauc proven in the Frame workstream; android-bootimg gated on the Lynx spike) | nothing for this path — the VM boots systemd-boot already |
-| B2 | ▲ Seat broker | ADR 0007 names logind/seatd as the DRM-master/hidraw broker and leaves "logind vs seatd on the appliance image" open | **the decision is forced at G2**: greetd's session worker needs a seat. Default: logind (NixOS default, zero work, `SetLockedHint` needs it anyway per ADR 0007); seatd remains an appliance-minimization option to revisit with image-size work |
-| B3 | greetd | contract options `spatial.xr.session.{autoLogin,greeter}` + profile-exclusivity assertion ([lib/contract](../../lib/contract/default.nix)); research [11](../research/11-display-managers-greeters.md); the VM currently bypasses this (getty autologin → `exec sway` in [devices/virtual-headset](../../devices/virtual-headset/default.nix)) | the NixOS module consuming the contract: `services.greetd` wiring for both profiles (multi-user → `default_session` = zxr greeter; appliance → `initial_session`), replacing the VM's getty hack when G2 lands |
+| B1a | Persistent state + hardware readiness | uefi-rauc mounts `syspersist` rw with `/var/lib/spatial` bound via `spatial-persist-setup.service` (pull-in dependency, not tmpfiles ordering) and the state-class skeleton (factory/identity/enrollment/state; machine-id its own class — [first-run-onboarding.md §2](first-run-onboarding.md)) | validation of the mounts + **factory** calibration presence/version *before* Monado starts (user calibration is F2's, not this stage's); firmware/module/udev discovery with a device-wait timeout policy; machine-id committed from `/persist` **before D-Bus/logind start**. Device access is **logind/libseat ACL acquisition, never permanent group membership** — the seat broker grants/revokes DRM+evdev per session; only nodes logind cannot broker (hidraw/IMU/camera) get narrowly scoped per-VID/PID udev rules (`TAG+="uaccess"` or a `spatial-xr` group documented as seat-revocation-exempt, with rationale). An explicit stage, not "NixOS default" |
+| B1b | XR preflight + recovery ladder | registry names the XR-init preflight probe (**partial**; pattern from KWin VR's `kwinvr-xrtest`, [ADR 0013 §2](adr/0013-kwin-vr-disposition.md); composition §7.3 makes it normative) | the probe as a gate before greeter/session start: runtime-created Vulkan device, GPU/device match, factory-calibration validity, required DRM/IMU nodes present, Monado reaches first frame. Plus the distro obligation: a **crash-loop threshold and recovery path** — N consecutive greeter/session failures → flat-output fallback on a docked/dev connector where present, SSH/serial always reachable on the dev profile, a diagnostic target otherwise. A runtime or driver failure must never leave a permanently dark headset |
+| F1 | First-boot machine provisioning | uefi-rauc state skeleton (§B1a) | silent provisioning per [first-run-onboarding.md §3](first-run-onboarding.md): per-unit keys, settings-store seeding, partition growth. Gated on the **durable `/persist` marker, not `ConditionFirstBoot`** (a fresh A/B root slot looks like first boot to the latter); idempotent units + atomic marker = interrupted-first-boot recovery |
+| B2 | ▲ Seat broker | ADR 0007 names logind/seatd as the DRM-master/hidraw broker and leaves "logind vs seatd on the appliance image" open | **the decision is forced at G2**: greetd's session worker needs a seat. Default: logind (NixOS default, zero work, `SetLockedHint` needs it anyway per ADR 0007, and B1a's ACL model assumes it); seatd remains an appliance-minimization option to revisit with image-size work |
+| B3 | greetd + session dispatch | contract options `spatial.xr.session.{autoLogin,greeter}` + profile-exclusivity assertion ([lib/contract](../../lib/contract/default.nix)); research [11](../research/11-display-managers-greeters.md); the VM currently bypasses this (getty autologin → `exec sway` in [devices/virtual-headset](../../devices/virtual-headset/default.nix)) | the NixOS module consuming the contract: `services.greetd` for both profiles, where `default_session` is a root-owned **dispatcher wrapper** (greetd cannot select a session from runtime state itself) that reads the enrollment marker and execs `zxr --oobe` (F2) or `zxr --greeter`; appliance → `initial_session`. Replaces the VM's getty hack at G2 |
+| F2 | Onboarding (OOBE) | design in [first-run-onboarding.md §4](first-run-onboarding.md); ADR 0017 (account model, UI/authority split) | `zxr --oobe` (unprivileged wizard UI on the G1 scene machinery) + **`spatial-provisiond`** (the privileged authority owning PIN-hash writes, key generation, and the root-owned transactional marker); wizard = locale → Wi-Fi → identity → PIN → **user** calibration (IPD/floor/boundary/pairing) → privacy defaults |
 | B4 | `zxr --greeter` | the mode's restrictions and exit contract are normative ([session-auth §5](../../specs/session-auth.md)); per-unit calibration paths in the contract; safe default IPD pre-auth | the binary itself: G1's deliverable (§3), running on R0's core |
-| B5 | Login authority | greetd's session worker is the **sole** login PAM authority; the greeter is an unprivileged greetd IPC client (session-auth §1, review-hardened) | the greeter's greetd client half (`create_session` → `post_auth_message_response` → `start_session`), rendering `auth_message`s in the auth scene |
+| B5 | Login authority | greetd's session worker is the **sole** login PAM authority; the greeter is an unprivileged greetd IPC client (session-auth §1, review-hardened) | the greeter's greetd client half (`create_session` → `post_auth_message_response` → `start_session`), rendering `auth_message`s in the auth scene. PAM stacks declared via NixOS modules: `pam_spatial_pin` in `spatial-lock` only; greetd login stays standard account-password (ADR 0017) |
 | B6 | Session start | `spatial.xr.shell` contract enum (zxr/stardust/wayvr/kwin-vr/none) | `spatial-session.target` (systemd user target owning Monado + compositor + shell services; crash/restart semantics per ADR 0007), enumerating sessions from the module system |
+| B6a | User-session bootstrap contract | session-auth §5 fixes greetd's exit-then-start ordering | the **session wrapper** greetd execs (a target is not an executable): `pam_systemd` establishes the login session + `$XDG_RUNTIME_DIR`; environment in three classes — *static* (`XR_RUNTIME_JSON`, locale) via `environment.d`/unit config; *compositor-created* (`WAYLAND_DISPLAY`) published **after** sd-notify readiness via `systemctl --user set-environment` + `dbus-update-activation-environment`; *dependent* services ordered after readiness, layered on standard `graphical-session-pre.target`/`graphical-session.target` with `spatial-session.target` on top (upstream portals/PipeWire integrate unmodified). Manager-correct lifetimes: a user unit cannot `BindsTo=` the system manager's session scope — the wrapper owns coupling (stops the user target on exit) and **the wrapper is what keeps the greetd session alive**, returning only after full teardown so the next greeter never races device release. Monado socket-activation ordering and greeter-Monado→session-Monado handoff explicit. Normative `specs/session-bootstrap.md` gated on G2 implementation experience |
 | B7 | The session | rung-1/rung-2 loops run sway as the stand-in session | zxr session mode: M1 onward (§3) |
 | B8 | Lock | lock state machine + invariants specified (ADR 0007, session-auth §2–§3); `ext-session-lock-v1` dev-profile-only | `spatial-authd` + the in-compositor lock states — a parallel track (§4), testable against sway+VM before zxr exists |
+| B9 | Session-ready gate + update mark-good | `spatial.qualification.readinessCheck` contract option + tier assertion exist ([lib/contract](../../lib/contract/default.nix)); the mark-good service is the recorded "still ahead" item ([images-and-updates §RAUC](images-and-updates.md)) | see §3a below: readiness tiers, the mark-good service, and systemd-boot boot-counting wired explicitly in the uefi-rauc family |
 
 ## 3. The rung ladder
 
@@ -52,10 +60,13 @@ stages marked ▲ are forced decisions this path surfaces.
 flowchart TD
     R0["R0 bring-up spike (risk retirement)\nsmithay skeleton in the dev-session slot\n4 measured gates (doc 39 s5)"] --> G1["G1 zxr --greeter in dev-session\nOpenXR loop + ash renderer + auth scene\nfake greetd over $GREETD_SOCK"]
     R0 --> M1["M1 spatial 2D desktop in a window\nxdg-shell, ray-to-pointer, move/rotate/resize\n(composition s7.5 acceptance)"]
-    G1 --> G2["G2 XR greeter in the rung-2 VM\nreal greetd module, start_session into sway\nzero manual steps"]
+    G1 --> G2["G2 XR greeter in the rung-2 VM\nreal greetd module + dispatcher, start_session into sway\nzero manual steps"]
+    G1 --> F2["F2 onboarding (OOBE)\nzxr --oobe wizard UI + spatial-provisiond\n(first-run-onboarding.md)"]
+    F2 --> G2
     M1 --> M2["M2 mixed 2D/3D composition\nzxr-shell-v2 protocol goes live"]
-    G2 --> G3["G3 greeter hands off to the zxr session\nspatial-session.target"]
+    G2 --> G3["G3 greeter hands off to the zxr session\nsession wrapper (B6a) + spatial-session.target"]
     M1 --> G3
+    G3 --> B9["B9 session-ready gate\nmark-good + boot-counting (s3a)"]
     M2 --> M3["M3 renderer-agnostic proof\nCPU reference client vs ground truth"]
     M3 --> M4["M4 headset output via Monado\none frame snapshot drives all clients"]
     AUTHD["parallel: spatial-authd + lock\n(VM testbed, sway session)"] -.-> G3
@@ -87,12 +98,15 @@ the scene is really spatial.
 ### G2 — the XR greeter in the VM (the first shippable artifact)
 
 The greetd NixOS module (B3) replaces the getty hack in `devices/virtual-headset`; multi-user
-profile with `spatial.xr.session.greeter = "zxr-greeter"`; the real greetd spawns zxr-greeter as
-the `greeter` user; login lands in **sway** as the stand-in session (B6's target can start any
-`spatial.xr.shell`). Forced decision B2 (logind default) lands here. Exit: VM cold boot →
-XR auth scene with zero manual steps → correct PAM conversation (real PAM, greetd worker) →
-sway session; re-lock/logout returns to the greeter; the greeter process never loads PAM symbols
-(session-auth §6.6).
+profile with `spatial.xr.session.greeter = "zxr-greeter"`; the real greetd runs the **dispatcher
+wrapper**, which finds the enrollment marker present (F2 or a pre-seeded VM fixture) and execs
+zxr-greeter as the `greeter` user; login lands in **sway** as the stand-in session (B6's target
+can start any `spatial.xr.shell`). Forced decision B2 (logind default) lands here, as does B1a's
+ACL model. **Multi-user G2 requires enrollment to exist** — either F2 has run or the VM fixture
+seeds `enrollment/`; the appliance MVP path (autologin + in-session OOBE, the Steam Deck model)
+needs neither. Exit: VM cold boot → XR auth scene with zero manual steps → correct PAM
+conversation (real PAM, greetd worker) → sway session; re-lock/logout returns to the greeter;
+the greeter process never loads PAM symbols (session-auth §6.6).
 
 ### M1 — the spatial 2D desktop (composition §7.5)
 
@@ -106,10 +120,41 @@ type, select, copy/paste, open menus, move/rotate/resize planes". When M1 lands,
 
 ### G3 — the full handoff
 
-`spatial-session.target` (B6) starts Monado + zxr-session + shell services; greetd
-`start_session` execs into it; ADR 0007's crash/restart and boot-locked-restart rules apply.
-Needs M1 (a session someone can use) + G2 (the greeter) + the authd track (§4) for lock. Exit:
-VM boots → XR greeter → login → **zxr session** → doff-grace/lock/unlock cycle works end to end.
+greetd `start_session` execs the **B6a session wrapper**, which brings up
+`spatial-session.target` (B6: Monado + zxr-session + shell services) under the environment and
+lifetime contract of B6a; ADR 0007's crash/restart and boot-locked-restart rules apply. Needs M1
+(a session someone can use) + G2 (the greeter) + the authd track (§4) for lock. Exit: VM boots →
+XR greeter → login → **zxr session** → doff-grace/lock/unlock cycle works end to end → logout
+tears down through the wrapper and returns to the greeter without racing device release.
+
+### §3a — B9: session-ready tiers, mark-good, and boot-counting
+
+"Session ready" has **two tiers**, and only the first ever gates an update:
+
+- **G3-minimum (the blessing tier):** Monado composited frames for a *stability interval*
+  (N seconds / M consecutive frames with no compositor or Monado restart — a first frame alone
+  can immediately precede a crash loop); systemd watchdog health (`WatchdogSec` on both
+  processes); writable `/persist/spatial` verified; per-unit settings-store migration completed;
+  input path confirmed (a synthetic event round-trips); crash-loop counter (B1b) at zero.
+  **Blessing is profile-specific**: appliance = a stable *locked owner session*; multi-user = a
+  stable *greeter* — mark-good never waits for a human to log in, so `/home` and per-user
+  migration state can never gate it.
+- **Desktop-usable (post-login qualification, never blocks blessing):** PipeWire + audio policy,
+  virtual keyboard/input method, settings daemon, polkit agent, portals, launcher +
+  notifications — each a registry row, several honestly **missing** today (the registry's gap
+  list is the work queue; without a polkit agent privileged operations silently fail, and
+  without a general virtual keyboard the headset cannot satisfy M1's "type in terminal/editor"
+  outside the desktop-window harness).
+
+The **mark-good service** runs `spatial.qualification.readinessCheck` against the blessing tier.
+The attempt/fallback mechanics are systemd-native and must be **explicitly wired in the
+uefi-rauc family** (it sets `boot.loader.systemd-boot.enable = false` — manual ESP install —
+so NixOS wires none of this automatically): RAUC `set-primary` arms the target slot's boot entry
+with a `+N`-tries BLS suffix; systemd-boot decrements tries across attempts and falls back to
+the previous slot's entry when exhausted; the readiness unit is a prerequisite of
+`boot-complete.target`; `systemd-bless-boot` performs the entry rename (the systemd-boot
+blessing); RAUC slot-status marking via the custom bootconf backend is the third, separate step.
+Three distinct transitions — readiness, boot blessing, RAUC state — each observable on its own.
 
 ### M2–M4 — widening the session (composition §7.5, unchanged)
 
@@ -121,6 +166,19 @@ output via Monado — head motion drives all clients from one frame snapshot; st
 never creates an unresolved GPU wait; a rootless Xwayland app participates. M4 runs entirely in
 rung 1 (simulated HMD); real-HMD output stays behind the display-path feasibility gate
 (desktop-environment §6.6).
+
+## 3b. Lifecycle: resume, doff, logout, user switch
+
+Resume is a boot sub-path, not an event: after suspend, the session re-enters through a reduced
+B1a/B1b — GPU/DRM/USB re-initialization, Monado restart-or-restore, tracking and calibration
+revalidation — and **the lock is asserted before any restored client frame is exposed**
+(ADR 0007 I1–I3; the L2 trace ordering from session-auth §3.1 applies to the resume edge
+exactly as to the suspend edge). Device loss mid-session (HMD unplug on dev hardware, tracking
+loss) routes through the same revalidation. The doff ladder and the docked-mode branch are
+ADR 0015's (doff-grace suppression while docked-in-use); logout tears down through the B6a
+wrapper (user target stopped, wrapper returns, greetd restarts the dispatcher → greeter);
+user switching on the multi-user profile is logout + login (no concurrent graphical sessions —
+one HMD, one seat), recorded as the deliberate v1 simplification.
 
 ## 4. Parallel tracks (no compositor dependency)
 
@@ -165,4 +223,7 @@ Milestone acceptance: [zxr-shell-v2-composition.md §7.5](zxr-shell-v2-compositi
 R0 gates and base evidence: [research/39 §5](../research/39-compositor-base-landscape.md).
 Session/greeter/lock contracts: [ADR 0007](adr/0007-session-greeter-lock.md) +
 [specs/session-auth.md](../../specs/session-auth.md).
+First-run/onboarding (the F-track): [first-run-onboarding.md](first-run-onboarding.md) +
+[ADR 0017](adr/0017-first-run-provisioning.md).
+Update health gating: [images-and-updates.md §Health-gated success](images-and-updates.md).
 The dev loops this path runs on: [README §Development](../../README.md).
