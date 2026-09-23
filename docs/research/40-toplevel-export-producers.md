@@ -1,7 +1,7 @@
 # 40: Toplevel-export producer seams — KWin, Mutter, smithay/COSMIC, wlroots
 
 **Question.** What exactly does each producer compositor need to implement
-[`zext-toplevel-export-v1`](../../protocols/zext-toplevel-export-v1.xml) (requirements R1–R24,
+[`zspatial-toplevel-export-v1`](../../protocols/zspatial-toplevel-export-v1.xml) (requirements R1–R24,
 [32 §8](32-toplevel-export-prior-art.md)) — verified against the code, replacing
 [ADR 0014](../architecture/adr/0014-toplevel-delegation-protocol.md) M-B's unverified "5–8 kLOC
 building on GraphicsBufferRef, thumbnail infra, krdp/EIS plumbing" estimate.
@@ -302,10 +302,10 @@ third producer**; engagement conditions in [producers/mutter.md](../architecture
 `cosmic-protocols/unstable/cosmic-toplevel-info-unstable-v1.xml:84-91`) — the exact shape of
 `export_toplevel`. Privilege is two predicates (`client_has_no_security_context`/
 `client_not_sandboxed`, `cosmic-comp/src/state.rs:643-653`) passed to every privileged global;
-a zext producer adds one line. `PendingImageCopyData` holds smithay `Buffer` clones until the
+a zspatial producer adds one line. `PendingImageCopyData` holds smithay `Buffer` clones until the
 copy's GPU fence lands, with the in-code comment saying exactly that
 (`cosmic-comp/src/wayland/handlers/image_copy_capture/render.rs:78-118`) — the hold-and-release
-pattern minus the render copy zext eliminates. Toplevel management's `activate` routes consumer
+pattern minus the render copy zspatial eliminates. Toplevel management's `activate` routes consumer
 requests through cosmic's own focus machinery (`handlers/toplevel_management.rs:31-114`) — the
 R18 shape.
 

@@ -71,10 +71,10 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [spatial-mapping.md](architecture/spatial-mapping.md) — anchors, persistence, relocalization, planes/mesh/boundary (Tier 4 world understanding)
 - [avatar-persona.md](architecture/avatar-persona.md) — Persona avatars: enrollment/asset/driver/runtime decomposition, control-interface + asset-format specs, kill-gates
 - [desktop-environment.md](architecture/desktop-environment.md) — the DE plane model (system/authority/perception/shell/service), mechanism/policy/presentation rule, XR redefinitions, component dependency graph
-- [foreign-session-integration.md](architecture/foreign-session-integration.md) — foreign 2D sessions as per-toplevel floating windows: the client-integration taxonomy, the toplevel export/delegation seam (maintainer provenance, buffers/pacing/popups/input), `protocols/zext-toplevel-export-v1.xml`
+- [foreign-session-integration.md](architecture/foreign-session-integration.md) — foreign 2D sessions as per-toplevel floating windows: the client-integration taxonomy, the toplevel export/delegation seam (maintainer provenance, buffers/pacing/popups/input), `protocols/zspatial-toplevel-export-v1.xml`
 - [budgets.md](architecture/budgets.md) — the global frame/compute/power/thermal partition across planes + the budget-impact standing rule (overview invariant 9)
 - [places-model.md](architecture/places-model.md) — the places model: typed reference-frame graph (XrSpace-grounded), attachment constraints, per-place layout, decomposed currency with the C1–C7 reconciliation rules, entry policies, protocol/restore/docked/mode-5 bindings
-- [spatial-a11y.md](architecture/spatial-a11y.md) — spatial accessibility design note: AT-SPI2 baseline, zxr's compositor duties, the `zext-a11y` spatial-semantics reservation, allow-list posture
+- [spatial-a11y.md](architecture/spatial-a11y.md) — spatial accessibility design note: AT-SPI2 baseline, zxr's compositor duties, the `zspatial-a11y` spatial-semantics reservation, allow-list posture
 - [component-registry.md](architecture/component-registry.md) — the master component inventory: 6 planes, evidence-based status (specified/partial/missing), the gap list
 - [implementation-path.md](architecture/implementation-path.md) — the boot-forward plan of record: greeter-first rationale, the B1–B8 boot chain, the R0/G1–G3 + M1–M4 rung ladder, parallel tracks, deferrals
 - [adr/](architecture/adr/) — decision records:
@@ -91,7 +91,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
   - [0011](architecture/adr/0011-eye-tracking-ipd.md) eye tracking and IPD (Monado-side eye-frame service, rotation-center IPD, event-gated motors)
   - [0012](architecture/adr/0012-de-modularity-spinout-seams.md) DE modularity and spin-out seams (standard-protocol clients vs in-process plugins vs authority-only; the zxr-private extension surface)
   - [0013](architecture/adr/0013-kwin-vr-disposition.md) KWin VR disposition (not the backbone; design donor for the 2D tier; `kwin-vr` reserved as optional session; galaxyxr fork into Galaxy XR evidence)
-  - [0014](architecture/adr/0014-toplevel-delegation-protocol.md) toplevel delegation protocol (specify upstream-shaped `zext-toplevel-export-v1` now; consumer-first, smithay → KWin MR → wayland-protocols; GNOME post-standardization)
+  - [0014](architecture/adr/0014-toplevel-delegation-protocol.md) toplevel delegation protocol (specify upstream-shaped `zspatial-toplevel-export-v1` now; consumer-first, smithay → KWin MR → wayland-protocols; GNOME post-standardization)
   - [0015](architecture/adr/0015-docked-desktop-mode.md) docked desktop mode (mirror tier + same-session flat presentation on external displays; quiescence ladder to 2D-compositor power; fact-gated on `spatial.hardware.externalDisplay`)
   - [0016](architecture/adr/0016-places-model.md) places model (typed frame graph; exclusive+overlay membership; decomposed currency — no active bit; groups = frames; transient+pin lifecycle; no second axis)
 - [REVIEW.md](architecture/REVIEW.md) — cross-model red-team review of the base architecture
@@ -110,7 +110,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 ## Normative artifacts (`../protocols/`, `../specs/`)
 
 Wire and format contracts live outside `docs/`: [protocols/](../protocols/README.md) (Wayland
-XMLs — zxr-shell-v2, zxr-workspace, zxr-layer-anchoring, zext-toplevel-export — house style in
+XMLs — zxr-shell-v2, zxr-workspace, zxr-layer-anchoring, zspatial-toplevel-export — house style in
 [CONVENTIONS.md](../protocols/CONVENTIONS.md), CI-validated by wayland-scanner) and
 [specs/](../specs/README.md) (perception intake, session/auth, settings schema, SpatialCast
 portal). Design docs here say *why*; those say *exactly what*.

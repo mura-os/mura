@@ -1,6 +1,6 @@
 # Protocol authoring conventions
 
-Style guide for every Wayland protocol XML in `protocols/` (the `zxr`/`zext` families).
+Style guide for every Wayland protocol XML in `protocols/` (the `zxr`/`zspatial` families).
 Every rule below is derived from upstream practice in the pinned clones under
 `references/wayland-protocols/`; citations are `file:line` into those clones. Where upstream
 is internally inconsistent, the picked side is marked **[picked]** and the alternatives noted.
@@ -25,7 +25,7 @@ is internally inconsistent, the picked side is marked **[picked]** and the alter
   inconsistent — `xdg_shell` (xdg-shell.xml:2) and `presentation_time` (presentation-time.xml:2)
   are unversioned grandfathered names, and `linux_dmabuf_v1` (linux-dmabuf-v1.xml:2) drops the
   `zwp` prefix its interfaces carry. We follow the modern form: protocol name matches the
-  interface namespace and carries `_v1` (so `zext_toplevel_export_v1`, `zxr_shell_v2`).
+  interface namespace and carries `_v1` (so `zspatial_toplevel_export_v1`, `zxr_shell_v2`).
 - **Copyright block**: first child of `<protocol>`. Upstream embeds the full MIT license text
   (xdg-shell.xml:4-30); spatial-os files use `SPDX-License-Identifier: MIT` plus attribution
   instead, with **real names** — attribution lines name people or legal entities with years,
@@ -53,7 +53,7 @@ is internally inconsistent, the picked side is marked **[picked]** and the alter
   name, not just the protocol (README.md:134-141; `ext_workspace_handle_v1`,
   `wp_linux_drm_syncobj_timeline_v1`). Note the legacy `z` prefix (`zwp_linux_dmabuf_v1`,
   linux-dmabuf-v1.xml:27) marks the retired "unstable" policy (README.md:57-63) — our `zxr_`/
-  `zext_` are namespace names in their own right, not that marker, and are never shortened.
+  `zspatial_` are namespace names in their own right, not that marker, and are never shortened.
 - **Version discipline**: the interface `version` attribute is the highest revision the file
   defines (xdg-shell.xml:32 `version="7"`). Additions carry `since="N"` on the request/event/
   entry (xdg-shell.xml:370, :909); deprecations carry `deprecated-since="N"`
@@ -157,7 +157,7 @@ is internally inconsistent, the picked side is marked **[picked]** and the alter
 
 ## 6. Timing and sync language
 
-Our pacing and sync interfaces (`zext_export_pacing_v1`, future frame-timing work) must match
+Our pacing and sync interfaces (`zspatial_export_pacing_v1`, future frame-timing work) must match
 this register:
 
 - **Clock domains** are established once, by an event, in named-clock terms: "This event tells
@@ -214,7 +214,7 @@ v2 does not inherit their era's shortcuts, not to diminish them.
 
 ## 8. spatial-os addenda
 
-- **Namespace policy** (protocols/README.md "Namespace and governance posture"): `zext_`/`zxr_`
+- **Namespace policy** (protocols/README.md "Namespace and governance posture"): `zspatial_`/`zxr_`
   are local experimental namespaces; nothing in this tree is an upstream protocol, and 2D
   protocol vocabulary is never silently given new wire meanings (ADR 0012 §4 rule). On proposal,
   interfaces are renamed to the upstream experimental `xx_` prefix (GOVERNANCE.md:76-80);
@@ -227,7 +227,7 @@ v2 does not inherit their era's shortcuts, not to diminish them.
 - **Budget-impact notes** belong in the protocol's *design document* under `docs/`, not in the
   XML: every design doc for a protocol here must state its frame-loop/latency budget impact.
   The XML stays a pure wire contract (§3 register rule).
-- **Deviations in `zext-toplevel-export-v1.xml`** — *all ten fixed at rev 2 (2026-09-23,
+- **Deviations in `zspatial-toplevel-export-v1.xml`** — *all ten fixed at rev 2 (2026-09-23,
   producer-spec workstream)*: real-name attribution (Jarrad Hope); RFC 2119 boilerplate +
   experimental warning added; every symbolic uint is now an `<enum>` (node_role, denied_reason,
   fallback_kind, region_kind, focus_kind, keymap_format, capability/adopt/presented bitfields);
@@ -237,7 +237,7 @@ v2 does not inherit their era's shortcuts, not to diminish them.
   version 1"; keymap ownership resolved by a producer keymap event); descriptions/summaries on
   every message and arg; destructor descriptions state child-object effects; the atomic batch
   boundary is a `done` event; the detach seat is a `wl_seat` object; buffers are
-  `zext_exported_buffer_v1` protocol objects with per-object release (params-object pattern).
+  `zspatial_exported_buffer_v1` protocol objects with per-object release (params-object pattern).
   Rev 2 also closed two structural holes the list missed: `get_pacing`/`get_input` factory
   requests now exist (rev 1 had orphan interfaces), and stacking/restack, viewport, window
   geometry, pointer/touch frame grouping, and clock correlation gained explicit wire shape.

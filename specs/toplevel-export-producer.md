@@ -1,7 +1,7 @@
-# specs/toplevel-export-producer: producer conformance for zext-toplevel-export-v1
+# specs/toplevel-export-producer: producer conformance for zspatial-toplevel-export-v1
 
 **Status:** draft (producer-specification workstream).
-**Contract:** [`protocols/zext-toplevel-export-v1.xml`](../protocols/zext-toplevel-export-v1.xml)
+**Contract:** [`protocols/zspatial-toplevel-export-v1.xml`](../protocols/zspatial-toplevel-export-v1.xml)
 (rev 2) is the wire contract; this spec is the *behavioral* contract a producer compositor must
 satisfy behind that wire, plus the conformance tests both sides run. Requirement numbers Rn refer
 to [research/32 §8](../docs/research/32-toplevel-export-prior-art.md); design rationale in
@@ -35,7 +35,7 @@ requests per the protocol's capability rule.
 
 ## 2. Exposure, identity, and tree export
 
-- **2.1 Privileged global (R2).** The `zext_toplevel_export_manager_v1` global must be filtered
+- **2.1 Privileged global (R2).** The `zspatial_toplevel_export_manager_v1` global must be filtered
   to authorized connections using the producer's privileged-global mechanism (security-context
   filtering or equivalent). `ext-foreign-toplevel-list` visibility must not imply export
   authority: an unauthorized client seeing handles gains nothing.

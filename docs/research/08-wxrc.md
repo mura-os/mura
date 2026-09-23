@@ -476,15 +476,15 @@ doc 10 §4.5, against the ancestor construct that addresses it:
 |---|---|---|---|---|---|
 | 1 | Typed colour+depth pair per view (composition §7.2) | `zxr_composite_buffer_v1.buffer_type` — right types, dead depth path, non-atomic attach | depth packed into a colour viewport (hack) | n/a (server renders) | REWORK v1: typed per-view images in an atomically-submitted slot |
 | 2 | Depth *encoding* negotiation — reversed-Z, near/far, normalization (composition §2 c.2, §8) | none | none | none | **NEW** — copy `XrCompositionLayerDepthInfoKHR`'s metadata shape (minDepth/maxDepth/nearZ/farZ) |
-| 3 | Explicit sync, syncobj timeline points (composition §5) | none — v1 predates syncobj | none | none | **NEW** — `wp_linux_drm_syncobj_v1` points per slot; wire vocabulary already exists in-repo: `protocols/zext-toplevel-export-v1.xml` `attach`/`release_buffer` (timeline fd + point_hi/point_lo) |
+| 3 | Explicit sync, syncobj timeline points (composition §5) | none — v1 predates syncobj | none | none | **NEW** — `wp_linux_drm_syncobj_v1` points per slot; wire vocabulary already exists in-repo: `protocols/zspatial-toplevel-export-v1.xml` `attach`/`release_buffer` (timeline fd + point_hi/point_lo) |
 | 4 | Transport tiers: dmabuf / opaque-fd / shm-CPU, allocation ownership (composition §5) | implicit `wl_buffer` only | implicit EGL double-wide | own shm stack (anti-pattern) | **NEW, narrowed at rev 2** — shm + dmabuf only; opaque-fd and allocation-ownership negotiation deferred to a later protocol revision (the XML says so normatively; composition §5's full tier set remains the design goal) |
-| 5 | Frame timing: snapshot, predicted display time, commit cutoff (composition §7.4) | none — the trailing TODO | thesis §7.3.2 discussion only, nothing on the wire | `zwn_virtual_object.frame(wl_callback)` — 2D pacing, no prediction | **NEW** — share vocabulary with `zext_export_pacing_v1`: `frame(display_time, period_ns, cutoff_ns)` + `presented`/`discarded` feedback |
+| 5 | Frame timing: snapshot, predicted display time, commit cutoff (composition §7.4) | none — the trailing TODO | thesis §7.3.2 discussion only, nothing on the wire | `zwn_virtual_object.frame(wl_callback)` — 2D pacing, no prediction | **NEW** — share vocabulary with `zspatial_export_pacing_v1`: `frame(display_time, period_ns, cutoff_ns)` + `presented`/`discarded` feedback |
 | 6 | View/projection delivery (composition §2 c.1, §7.2) | folded `mvp_matrix` per surface×view — DROP | `view_matrix`/`projection_matrix` split per viewpoint — RESURRECT | clients never see a camera | split matrices delivered **inside the atomic frame snapshot**, paired with frame id (see §3.7d) |
 | 7 | Size/bounds negotiation (composition §7.2 "bounds") | none — dropped | `request_size_3d`/`set_size_3d` | `configure/ack_configure` serial idiom | RESURRECT motorcar semantics in zwin's idiom |
 | 8 | Clipping modes, enforced (composition §2 c.3; doc 10 §4.5 Q4) | none | `clipping_mode` cuboid/portal | bounded/expansive shell types | RESURRECT — enum + normative out-of-bounds behavior (clamp vs error must be decided in the draft) |
 | 9 | Ray + 6DoF input (ADR 0006; v1 dropped motorcar's!) | none | `motorcar_six_dof_pointer` | `zwn_ray` + seat capabilities | **NEW interfaces** synthesized from both, as two seat capabilities |
 | 10 | Surface roles + lifecycle (composition §7.2) | role factory + 2D-buffer error KEEP; but no destructors on surface/surface-view, dangling `finished` reference, no destroy listener in wxrc | one-motorcar-surface-per-wl_surface rule | `role`/`invalid_state` errors, `unconfigured` | REWORK — full lifecycle: destructors everywhere, view add/remove events, mapped/unmapped states |
-| 11 | Error conditions | two enums, both `invalid_buffer` | **zero** error enums | per-interface typed errors | **NEW taxonomy** — per interface; typed denial precedent in `zext_exported_tree_v1.denied` |
+| 11 | Error conditions | two enums, both `invalid_buffer` | **zero** error enums | per-interface typed errors | **NEW taxonomy** — per interface; typed denial precedent in `zspatial_exported_tree_v1.denied` |
 | 12 | Multiview/layout option (v1 TODO "left/right views"; composition §8 bandwidth) | TODO only | double-wide layout convention | n/a | per-view images primary; **dropped from rev 2 entirely** (a capability with no wire contract is worse than absence — red-team F17); a layered/array layout returns only with a full attachment contract in a later revision |
 
 Doc 10 §4.5's remaining questions land as follows: Q1 (pacing across clients) is item 5 plus the
@@ -512,7 +512,7 @@ The draft should read as v1 grown up. Proposal:
 - **New interfaces take v1's naming shape, not motorcar's or zwin's:** `zxr_frame_v2` (timing
   snapshot), `zxr_pointer_6dof_v2` and `zxr_ray_v2` (seat capabilities), `zxr_seat_v2` if the seat
   extension point is ours. Event/arg vocabulary for pacing and sync copies the sibling
-  `protocols/zext-toplevel-export-v1.xml` (`display_time_hi/lo`, `period_ns`, `cutoff_ns`,
+  `protocols/zspatial-toplevel-export-v1.xml` (`display_time_hi/lo`, `period_ns`, `cutoff_ns`,
   `presented`/`discarded`, timeline-fd + `point_hi/lo`) so the two spatial-os protocols read as one
   family where semantics overlap.
 - **Vocabulary continuity from motorcar** where concepts return: `clipping_mode` with `cuboid` and
@@ -534,7 +534,7 @@ The draft should read as v1 grown up. Proposal:
   `docs/architecture/places-model.md` §2's layer, exposed via ext-workspace plus a **separate zxr
   workspace extension whose XML explicitly follows zxr-shell-v2's drafting** (places-model §9).
   The boundary: v2 says *where a surface is*; places says *what it belongs to*.
-- **A11y semantics** — deferred to the zext-a11y workstream; v2 must merely not preclude it.
+- **A11y semantics** — deferred to the zspatial-a11y workstream; v2 must merely not preclude it.
 - Also out (composition §7.5): unmodified-app interception, multi-GPU, curved panels (a
   presentation policy, not surface state).
 

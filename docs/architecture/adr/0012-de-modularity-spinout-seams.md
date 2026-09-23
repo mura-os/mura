@@ -103,12 +103,12 @@ spatial semantics ([30 §6](../../research/30-wayland-de-anatomy-protocol-seams.
    Completeness checklist: KWin VR's KCM taxonomy (general / input / headgaze / follow-mode /
    advanced pages, [31 §2.7](../../research/31-kwin-vr.md)) — the empirically user-tested set of
    knobs a 2D-in-XR tier needed (ADR 0013 §2).
-6. toplevel export/delegation (`zext-toplevel-export-v1`, added by
+6. toplevel export/delegation (`zspatial-toplevel-export-v1`, added by
    [ADR 0014](0014-toplevel-delegation-protocol.md)) — unlike items 1–5 this one is
    deliberately **XR-agnostic** and carries explicit upstream intent (`xx_`/`ext_` path); zxr is
    its consumer, foreign 2D compositors its producers
    ([foreign-session-integration.md](../foreign-session-integration.md)).
-7. spatial accessibility semantics (`zext-a11y`, reserved by
+7. spatial accessibility semantics (`zspatial-a11y`, reserved by
    [spatial-a11y.md](../spatial-a11y.md)) — read-only spatial context (window poses/relations,
    place membership/currency per [places-model.md](../places-model.md), gaze context under the
    ADR 0011 privacy posture, boundary state) plus privileged navigation verbs, for allow-listed

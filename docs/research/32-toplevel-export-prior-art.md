@@ -454,7 +454,7 @@ COSMIC adopted it in [cosmic-comp#1213](https://github.com/pop-os/cosmic-comp/pu
 
 **Recommended posture.**
 
-1. Keep `zext-toplevel-export-v1.xml` experimental, privileged, and local. `zext` is not upstream;
+1. Keep `zspatial-toplevel-export-v1.xml` experimental, privileged, and local. `zspatial` is not upstream;
    prefer `zxr_` privately, `xx_` for upstream experimental, then `ext_`.
 2. Build zxr plus Smithay and KWin producers: one client + two servers exceeds the ext minimum and
    tests Rust/Smithay against mature C++.
@@ -463,7 +463,7 @@ COSMIC adopted it in [cosmic-comp#1213](https://github.com/pop-os/cosmic-comp/pu
 
 ---
 ## 8. Requirements distillate for the XML draft
-The following requirements are the direct input to `protocols/zext-toplevel-export-v1.xml`.
+The following requirements are the direct input to `protocols/zspatial-toplevel-export-v1.xml`.
 
 1. **R1 — Stable selection.** Bind an `ext_foreign_toplevel_handle_v1` or equally unique mapped-lifetime handle, never title/app-id matching (§1).
 2. **R2 — Privileged visibility.** Connection-filter the global; enumeration grants neither export nor input authority (§1, §5).

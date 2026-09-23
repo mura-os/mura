@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<protocol name="zext_toplevel_export_v1">
+<protocol name="zspatial_toplevel_export_v1">
   <copyright>
     Copyright © 2026 Jarrad Hope
 
@@ -16,17 +16,32 @@
     authority over its clients (serials, grabs, popup placement, activation).
 
     The consumer is an ordinary, privileged Wayland client of the producer.
-    The zext_toplevel_export_manager_v1 global must only be exposed to
-    authorized connections (compositor policy, for example security-context
-    based filtering). Toplevel enumeration through ext-foreign-toplevel-list
-    grants neither export nor input authority, and the producer may deny or
-    revoke the delegation of any surface at any time.
+    The zspatial_toplevel_export_manager_v1 global must only be exposed to
+    authorized connections (compositor policy: a trusted dedicated
+    connection, security-context based filtering, or an equivalent
+    authorization mechanism). Toplevel enumeration through
+    ext-foreign-toplevel-list grants neither export nor input authority, and
+    the producer may deny or revoke the delegation of any surface at any
+    time.
 
-    Unless otherwise specified, timestamps are in the producer's
+    While a toplevel is delegated, the producer ceases presenting it locally
+    and delivers no input to it from its own devices; the local window-
+    management state of a delegated toplevel is specified by the producer
+    conformance rules accompanying this protocol, not by wire messages.
+
+    File descriptors are owned by the receiver: plane, timeline, and keymap
+    fds transferred by events or requests are duplicates the receiving side
+    must close. Unless otherwise specified, timestamps are in the producer's
     CLOCK_MONOTONIC domain, with millisecond timestamps following wl_pointer
-    semantics. Where 64-bit values are carried as two arguments, the value is
-    'hi' * 0x100000000 + 'lo'. Colour-management and colour-representation
-    state is not carried in version 1 of this protocol.
+    semantics. Where 64-bit values are carried as two arguments, the value
+    is 'hi' * 0x100000000 + 'lo'.
+
+    Colour-management and colour-representation state is not carried in
+    version 1 of this protocol: consumers must treat exported content as
+    sRGB, and producers must not deliver buffers whose committed colour
+    state differs from the producer's default interpretation — such nodes
+    take the color_state fallback instead. A capability bit is reserved for
+    a future colour-carrying version.
 
     The key words "must", "must not", "required", "shall", "shall not",
     "should", "should not", "recommended", "may", and "optional" in this
@@ -38,12 +53,13 @@
     protocol's presence is discouraged outside spatial-os itself.
   </description>
 
-  <interface name="zext_toplevel_export_manager_v1" version="1">
+  <interface name="zspatial_toplevel_export_manager_v1" version="1">
     <description summary="export factory and capability negotiation">
-      The privileged entry point advertised by the producer. The capabilities
-      event tells the consumer which optional protocol features this producer
-      implements; requests that depend on an absent capability are ignored,
-      and clients should hide or disable the corresponding functionality.
+      The privileged entry point advertised by the producer. The
+      capabilities event tells the consumer which optional protocol features
+      this producer implements; requests that depend on an absent capability
+      are ignored, and objects that depend on one become inert or are denied
+      as specified per request.
     </description>
 
     <enum name="error">
@@ -57,13 +73,15 @@
         client's own dmabuf allocations. input: get_input is honored.
         pacing: get_pacing is honored. detach_drag: mid-move handoff is
         honored. dnd: cross-export drag-and-drop (no producer is expected to
-        set this in version 1).
+        set this in version 1). color: reserved for a future colour-carrying
+        version; producers must not set it in version 1.
       </description>
       <entry name="dmabuf" value="1" summary="zero-copy dmabuf delivery"/>
       <entry name="input" value="2" summary="per-export input channel"/>
       <entry name="pacing" value="4" summary="consumer-driven pacing"/>
       <entry name="detach_drag" value="8" summary="mid-move detach handoff"/>
       <entry name="dnd" value="16" summary="cross-export drag-and-drop"/>
+      <entry name="color" value="32" summary="reserved: colour state forwarding"/>
     </enum>
 
     <request name="destroy" type="destructor">
@@ -78,12 +96,12 @@
         Request export of the toplevel identified by the given
         ext_foreign_toplevel_handle_v1; identity is always the handle, never
         title or app-id matching. The producer answers on the returned tree
-        with either node announcements or a denied event. Requesting a second
-        tree for the same toplevel on the same connection raises the
+        with either node announcements or a denied event. Requesting a
+        second tree for the same toplevel on the same connection raises the
         already_exported error. If the handle is inert, the returned tree
         receives denied with the gone reason.
       </description>
-      <arg name="id" type="new_id" interface="zext_exported_tree_v1"/>
+      <arg name="id" type="new_id" interface="zspatial_exported_tree_v1"/>
       <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"
            summary="the toplevel to delegate"/>
     </request>
@@ -97,46 +115,53 @@
         announces the export on the returned tree, beginning with an anchor
         event carrying the surface-local cursor-anchor point, so that the
         consumer's grab can keep the same content pixel under its cursor or
-        ray. If no interactive move is active on the seat when the request is
-        processed — including the race where the move ended in flight — the
-        tree receives denied with the no_active_move reason. Requires the
-        detach_drag capability; without it the request is ignored and the
-        tree is immediately inert.
+        ray. If no interactive move is active on the seat when the request
+        is processed — including the race where the move ended in flight —
+        the tree receives denied with the no_active_move reason. Without the
+        detach_drag capability the tree receives denied with the unsupported
+        reason.
       </description>
-      <arg name="id" type="new_id" interface="zext_exported_tree_v1"/>
+      <arg name="id" type="new_id" interface="zspatial_exported_tree_v1"/>
       <arg name="seat" type="object" interface="wl_seat"
            summary="the producer seat whose move-grab is taken over"/>
     </request>
 
     <event name="capabilities">
       <description summary="producer capabilities">
-        The producer's capabilities. Sent once on bind, before any other
-        event on this object.
+        The producer's capabilities. Sent on bind, before any other event on
+        this object, and again whenever the set changes. Losing a capability
+        revokes objects that depend on it: affected trees receive denied
+        with the unsupported reason.
       </description>
       <arg name="capabilities" type="uint" enum="capability"/>
     </event>
 
     <event name="main_device">
       <description summary="producer's main DRM device">
-        The DRM device (dev_t, native endianness) client buffers are expected
-        to be allocated on, so the consumer can verify import compatibility
-        before requesting an export. Sent once on bind, after capabilities,
-        and again if the device changes; a change invalidates no existing
-        tree, but subsequent buffers may arrive with a different device.
+        The DRM device (dev_t, native endianness) client buffers are
+        expected to be allocated on, so the consumer can verify import
+        compatibility before requesting an export. Sent once on bind, after
+        capabilities, and again if the device changes; a change invalidates
+        no existing tree, but subsequent buffers may arrive with a different
+        device.
       </description>
       <arg name="device" type="array" summary="dev_t of the producer's main device"/>
     </event>
   </interface>
 
-  <interface name="zext_exported_tree_v1" version="1">
+  <interface name="zspatial_exported_tree_v1" version="1">
     <description summary="one delegated toplevel and its surface tree">
       One exported toplevel: the root node, its subsurfaces, and its popups
       and transients as separate nodes. All node state delivered since the
       previous done event applies atomically at the next done event.
 
-      After a denied event the tree and all its child objects are inert: all
-      requests on them are ignored except the destructors, and no further
-      events referencing them will be sent.
+      After a denied event the tree, its nodes, and its pacing and input
+      objects are inert: requests on them are ignored except the
+      destructors, and no further events referencing them will be sent —
+      with one deliberate exception: zspatial_exported_buffer_v1 objects are
+      NOT inert after denied. Outstanding buffer releases remain valid and
+      required, so that revocation never strands the producer's client
+      buffers behind unreturnable leases.
     </description>
 
     <enum name="error">
@@ -146,18 +171,25 @@
              summary="the tree already has an input object"/>
       <entry name="invalid_bounds" value="2"
              summary="bounds width or height not positive"/>
+      <entry name="invalid_size" value="3"
+             summary="size request width or height not positive"/>
+      <entry name="invalid_scale" value="4"
+             summary="preferred scale is zero"/>
     </enum>
 
     <enum name="denied_reason">
       <description summary="why an export was refused or revoked">
-        The typed reason an export was refused, or a live delegation revoked.
-        policy: producer policy (never detailed further, to avoid oracle
-        probing). protected_content: the content is protected.
+        The typed reason an export was refused, or a live delegation
+        revoked. policy: producer policy (never detailed further, to avoid
+        oracle probing). protected_content: the content is protected.
         device_mismatch: the consumer cannot import from the buffer device.
         session_locked: the producer session locked. no_active_move: a
         detach_drag found no interactive move. gone: the toplevel was closed
         or the handle was already inert. gpu_reset: the producer lost the
-        device.
+        device. unsupported: a required capability is absent or was lost.
+        overrun: the consumer exceeded the advertised in-flight limit — the
+        consumer caused this and may re-export with tighter buffer
+        discipline.
       </description>
       <entry name="policy" value="0"/>
       <entry name="protected_content" value="1"/>
@@ -166,6 +198,8 @@
       <entry name="no_active_move" value="4"/>
       <entry name="gone" value="5"/>
       <entry name="gpu_reset" value="6"/>
+      <entry name="unsupported" value="7"/>
+      <entry name="overrun" value="8"/>
     </enum>
 
     <enum name="node_role">
@@ -182,9 +216,9 @@
     <request name="destroy" type="destructor">
       <description summary="stop the delegation">
         Stop the delegation. All node, pacing, and input objects become
-        inert. The producer must cancel outstanding input state it created on
-        behalf of this consumer and must release client buffers only after
-        all outstanding consumer release points have signalled or the
+        inert. The producer must cancel outstanding input state it created
+        on behalf of this consumer and must release client buffers only
+        after all outstanding consumer release points have signalled or the
         consumer connection is gone.
       </description>
     </request>
@@ -192,21 +226,27 @@
     <request name="adopt" type="destructor">
       <description summary="end delegation with landing placement">
         End the delegation, handing the toplevel back to the producer's
-        window-management authority with a landing hint: a producer output
-        (by wl_output reference), coordinates in that output's logical
-        coordinate space, and optionally the resume_move flag, upon which the
-        producer warps its pointer to the landing point and continues its
-        interactive move there, with the final position determined as if an
-        xdg_toplevel move ended at that point. Without resume_move the
-        producer places the toplevel at the hint as a normal placement.
+        window-management authority with a landing hint: a producer output,
+        coordinates in that output's logical coordinate space, and
+        optionally the resume_move flag. The producer places the toplevel at
+        the hint; with resume_move it additionally warps its pointer to the
+        landing point and starts an interactive move there that follows the
+        producer's own pointer motion and ends on the producer's next
+        button-release or cancel, exactly as a move started by
+        xdg_toplevel.move would. If the output is null, was removed, or the
+        hint is otherwise unusable, the producer places the toplevel as if
+        no hint had been given. On an inert (denied) tree, adopt behaves as
+        destroy: the hint is ignored, since the producer already reclaimed
+        the toplevel at revocation.
 
-        Only delegated toplevels can be adopted; a consumer-native client can
-        never enter the producer's session, since its connection belongs to
-        the consumer. Object lifetime follows destroy: all child objects
-        become inert and buffer teardown follows the destroy rules.
+        Only delegated toplevels can be adopted; a consumer-native client
+        can never enter the producer's session, since its connection belongs
+        to the consumer. Object lifetime follows destroy: node, pacing, and
+        input objects become inert and buffer teardown follows the destroy
+        rules.
       </description>
-      <arg name="output" type="object" interface="wl_output"
-           summary="the producer output to land on"/>
+      <arg name="output" type="object" interface="wl_output" allow-null="true"
+           summary="the producer output to land on, or null for no hint"/>
       <arg name="x" type="int" summary="landing x in the output's logical space"/>
       <arg name="y" type="int" summary="landing y in the output's logical space"/>
       <arg name="flags" type="uint" enum="adopt_flags"/>
@@ -230,24 +270,76 @@
       <arg name="height" type="int" summary="bounds height"/>
     </request>
 
+    <request name="request_size">
+      <description summary="ask the producer to resize the toplevel">
+        Ask the producer to resize the delegated toplevel to the given size
+        in surface-local coordinates. The producer may honor the request
+        through its normal configure path — the result, if any, arrives as
+        ordinary committed state; the producer remains free to constrain or
+        ignore the request per its own rules. While a toplevel is delegated,
+        this request is the only geometry intent the producer should derive
+        configure sizes from; local work-area and output-topology changes
+        must not resize a delegated toplevel. Width and height must be
+        positive, otherwise the invalid_size error is raised.
+      </description>
+      <arg name="width" type="int" summary="requested width, surface-local"/>
+      <arg name="height" type="int" summary="requested height, surface-local"/>
+    </request>
+
+    <request name="set_preferred_scale">
+      <description summary="communicate the consumer's preferred scale">
+        Communicate the scale at which the consumer samples the tree, as a
+        numerator of a base of 120 (the wp-fractional-scale model: 180 means
+        1.5). The producer should forward it to the delegated client through
+        its normal scale machinery (preferred_buffer_scale or
+        fractional-scale). Consumers must nonetheless handle buffers at any
+        scale the client commits. A value of zero raises the invalid_scale
+        error. If never sent, the producer keeps its own scale choice.
+      </description>
+      <arg name="scale" type="uint" summary="preferred scale, base 120"/>
+    </request>
+
+    <request name="close">
+      <description summary="ask the producer to close the toplevel">
+        Ask the producer to close the delegated toplevel through its normal
+        close path (as if the user closed it in the producer's own shell).
+        The client may ignore it; an actual close arrives as unmapped +
+        denied(gone).
+      </description>
+    </request>
+
+    <request name="import_timeline">
+      <description summary="import a DRM syncobj timeline">
+        Import a DRM syncobj timeline for use in attach events and release
+        requests on this tree's buffers. Timelines are imported once and
+        referenced by object thereafter, following the
+        wp-linux-drm-syncobj-v1 model; the fd is consumed by this request.
+      </description>
+      <arg name="id" type="new_id" interface="zspatial_export_timeline_v1"/>
+      <arg name="fd" type="fd" summary="DRM syncobj fd"/>
+    </request>
+
     <request name="get_pacing">
       <description summary="create the pacing object">
         Create the pacing object for this tree. A tree has at most one; a
-        second request raises the pacing_exists error. Requires the pacing
-        capability; without it the request is ignored and the returned object
-        is inert.
+        second request raises the pacing_exists error. Without the pacing
+        capability the returned object is inert and the tree receives
+        denied with the unsupported reason.
       </description>
-      <arg name="id" type="new_id" interface="zext_export_pacing_v1"/>
+      <arg name="id" type="new_id" interface="zspatial_export_pacing_v1"/>
     </request>
 
     <request name="get_input">
       <description summary="create the input object">
-        Create the input back-path object for this tree. A tree has at most
-        one; a second request raises the input_exists error. Requires the
-        input capability; without it the request is ignored and the returned
-        object is inert.
+        Create the input back-path object for this tree, bound to the given
+        producer seat: all input delivered through it enters that seat's
+        event streams. A tree has at most one; a second request raises the
+        input_exists error. Without the input capability the returned object
+        is inert and the tree receives denied with the unsupported reason.
       </description>
-      <arg name="id" type="new_id" interface="zext_export_input_v1"/>
+      <arg name="id" type="new_id" interface="zspatial_export_input_v1"/>
+      <arg name="seat" type="object" interface="wl_seat"
+           summary="the producer seat input is delivered on"/>
     </request>
 
     <event name="anchor">
@@ -261,22 +353,47 @@
       <arg name="y" type="fixed" summary="anchor y, root surface-local"/>
     </event>
 
+    <event name="flow_control">
+      <description summary="the in-flight limit for this tree">
+        The maximum number of attaches the consumer may hold unreleased
+        across this tree's buffers. Sent before the first done event and
+        whenever the limit changes. Exceeding it revokes the tree with
+        denied(overrun).
+      </description>
+      <arg name="max_in_flight" type="uint" summary="maximum unreleased attaches"/>
+    </event>
+
     <event name="node">
       <description summary="a surface node exists">
-        Announces a node of the exported tree and its parent relation. Nodes
-        are announced parent-first; stacking order within a parent follows
-        the placed_above argument (null means bottom-most among current
-        siblings). Restacking is conveyed by a new node event for an existing
-        node id — consumers must treat it as a stacking update. The node's
-        state arrives through events on the node object and applies at the
-        next done event.
+        Announces a new node of the exported tree and its parent and
+        stacking relation. Nodes are announced parent-first, and within one
+        parent bottom-to-top, so placed_above always references an
+        already-announced sibling (null means bottom-most among current
+        siblings). Restacking of existing nodes is conveyed by the restacked
+        event, never by re-announcing a node. The node's state arrives
+        through events on the node object and applies at the next done
+        event.
+
+        If the consumer destroys a node while events referencing it are in
+        flight, subsequent tree events may still reference it; consumers
+        must ignore events referencing nodes they have destroyed.
       </description>
-      <arg name="id" type="new_id" interface="zext_exported_node_v1"/>
-      <arg name="parent" type="object" interface="zext_exported_node_v1" allow-null="true"
+      <arg name="id" type="new_id" interface="zspatial_exported_node_v1"/>
+      <arg name="parent" type="object" interface="zspatial_exported_node_v1" allow-null="true"
            summary="parent node, null for the root"/>
-      <arg name="placed_above" type="object" interface="zext_exported_node_v1" allow-null="true"
+      <arg name="placed_above" type="object" interface="zspatial_exported_node_v1" allow-null="true"
            summary="sibling this node stacks directly above, null for bottom-most"/>
       <arg name="role" type="uint" enum="node_role"/>
+    </event>
+
+    <event name="restacked">
+      <description summary="an existing node changed stacking position">
+        The node now stacks directly above the given sibling (null for
+        bottom-most among current siblings). Applies at the next done event.
+      </description>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+      <arg name="placed_above" type="object" interface="zspatial_exported_node_v1" allow-null="true"
+           summary="sibling the node stacks directly above, null for bottom-most"/>
     </event>
 
     <event name="configure_bounds">
@@ -291,30 +408,35 @@
     <event name="denied">
       <description summary="export refused or revoked">
         The export was refused, or a live delegation revoked. The tree and
-        all child objects are inert from this event on. The producer has
-        already cancelled consumer-originated input state and will release
-        client buffers only once outstanding fenced GPU work completes.
+        its node, pacing, and input objects are inert from this event on;
+        buffer objects are NOT inert (see the interface description) and
+        their outstanding releases remain required. The producer has already
+        cancelled consumer-originated input state and reclaims local
+        presentation of the toplevel; it releases client buffers only once
+        its own and the consumer's outstanding fenced work completes.
       </description>
       <arg name="reason" type="uint" enum="denied_reason"/>
     </event>
 
     <event name="done">
       <description summary="atomic tree state boundary">
-        All node state (buffers, damage, geometry, regions) delivered since
-        the previous done event applies atomically now. This allows changes
-        to the tree to be seen as atomic, even if they happen via multiple
-        events. The commit id identifies this state for presentation
-        feedback; ids increase monotonically per tree.
+        All node state (buffers, damage, geometry, regions, stacking)
+        delivered since the previous done event applies atomically now. This
+        allows changes to the tree to be seen as atomic, even if they happen
+        via multiple events. The commit id identifies this state for pacing
+        reports; ids increase monotonically per tree and wrap — consumers
+        and producers compare ids by wrapping distance.
       </description>
       <arg name="commit_id" type="uint" summary="identifies this atomic state"/>
     </event>
   </interface>
 
-  <interface name="zext_exported_node_v1" version="1">
+  <interface name="zspatial_exported_node_v1" version="1">
     <description summary="one surface in the exported tree">
       One surface of the exported tree, mirroring the client's commits.
-      Buffers are announced as zext_exported_buffer_v1 objects and attached
-      by reference; all state applies at the tree's next done event.
+      Buffers are announced as zspatial_exported_buffer_v1 objects and
+      attached by reference; all state applies at the tree's next done
+      event.
 
       When the underlying surface is unmapped or the tree becomes inert, the
       node is inert: requests other than the destructor are ignored and no
@@ -326,18 +448,34 @@
         Delegated zero-copy delivery is unavailable for this node. shm_only:
         the client commits wl_shm buffers. device_mismatch: the consumer
         cannot import from this buffer's device. protected_content: the
-        buffer is protected. Consumers are expected to present such nodes
-        through a capture-based profile instead; this protocol never falls
-        back to silent copies.
+        buffer is protected. color_state: the surface carries committed
+        colour state that version 1 cannot express, and the producer will
+        not deliver silently-misinterpreted pixels. Consumers are expected
+        to present such nodes through a capture-based profile instead; this
+        protocol never falls back to silent copies.
       </description>
       <entry name="shm_only" value="0"/>
       <entry name="device_mismatch" value="1"/>
       <entry name="protected_content" value="2"/>
+      <entry name="color_state" value="3"/>
     </enum>
 
     <enum name="region_kind">
       <entry name="input" value="0" summary="the surface input region"/>
       <entry name="opaque" value="1" summary="the surface opaque region"/>
+    </enum>
+
+    <enum name="decoration_mode">
+      <description summary="who draws the window decoration">
+        client: decorations, if any, are part of the client's buffer (CSD).
+        server_excluded: the producer decorates this window itself and its
+        decoration is NOT part of the exported content — the exported
+        window-geometry excludes it, and the consumer is expected to draw
+        its own affordances (close via zspatial_exported_tree_v1.close,
+        move/resize via its own presentation and request_size).
+      </description>
+      <entry name="client" value="0"/>
+      <entry name="server_excluded" value="1"/>
     </enum>
 
     <request name="destroy" type="destructor">
@@ -353,11 +491,10 @@
         A buffer entered the node's active set: the client's original
         allocation, leased to the consumer for sampling. Format is a DRM
         fourcc; the modifier is hi/lo combined. Plane events follow on the
-        buffer object, one per plane. The producer enforces its negotiated
-        in-flight cap by revoking (denied on the tree) rather than by
-        blocking its client.
+        buffer object, one per plane; the plane fds are duplicates owned by
+        the consumer.
       </description>
-      <arg name="id" type="new_id" interface="zext_exported_buffer_v1"/>
+      <arg name="id" type="new_id" interface="zspatial_exported_buffer_v1"/>
       <arg name="width" type="int" summary="buffer width in pixels"/>
       <arg name="height" type="int" summary="buffer height in pixels"/>
       <arg name="format" type="uint" summary="DRM fourcc"/>
@@ -369,14 +506,15 @@
     <event name="attach">
       <description summary="buffer attached for the next done, with acquire point">
         The named buffer is the node's content from the next done event on.
-        The acquire argument carries a DRM syncobj timeline fd; the consumer
-        must not sample the buffer before the acquire point signals. Each
-        attach obligates the consumer to exactly one release on the buffer
-        object once its reads complete.
+        The consumer must not sample the buffer before the given point on
+        the given imported timeline signals. Each attach obligates the
+        consumer to exactly one release on the buffer object once its reads
+        complete.
       </description>
-      <arg name="buffer" type="object" interface="zext_exported_buffer_v1"
+      <arg name="buffer" type="object" interface="zspatial_exported_buffer_v1"
            summary="the attached buffer"/>
-      <arg name="acquire" type="fd" summary="DRM syncobj timeline fd"/>
+      <arg name="timeline" type="object" interface="zspatial_export_timeline_v1"
+           summary="the acquire timeline (producer-imported)"/>
       <arg name="point_hi" type="uint" summary="upper 32 bits of the acquire point"/>
       <arg name="point_lo" type="uint" summary="lower 32 bits of the acquire point"/>
     </event>
@@ -437,6 +575,14 @@
       <arg name="height" type="int" summary="window geometry height"/>
     </event>
 
+    <event name="decoration">
+      <description summary="decoration mode of this node">
+        How this node is decorated. Sent before the first done event that
+        maps the node, and again on change.
+      </description>
+      <arg name="mode" type="uint" enum="decoration_mode"/>
+    </event>
+
     <event name="region_rect">
       <description summary="one rectangle of a pending region">
         One rectangle, surface-local, of the region being replaced; the
@@ -471,14 +617,32 @@
     </event>
   </interface>
 
-  <interface name="zext_exported_buffer_v1" version="1">
+  <interface name="zspatial_export_timeline_v1" version="1">
+    <description summary="an imported DRM syncobj timeline">
+      A DRM syncobj timeline imported once and referenced by attach events
+      and release requests, following the wp-linux-drm-syncobj-v1 model of
+      import-once, reference-by-point.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the timeline object">
+        Destroy the timeline object. Points already communicated remain
+        valid; the underlying syncobj lives until both sides drop it.
+      </description>
+    </request>
+  </interface>
+
+  <interface name="zspatial_exported_buffer_v1" version="1">
     <description summary="a leased client buffer">
       One client buffer leased to the consumer. Plane events describe the
       dmabuf; each attach on the owning node obligates exactly one release.
-      The producer joins the consumer's release point with its own completion
-      before releasing the buffer to its client; the consumer never touches
-      the client's release timeline. Releases may complete out of order
-      across buffers.
+      The producer joins the consumer's release point with its own
+      completion before releasing the buffer to its client; the consumer
+      never touches the client's release timeline. Releases may complete
+      out of order across buffers.
+
+      Buffer objects are exempt from tree inertness on denied: releases and
+      destruction remain valid after revocation, so leases always unwind.
     </description>
 
     <enum name="error">
@@ -497,20 +661,22 @@
 
     <request name="release">
       <description summary="consumer GPU-complete release">
-        Return one outstanding attach of this buffer: the release argument
-        carries a DRM syncobj timeline fd whose given point the consumer
-        signals when its reads of the buffer complete. Sending more releases
-        than there are outstanding attaches raises the excess_release error.
+        Return one outstanding attach of this buffer: the consumer signals
+        the given point on the given imported timeline when its reads of the
+        buffer complete. Sending more releases than there are outstanding
+        attaches raises the excess_release error.
       </description>
-      <arg name="release" type="fd" summary="DRM syncobj timeline fd"/>
+      <arg name="timeline" type="object" interface="zspatial_export_timeline_v1"
+           summary="the release timeline (consumer-imported)"/>
       <arg name="point_hi" type="uint" summary="upper 32 bits of the release point"/>
       <arg name="point_lo" type="uint" summary="lower 32 bits of the release point"/>
     </request>
 
     <event name="plane">
       <description summary="one dmabuf plane">
-        One plane of the buffer, in plane-index order; num_planes such events
-        follow the announcing buffer event.
+        One plane of the buffer, in plane-index order; num_planes such
+        events follow the announcing buffer event. The fd is a duplicate
+        owned by the consumer.
       </description>
       <arg name="plane_idx" type="uint" summary="plane index"/>
       <arg name="fd" type="fd" summary="dmabuf fd for this plane"/>
@@ -527,18 +693,26 @@
     </event>
   </interface>
 
-  <interface name="zext_export_pacing_v1" version="1">
+  <interface name="zspatial_export_pacing_v1" version="1">
     <description summary="consumer-driven presentation pacing">
       Consumer-driven pacing for one exported tree. While this object exists
       and a clock has been set, the producer dispatches the tree's client
       frame callbacks against the consumer's cadence instead of its own
       outputs'; destroying the object atomically returns the tree to
       producer-paced mode. Exactly one pacing mode owns a tree at any time.
+
+      The consumer reports presentation outcomes through mark_presented and
+      mark_discarded; the producer translates them into its own
+      presentation-time feedback toward the delegated client. Exactly one of
+      the two must be reported for every done commit id while
+      consumer-paced.
     </description>
 
     <enum name="error">
       <entry name="no_clock" value="0"
              summary="frame sent before set_consumer_clock"/>
+      <entry name="invalid_clock" value="1"
+             summary="the clock id is not a supported CLOCK_* value"/>
     </enum>
 
     <enum name="presented_flags" bitfield="true">
@@ -553,18 +727,21 @@
     <request name="destroy" type="destructor">
       <description summary="return the tree to producer pacing">
         Destroy the pacing object. The tree atomically returns to
-        producer-paced frame callback dispatch; no presented or discarded
-        events follow.
+        producer-paced frame callback dispatch. Outcome reports for commits
+        already made are no longer possible; the producer resolves their
+        client feedback by its own rules.
       </description>
     </request>
 
     <request name="set_consumer_clock">
       <description summary="enter consumer-paced mode">
         Supply the consumer's presentation clock (a CLOCK_* id valid for
-        clock_gettime) and correlation to the producer's CLOCK_MONOTONIC: a
-        pair of timestamps sampled together, so the producer can convert
-        frame arguments into its own domain. May be sent again to refine the
-        correlation.
+        clock_gettime; an unsupported id raises the invalid_clock error) and
+        correlation to the producer's CLOCK_MONOTONIC: a pair of timestamps
+        sampled together, so the producer can convert frame arguments into
+        its own domain. Clocks drift: consumers should resend the
+        correlation periodically (once per second is sufficient for
+        millisecond-accurate cutoffs).
       </description>
       <arg name="clock_id" type="uint" summary="consumer presentation clock id"/>
       <arg name="consumer_time_hi" type="uint" summary="upper 32 bits, consumer sample ns"/>
@@ -588,69 +765,87 @@
       <arg name="cutoff_ns" type="uint" summary="commit cutoff before display time, ns"/>
     </request>
 
-    <event name="presented">
-      <description summary="a commit was first sampled">
-        The consumer first sampled the tree state identified by commit_id at
-        the given time (consumer clock, nanoseconds, hi/lo). Sent by the
-        producer on the consumer's report; exactly one of presented or
-        discarded is sent per commit id while consumer-paced.
+    <request name="mark_presented">
+      <description summary="report that a commit was first sampled">
+        Report that the consumer first sampled the tree state identified by
+        commit_id at the given time (consumer clock, nanoseconds, hi/lo).
+        The producer translates this into presentation feedback toward its
+        client.
       </description>
       <arg name="commit_id" type="uint" summary="the done event's commit id"/>
       <arg name="time_hi" type="uint" summary="upper 32 bits of sample time ns"/>
       <arg name="time_lo" type="uint" summary="lower 32 bits of sample time ns"/>
       <arg name="flags" type="uint" enum="presented_flags"/>
-    </event>
+    </request>
 
-    <event name="discarded">
-      <description summary="a commit was never sampled">
-        The tree state identified by commit_id was never sampled — a newer
-        state replaced it first, or it missed its cutoff and the consumer
-        reused the last ready state.
+    <request name="mark_discarded">
+      <description summary="report that a commit was never sampled">
+        Report that the tree state identified by commit_id was never sampled
+        — a newer state replaced it first, or it missed its cutoff and the
+        consumer reused the last ready state.
       </description>
       <arg name="commit_id" type="uint" summary="the done event's commit id"/>
-    </event>
+    </request>
   </interface>
 
-  <interface name="zext_export_input_v1" version="1">
+  <interface name="zspatial_export_input_v1" version="1">
     <description summary="per-export input back-path">
-      The input back-path for one exported tree. Requests address tree nodes
-      in surface-local coordinates; the producer translates them into its
-      own protocol streams towards its client, generating its own wire
-      serials and owning implicit grabs, popup dismissal, and focus.
-      Requests naming an inert node are ignored. Drag-and-drop is absent in
-      version 1; producers advertise it with the dnd capability when a
-      future version adds it.
+      The input back-path for one exported tree, bound to one producer seat.
+      Requests address tree nodes in surface-local coordinates; the producer
+      translates them into its own protocol streams towards its client,
+      generating its own wire serials and owning implicit grabs, popup
+      dismissal, and focus. Requests naming an inert node are ignored.
+      Drag-and-drop is absent in version 1; producers advertise it with the
+      dnd capability when a future version adds it.
+
+      The bound seat is shared with the producer's local session: this
+      protocol assumes one human using both presentations, and consumer
+      input contends for seat focus like any local interaction. Delivering
+      consumer keyboard input moves the producer's keyboard focus to the
+      delegated surface; keyboard_enter and keyboard_leave carry the
+      consumer's focus intent so the producer can apply its own focus
+      policy.
 
       Pointer and touch requests accumulate and are delivered to the
       producer's client at the frame requests, following wl_pointer and
-      wl_touch frame semantics. Timestamps are milliseconds in the
-      producer's CLOCK_MONOTONIC domain; the consumer converts using the
-      pacing clock correlation, or sends its own monotonic milliseconds if
-      no pacing object exists.
+      wl_touch frame semantics. The time argument is advisory ordering
+      information in milliseconds; producers must restamp events into their
+      own clock domain on delivery (using the pacing clock correlation when
+      available), so inter-event timing the client observes is always
+      producer-clock-consistent.
     </description>
 
     <request name="destroy" type="destructor">
       <description summary="destroy the input object">
         Destroy the input object. The producer cancels consumer-originated
-        pointer, keyboard, and touch state towards its client (leave events,
-        key releases, touch cancel).
+        pointer, keyboard, and touch state towards its client (pointer
+        leave, key releases, touch cancel).
       </description>
     </request>
 
     <request name="pointer_motion">
       <description summary="pointer moved over a node"/>
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+      <arg name="time" type="uint" summary="advisory timestamp in milliseconds"/>
       <arg name="x" type="fixed" summary="x, node surface-local"/>
       <arg name="y" type="fixed" summary="y, node surface-local"/>
+    </request>
+
+    <request name="pointer_leave">
+      <description summary="the consumer's pointer left the tree">
+        The consumer's cursor or ray left the exported tree. The producer
+        delivers pointer leave to its client and clears consumer-originated
+        hover state, subject to its own grab rules (an implicit grab
+        continues until its buttons release).
+      </description>
     </request>
 
     <request name="pointer_button">
       <description summary="pointer button state changed">
         Button codes and state values follow wl_pointer.button semantics.
       </description>
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+      <arg name="time" type="uint" summary="advisory timestamp in milliseconds"/>
       <arg name="button" type="uint" summary="button code, as in wl_pointer.button"/>
       <arg name="state" type="uint" summary="button state, as in wl_pointer.button_state"/>
     </request>
@@ -661,8 +856,8 @@
         discrete steps accompany as pointer_axis_value120 within the same
         frame.
       </description>
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+      <arg name="time" type="uint" summary="advisory timestamp in milliseconds"/>
       <arg name="axis" type="uint" summary="axis, as in wl_pointer.axis"/>
       <arg name="value" type="fixed" summary="axis displacement"/>
     </request>
@@ -672,7 +867,7 @@
         Discrete axis movement in fractions of 120, following
         wl_pointer.axis_value120 semantics.
       </description>
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
       <arg name="axis" type="uint" summary="axis, as in wl_pointer.axis"/>
       <arg name="value120" type="int" summary="movement in fractions of 120"/>
     </request>
@@ -681,21 +876,57 @@
       <description summary="end of a logical pointer event group"/>
     </request>
 
+    <request name="keyboard_enter">
+      <description summary="the consumer focused the tree for keyboard input">
+        The consumer's user directed keyboard focus at the given node. The
+        producer applies its own focus policy; if it grants focus, its seat
+        keyboard focus moves to the delegated surface.
+      </description>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+    </request>
+
+    <request name="keyboard_leave">
+      <description summary="the consumer's keyboard focus left the tree">
+        The producer releases consumer-originated keyboard focus (delivering
+        key releases for keys this object pressed) and restores its own
+        focus policy.
+      </description>
+    </request>
+
     <request name="keyboard_key">
       <description summary="key state changed">
-        Key codes are in the keymap announced by the keymap event; the
-        producer computes and delivers modifier state to its client itself.
+        Key codes are in the keymap announced by the keymap event whose
+        serial is given; keys sent with a stale serial after a keymap change
+        are dropped by the producer (never reinterpreted in the wrong map).
+        The producer computes and delivers modifier state to its client
+        itself.
       </description>
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+      <arg name="keymap_serial" type="uint" summary="serial of the keymap the code is valid in"/>
+      <arg name="time" type="uint" summary="advisory timestamp in milliseconds"/>
       <arg name="key" type="uint" summary="key code in the announced keymap"/>
+      <arg name="state" type="uint" summary="key state, as in wl_keyboard.key_state"/>
+    </request>
+
+    <request name="keyboard_keysym">
+      <description summary="keysym-level key event">
+        A key event expressed as an xkb keysym instead of a keycode, for
+        consumers whose users type on layouts the producer's keymap cannot
+        be assumed to contain. The producer maps the keysym into its
+        delivery machinery itself (which may involve temporary keymap
+        amendment); state follows wl_keyboard.key_state. Consumers should
+        prefer keyboard_key when they can produce valid codes.
+      </description>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+      <arg name="time" type="uint" summary="advisory timestamp in milliseconds"/>
+      <arg name="keysym" type="uint" summary="xkb keysym"/>
       <arg name="state" type="uint" summary="key state, as in wl_keyboard.key_state"/>
     </request>
 
     <request name="touch_down">
       <description summary="touch point down on a node"/>
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+      <arg name="time" type="uint" summary="advisory timestamp in milliseconds"/>
       <arg name="id" type="int" summary="touch point id"/>
       <arg name="x" type="fixed" summary="x, node surface-local"/>
       <arg name="y" type="fixed" summary="y, node surface-local"/>
@@ -703,8 +934,8 @@
 
     <request name="touch_motion">
       <description summary="touch point moved"/>
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+      <arg name="time" type="uint" summary="advisory timestamp in milliseconds"/>
       <arg name="id" type="int" summary="touch point id"/>
       <arg name="x" type="fixed" summary="x, node surface-local"/>
       <arg name="y" type="fixed" summary="y, node surface-local"/>
@@ -712,8 +943,16 @@
 
     <request name="touch_up">
       <description summary="touch point up"/>
-      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="time" type="uint" summary="advisory timestamp in milliseconds"/>
       <arg name="id" type="int" summary="touch point id"/>
+    </request>
+
+    <request name="touch_cancel">
+      <description summary="cancel the forwarded touch sequence">
+        The consumer took over the touch sequence for its own gestures (or
+        lost its input source). The producer delivers wl_touch.cancel to its
+        client for the sequence this object forwarded.
+      </description>
     </request>
 
     <request name="touch_frame">
@@ -727,8 +966,8 @@
         mints and validates its own token from this intent, subject to its
         focus-stealing policy.
       </description>
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
-      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
+      <arg name="time" type="uint" summary="advisory timestamp in milliseconds"/>
     </request>
 
     <enum name="keymap_format">
@@ -745,9 +984,12 @@
     <event name="keymap">
       <description summary="the keymap key codes are interpreted in">
         The keymap the producer's client receives; keyboard_key codes must
-        be valid in it. Sent before the first keyboard_key may be sent, and
-        again whenever the producer's keymap changes.
+        be valid in it and must carry this event's serial. Sent before the
+        first keyboard_key may be sent, and again with a new serial whenever
+        the producer's keymap changes. The fd is a duplicate owned by the
+        consumer.
       </description>
+      <arg name="serial" type="uint" summary="keymap serial"/>
       <arg name="format" type="uint" enum="keymap_format"/>
       <arg name="fd" type="fd" summary="keymap file descriptor"/>
       <arg name="size" type="uint" summary="keymap size in bytes"/>
@@ -759,7 +1001,7 @@
         kind sits within this tree, or null when it left the tree. Purely
         informational: the producer owns the state.
       </description>
-      <arg name="node" type="object" interface="zext_exported_node_v1" allow-null="true"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1" allow-null="true"/>
       <arg name="kind" type="uint" enum="focus_kind"/>
     </event>
 
@@ -769,7 +1011,7 @@
         synthesized, or its own policy). The consumer should stop presenting
         the node; the unmapped event on the node follows.
       </description>
-      <arg name="node" type="object" interface="zext_exported_node_v1"/>
+      <arg name="node" type="object" interface="zspatial_exported_node_v1"/>
     </event>
   </interface>
 </protocol>

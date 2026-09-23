@@ -1,10 +1,10 @@
-# producers/mutter: the GNOME producer brief for zext-toplevel-export-v1
+# producers/mutter: the GNOME producer brief for zspatial-toplevel-export-v1
 
 **Status:** brief rev 2 (producer-specification workstream; Mutter-persona red-team findings
 absorbed — privilege story made an explicit decision, g-r-d wedge replaced, release-join and
 pacing costs named honestly). The behavioral contract is
 [specs/toplevel-export-producer.md](../../../specs/toplevel-export-producer.md); the wire contract
-[`protocols/zext-toplevel-export-v1.xml`](../../../protocols/zext-toplevel-export-v1.xml); the
+[`protocols/zspatial-toplevel-export-v1.xml`](../../../protocols/zspatial-toplevel-export-v1.xml); the
 full file:line evidence and the R1–R24 matrix are in
 [research/40 §2](../../research/40-toplevel-export-producers.md). Strategy context:
 [ADR 0014 §4](../adr/0014-toplevel-delegation-protocol.md) (this brief supersedes its one-line

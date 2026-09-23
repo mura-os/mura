@@ -213,7 +213,7 @@ Mode 4 covers *remote/VM apps*. The adjacent local case — a foreign 2D composi
 (e.g. a live KWin/Plasma) appearing as per-toplevel floating windows — is **not** a sharing mode
 and not capture: it is the delegation seam specified in
 [foreign-session-integration.md](foreign-session-integration.md) (client-integration taxonomy
-there; protocol `zext-toplevel-export-v1`, [ADR 0014](adr/0014-toplevel-delegation-protocol.md)).
+there; protocol `zspatial-toplevel-export-v1`, [ADR 0014](adr/0014-toplevel-delegation-protocol.md)).
 Nothing in this document's consent/portal machinery governs delegation.
 
 Per [19](../research/19-wayland-proxying.md), **waypipe, unmodified from nixpkgs, is the shipped

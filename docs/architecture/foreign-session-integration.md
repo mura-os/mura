@@ -6,7 +6,7 @@ requires. Evidence base: [research/32](../research/32-toplevel-export-prior-art.
 the R1–R22 requirements distillate), [research/31](../research/31-kwin-vr.md) (the KWin VR fork),
 [research/19](../research/19-wayland-proxying.md) (protocol proxying). Strategy and milestones:
 [ADR 0014](adr/0014-toplevel-delegation-protocol.md). Protocol draft:
-[`protocols/zext-toplevel-export-v1.xml`](../../protocols/zext-toplevel-export-v1.xml).
+[`protocols/zspatial-toplevel-export-v1.xml`](../../protocols/zspatial-toplevel-export-v1.xml).
 
 ## 1. Provenance: the named positions this seam answers
 
@@ -64,7 +64,7 @@ establishes why `ext-image-copy-capture` semantics (damage-driven, copy-flavoure
 contract, no input, no surface tree) cannot be stretched into this role.
 
 Dependency-graph placement ([desktop-environment.md §6](desktop-environment.md)): the delegated
-session enters as a consumer under the seam layer — foreign producer → `zext-toplevel-export` →
+session enters as a consumer under the seam layer — foreign producer → `zspatial-toplevel-export` →
 zxr's window model — parallel to, not through, the capture seam.
 
 ## 3. The seam, by problem area
@@ -177,8 +177,8 @@ ended" — and producers that already implement it have most of the machinery R2
 
 ## 5. Deliverables and sequencing
 
-The protocol draft lives at [`protocols/zext-toplevel-export-v1.xml`](../../protocols/zext-toplevel-export-v1.xml)
-(experimental `zext` namespace; renamed `xx_`/`ext_` on upstream proposal per
+The protocol draft lives at [`protocols/zspatial-toplevel-export-v1.xml`](../../protocols/zspatial-toplevel-export-v1.xml)
+(experimental `zspatial` namespace; renamed `xx_`/`ext_` on upstream proposal per
 [`protocols/README.md`](../../protocols/README.md)). Implementation order, decided in
 [ADR 0014](adr/0014-toplevel-delegation-protocol.md): zxr consumer (after the 2D tier exists) →
 smithay reference producer → the KWin producer MR (the demonstration addressed to the §1

@@ -164,7 +164,7 @@ GL-multiview path; our Vulkan renderer uses `VK_KHR_multiview`, unaffected).
   decide and out of scope; but if KDE lands Vlad's preferred shape (window info + thumbnails +
   input forwarding over protocols), a future KWin could consume the same seam family ADR 0012
   §4 defines. *Superseded update:* spatial-os is now specifying that shape itself —
-  [ADR 0014](0014-toplevel-delegation-protocol.md) / `zext-toplevel-export-v1`, with a KWin
+  [ADR 0014](0014-toplevel-delegation-protocol.md) / `zspatial-toplevel-export-v1`, with a KWin
   producer MR as milestone M-B; the revisit trigger is M-B's outcome.
 - **Package kwin-vr now**: rejected as scope — this workstream is exploration and design; the
   reserved enum value plus the pinned recipe in `references/` is the complete design artifact.

@@ -151,7 +151,7 @@ a big-bang at the end.
 - **Places implementation** beyond what M1's window model needs; the model is specified
   (ADR 0016) and its protocol drafted (`zxr-workspace-v1`), but residency/currency machinery
   waits for a session that has windows worth organizing.
-- **Delegation consumer** (`zext-toplevel-export-v1`): staged behind M1 per ADR 0014 M-A.
+- **Delegation consumer** (`zspatial-toplevel-export-v1`): staged behind M1 per ADR 0014 M-A.
 - **All hardware-gated work**: the Lynx spike rule stands (design-backlog standing rule);
   the Steam Frame donor workstream continues in parallel on its own ladder; nothing in this
   path requires hardware before M4's exit.

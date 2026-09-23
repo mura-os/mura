@@ -29,8 +29,8 @@ live KWin/Plasma (or any producer) session's windows float individually in spati
 ### 1. Specify it now, as an upstream-shaped protocol
 
 The seam is specified in this repository —
-[`protocols/zext-toplevel-export-v1.xml`](../../../protocols/zext-toplevel-export-v1.xml) against
-requirements R1–R22 — in the local experimental `zext` namespace, renamed `xx_` on
+[`protocols/zspatial-toplevel-export-v1.xml`](../../../protocols/zspatial-toplevel-export-v1.xml) against
+requirements R1–R22 — in the local experimental `zspatial` namespace, renamed `xx_` on
 wayland-protocols proposal and `ext_` on promotion (governance rules verified in
 [32 §7](../../research/32-toplevel-export-prior-art.md)). It is designed as a *general
 inter-compositor seam*, not an XR-private one: nothing in it references XR concepts, so KWin,

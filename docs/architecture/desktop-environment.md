@@ -465,7 +465,7 @@ Consumer-side edges that cross *out* of this table:
 [A] proxied-client globals baseline + security-context ─────────► mode 4 (waypipe/VM apps)
 [A] space model + [V] sharing service ──────────────────────────► mode 5 (workspace join)
 
-foreign 2D compositor (producer) ──► zext-toplevel-export ──► [A] window model
+foreign 2D compositor (producer) ──► zspatial-toplevel-export ──► [A] window model
     (delegated sessions: per-toplevel floating windows — NOT capture;
      foreign-session-integration.md, ADR 0014; consumer gated on the 2D tier)
 ```

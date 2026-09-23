@@ -1,8 +1,8 @@
-# producers/kwin: the KDE producer brief for zext-toplevel-export-v1
+# producers/kwin: the KDE producer brief for zspatial-toplevel-export-v1
 
 **Status:** brief (producer-specification workstream). Behavioral contract:
 [specs/toplevel-export-producer.md](../../../specs/toplevel-export-producer.md); wire contract:
-[`protocols/zext-toplevel-export-v1.xml`](../../../protocols/zext-toplevel-export-v1.xml); full
+[`protocols/zspatial-toplevel-export-v1.xml`](../../../protocols/zspatial-toplevel-export-v1.xml); full
 file:line evidence and the R1–R24 matrix:
 [research/40 §1](../../research/40-toplevel-export-producers.md). This brief *is* ADR 0014
 milestone M-B made concrete — the "seam-shaped patch addressed directly to the §Context
