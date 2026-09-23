@@ -189,8 +189,11 @@ tracking, the eye-frame service (gaze, rotation-center IPD, motor policy), and t
 (re-published as a derived face device). No desktop DE has this plane; it exists because XR
 presentation is *sensor-derived*. Its outputs cross into the authority plane only as finished
 dmabuf layers with explicit sync, or as OpenXR-visible devices — never raw frames, never
-per-client. The privacy rules (clients never see camera frames, mattes, eye images; gaze is
-opt-in per app) are properties of this plane's boundary, stated in the owning ADRs.
+per-client. The privacy rules (clients never see camera frames, mattes, eye images; gaze reaches
+a client only through the OpenXR extension it enables — whether an *additional* per-app
+permission gate is required is an open question, [28 §q5](../research/28-eye-tracking-stack.md),
+[38 §7](../research/38-desktop-linux-security-landscape.md)) are properties of this plane's
+boundary, stated in the owning ADRs.
 
 ### Shell plane
 
