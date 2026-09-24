@@ -625,6 +625,19 @@ The purpose-built tools are lighter but bring their own hostapd/DNS stacks or ar
 Candidate for Phase 3: **Cockpit as the web surface, with a minimal static portal-launcher page
 in front of it**; a purpose-built page only if Cockpit's Wi-Fi dialog fails on real hardware.
 
+**Outcome, overturned (2026-09-24, after D2):** Cockpit is **dropped as the tool**. The mandate
+the scoring above served was narrower than the tool it picked — a phone-facing companion for
+the OOBE items that *lives with the provisioning hotspot*, not a permanent admin console — and
+adopting Cockpit dragged in a LAN-binding rule and an "administrator toggle" that were never
+asked for. The web surface is a bespoke program, **`mura-setup`**, which is also the in-headset
+welcome surface: one library, two instances, gnome-initial-setup's `NEW_USER`/`EXISTING_USER`
+pattern (`references/gnome-initial-setup/gnome-initial-setup/gnome-initial-setup.c:218-249, 279`),
+with scoped polkit rules in the shape of `data/20-gnome-initial-setup.rules.in:8-30`. The
+scored table stays as evidence: Cockpit's `passwd_self` pty flow and its NM Wi-Fi dialog are
+the mechanism references the bespoke pages copy; wifi-connect/comitup are the shape of the
+portal service. A wearer who wants Cockpit installs it; that is not Mura's concern. Recorded in
+first-run-onboarding §5.1 / ADR 0017 rev 2.4 decision 10 and alternatives.
+
 ### 6.4 Authorising the hotspot — ruled
 
 An open provisioning hotspot is the same trust class as SSH over the USB cable, **provided it
@@ -690,6 +703,28 @@ user's own file in a sticky `state/credential-hint/` directory, owner-checked by
 way: Linux-PAM's sysconfdir is inside the store, so `pam_faillock` needs `conf=` to see
 `/etc/security/faillock.conf`; and OpenSSH ≥ 9.8's `PerSourcePenalties` throttles a source
 address after failures independently of PAM.
+
+**Second correction — the whole of (b) withdrawn (2026-09-24, later the same day; first-run
+rev 2.5, ADR 0017 rev 2.4):** on review, the SSH scoping itself — key-only everywhere except a
+USB-subnet `Match Address` block — was hardening beyond what any Linux distribution ships, and
+nothing in the mandate ("a regular Linux PC; postmarketOS knows hacking devices") asked for it.
+It existed to compensate for a digits-only password, which is the wearer's choice to make.
+**Ruled: sshd on every profile with OpenSSH's own defaults** — password auth on every interface,
+`PermitEmptyPasswords no`, no `Match`; `pam_faillock` guards every password; the network, not
+the device, is what stands between a home headset and the internet. Consequence for the
+passwordless `mura`: SSH after `passwd`, or from first boot with a builder-declared key
+(`users.users.mura.openssh.authorizedKeys.keys`) — candidate (a), the default password, is
+rejected again with the Raspberry Pi's `pi:raspberry` withdrawal as the evidence; candidate (c)
+survives as the setup web app's job. Three further facts verified in the pinned clones for the
+welcome surface's authority split (first-run §4.3): NetworkManager keeps `settings.modify.system`
+at `auth_admin_keep` even for active sessions and *refuses* the `modify_system` build flag
+(`references/networkmanager/data/org.freedesktop.NetworkManager.policy.in:115-123`,
+`meson.build:557-560`) while `settings.modify.own` is `yes` (`:105-113`) — so a passwordless
+session user's Wi-Fi is a user-scoped connection; `timedate1.set-timezone` is `auth_admin_keep`
+(`references/systemd/src/timedate/org.freedesktop.timedate1.policy:32-38`) — so the time-zone
+card sits after the password; BlueZ's default D-Bus policy admits any caller
+(`references/bluez/src/bluetooth.conf:26-28`); AccountsService `change-own-user-data` is `yes`
+and `change-own-password` is `auth_admin` (`references/accountsservice/data/org.freedesktop.accounts.policy.in:10-26`).
 
 ### 6.6 Native companion app
 

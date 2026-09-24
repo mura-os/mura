@@ -13,7 +13,10 @@ separate `pam_mura_pin` module is withdrawn, a PIN is a numeric password with a 
 upper layer is on `/persist`** — the `/persist/userdb` + symlink design is withdrawn (§1, §1.1).
 **Rev 3.4 (2026-09-24, D2):** the credential hint is an owner-checked file in a sticky
 directory (no mirror unit); sshd carries no `nullok` and never `PermitEmptyPasswords`; the
-faillock rules are spelled out with `conf=` (§3, §3.1).
+faillock rules are spelled out with `conf=` (§3, §3.1). **Rev 3.5 (same day):** the
+regular-Linux-PC correction — sshd with upstream defaults on every interface (the key-only
+scoping withdrawn), the password is the user's choice, Cockpit gone, the `mura-setup` polkit
+rule set added and the "no rule for sessions" principle stated (§3, §3.1).
 **Decision record:** [ADR 0018](adr/0018-multi-user-accounts.md).
 **Evidence base:** [research/41](../research/41-multi-user-login-landscape.md) — its Linux
 mechanics sections (§1, §3); the closed-platform sections are context and anti-patterns.
@@ -141,8 +144,9 @@ as amended: the separate optional `pam_mura_pin` module of rev 3 is withdrawn �
 short numeric password, and Unix does not care.)*
 
 - **The digit pad is a rendering choice, not a credential.** When a user sets a digits-only
-  password (through `passwd` — the welcome item and Cockpit drive it in a pty; no D-Bus path
-  sets a password without `auth_admin`), a **non-secret `numeric-credential` hint** is written
+  password (through `passwd` — the welcome surface drives it in a pty; the setup web app uses
+  AccountsService under `mura-setup`'s scoped rule; no D-Bus path sets a password without
+  `auth_admin` otherwise), a **non-secret `numeric-credential` hint** is written
   by the user as their own file `state/credential-hint/<user>` (the hash itself cannot reveal
   its alphabet). That directory is **sticky and world-writable** (`1777`, the `/tmp` shape;
   rev 3.4, D2): any user creates their own file, only its owner or root can replace or remove
@@ -161,14 +165,18 @@ short numeric password, and Unix does not care.)*
   `create_session`, PAM failures are uniform (GDM's `PAM_USER_UNKNOWN` collapse), and the
   numeric-hint lookup requires `uid` in the enumeration window **before any path construction**
   (a nonexistent user renders the keyboard path, never an error).
-- **A short numeric password is weak against remote guessing; the design carries that, the
-  user chooses it.** `pam_faillock` with counters persisted on `/persist` (tmpfs counters
-  reset on the reboot a locked device forces), scoped per-account with a device-level ladder
-  above; and **sshd is key-only on every interface except the USB-gadget subnet**
-  ([first-run-onboarding.md §5.3](first-run-onboarding.md)), so a short numeric password is never
-  exposed to LAN guessing. **A passwordless account cannot administer**: `sudo` and polkit
-  `auth_admin` stay standard (no `nullok`); setting a password with `passwd` — which asks no old
-  password — is the gate. The terminal fallback for a forgotten credential is standard admin
+- **The password is the user's choice, and the OS does not grade it** (rev 3.5). Digits-only,
+  short, long, none: the wearer picks their own security profile, as on any Linux machine.
+  What the OS provides is the same for every password: `pam_faillock` with counters persisted
+  on `/persist` (tmpfs counters reset on the reboot a locked device forces), scoped per-account
+  with a device-level ladder above, on the greeter, the lock and SSH alike; and **sshd with
+  OpenSSH's own defaults on every interface** ([first-run-onboarding.md §5.3](first-run-onboarding.md)) —
+  the rev 3.1–3.4 "key-only except the USB subnet" scoping was hardening beyond what any
+  distribution ships and is withdrawn (ADR 0017 alternatives). **A passwordless account cannot
+  administer**: `sudo` and polkit `auth_admin` stay standard (no `nullok`); setting a password
+  with `passwd` — which asks no old password — is the gate; and because OpenSSH refuses empty
+  passwords, it is also what turns SSH on for that account (a builder's declared key does so
+  from first boot). The terminal fallback for a forgotten credential is standard admin
   (`sudo passwd`) — recovery-environment reset exists for the machine, not per-user.
 
 ### 3.1 PAM services and polkit rules — the complete table (normative for `modules/os/policy.nix`)
@@ -183,19 +191,26 @@ NixOS's default. `nullok` = `security.pam.services.<n>.allowNullPassword`.
 | `greetd-greeter` | NixOS greetd module | — | — | the greeter user's own session; `pam_permit`-class, never a human |
 | `mura-lock` | `modules/os/policy.nix` (authd's service, [specs/session-auth.md](../../specs/session-auth.md)) | yes | yes | no credential ⇒ no lock engages (ADR 0007) |
 | `mura-guest` | policy.nix, only when `guest.enable` | — | — | the gated branch: root check module on the enable flag + provisiond single-use token (§4) |
-| `sshd` | NixOS openssh module; policy.nix forces `pam_unix` back into the stack (`unixAuth`, which NixOS drops when the global `PasswordAuthentication` is off) | **no** (rev 3.4) | yes | reachable *with a password* only from the USB-gadget subnet (`Match Address` → `PasswordAuthentication` + `KbdInteractiveAuthentication yes`, first-run §5.3); key-only elsewhere. **Never `PermitEmptyPasswords`**: OpenSSH's `none` probe then authenticates with an empty password in the parent while the real attempt runs in a forked helper, and `pam_setcred` replays the probe's failure for every password login once the account has one (D2 finding). Passwordless first contact over the cable is Cockpit or the session; SSH follows `passwd` or a declared key |
-| `cockpit` | NixOS cockpit module; policy.nix sets `nullok` | yes | yes | socket bound to gadget + hotspot addresses only (first-run §5.4) |
+| `sshd` | NixOS openssh module, **upstream defaults** (rev 3.5): `services.openssh.enable = mkDefault true` in `modules/os/default.nix`, no `settings` overrides, no `Match` blocks; policy.nix adds only the faillock rules | **no** (NixOS default) | yes | password auth on every interface; the empty password is refused (`PermitEmptyPasswords no`, OpenSSH's default — and unusable here: its `none` probe authenticates with an empty password in the parent while the real attempt runs in a forked helper, and `pam_setcred` replays the probe's failure for every password login once the account has one, D2 finding). A passwordless account gets SSH after `passwd`, or from first boot with a key declared via `users.users.<n>.openssh.authorizedKeys.keys` (first-run §5.3) |
+| *(no `cockpit` service)* | — | — | — | Cockpit is not part of Mura (rev 3.5); the setup web app is `mura-setup`, which has no PAM login — link possession authorises it (first-run §5.1). A user who installs Cockpit gets NixOS's own service defaults |
 | `sudo` | NixOS default | **no** | — | **standard**: a passwordless account cannot `sudo`; `wheelNeedsPassword` default |
 | `passwd` (password stack) | NixOS default | yes (NixOS's own `password` stack) | — | the gate: no old password asked for a passwordless account |
 | `polkit-1` | NixOS default | **no** | — | `auth_admin` prompts cannot be satisfied by an empty password; standard |
 
 | polkit rule | Grants | To | Condition | Why |
 |---|---|---|---|---|
-| `50-mura-greeter-network.rules` | `org.freedesktop.NetworkManager.settings.modify.system` | the `greeter` user | `subject.local && subject.active` | GDM parity (`gdm/data/polkit-gdm.rules.in`): a Wi-Fi network joined at the greeter becomes a system connection the logged-in user can use (research/11 §11.D) |
+| `50-mura-greeter-network.rules` | `org.freedesktop.NetworkManager.settings.modify.system` | the `greeter` user | `subject.local && subject.active` | GDM parity (`gdm/data/polkit-gdm.rules.in`): a Wi-Fi network joined at the greeter becomes a system connection the logged-in user can use (research/11 §11.D). Needed because upstream NM keeps `modify.system` at `auth_admin_keep` even for active sessions (`references/networkmanager/data/org.freedesktop.NetworkManager.policy.in:115-123`) |
+| `50-mura-setup.rules` (rev 3.5; lands with `mura-setup`, D3) | exactly: `org.freedesktop.NetworkManager.settings.modify.system`, `org.freedesktop.timedate1.set-timezone`, `org.freedesktop.hostname1.set-static-hostname`, `org.freedesktop.accounts.user-administration`, BlueZ agent registration | the `mura-setup` system identity only (`subject.user`) | none beyond the identity — the service itself exists only while `state/setup/setup-complete` is absent | the gnome-initial-setup pattern (`references/gnome-initial-setup/data/20-gnome-initial-setup.rules.in:8-30`, which grants its setup user whole action prefixes; Mura names the exact actions). The privileged work is done by the standard daemons; the setup web app has no root helper (first-run §5.1) |
 
-That is the whole list. Rejected and recorded (ADR 0017 rev 2.2): a rule relaxing
-`org.freedesktop.accounts.change-own-password` (escalation vector); `nullok` on sudo (root for
-any session process). login1's defaults already grant the displayed greeter session
+That is the whole list: the greeter rule plus `mura-setup`'s scoped set. **No rule relaxes
+anything for ordinary sessions** — the welcome surface runs as the logged-in user with
+active-session authority only (first-run §4.3): a passwordless user's Wi-Fi is a user-scoped
+connection (`settings.modify.own`, `allow_active=yes`, `policy.in:105-113`), and the
+time-zone/hostname cards wait for a password (`auth_admin_keep`). Rejected and recorded
+(ADR 0017 rev 2.2, 2.4): a rule relaxing `org.freedesktop.accounts.change-own-password`
+(escalation vector); `nullok` on sudo (root for any session process); a rule granting the
+active session the setup actions while setup is unfinished (the dynamic passwordless-window
+mechanism). login1's defaults already grant the displayed greeter session
 power-off/reboot/suspend (`allow_active=yes`, research/11 §11.A) — no rule needed.
 
 **logind** (also policy.nix): `services.logind.settings.Login.HandlePowerKey = "ignore"` (and
