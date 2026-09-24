@@ -169,6 +169,13 @@ security acceptance checks are [first-run-onboarding.md §8](first-run-onboardin
 Order is dependency, not calendar: D0 first (everything imports the profiles and the session
 module), then D1/D2/D4 in any order, D3 after D1+D2, D5 after D4, D6 after D1; D7 whenever.
 
+**Status (explicit):** D0 landed 2026-09-24 (`profiles/`, `modules/os/session.nix`, the two
+fixtures in `checks`) and was verified by hand the same day: the default-image VM autologins
+straight into the sway stand-in as the passwordless `mura`; the multi-user VM boots to the
+gtkgreet stand-in, refuses an undeclared username uniformly, and logs the declared fixture
+account in to sway. Not yet exercised: logout returning to the greeter (D4 makes this
+mechanical through the wrapper), and the §8 checks 12–15 by hand. D1–D7 not started.
+
 ### R0 — the bring-up spike (risk retirement, not a decision gate)
 
 The smithay skeleton dropped into the dev-session slot, measured against the four gates of
