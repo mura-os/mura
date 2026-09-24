@@ -254,10 +254,13 @@ let
     config.mura.hardware.input.backRole = "aux";
   };
 
-  # D2: a device may tighten the faillock ladder.
+  # D2/D4: a device may tighten the faillock ladder and lengthen the readiness bound.
   faillockStrict = {
     imports = [ validDevice ];
-    config.mura.xr.session.faillock = { deny = 3; unlockSeconds = 900; };
+    config.mura.xr.session = {
+      faillock = { deny = 3; unlockSeconds = 900; };
+      readinessTimeoutSeconds = 45;
+    };
   };
 
   # Assertion helpers.
@@ -321,6 +324,10 @@ let
     faillockDefaultUnlock = eval.config.mura.xr.session.faillock.unlockSeconds == 300;
     faillockOverridable =
       (evalContract faillockStrict).config.mura.xr.session.faillock.deny == 3;
+    # specs/session-bootstrap.md §4 step 4 / D4: the readiness bound is a schema value.
+    readinessTimeoutDefault = eval.config.mura.xr.session.readinessTimeoutSeconds == 30;
+    readinessTimeoutOverridable =
+      (evalContract faillockStrict).config.mura.xr.session.readinessTimeoutSeconds == 45;
     # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.
     eyesDefaultNone = eval.config.mura.adaptation.eyes.backend == "none";
     ipdDefaultFixed = eval.config.mura.hardware.ipd.source == "fixed";

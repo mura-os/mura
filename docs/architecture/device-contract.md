@@ -155,6 +155,7 @@ Mirrors Monado's build/runtime surface ([05](../research/05-xr-userspace.md) §9
 | `mura.xr.tracking.slam.package` | pkg | provides `libbasalt.so`, sets `VIT_SYSTEM_LIBRARY_PATH` |
 | `mura.xr.calibration.paths` | attrs | per-device calibration data locations (per-unit state) |
 | `mura.xr.session.faillock.deny` / `.unlockSeconds` | positive ints (defaults 5 / 300) | the `pam_faillock` ladder shared by greeter, lock and SSH (`modules/os/policy.nix`, D2); tally in `state/faillock/` on `/persist`; schema values, never compiled in (constraint 9) — the rest of `mura.xr.session.*` (greeter/autoLogin/multiUser/guest/lock) is specified in [multi-user.md](multi-user.md) and ADR 0007/0018 |
+| `mura.xr.session.readinessTimeoutSeconds` | positive int (default 30) | how long the session wrapper waits for the compositor to signal readiness before the login is torn down — uwsm's `wayland-wm@.service` `TimeoutStartSec` ([specs/session-bootstrap.md §4](../../specs/session-bootstrap.md), D4); schema value (constraint 9) |
 
 ### `mura.xr.sensing.*` — expression, gaze, and audio-source facts
 

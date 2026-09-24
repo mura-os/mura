@@ -534,6 +534,17 @@ in
             '';
           };
         };
+        readinessTimeoutSeconds = mkOption {
+          type = types.ints.positive;
+          default = 30;
+          description = ''
+            Seconds the session wrapper waits for the compositor to signal readiness
+            (`WAYLAND_DISPLAY` published, `READY=1`) before the login is torn down and the
+            greeter returns (specs/session-bootstrap.md §4 step 4; uwsm's
+            `wayland-wm@.service` `TimeoutStartSec`). A schema value, never compiled in
+            (constraint 9).
+          '';
+        };
         faillock = {
           deny = mkOption {
             type = types.ints.positive;

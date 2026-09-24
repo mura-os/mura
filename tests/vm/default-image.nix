@@ -26,6 +26,66 @@
         shadow = machine.succeed("getent shadow mura").strip()
         assert shadow.split(":")[1] == "", f"unexpected shadow field: {shadow}"
 
+    # `systemctl --user` for another user, from root: -M user@ enters their manager.
+    userctl = "systemctl --user -M mura@ "
+
+    with subtest("D4: the compositor runs as a user unit under uwsm and acquired the seat from there"):
+        machine.wait_until_succeeds(userctl + "is-active wayland-wm@sway.service", timeout=60)
+        machine.wait_until_succeeds(userctl + "is-active graphical-session.target", timeout=60)
+        machine.succeed(userctl + "is-active mura-session.target")
+        machine.succeed(userctl + "is-active monado.socket")      # the session's own Monado, socket-activated
+        # no ordering cycle in the user manager either (target Wants= imply After=)
+        machine.fail("journalctl -b --no-pager _UID=1000 | grep -q 'ordering cycle'")
+        # sway is inside the unit, not a child of greetd
+        cg = machine.succeed("cat /proc/$(pgrep -u mura -x sway | head -1)/cgroup").strip()
+        assert "wayland-wm@sway.service" in cg, f"sway cgroup: {cg}"
+        # the F1 regression: seat acquisition through libseat's XDG_SESSION_ID fallback — the
+        # session vars reach the compositor UNIT via uwsm's env_session.conf, never the user
+        # manager itself (which outlives sessions)
+        machine.succeed("grep -q '^XDG_SESSION_ID=' /run/user/1000/uwsm/env_session.conf")
+        machine.succeed("tr '\\0' '\\n' < /proc/$(pgrep -u mura -x sway | head -1)/environ | grep '^XDG_SESSION_ID=' >/dev/null")
+        machine.fail(userctl + "show-environment | grep -q '^XDG_SESSION_ID='")
+        machine.fail("journalctl -b --no-pager _UID=1000 | grep -qi 'libseat.*\\(fail\\|error\\|could not\\)'")
+
+    with subtest("D4: the wrapper is the greetd session's leader and stays alive"):
+        sid = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}' | head -1").strip()
+        leader = machine.succeed(f"loginctl show-session {sid} -p Leader --value").strip()
+        # greetd's session worker is the logind leader and forks the session command: the
+        # wrapper is its child, in the same session scope. uwsm binds the graphical session to
+        # the wrapper's PID (wayland-session-bindpid@<pid>): that PID must be in the scope,
+        # descend from the leader, and be alive.
+        bind = machine.succeed(userctl + "list-units --no-legend --plain 'wayland-session-bindpid@*' | awk '{print $1}'").strip()
+        wpid = bind.split("@", 1)[1].split(".", 1)[0]
+        assert f"session-{sid}.scope" in machine.succeed(f"cat /proc/{wpid}/cgroup"), f"wrapper {wpid} not in session-{sid}.scope"
+        cmd = machine.succeed(f"tr '\\0' ' ' < /proc/{wpid}/cmdline").strip()
+        assert "signal-handler" in cmd or "uwsm" in cmd, f"bound pid is not the wrapper: {cmd}"
+        p = wpid
+        while p not in ("0", "1", leader):
+            p = machine.succeed(f"awk '{{print $4}}' /proc/{p}/stat").strip()
+        assert p == leader, f"wrapper {wpid} does not descend from the session leader {leader}"
+
+    with subtest("D4: environment classes — static from environment.d, compositor-created after readiness"):
+        env = machine.succeed(userctl + "show-environment")
+        for var in ("MURA_PROFILE=appliance", "XDG_SESSION_TYPE=wayland", "XDG_CURRENT_DESKTOP=mura", "WAYLAND_DISPLAY=", "SWAYSOCK="):
+            assert var in env, f"{var} missing from the user manager environment:\n{env}"
+        # WAYLAND_DISPLAY names a socket that is actually bound (no pre-readiness leak)
+        wd = [l for l in env.splitlines() if l.startswith("WAYLAND_DISPLAY=")][0].split("=", 1)[1]
+        machine.succeed(f"test -S /run/user/1000/{wd}")
+        # nothing from greetd's own environment leaked into the user manager
+        assert "GREETD_SOCK" not in env, env
+        # the readiness bound is the contract value
+        assert machine.succeed(userctl + "show -p TimeoutStartUSec --value wayland-wm@sway.service").strip() == "30s"
+
+    with subtest("D4: a compositor crash restarts it inside the same session"):
+        sid_before = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
+        pid_before = machine.succeed("pgrep -u mura -x sway | head -1").strip()
+        machine.succeed("pkill -9 -u mura -x sway")
+        machine.wait_until_succeeds(f"pgrep -u mura -x sway | grep -qv '^{pid_before}$'", timeout=60)
+        machine.wait_until_succeeds(userctl + "is-active wayland-wm@sway.service", timeout=60)
+        machine.wait_until_succeeds(userctl + "is-active graphical-session.target", timeout=60)
+        sid_after = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
+        assert sid_before == sid_after, f"login session changed across the crash: {sid_before} -> {sid_after}"
+
     with subtest("D1: /persist is a stage-1 mount and the class skeleton exists"):
         machine.succeed("findmnt -no SOURCE /persist | grep -q vdb")
         for d, mode in [("factory", "750"), ("identity", "700"), ("enrollment", "755"), ("pairing", "700"), ("state", "755"), ("state/provisioning", "750"), ("state/faillock", "750"), ("state/credential-hint", "1777")]:
