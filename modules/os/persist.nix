@@ -150,8 +150,10 @@ in
           install -d -m 0700 ${root}/pairing
           install -d -m 0755 ${root}/state
           install -d -m 0750 ${root}/state/provisioning
-          # faillock counters (modules/os/policy.nix): pam_faillock runs as root
-          install -d -m 0750 ${root}/state/faillock
+          # faillock counters (modules/os/policy.nix): the directory is traversable so an
+          # unprivileged caller (mura-authd, the lock) can read and update the user's own 0660
+          # tally — Linux-PAM's design for screen lockers; only root creates tallies (D5)
+          install -d -m 0755 ${root}/state/faillock
           # credential hint (multi-user.md §3): the /tmp shape — every user writes their own
           # <user> file (0644); the greeter/lock trust a file only if its owner is that user.
           install -d -m 1777 ${root}/state/credential-hint

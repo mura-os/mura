@@ -102,6 +102,11 @@
         machine.fail("pgrep -u mura -x sleep")
         machine.fail(userctl + "is-active wayland-wm@sleep.service wayland-session@sleep.target")
 
+    with subtest("D5: the lock authenticates the declared fixture account through mura-lock"):
+        h = "su - mura -c 'mura-authd-harness --authd /run/current-system/sw/bin/mura-authd --user mura --scenario basic --password {pw}{extra}'"
+        machine.succeed(h.format(pw="mura", extra=""))
+        machine.succeed(h.format(pw="wrong", extra=" --expect-fail"))
+
     with subtest("D6: on the greeter profile the blessing tier is a stable greeter, never a login"):
         machine.succeed("systemctl show -p Result --value mura-preflight.service | grep -qx success")
         machine.wait_for_unit("mura-readiness.service", timeout=360)

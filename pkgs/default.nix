@@ -8,5 +8,9 @@ final: prev: {
   mura = (prev.mura or { }) // {
     # Marker so `pkgs.mura ? scaffold` is a cheap "overlay applied" check.
     scaffold = true;
+    # The lock-path PAM helper + its conformance harness (specs/session-auth.md; D5).
+    authd = final.callPackage ./mura-authd { };
+    # TEST-ONLY PAM module for the harness (session-auth §6 items 2 and 7); never shipped.
+    pamTestModule = final.callPackage ./mura-authd/test { };
   };
 }

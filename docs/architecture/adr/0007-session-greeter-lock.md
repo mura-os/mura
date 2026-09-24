@@ -151,6 +151,6 @@ logind** at implementation-path B2, forced at G2; seatd stays an appliance-minim
 and whether the desktop profile's `ext-session-lock-v1` support should extend to third-party
 headset lockers. *PIN storage/enrollment UX is **closed** by
 [ADR 0017](0017-first-run-provisioning.md) rev 2.1: one credential — the Unix password; a
-digits-only password sets a non-secret `numeric-credential` hint in `enrollment/<user>/` that
+digits-only password sets a non-secret hint file `state/credential-hint/<user>` (sticky directory, owner-checked; D2) that
 selects the digit-pad rendering (ADR 0018 rev 3.1, multi-user.md §3); no PIN module, no secret
 store, the owner-password-is-PIN bridge withdrawn.*

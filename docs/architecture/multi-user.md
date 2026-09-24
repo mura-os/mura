@@ -13,7 +13,8 @@ separate `pam_mura_pin` module is withdrawn, a PIN is a numeric password with a 
 upper layer is on `/persist`** — the `/persist/userdb` + symlink design is withdrawn (§1, §1.1).
 **Rev 3.4 (2026-09-24, D2):** the credential hint is an owner-checked file in a sticky
 directory (no mirror unit); sshd carries no `nullok` and never `PermitEmptyPasswords`; the
-faillock rules are spelled out with `conf=` (§3, §3.1). **Rev 3.5 (same day):** the
+faillock rules are spelled out with `conf=` (§3, §3.1). **Rev 3.6 (same day, D5):** `mura-lock`
+without `nullok`, faillock for an unprivileged caller (§3.1). **Rev 3.5 (same day):** the
 regular-Linux-PC correction — sshd with upstream defaults on every interface (the key-only
 scoping withdrawn), the password is the user's choice, Cockpit gone, the `mura-setup` polkit
 rule set added and the "no rule for sessions" principle stated (§3, §3.1).
@@ -189,7 +190,7 @@ NixOS's default. `nullok` = `security.pam.services.<n>.allowNullPassword`.
 | `greetd` | NixOS greetd module; **policy.nix pins `nullok` explicitly** (nixpkgs has flipped between setting `allowNullPassword` on `greetd` directly and substacking the `login` service, which carries it — `programs/shadow.nix:253-258` in the pinned revision; D0 verified the latter) | yes | yes (counters on `/persist`) | login for the greeter and autologin; the greeter renders the digit pad from the owner-checked hint file |
 | *faillock itself* | policy.nix: three rules per service — `preauth` (required, before `pam_unix`), `authfail` (`[default=die]`, after it), `account` (required; resets on success) — each with **`conf=/etc/security/faillock.conf`**, because nixpkgs builds Linux-PAM with its sysconfdir inside the store and pam_faillock otherwise runs on compiled defaults (deny 3, 10 min, `/run/faillock`); NixOS's own `logFailures` is one argument-less `authfail` line and never blocks anything | — | — | `dir = /var/lib/mura/state/faillock`, `deny`/`unlock_time` from `mura.xr.session.faillock.{deny,unlockSeconds}` (defaults 5 / 300 s; constraint 9 — schema values), `silent`; the `faillock` CLI reads no conf file, so it is aliased with `--dir` |
 | `greetd-greeter` | NixOS greetd module | — | — | the greeter user's own session; `pam_permit`-class, never a human |
-| `mura-lock` | `modules/os/policy.nix` (authd's service, [specs/session-auth.md](../../specs/session-auth.md)) | yes | yes | no credential ⇒ no lock engages (ADR 0007) |
+| `mura-lock` | `modules/os/policy.nix` (D5; authd's service, [specs/session-auth.md](../../specs/session-auth.md)) | **no** (rev 3.6 — `pam_authenticate` always runs with `PAM_DISALLOW_NULL_AUTHTOK`, so `nullok` here would be inert; "no credential ⇒ no lock engages" is the state machine's T2, not PAM's) | yes | authd runs **as the user**; `pam_faillock` is built for that (`EACCES`/`ENOENT` on the tally → `PAM_SUCCESS`, tallies `0660 user:root`; Linux-PAM `pam_faillock.c:206-210, 306-308`) provided the tally directory is traversable — `state/faillock` is `0755` (was `0750`). Consequence: the lock updates the user's *existing* tally and honours a lockout; only root callers (greeter, sshd) create a tally, and a user can edit their own — the accepted screen-locker trade in Linux-PAM's design. VM-verified: five wrong unlocks lock the account; the right password is refused while locked |
 | `mura-guest` | policy.nix, only when `guest.enable` | — | — | the gated branch: root check module on the enable flag + provisiond single-use token (§4) |
 | `sshd` | NixOS openssh module, **upstream defaults** (rev 3.5): `services.openssh.enable = mkDefault true` in `modules/os/default.nix`, no `settings` overrides, no `Match` blocks; policy.nix adds only the faillock rules | **no** (NixOS default) | yes | password auth on every interface; the empty password is refused (`PermitEmptyPasswords no`, OpenSSH's default — and unusable here: its `none` probe authenticates with an empty password in the parent while the real attempt runs in a forked helper, and `pam_setcred` replays the probe's failure for every password login once the account has one, D2 finding). A passwordless account gets SSH after `passwd`, or from first boot with a key declared via `users.users.<n>.openssh.authorizedKeys.keys` (first-run §5.3) |
 | *(no `cockpit` service)* | — | — | — | Cockpit is not part of Mura (rev 3.5); the setup web app is `mura-setup`, which has no PAM login — link possession authorises it (first-run §5.1). A user who installs Cockpit gets NixOS's own service defaults |
@@ -271,7 +272,7 @@ family's own options (uefi-rauc owns its partition scheme).
   condition-shaped on the mode-5 rights vocabulary, added when someone wants it.
 - **Settings:** per-user preferences/state are already per-account via XDG strata; nothing new.
 - **Per-user XR state:** `enrollment/<user>/calibration/` (0700 `<user>`: IPD, floor, boundary
-  prefs) and the non-secret `enrollment/<user>/numeric-credential` hint (§3). First login of
+  prefs) and the non-secret `state/credential-hint/<user>` hint file (§3). First login of
   a new account meets the same first-session welcome surface every account does
   ([first-run-onboarding.md §4](first-run-onboarding.md)) — per-item gated, skippable,
   re-runnable from settings; **never a wall between a user and their machine**.

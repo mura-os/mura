@@ -59,7 +59,7 @@ in
 
       ## The wrapper: uwsm ---------------------------------------------------------------
       programs.uwsm.enable = true;
-      environment.systemPackages = [ muraSession ];
+      environment.systemPackages = [ muraSession pkgs.mura.authd ];
 
       # Drop-ins on uwsm's units (NixOS merges these as overrides.conf on the packaged units;
       # the uwsm module already marks them restartIfChanged=false / enableDefaultPath=false).

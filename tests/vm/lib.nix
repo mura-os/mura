@@ -20,7 +20,7 @@ pkgs.testers.runNixOSTest {
   inherit name testScript;
   meta.maintainers = [ ];
 
-  nodes.machine = { lib, ... }: {
+  nodes.machine = { lib, config, ... }: {
     imports = (import ../../modules) ++ [
       ../../devices/virtual-headset
       ../../devices/virtual-headset/vm-persist.nix # /persist on /dev/vdb, as in the interactive VM
@@ -45,6 +45,19 @@ pkgs.testers.runNixOSTest {
       source = ./fixture-ssh-key;
       mode = "0600"; # ssh refuses world-readable identity files
     };
+
+    # TEST-ONLY PAM services for the mura-authd conformance harness (session-auth §6 items 2
+    # and 7): a stack that sleeps before pam_unix, and one whose module issues a batched
+    # conversation. The real `mura-lock` service is modules/os/policy.nix's.
+    security.pam.services.mura-lock-slow.text = ''
+      auth required ${pkgs.mura.pamTestModule}/lib/security/pam_mura_test.so sleep=5
+      auth required ${config.security.pam.package}/lib/security/pam_unix.so
+      account required ${config.security.pam.package}/lib/security/pam_unix.so
+    '';
+    security.pam.services.mura-lock-batched.text = ''
+      auth required ${pkgs.mura.pamTestModule}/lib/security/pam_mura_test.so batched
+      account required ${config.security.pam.package}/lib/security/pam_permit.so
+    '';
 
     # qemu-vm.nix assumes a VM has no radio and mkVMOverride-disables wpa_supplicant; the
     # virtual headset has a mac80211_hwsim radio and NetworkManager needs the supplicant for

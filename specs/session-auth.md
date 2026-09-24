@@ -1,8 +1,10 @@
 # specs/session-auth: the lock auth helper, lock events, and greeter mode
 
-**Status:** draft rev 2 (specification workstream; rev 1 findings from the PAM/greetd-persona
-review absorbed — greetd is the sole login PAM authority, conversation nonces close the grace
-race, batched conversations added).
+**Status:** rev 3 (2026-09-24, **D5 landed**: `mura-authd` exists — `pkgs/mura-authd`, Rust with a
+hand-written Linux-PAM FFI — and §6 items 1, 2, 3, 7 are VM-verified against the sway stand-in by
+`mura-authd-harness`; items 4–6 wait for zxr). Rev 2 was the specification workstream's draft
+(rev 1 findings from the PAM/greetd-persona review absorbed — greetd is the sole login PAM
+authority, conversation nonces close the grace race, batched conversations added).
 **Design source:** [ADR 0007](../docs/architecture/adr/0007-session-greeter-lock.md); the lock
 transition table (§3) maps every row to its ADR invariant.
 **Grounding:** greetd IPC is the login-path authority and prior art; PAM message semantics follow
@@ -30,6 +32,18 @@ complete seqpacket record is one UTF-8 JSON object; there is no in-band length p
 above 64 KiB, truncated reads (`MSG_TRUNC`), zero-length records, invalid UTF-8/JSON, or unknown
 `type` values terminate the conversation as `failure(internal)`. Every message in both directions
 carries `"nonce"`; a message with a stale nonce is ignored (§2.4).
+
+**Implementation notes (D5, from the VM):** the helper is spawned with `--fd N --nonce HEX
+[--user NAME] [--service NAME]` (`--service` exists for the test-only stacks; production is
+`mura-lock`). The fail-delay callback is installed with `pam_set_item(PAM_FAIL_DELAY, fn)`; the
+helper never sleeps itself — `delay_ms` is the compositor's to enforce (Linux-PAM's default
+fail delay of ~2 s was observed as `delay_ms: 1876` on a wrong password). `security.pam.services.mura-lock`
+carries **no `nullok`** — `PAM_DISALLOW_NULL_AUTHTOK` makes it inert, and "no credential ⇒ no lock
+engages" is T2's rule, not PAM's — and the faillock ladder; because authd runs *as the user*,
+`pam_faillock` reaches the tally only through a traversable directory (`state/faillock` is
+`0755`; the user's tally is `0660 user:root`, Linux-PAM's screen-locker design), updates it, and
+cannot create it (root callers do). Responses handed to PAM are `calloc`/`strdup`'d as the
+Linux-PAM contract requires (PAM frees them); the helper's own copies are zeroed.
 
 ### 2.2 The PAM call sequence (helper side)
 
@@ -131,19 +145,35 @@ external connector; identical conversation.
 
 ## 6. Conformance checklist
 
+Status per item (D5, `tests/vm/default-image.nix` / `multi-user.nix`, `mura-authd-harness`):
+
 1. authd killed mid-`prompt_batch` ⇒ `locked`, retry allowed with a fresh nonce; zeroization
-   verified (no secrets in the compositor heap dump).
+   verified (no secrets in the compositor heap dump). **Verified (helper half):** SIGKILL during
+   the prompt → the caller sees EOF and no terminal message (⇒ `failure(internal)`), a fresh
+   conversation with a fresh nonce succeeds. The heap-dump half is the compositor's (zxr).
 2. PAM module sleeping 60 s ⇒ compositor frame loop unaffected (reads are event-driven; §3.1
-   trace shows no stalls).
+   trace shows no stalls). **Verified** with a 5 s test module (`pam_mura_test.so sleep=5`): the
+   caller's loop ticked 25× at 200 ms while the helper sat inside PAM; success arrived after
+   the sleep. Out-of-process PAM is the mechanism.
 3. **Race test:** hold a valid `success` datagram, expire grace, then deliver it ⇒ ignored;
-   session stays `locked` (T5 beats T8 by nonce invalidation).
+   session stays `locked` (T5 beats T8 by nonce invalidation). **Demonstrated** by the harness
+   as the compositor's rule: the nonce is invalidated before the terminal message is read, and a
+   `success` carrying it does not unlock. Also verified: a `respond_batch` with a stale nonce is
+   ignored by the helper (it keeps waiting); `cancel` → `failure(abort)`, non-zero exit.
 4. L1–L3: for one `seq`, assert strict trace ordering *and* independently verify the
    `client_free_frame_submitted` frame contains no client samples (composition introspection).
-5. Crash-restart: T10 both branches.
+   **Needs zxr.**
+5. Crash-restart: T10 both branches. **Partial:** the compositor restarts inside the same login
+   session (D4, `RestartMode=direct`); *into locked* needs the lock scene (zxr, D5→G3).
 6. Greeter mode: no Wayland listening socket (`ss`/`lsof`); camera nodes unopened; **no PAM
-   symbols loaded** in the greeter process (greetd owns login PAM).
+   symbols loaded** in the greeter process (greetd owns login PAM). **Needs zxr (G1/G2).**
 7. Batched conversation: a module issuing two prompts + one info in one callback round-trips as
-   one `prompt_batch`/`respond_batch` pair.
+   one `prompt_batch`/`respond_batch` pair. **Verified** with `pam_mura_test.so batched`:
+   one `prompt_batch` with `secret`, `visible`, `info`; one `respond_batch` with an empty slot
+   for the info entry; success.
+8. *(added D5)* A passwordless account is refused by the lock (`PAM_DISALLOW_NULL_AUTHTOK` →
+   `failure(auth)`); a wrong password → `failure(auth)` with `delay_ms`; the faillock ladder
+   counts unlock failures and refuses the right password while locked. **Verified.**
 
 ## 7. Open items
 

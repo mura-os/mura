@@ -93,6 +93,9 @@
             # Rung-1 dev loop: nested session window + simulated-HMD Monado.
             dev-session = (pkgsFor system).callPackage ./pkgs/dev-session { };
 
+            # The lock-path PAM helper (D5) — built in `nix flake check` through `checks`.
+            mura-authd = (pkgsFor system).mura.authd;
+
             # D-track VM tests (implementation-path §3c) — on demand, NOT in `nix flake check`
             # (each boots a VM and takes minutes): `nix build .#vm-test-default-image`.
             vm-test-default-image = import ./tests/vm/default-image.nix { pkgs = pkgsFor system; };
@@ -150,6 +153,7 @@
           virtual-headset-vm = self.packages.${system}.virtual-headset-vm;
           virtual-headset-multiuser-vm = self.packages.${system}.virtual-headset-multiuser-vm;
           # The rung-1 dev-loop harness builds (script-level shellcheck via writeShellApplication).
+          mura-authd = self.packages.${system}.mura-authd;
           dev-session = self.packages.${system}.dev-session;
         };
     };

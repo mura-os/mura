@@ -73,8 +73,18 @@ in
       # sshd keeps NixOS's stack (pam_unix, no nullok — OpenSSH refuses empty passwords anyway)
       # and gains the same faillock ladder as the greeter.
       sshd.rules = faillockRules "sshd";
+      # The lock (mura-authd, specs/session-auth.md §2.2; D5): pam_authenticate always runs with
+      # PAM_DISALLOW_NULL_AUTHTOK, so `nullok` here would be inert — the table in multi-user.md
+      # §3.1 says so. "No credential ⇒ no lock engages" is the state machine's rule (T2), not
+      # PAM's. Same faillock ladder as the greeter; authd runs AS THE USER, and pam_faillock is
+      # built for that: it needs the tally directory traversable (0755, persist.nix) and updates
+      # the user's own 0660 tally; it cannot create one (root callers — greeter, sshd — do).
+      mura-lock = {
+        allowNullPassword = false;
+        rules = faillockRules "mura-lock";
+      };
       # sudo and polkit-1 are deliberately NOT configured: a passwordless account cannot
-      # administer until it sets a password (first-run §5.3). `mura-lock` (authd) joins at D5.
+      # administer until it sets a password (first-run §5.3).
     };
 
     # Counters on /persist so a reboot does not reset the ladder (multi-user.md §3); the

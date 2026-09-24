@@ -64,8 +64,9 @@ has no such gap. Rev 2 follows that observation to its conclusions.
    word "owner" is not a role (ADR 0018 rev 3).*
 2. **One credential — the Unix password; a PIN is a numeric one** *(rev 2.1; supersedes rev 2's
    stacked `pam_mura_pin`)*. No dedicated PIN module and no `enrollment/<user>/secret/` exist.
-   A digits-only password writes a **non-secret `numeric-credential` hint** to
-   `enrollment/<user>/` that makes the greeter and lock render a digit pad; any other password
+   A digits-only password writes a **non-secret `numeric-credential` hint** as the user's own
+   file in the sticky `state/credential-hint/` directory (D2; rev 2.1 said `enrollment/<user>/`)
+   that makes the greeter and lock render a digit pad; any other password
    renders the keyboard path ([multi-user.md §3](../multi-user.md), ADR 0018 rev 3.1). Standard
    PAM stacks everywhere, declared through NixOS modules, never hand-edited. **The password is
    the wearer's choice and the OS does not grade it** (rev 2.4): `pam_faillock` guards every

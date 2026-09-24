@@ -93,7 +93,7 @@
 
     with subtest("D1: /persist is a stage-1 mount and the class skeleton exists"):
         machine.succeed("findmnt -no SOURCE /persist | grep -q vdb")
-        for d, mode in [("factory", "750"), ("identity", "700"), ("enrollment", "755"), ("pairing", "700"), ("state", "755"), ("state/provisioning", "750"), ("state/faillock", "750"), ("state/credential-hint", "1777")]:
+        for d, mode in [("factory", "750"), ("identity", "700"), ("enrollment", "755"), ("pairing", "700"), ("state", "755"), ("state/provisioning", "750"), ("state/faillock", "755"), ("state/credential-hint", "1777")]:
             got = machine.succeed(f"stat -c %a /persist/mura/{d}").strip()
             assert got == mode, f"/persist/mura/{d} is {got}, want {mode}"
         # a bind mount's SOURCE is the backing device plus the subtree: /dev/vdb[/mura]
@@ -136,6 +136,15 @@
         machine.fail(ssh_pw.format(pw=""))                    # the empty password is not a credential
         machine.succeed(ssh_key)                              # the self-builder path: a declared key, first boot
 
+    harness = "su - mura -c 'mura-authd-harness --authd /run/current-system/sw/bin/mura-authd --user mura {args}'"
+
+    with subtest("D5: the lock refuses a passwordless account (PAM_DISALLOW_NULL_AUTHTOK): no credential, no unlock"):
+        # an empty --password is passed as a double-quoted empty string (the Nix indented string
+        # would swallow two adjacent single quotes)
+        machine.succeed(harness.format(args='--scenario basic --password "" --expect-fail'))
+        machine.succeed("grep -q 'auth.*pam_faillock.so preauth' /etc/pam.d/mura-lock")
+        machine.fail("grep -E '^auth.*pam_unix.so.*nullok' /etc/pam.d/mura-lock")  # the password stack may carry nullok; auth must not
+
     with subtest("D2: a passwordless mura cannot administer; passwd is the gate"):
         machine.fail("su - mura -c 'sudo -n true'")
         machine.fail("su - mura -c \"printf '\\n' | sudo -S true\"")
@@ -158,6 +167,23 @@
         machine.succeed("journalctl -b --no-pager | grep -q 'pam_faillock(sshd:auth): Consecutive login failures'")
         machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")
         machine.succeed(ssh_pw.format(pw="s3cret"))
+
+    with subtest("D5: mura-authd conformance (session-auth §6 items 1, 2, 3, 7) against the sway session"):
+        for scenario in ("basic", "stale-nonce", "cancel", "kill", "revoked"):
+            print(machine.succeed(harness.format(args=f"--scenario {scenario} --password s3cret")))
+        print(machine.succeed(harness.format(args="--scenario slow --service mura-lock-slow --password s3cret")))
+        print(machine.succeed(harness.format(args="--scenario batched --service mura-lock-batched --password batched-ok")))
+        machine.succeed(harness.format(args="--scenario basic --password wrong --expect-fail"))
+
+    with subtest("D5: the lock counts towards the same faillock ladder and is refused while locked"):
+        machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")
+        for _ in range(5):
+            machine.succeed(harness.format(args="--scenario basic --password wrong --expect-fail"))
+        out = machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura")
+        assert out.count(" V") >= 5, out                       # five valid failures in the user-owned tally
+        machine.succeed(harness.format(args="--scenario basic --password s3cret --expect-fail"))  # locked: the right password is refused
+        machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")
+        machine.succeed(harness.format(args="--scenario basic --password s3cret"))
 
     with subtest("D2: logind leaves the power key to the compositor; no greeter polkit rule on the default image"):
         out = machine.succeed("busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager HandlePowerKey")
