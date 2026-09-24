@@ -48,10 +48,18 @@ zxr M1; Alt+Return = terminal, Alt+Shift+E = quit) plus Monado running the **sim
 `--verbose`. No VM, no image.
 
 **Rung 2 — `nix run .#virtual-headset-vm`** (module/system integration; iteration = incremental
-rebuild, no image assembly — the VM shares the host `/nix/store`). Boots in seconds under KVM
-straight into a visible sway session (virgl-accelerated GL, 8 GiB/4 cores); `ssh -p 2221
-mura@localhost` (password `mura`). State persists in `./mura-virtual-headset.qcow2` — delete it
-for a factory-reset boot.
+rebuild, no image assembly — the VM shares the host `/nix/store`). Two fixtures, one per login
+profile ([docs/architecture/implementation-path.md §3c](docs/architecture/implementation-path.md)):
+`virtual-headset-vm` is the **default image** — autologin as the passwordless `mura` straight
+into the stand-in session (sway until zxr M1); `virtual-headset-multiuser-vm` is the **greeter
+shape** — the stand-in greeter (cage + gtkgreet until G2), log in as `mura` / `mura` (a fixture
+account, [tests/vm/fixture-user.nix](tests/vm/fixture-user.nix)). virgl-accelerated GL, 8 GiB/4
+cores; `ssh -p 2221 mura@localhost`. State persists in the VM's `.qcow2` beside the working
+tree — delete it for a fresh boot.
+
+**Rung 2 automated — `nix build .#vm-test-default-image` / `.#vm-test-multi-user`**: the
+D-track's exit criteria as NixOS VM tests ([tests/vm/](tests/vm/)). On demand only — they boot
+a VM and take minutes, so they are not part of `nix flake check`.
 
 **Rung 3 — `nix run .#frame-vm-run -- <image.raw[.zst]>`** (image/update machinery only): the
 Steam Frame aarch64 image under full-system emulation, including the RAUC A/B update round-trip

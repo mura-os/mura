@@ -63,18 +63,8 @@
         extraModules = [
           { nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }
           ./profiles/multi-user.nix
-          # VM FIXTURE ONLY: a declared human account so the greeter has someone to log in
-          # (the contract refuses a greeter image without one). Log in as `mura` / `mura` —
-          # note this `mura` is a *fixture* user with a password, not profiles/default.nix's
-          # passwordless one (that profile is not imported here). A shipped image declares
-          # `hashedPasswordFile` — never a hash in the store (ADR 0017 d.5).
-          {
-            users.users.mura = {
-              isNormalUser = true;
-              extraGroups = [ "wheel" ];
-              hashedPassword = "$6$murafixture00001$/OEUueXZ0lBL.stcb70lwUr3UvdBSYEP1cSWJIS2jVQODmeW1J/6dyoFfV5tMpOQ.c1TTZVyRyzfeLt7l6pJf/";
-            };
-          }
+          # VM FIXTURE ONLY: the declared account (mura / mura) — see the file's header.
+          ./tests/vm/fixture-user.nix
         ];
       };
 
@@ -102,6 +92,11 @@
 
             # Rung-1 dev loop: nested session window + simulated-HMD Monado.
             dev-session = (pkgsFor system).callPackage ./pkgs/dev-session { };
+
+            # D-track VM tests (implementation-path §3c) — on demand, NOT in `nix flake check`
+            # (each boots a VM and takes minutes): `nix build .#vm-test-default-image`.
+            vm-test-default-image = import ./tests/vm/default-image.nix { pkgs = pkgsFor system; };
+            vm-test-multi-user = import ./tests/vm/multi-user.nix { pkgs = pkgsFor system; };
           }
         // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
           # Steam Frame uefi-rauc artifacts (build via remote aarch64 builder).
