@@ -22,6 +22,7 @@
   mura.hardware = {
     displays = 1;
     panel = { width = 1920; height = 1080; refresh = 60; };
+    input.bluetooth = false; # no adapter in the VM: no pairing/ bind, no pre-login agent
   };
 
   # No donor: this is a from-source VM, so donor stays null and no flashable image
@@ -79,6 +80,7 @@
   # `nix run .#virtual-headset-vm`, and the QEMU window boots into the session (default
   # image) or the stand-in greeter (multi-user fixture).
   virtualisation.vmVariant = {
+    imports = [ ./vm-persist.nix ]; # /persist on a second virtual disk (syspersist stand-in)
     virtualisation = {
       memorySize = 8192;
       cores = 4;

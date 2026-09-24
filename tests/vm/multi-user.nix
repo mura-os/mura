@@ -29,8 +29,13 @@
         machine.fail("pgrep -x sway")
         machine.screenshot("multi-user-refused")
 
+    with subtest("D0: greetd respawns the greeter when it exits"):
+        old = machine.succeed(GREETER).strip()
+        machine.succeed("pkill -u greeter -f bin/gtkgreet")
+        machine.wait_until_succeeds(f"{GREETER} | grep -vqx '{old}'", timeout=60)
+        machine.sleep(2)  # a fresh prompt, independent of gtkgreet's post-error state
+
     with subtest("D0: the declared account logs in through the greeter into the stand-in session"):
-        # gtkgreet re-asks the username after a failure; type the fixture account.
         machine.send_chars("mura\n")
         machine.sleep(2)
         machine.send_chars("mura\n")
@@ -38,5 +43,16 @@
         machine.wait_until_fails(GREETER)
         machine.succeed("loginctl list-sessions --no-legend | grep -w mura")
         machine.screenshot("multi-user-session")
+
+    with subtest("D1: a runtime-created account survives a reboot (userborn hybrid mode on the persisted /etc overlay)"):
+        machine.succeed("findmnt -no FSTYPE /etc | grep -qx overlay")
+        machine.succeed("useradd -m -G wheel guestadmin && echo 'guestadmin:pw' | chpasswd")
+        machine.succeed("grep -q '^guestadmin:' /persist/etc-rw/upper/passwd")
+        machine.shutdown()
+        machine.start()
+        machine.wait_for_unit("multi-user.target")
+        machine.succeed("getent passwd guestadmin")          # runtime row preserved (hybrid mode)
+        machine.succeed("getent passwd mura")                # declared row re-materialised
+        machine.wait_until_succeeds(GREETER, timeout=120)
   '';
 }

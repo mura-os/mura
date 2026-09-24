@@ -166,64 +166,20 @@ in
     fsType = "ext4";
     options = [ "nofail" ];
   };
-  # Per-unit persistent state. Read-write: per-unit state durability is a contract
-  # requirement (device-contract `mura.xr.calibration.paths`, overview invariant 4)
-  # — the earlier `ro` mount was donor-mirroring that couldn't survive first contact
-  # with the lock/calibration design (user calibration, Bluetooth link keys, and the
-  # F1 per-task markers all live here; docs/architecture/first-run-onboarding.md).
+  # Per-unit persistent state: the `syspersist` partition (the donor's own partlabel set,
+  # docs/research/33) mounted at /persist. Read-write: per-unit state durability is a
+  # contract requirement (device-contract `mura.xr.calibration.paths`, overview
+  # invariant 4). Everything *inside* /persist — the state classes, machine-id, the
+  # userdb, Bluetooth pairing, the F1 pattern — is modules/os/persist.nix's.
   #
-  # /persist/mura subtree classes (first-run-onboarding.md §2 —
-  # factory reset treats each differently, never the tree as one blob):
-  #   factory/    factory calibration — survives factory reset
-  #   identity/   device keys — survive reset; regenerated only by re-provisioning
-  #   enrollment/ per-user calibration + non-secret numeric-credential hint — wiped on reset
-  #   pairing/    BlueZ state (/var/lib/bluetooth: link keys) — wiped on reset
-  #   state/      F1 per-task markers, update/migration state — reset per policy
-  #   machine-id  own class: survives A/B slot updates, rotated on factory reset
+  # Stage 1 and no `nofail` (multi-user.md §1.1 rule 2): userborn reads /persist/userdb
+  # before sysinit.target and /etc/machine-id is bound from here in the initrd; a device
+  # without its account database must not boot to a greeter — the B1b recovery ladder is
+  # the answer to a missing persist, not a silent boot.
   fileSystems."/persist" = {
     device = "/dev/disk/by-partlabel/syspersist";
     fsType = "ext4";
-    options = [ "nofail" ];
-  };
-  # /var/lib/mura is the contract-visible path; it binds into /persist so it
-  # survives A/B slot switches. The bind mount *pulls in* the setup service
-  # (x-systemd.requires — ordering alone is not a dependency); the service creates
-  # the directory skeleton, which is what makes this work after a factory reset
-  # (an image-seeded directory would not).
-  fileSystems."/var/lib/mura" = {
-    device = "/persist/mura";
-    fsType = "none";
-    options = [
-      "bind"
-      "nofail"
-      "x-systemd.requires=mura-persist-setup.service"
-      "x-systemd.after=mura-persist-setup.service"
-    ];
-  };
-  systemd.services.mura-persist-setup = {
-    description = "Create the /persist/mura state skeleton";
-    unitConfig.RequiresMountsFor = "/persist";
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      install -d -m 0750 /persist/mura
-      install -d -m 0750 /persist/mura/factory
-      install -d -m 0700 /persist/mura/identity
-      install -d -m 0700 /persist/mura/enrollment
-      # pairing class (first-run-onboarding §2): BlueZ's /var/lib/bluetooth binds here
-      # (bluetoothd runs as root; link keys are secrets) — the bind mount itself lands
-      # with the Bluetooth module, gated on mura.hardware.input.bluetooth.
-      install -d -m 0700 /persist/mura/pairing
-      install -d -m 0750 /persist/mura/state
-      # userdb class (multi-user profile; multi-user.md §1.1): world-traversable —
-      # /etc/passwd symlinks here and getpwuid is universal, so it cannot live under
-      # the 0750 mura/ tree. File perms (passwd/group 0644, shadow 0000) are
-      # userborn's; the initrd-early mount + RequiresMountsFor wiring lands with the
-      # multi-user profile module.
-      install -d -m 0755 /persist/userdb
-    '';
+    neededForBoot = true;
   };
 
   boot.initrd.systemd.enable = true;

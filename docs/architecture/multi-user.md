@@ -8,7 +8,9 @@ input hardening) survive — they were correctness, not policy. **Rev 3.1 (2026-
 first account is declared in the image and asserted at build; the runtime account-bootstrap
 screen is gone ([ADR 0017 rev 2](adr/0017-first-run-provisioning.md)); **one credential** — the
 separate `pam_mura_pin` module is withdrawn, a PIN is a numeric password with a rendering hint
-(§3); the greeter's standard furniture and the input floor are normative (§2).
+(§3); the greeter's standard furniture and the input floor are normative (§2). **Rev 3.3
+(2026-09-24, D1):** the account database persists through a **mutable `/etc` overlay whose
+upper layer is on `/persist`** — the `/persist/userdb` + symlink design is withdrawn (§1, §1.1).
 **Decision record:** [ADR 0018](adr/0018-multi-user-accounts.md).
 **Evidence base:** [research/41](../research/41-multi-user-login-landscape.md) — its Linux
 mechanics sections (§1, §3); the closed-platform sections are context and anti-patterns.
@@ -25,8 +27,8 @@ creates, and neither does this one. Practical notes are notes, not limits: the p
 past a handful of entries, and `/home` sizing/quotas are the administrator's business (§8).
 
 - **Creation is standard.** `useradd`/`userdel`/`passwd` over SSH or a TTY work, period —
-  because the persisted userdb (below) *is* `/etc`'s backing store, standard tools operate on
-  it natively. The in-headset settings UI is a convenience path for the same operation: a
+  because `/etc` itself is persistent (the overlay below), standard tools operate on the real
+  files natively. The in-headset settings UI is a convenience path for the same operation: a
   polkit-gated admin action that `mura-provisiond` executes (it is *a* path, not an
   authority — the only place provisiond remains load-bearing is the guest token gate, §4).
 - **Admin is wheel + polkit.** No "owner" role exists. The first account is **declared in the
@@ -43,9 +45,16 @@ past a handful of entries, and `/home` sizing/quotas are the administrator's bus
 - **Durability across A/B (the one genuinely novel problem):** on an image-based A/B system,
   `/etc/passwd` is slot-local, so conventionally-created accounts would vanish at the next OTA
   (doc 41 §3.1 — this bites a Linux PC exactly as hard as anything else). The fix: **userborn**
-  with `passwordFilesLocation = /persist/userdb/` — the entire passwd/shadow/group database
-  lives on the persistent partition and `/etc` symlinks into it. Accounts survive slot switches
-  by construction, whoever created them and however.
+  in hybrid mode on a **persisted `/etc` overlay** — `/etc` is an overlayfs whose generated
+  lower layer comes from the image and whose writable upper layer (`/persist/etc-rw/`) lives on
+  the persistent partition (NixOS `system.etc.overlay`, `mutable = true`; the mechanism NixOS
+  itself pairs userborn with). passwd/shadow/group are ordinary files inside that overlay, so
+  `useradd`, `passwd` and `chpasswd` behave exactly as on any Linux machine and their writes
+  land on `/persist`. Accounts survive slot switches by construction, whoever created them and
+  however. *(Rev 3.3, found at D1: rev 2/3's design — `passwordFilesLocation = /persist/userdb`
+  with `/etc` symlinking into it — does not work: shadow-utils write `shadow+` and `rename(2)`
+  it over `/etc/shadow`, which replaces the symlink with a slot-local file; a bind-mounted file
+  makes the rename fail with `EBUSY`. Verified in the VM before the change.)*
 
 ### 1.1 The userborn wiring (normative; each rule closes a boot-breaking defect)
 
@@ -61,14 +70,21 @@ past a handful of entries, and `/home` sizing/quotas are the administrator's bus
    account itself still declared (`initialHashedPassword = ""`; userborn's hybrid mode keeps the
    declared row and leaves the password alone). `mutableUsers = false` would re-impose the empty
    password at every activation.
-2. **Mount ordering:** `userborn.service` runs `Before=sysinit.target` with
-   `DefaultDependencies=false` and will `mkdir -p` its location on the wrong filesystem if the
-   mount isn't up. Therefore: `syspersist` + `/persist/userdb` mount in the **initrd**, no
-   `nofail` on this path (a machine without its account database must not boot to a greeter),
-   and a drop-in adds `RequiresMountsFor=/persist/userdb` to `userborn.service`.
-3. **Permissions:** `/persist/userdb/` is `0755 root`; `passwd`/`group` `0644`; `shadow`
-   `0000 root` — world-traversable because `getpwuid` is universal. This is why the userdb
-   lives beside, not under, the `0750` `mura/` tree.
+2. **Mount ordering:** the `/etc` overlay is a **stage-1** mount (NixOS mounts it in the
+   initrd), so its upper layer must be there first: `syspersist` is `neededForBoot` with **no
+   `nofail`** (a machine without its account database must not boot to a greeter — the B1b
+   recovery ladder answers a missing persist, not a silent boot), and `/.rw-etc` is a stage-1
+   bind of `/persist/etc-rw` ordered before NixOS's `rw-etc` initrd service and the overlay
+   mount. `userborn.service` (`Before=sysinit.target`, `DefaultDependencies=false`) then finds
+   `/etc` already persistent; no drop-in is needed (rev 3.3 — the `RequiresMountsFor` drop-in
+   of rev 2/3 addressed the symlink design). The stage-2 skeleton service
+   `mura-persist-setup` carries `DefaultDependencies=false` and `Before=local-fs.target`
+   because the `/var/lib/mura` bind pulls it in (found at D1: the default dependencies made an
+   ordering cycle that the family's old `nofail` had hidden).
+3. **Permissions:** the account files keep shadow-utils' own modes inside the overlay
+   (`passwd`/`group` `0644`, `shadow` `0000 root`); `/persist/etc-rw/` is `0755 root` and the
+   overlay's `upper/` inherits `/etc`'s world-traversability (`getpwuid` is universal). No
+   separate `userdb/` directory exists (rev 3.3).
 4. **Uid discipline:** the persisted files are the single allocation ledger both slots share.
    The picker's enumeration window (§2) follows login.defs (`UID_MIN`/`UID_MAX`, typically
    1000–60000 — the SDDM/tuigreet pattern, fidelity-checked against both trees); guest
@@ -236,8 +252,9 @@ family's own options (uefi-rauc owns its partition scheme).
   the greeter — recorded consequence; a destructive owner-confirmed "log out other session"
   lock affordance is an open item, §8). Boot with any credentialed account lands in the
   greeter.
-- **Factory reset** (recovery environment): removes human-window rows from the persisted
-  userdb, wipes `enrollment/*` and homes, rotates machine-id; on the next boot userborn
+- **Factory reset** (recovery environment): wipes the `/etc` overlay's upper layer
+  (`/persist/etc-rw/` — the account database, machine-id, network profiles in one stroke),
+  `enrollment/*`, `pairing/` and homes; on the next boot userborn
   re-materialises the image's declared accounts, runtime-created accounts are gone, and each
   account's first session meets the welcome surface again. userborn's hybrid mode tolerates
   the external edit (load-bearing, stated). Reset is the device-transfer path, never

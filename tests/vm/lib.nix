@@ -23,6 +23,7 @@ pkgs.testers.runNixOSTest {
   nodes.machine = { lib, ... }: {
     imports = (import ../../modules) ++ [
       ../../devices/virtual-headset
+      ../../devices/virtual-headset/vm-persist.nix # /persist on /dev/vdb, as in the interactive VM
     ] ++ profileModules ++ extraModules;
 
     # Test-only (see header).

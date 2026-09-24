@@ -139,6 +139,9 @@
           formatting = treefmtEval.${system}.config.build.check self;
           # Device-contract typing + cross-field assertions (pure eval).
           contract = import ./tests/contract.nix { inherit nixpkgs system; };
+          # Persistent-state layout on the flashable image and the VM stand-in (pure eval —
+          # the aarch64 Frame configuration is checked here without building it).
+          persist = import ./tests/persist.nix { inherit nixpkgs system; configurations = self.nixosConfigurations; };
           # protocols/*.xml: well-formed + wayland-scanner generates cleanly.
           protocols = import ./tests/protocols.nix { inherit nixpkgs system; };
           # End-to-end smoke checks: both VM fixtures build (D-track, implementation-path §3c).

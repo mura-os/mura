@@ -3,7 +3,9 @@
 **Status:** accepted, rev 3 (2026-09-23); **rev 3.1 (2026-09-24)** amends decision 3 (one
 credential — `pam_mura_pin` withdrawn) and decision 7 (per-user state), and adds decision 9
 (greeter furniture + Wi-Fi rule), following the [research/42](../../research/42-input-bootstrap.md)
-review and [ADR 0017 rev 2](0017-first-run-provisioning.md). Rev 3 is the Linux-native reframe: rev 2 had imported
+review and [ADR 0017 rev 2](0017-first-run-provisioning.md); **rev 3.3 (same day, D1)** amends
+decision 2 — the account database persists through a mutable `/etc` overlay on `/persist`, not
+`passwordFilesLocation` + symlinks. Rev 3 is the Linux-native reframe: rev 2 had imported
 policy from closed consumer platforms — an account cap, PIN-as-the-login-credential, an "owner"
 role above ordinary Unix — in violation of what became [AGENTS.md](../../AGENTS.md) /
 overview invariant 10. Those are **rescinded**. Rev 2's engineering corrections (userborn boot
@@ -32,13 +34,18 @@ appliance. Everything else about multi-user is a solved Linux problem and is tre
    operations (`useradd`, `sudo passwd`, …); the in-headset settings UI is a polkit-gated
    convenience path executing the same operations via `mura-provisiond`, which is *a* path,
    not the authority.
-2. **Durability via userborn `passwordFilesLocation = /persist/userdb/`** with the normative
-   wiring of multi-user.md §1.1 (initrd mount, no `nofail`, `RequiresMountsFor` drop-in,
-   `0755`/`0644`/`0000` perms, `users.mutableUsers = true` under userborn on this profile —
-   hybrid mode is what preserves administrator-created rows). The appliance profile keeps
-   ADR 0017's fully-declarative arrangement. A consequence worth naming: because the persisted
-   userdb backs `/etc` natively, **standard tools just work** — SSH in and `useradd`; no
-   Mura-specific tooling is ever required for account management.
+2. **Durability via userborn in hybrid mode on a persisted `/etc` overlay** *(rev 3.3,
+   supersedes "`passwordFilesLocation = /persist/userdb/` with `/etc` symlinks" — found at D1
+   not to work: shadow-utils `rename(2)` over `/etc/shadow` replaces a symlink with a
+   slot-local file, and a bind-mounted file fails the rename with `EBUSY`)*. NixOS
+   `system.etc.overlay` (mutable) with its upper layer bound from `/persist/etc-rw/` in stage 1,
+   the normative wiring of multi-user.md §1.1 (`syspersist` `neededForBoot`, no `nofail`;
+   `users.mutableUsers = true` under userborn — hybrid mode preserves administrator-created rows
+   and runtime password changes). **On every profile**, the default image included (its
+   `passwd` must survive slot switches — ADR 0017 rev 2.2). A consequence worth naming: because
+   `/etc` is simply persistent, **standard tools just work** — SSH in and `useradd`; no
+   Mura-specific tooling is ever required for account management — and machine-id and
+   NetworkManager profiles ride the same mechanism.
 3. **One credential — the Unix password; a numeric one is a PIN** *(rev 3.1; supersedes rev 3's
    "passwords primary, PIN optional")*. The Unix password is the only credential everywhere
    (greeter, lock, SSH, TTY, `sudo`). The separate `pam_mura_pin` module is **withdrawn**: a

@@ -5,8 +5,9 @@ reframe**; **rev 2.1 same day — the [research/42](../research/42-input-bootstr
 ruled: input floor, welcome-surface contents, one credential, out-of-band mechanisms**;
 **rev 2.2 same day — security review of the passwordless posture: admin requires a password,
 `passwd` is the gate, SSH key-only off the USB subnet, Cockpit on trusted links, PSK hotspot,
-hint mirror; all static**). Decision record: [ADR 0017](adr/0017-first-run-provisioning.md)
-(amended in place).
+hint mirror; all static**; **rev 2.3, D1 — the account database, machine-id and other `/etc`
+state persist through a mutable `/etc` overlay whose upper layer is the `etc-rw/` class**).
+Decision record: [ADR 0017](adr/0017-first-run-provisioning.md) (amended in place).
 **What this covers:** everything between "the image was flashed" and "a person is using their
 session": what an installer would collect and where it lives here (§1), the persistent-state
 classes (§2), silent machine provisioning F1 (§3), the first-session welcome surface F2 (§4),
@@ -92,8 +93,7 @@ treat them by class, never the tree as one blob:
 | `enrollment/<user>/` | user calibration (`calibration/`, §6) and the non-secret `numeric-credential` hint that selects the digit pad ([multi-user.md §3](multi-user.md)); no secret material — the credential is the Unix password in the userdb | survives | **wiped** |
 | `pairing/` (exists only when `mura.hardware.input.bluetooth`) | BlueZ state — `/var/lib/bluetooth` bound here: adapter settings and per-peer **link keys** (shared secrets with each paired controller/keyboard/phone) | survives | **wiped** — link keys are secrets; the next owner must not inherit the previous owner's paired devices (every phone and consumer headset does the same; bundled controllers are re-paired after a reset) |
 | `state/` | F1 per-task markers (`state/provisioning/<task>`), update/migration bookkeeping, quarantine records | survives | reset per settings-schema policy |
-| `/persist/userdb/` (multi-user profile; **its own class**, beside `mura/` — dir 0755, passwd/group 0644, shadow 0000; see [multi-user.md §1.1/§6](multi-user.md)) | userdb | survives | human rows removed; **declared accounts re-materialise at next boot** (userborn from the image), runtime-created accounts are gone |
-| machine-id | `/etc/machine-id`, persisted here and committed **before D-Bus/logind start** | **survives** (one identity per unit, not per slot) | **rotated** — privacy; machine identity is not hardware identity |
+| `/persist/etc-rw/` (**its own class**, beside `mura/`; every profile — rev 2.3, D1) | the writable upper layer of the **`/etc` overlay** (NixOS `system.etc.overlay`, mutable): the account database (`passwd`/`shadow`/`group`, userborn hybrid mode — [multi-user.md §1.1](multi-user.md)), `/etc/machine-id`, NetworkManager system connections, anything else written into `/etc` at runtime | survives (the generated lower layer is per slot; the upper is per unit) | **wiped** — declared accounts re-materialise at next boot (userborn from the image), runtime-created accounts and network profiles are gone, **machine-id rotates** (privacy; machine identity is not hardware identity) |
 
 Per-user preferences and remembered state stay in `$XDG_CONFIG_HOME` / `$XDG_STATE_HOME` on
 `/home` (settings-schema §2); factory reset wipes `/home` wholesale.
@@ -101,21 +101,26 @@ Per-user preferences and remembered state stay in `$XDG_CONFIG_HOME` / `$XDG_STA
 ## 3. F1 — silent machine provisioning
 
 One-shot systemd units, no UI, no XR. Work: data-partition growth where the device needs it,
-per-unit key generation into `identity/`, the `/persist/mura` skeleton (the setup service's
-job), settings-store seeding (empty stores + the generation tag), nix-db rehydration where the
-family requires it.
+per-unit key generation into `identity/` (the SSH host key in `identity/ssh/` is the first —
+generated idempotently by sshd's own keygen unit, D1), the `/persist/mura` skeleton (the setup
+service's job), settings-store seeding (empty stores + the generation tag), nix-db rehydration
+where the family requires it.
 
 **Durable per-task markers are authoritative, `ConditionFirstBoot` is not.** Installing a fresh
-root slot via an A/B update presents an empty `/etc/machine-id` and looks like first boot to
-`ConditionFirstBoot`; provisioning must not re-run there. Rules:
+root slot via an A/B update presents an empty slot-local `/etc/machine-id` to a system without
+a persisted `/etc`, and looks like first boot to `ConditionFirstBoot`; provisioning must not
+re-run there. Rules:
 
 - Each F1 unit gates on **absence of its own marker** under `state/provisioning/<task>` — on
   `/persist`, so it sees through slot replacement. No single "provisioned" bit exists, and no
-  marker gates any UI.
+  marker gates any UI. The reference implementation is `mura-f1-seed-state.service`
+  (`ConditionPathExists=!…/seed-state`; idempotent body; marker committed by `rename(2)`) in
+  `modules/os/persist.nix` — later F1 tasks copy it.
 - `ConditionFirstBoot` is used only for genuinely *slot-local* concerns (nix-db rehydration
   class — work that must re-run per new rootfs).
-- machine-id: bound from `/persist` before D-Bus/logind start (early-boot, the standard
-  image-based pattern), so identity is stable across updates and rotates only on factory reset.
+- machine-id lives in the persisted `/etc` overlay (§2): PID 1 generates and commits it into
+  the upper layer on the very first boot, before D-Bus/logind start; identity is stable across
+  updates and rotates only on factory reset (wiping `etc-rw/`).
 
 **Interrupted first boot is recovered by construction:** every F1 unit is idempotent and its
 marker is written atomically (`rename(2)`) after the work completes; a power cut mid-F1 re-runs
@@ -393,9 +398,10 @@ in-session calibration UI.
 ## 7. Factory reset
 
 The inverse of provisioning, per the §2 class table: wipe `enrollment/`, wipe `pairing/`
-(link keys), wipe `/home`, remove human rows from the persisted userdb, reset `state/` per
-policy, **rotate machine-id**, preserve `factory/` and `identity/`. Next boot: declared accounts re-materialise from the image
-(userborn on the multi-user profile, the declared user on the appliance profile), runtime-created
+(link keys), wipe `/home`, **wipe `etc-rw/`** (the `/etc` overlay's upper layer — which is
+what removes runtime-created accounts and network profiles and **rotates machine-id** in one
+stroke), reset `state/` per policy, preserve `factory/` and `identity/`. Next boot: declared
+accounts re-materialise from the image (userborn hybrid mode on every profile), runtime-created
 accounts are gone, and each account's first session meets the welcome surface again. Reset is a
 recovery-environment operation (not an in-session `rm`).
 
