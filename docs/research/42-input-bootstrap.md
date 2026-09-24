@@ -354,6 +354,129 @@ instead `EVIOCGRAB`s the power device and re-exports it as `/user/head/input/sys
 `monado-galaxyxr/src/xrt/drivers/galaxyxr/galaxyxr_hmd_input.c:44, 166-186` — a design choice, not
 a necessity.
 
+### 4.3a Which button is "select"? Per-target conventions (added 2026-09-24)
+
+Follow-up asked after the review: do we *know* the vendor's confirm convention per target, its
+physical location, and the evdev code — or was the `selectRole = "volumeUp"` default an
+inference? Answer: it was an inference that the survey below now grounds; one target changes
+the picture (the Galaxy XR's only candidate is the power key). Repo targets first, reference
+devices after. `FRAME` = `archive-steam-frame/frame-archive-deckard-20260921.6090922-0.5.0`.
+
+**Valve Steam Frame (deckard).** Buttons: **Aux** (right side, "just above the power button"),
+power (right, recessed, below Aux), volume ± (left), mechanical IPD dial with lock. Vendor:
+the Aux "controls the cameras or selecting options in the menu without controllers"; Valve's
+developer setup says "navigate the initial menus to log in using the Aux button" [external:
+https://partner.steamgames.com/doc/steamhardware/steamframe/setup ;
+https://www.pcgamer.com/hardware/vr-hardware/steam-frame-specs-availability/ ]. Codes,
+donor-verified: gpio-keys `"Select"` → `linux,code = <0x161>` (**`KEY_SELECT` = 353**),
+`linux,can-disable` — `FRAME/extracted/sm8650-mp.dts:9199-9205`; `"Volume Up"` `0x73` —
+`:9191-9197`; PMIC `pwrkey` `0x74` — `:5572-5577`; `resin` `0x72` (Vol−, `disable-wake-source`)
+— `:5579-5585`. Those four are the *only* `linux,code` nodes in the DTS; no touchpad or
+capacitive surface. SteamOS side (rootfs read from `FRAME/images/rootfs.img`): power button
+tagged `STEAMOS_POWER_BUTTON=1` via `usr/lib/udev/hwdb.d/70-steamos-power-button.hwdb:52-53`,
+`HandlePowerKey=ignore` in `etc/systemd/logind.conf.d/10-logind-no-powerbutton.conf`; **no
+hwdb or udev remap of `KEY_SELECT` anywhere** — the "Aux = click" semantic lives inside
+Steam/SteamVR, i.e. the *compositor-side* consumer, exactly the arrangement A2 adopts.
+
+**Meta Quest 1 (monterey).** Power (right side), volume ± (right underside), mechanical IPD
+slider. Vendor no-controller convention: the head-gaze fallback where "the volume button is used
+to select or interact" [external: https://developers.meta.com/horizon/design/interactions-input-modalities/ ,
+https://beta.developers.meta.com/horizon/design/head/ ]; the boot menu is "volume buttons to
+navigate, power button to select" [external: https://www.meta.com/help/quest/1081950390666891/ ].
+Codes [external, Meta's archived kernel `oculus-quest-kernel-master`]: PON `kpdpwr` `<116>`
+(`msm-pm8998.dtsi:42-46`), Vol+ gpio-keys `<115>` (`msm8998-mtp.dtsi:585-592`), Vol− PON
+`resin` `<114>` (`msm-pm8998.dtsi:48-52`).
+
+**Meta Quest 3 (eureka).** Power (left side while worn, near USB-C), volume ± (right
+underside), mechanical IPD wheel; the side **double-tap** for passthrough is IMU software — no
+extra gpio key exists in `eureka-base.dtsi` / `anorak-oculus-base.dtsi` [external, Meta's
+`oculus-quest3-kernel-master`]. Same head-gaze convention (either volume key clicks). Codes:
+`pmk8550_pwrkey` `KEY_POWER` (`pmk8550.dtsi:26-30`), Vol+ gpio-keys `KEY_VOLUMEUP`
+(`anorak-oculus-base.dtsi:261-276`), Vol− `resin` `KEY_VOLUMEDOWN` (`pmk8550.dtsi:32-36`).
+**Quest 3S** (reference): adds an **action button** bottom-right, `mr_toggle`, `linux,code =
+<KEY_SWITCHVIDEOMODE>` (227) — a *mode-switch* code, not a select code
+(`oculus/panther/panther-base.dtsi:151-163` [external]).
+
+**Lynx R-1.** Power (right of faceplate; 2 s on/off, short = standby), volume rocker (right), two
+long top buttons **L** (left) and **R** (right), central mechanical eye-relief release; per-lens
+IPD sliders. Vendor: **R** opens the Lynx Menu (quit/capture/screenshot/quick settings) and is
+Android `KEYCODE_SOFT_RIGHT` since firmware 1.1.8; **L** has "no pre-defined action",
+`KEYCODE_SOFT_LEFT`, developer-assignable [external: https://portal.lynx-r.com/documentation/view/getting-started ,
+https://portal.lynx-r.com/documentation/view/lynx-menu-4 , firmware notes
+https://portal.lynx-r.com/downloads/firmware/lynx-r-1/ ]. The vendor's default navigation is
+Ultraleap hand tracking ("point and hold"); no head-cursor mode is documented. Mainline:
+postmarketOS `device-lynx-r1` (dtb `qcom/sm8250-lynx-r1`) with `CONFIG_INPUT_PM8941_PWRKEY=y`
+and `CONFIG_KEYBOARD_GPIO=y` — `pmaports/device/testing/linux-lynx-r1/config-lynx-r1.aarch64:3067, 2907`;
+the DTS itself is not vendored (Gaps), so L/R/volume codes are unverified.
+
+**Samsung Galaxy XR (SM-I610).** **Top button** (1× Launcher, 2× camera, 3× eye calibration,
+hold = assistant, hold >7 s force restart, hold to power on), volume ± (side unspecified;
+Top+Vol− short = screenshot, long = power menu), **touchpad on the right of the headband**
+(double-tap passthrough, touch-and-hold recenter), motorized IPD [external:
+https://www.samsung.com/us/support/answer/ANS10007517/ , https://www.samsung.com/us/support/answer/ANS10007549/ ,
+https://www.samsung.com/us/support/answer/ANS10007511/ ]. **No head-aiming mode exists**:
+aiming is "hand and eye" or "hand only" (Android XR lists hands, eyes, voice, BT peripherals,
+6DoF controllers [external: https://developer.android.com/design/ui/xr/guides/foundations ]).
+Code, fork-verified: the Top button **is the PMIC power key** — `pmic_pwrkey`, `/dev/input/event2`,
+`KEY_POWER`, grabbed with `EVIOCGRAB` and re-exported as a Vive-Pro system click —
+`monado-galaxyxr/src/xrt/drivers/galaxyxr/galaxyxr_hmd_input.c:23, 37, 44, 174`. Volume and
+touchpad nodes are not handled by the fork (no public kernel; Anorak convention would put Vol+
+on gpio-keys and Vol− on `resin` — inference). Consequence: on this target **select and power
+are the same key**; short press = select, long press = power menu — the compositor must own
+`KEY_POWER` (A2) and disambiguate by duration.
+
+**Play For Dream MR (PFDM-D3).** Top button (hold 1.5 s on / 4 s off; short = camera quick
+action) and a **Digital Dial** (rotary + push: short = Home, hold 1 s = recenter, rotate =
+immersion or volume, hold during fit = IPD) [external: manual
+https://cdn.shopify.com/s/files/1/0915/0647/5306/files/Play_For_Dream_MR_User_Manual.pdf §3–4];
+reviewers report the dial press "acts as a push button for navigating menus" [external:
+https://www.youtube.com/watch?v=IF3p_5M3QTM ]. Default navigation is hand + eye tracking. No
+public kernel; dial encoding (`REL_DIAL`/`REL_WHEEL` vs key pair) unknown.
+
+**PICO 4 Ultra** (reference). Power, volume ±, proximity. **Head Control Mode** when no
+controller is connected: head crosshair, "click the Volume Up/Down button", **Vol− hold ≥1 s =
+recenter**; PICO's own video maps Vol+ ≙ trigger, Vol− ≙ Home [external:
+https://p16-platform-static-va.ibyteimg.com/tos-maliva-i-jo6vmmv194-us/pico4-ultra-user-guide-apac.pdf ,
+https://www.youtube.com/watch?v=UcIOsjcmF74 ].
+
+**Cross-vendor convention.** *Confirm* has two camps: Android-based platforms (Meta, PICO) reuse
+the **volume keys** as click in their head-cursor fallback (Meta: either key; PICO: Vol+ ≙
+trigger), and Google's Switch Access default recipe is Vol+ = Select, Vol− = Next [external:
+https://developer.android.com/guide/topics/ui/accessibility/testing ]; Valve adds a **dedicated
+button emitting `KEY_SELECT`**, and Android's `Generic.kl` maps Linux 353 → `DPAD_CENTER`
+(activate) [external: https://android.googlesource.com/platform/frameworks/base.git/+/android-5.0.2_r1/data/keyboards/Generic.kl ]
+— so both camps agree that **353 means activate**. *Back/cancel* has no HMD-button convention
+(PICO: Vol− = Home; Lynx: R = menu; Meta/Samsung/PFD put Home on a button, none has "back").
+*Recenter* is always a **long press** (PICO Vol− ≥1 s, PFD dial 1 s, Samsung touchpad hold).
+*Power* long-press = power menu everywhere, short = sleep.
+
+**The `KEY_SELECT > 255` consequence.** `KEY_OK 0x160`, `KEY_SELECT 0x161`
+(`libinput/include/linux/linux/input-event-codes.h:424-425`); devices with a key in the
+`KEY_OK..BTN_DPAD_UP` block get `ID_INPUT_KEY` (`systemd/src/udev/udev-builtin-input_id.c:34-36,
+354-362`), so libinput delivers 353 as an ordinary keyboard key. But xkeyboard-config maps only
+keycodes ≤255 ("Key codes below cannot be used in X … `= 361; // KEY_SELECT 353`" [external:
+xkeyboard-config `keycodes/evdev`]), so GTK/Qt clients receive **no keysym** for it. A dedicated
+select button should still emit `KEY_SELECT` at the device-tree level (Valve and Android agree),
+and the compositor must consume raw evdev 353 for its own scenes; for ordinary clients either a
+hwdb `KEYBOARD_KEY_<scancode>=enter` remap (`systemd/hwdb.d/60-keyboard.hwdb:60-70`) or a
+compositor-side translation to Return is required. Quest 3S's `KEY_SWITCHVIDEOMODE` (227) *is*
+≤255 and has a keysym, but its semantics are wrong for select.
+
+**Recommended contract defaults** (inference where the vendor documents nothing; the user
+adjudicates): deckard — `select = KEY_SELECT` (vendor-documented), back = Vol−, recenter = hold
+select; eureka/monterey — `selectRole = volumeUp`, back = Vol− (Meta allows either key as click;
+Vol+ = confirm keeps a two-key vocabulary and matches PICO and Switch Access), recenter = hold
+Vol− (borrowed from PICO); SM-I610 — `select = KEY_POWER` short press (the Top button), back =
+Vol−, recenter = touchpad hold if drivable else hold Vol−; PFDM-D3 — select = dial press
+(vendor: Home), back = Top short, recenter = dial hold (vendor); Lynx R-1 — select = R
+(vendor: menu), back = L, recenter = hold R — flagged: hand tracking is the vendor default there,
+but pre-login has no cameras, so the buttons are the floor regardless.
+
+**Gaps.** Lynx R-1 mainline DTS (L/R/volume codes) not fetched (Anubis-gated GitLab); Galaxy XR
+volume/touchpad device nodes unknown without `evtest` on hardware; Play For Dream dial encoding
+unknown; Steam Frame Aux hold/double-press semantics after login undocumented (Valve's Feature
+Guide page is JS-only); Quest 3 double-tap thresholds closed.
+
 ### 4.4 Proximity / don-doff
 
 Wear sensors arrive as proprietary HID fields (Rift S `rift_s_hmd.c:345`; PSVR2 `psvr2.c:308`;

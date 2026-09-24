@@ -143,9 +143,24 @@ in
           type = types.str;
           default = "volumeUp";
           description = ''
-            Which `hmdButtons` role acts as "select" at the input floor (PICO's Head Control
-            Mode uses the volume keys; Steam Frame has a dedicated Aux). Must name a key of
-            `hmdButtons` — asserted.
+            Which `hmdButtons` role acts as "select" at the input floor. The default follows
+            the Android-side convention (Meta's head-gaze fallback and PICO's Head Control
+            Mode click with the volume keys; Android Switch Access defaults Vol+ = Select);
+            the Steam Frame has a dedicated Aux (`KEY_SELECT`); on the Galaxy XR the Top
+            button *is* the PMIC power key, so `select` and `power` may legitimately share a
+            code — the compositor disambiguates short press (select) from long press (power
+            menu). Must name a key of `hmdButtons` — asserted. research/42 §4.3a.
+          '';
+        };
+        backRole = mkOption {
+          type = types.nullOr types.str;
+          default = "volumeDown";
+          description = ''
+            Which `hmdButtons` role acts as "back/cancel" at the input floor (Android Switch
+            Access: Vol- = Next; PICO: Vol- = Home). null = no back button; scenes must then
+            expose an on-scene cancel target. Recenter is a long press of the select role by
+            convention (PICO Vol- hold, Play For Dream dial hold). Must name a key of
+            `hmdButtons` when set — asserted.
           '';
         };
         controllers = mkOption {
@@ -678,6 +693,11 @@ in
       # that actually exists on the HMD.
       assertion = builtins.hasAttr cfg.hardware.input.selectRole cfg.hardware.input.hmdButtons;
       message = "mura.hardware.input.selectRole = \"${cfg.hardware.input.selectRole}\" must name a key of mura.hardware.input.hmdButtons (the input-floor select button; first-run-onboarding.md §4.4).";
+    }
+    {
+      assertion = cfg.hardware.input.backRole == null
+        || builtins.hasAttr cfg.hardware.input.backRole cfg.hardware.input.hmdButtons;
+      message = "mura.hardware.input.backRole = \"${toString cfg.hardware.input.backRole}\" must name a key of mura.hardware.input.hmdButtons or be null (first-run-onboarding.md §4.4).";
     }
     {
       # ADR 0017 rev 2: the appliance profile's autologin user must exist in the image.

@@ -212,8 +212,21 @@ the Steam Frame as its Aux button (mechanism precedents); measured cost ≈10 WP
 
 - **Buttons reach the compositor through libinput** as ordinary key events. logind's power-key
   handling is `HandlePowerKey=ignore` or inhibited by the session (`handle-power-key`) — the
-  Steam Deck's `powerbuttond` arrangement — never grabbed inside Monado (the Galaxy XR fork's
-  `EVIOCGRAB` is recorded and not followed). Volume keys are never logind's.
+  Steam Deck's `powerbuttond` arrangement, and exactly what SteamOS on the Steam Frame does
+  (`10-logind-no-powerbutton.conf`; the Aux→click semantic lives in the compositor-side
+  consumer, not in udev) — never grabbed inside Monado (the Galaxy XR fork's `EVIOCGRAB` is
+  recorded and not followed). Volume keys are never logind's.
+- **A two-key vocabulary per target** (`mura.hardware.input.{selectRole,backRole}`;
+  [research/42 §4.3a](../research/42-input-bootstrap.md)): *select* = the vendor's own
+  head-cursor click where one is documented (Steam Frame Aux = `KEY_SELECT`; Meta/PICO volume
+  keys, Vol+ by default — the Android Switch-Access convention), *back* = Vol− by default,
+  *recenter* = a long press of select (the cross-vendor convention). On the Galaxy XR the only
+  candidate is the Top button, which **is** the PMIC power key: select and power share
+  `KEY_POWER` there and the compositor disambiguates short press (select) from long press
+  (power menu) — allowed by the contract, tested. A dedicated select button emits `KEY_SELECT`
+  (353) at the device-tree level; because xkeyboard-config maps only keycodes ≤255, the
+  compositor consumes 353 raw for its own scenes and translates it to Return for ordinary
+  clients (or ships a hwdb `KEYBOARD_KEY_…=enter` remap).
 - **Constraint 7's stabiliser** ([zxr-shell-v2-composition.md §7.3](zxr-shell-v2-composition.md):
   deadzone, smoothing, dwell, magnetism, event-time compensation) has the greeter as its first
   consumer. Defaults: dwell 400–600 ms, targets ≥2.5–3° with ≥12 mm spacing — from the settings

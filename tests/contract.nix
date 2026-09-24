@@ -233,6 +233,27 @@ let
     config.mura.hardware.input.selectRole = "select";
   };
 
+  # Galaxy XR shape: the Top button is the PMIC power key — select and power share a code.
+  inputSelectSharesPower = {
+    imports = [ validDevice ];
+    config.mura.hardware.input = {
+      hmdButtons = { power = "KEY_POWER"; top = "KEY_POWER"; volumeUp = "KEY_VOLUMEUP"; volumeDown = "KEY_VOLUMEDOWN"; };
+      selectRole = "top";
+    };
+  };
+
+  # No back button is allowed (scenes expose an on-scene cancel)...
+  inputNoBack = {
+    imports = [ validDevice ];
+    config.mura.hardware.input.backRole = null;
+  };
+
+  # ...but a back role naming a missing button fails.
+  inputBackMissing = {
+    imports = [ validDevice ];
+    config.mura.hardware.input.backRole = "aux";
+  };
+
   # Assertion helpers.
   assertsPass = e: builtins.all (a: a.assertion) e.config.assertions;
 
@@ -282,6 +303,10 @@ let
     inputDefaultApStaUnknown = eval.config.mura.hardware.input.concurrentApSta == null;
     inputSelectAuxPasses = assertsPass (evalContract inputSelectAux);
     inputSelectMissingFails = !assertsPass (evalContract inputSelectMissing);
+    inputSelectSharesPowerPasses = assertsPass (evalContract inputSelectSharesPower);
+    inputDefaultBackVolumeDown = eval.config.mura.hardware.input.backRole == "volumeDown";
+    inputNoBackPasses = assertsPass (evalContract inputNoBack);
+    inputBackMissingFails = !assertsPass (evalContract inputBackMissing);
     # Lock triggers default sensibly.
     lockDefaultsOn = eval.config.mura.xr.session.lock.enable == true;
     # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.

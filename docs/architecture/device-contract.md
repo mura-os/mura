@@ -181,8 +181,14 @@ buttons, dwell where a button is unusable. Declared facts:
   Frame's Aux is `KEY_SELECT` in its DTS, [research/42 §4.3](../research/42-input-bootstrap.md)).
   The compositor reads them through libinput; logind's power-key handling is ignored or
   inhibited so the compositor owns the key.
-- `selectRole` — which `hmdButtons` role is "select" at the floor (default `volumeUp`, the
-  PICO Head-Control-Mode shape); **asserted** to name an existing button.
+- `selectRole` — which `hmdButtons` role is "select" at the floor (default `volumeUp`: Meta's
+  head-gaze fallback and PICO's Head Control Mode click with the volume keys, Android Switch
+  Access defaults Vol+ = Select); **asserted** to name an existing button. Select may share a
+  code with power — the Galaxy XR's Top button *is* the PMIC power key; the compositor
+  disambiguates by press duration.
+- `backRole` (nullable) — "back/cancel" at the floor (default `volumeDown`; null = scenes expose
+  an on-scene cancel); **asserted** when set. Recenter is a long press of select by convention.
+  Per-target conventions and codes: [research/42 §4.3a](../research/42-input-bootstrap.md).
 - `controllers` ∈ `none | imu-3dof | optical-6dof` — the controller class available before
   cameras are up (`optical-6dof` counts as `imu-3dof` pre-login).
 - `bluetooth` — adapter present; gates the pre-login pairing agent and the `pairing/` state
