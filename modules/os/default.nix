@@ -22,6 +22,14 @@ in
     security.polkit.enable = true;
     hardware.graphics.enable = lib.mkDefault true;
 
+    # The headset is an ordinary Linux host reachable from a device you already hold
+    # (first-run-onboarding.md §5, the postmarketOS pattern): sshd on every profile, with
+    # OpenSSH's own defaults — password auth on every interface, PermitEmptyPasswords no. A
+    # passwordless account therefore gets SSH after `passwd` (in the headset or via the setup
+    # web app over cable/hotspot) or with a declared key (profiles/dev.nix). Internet exposure
+    # is the network's job, as for any Linux PC. mkDefault: a profile or device may turn it off.
+    services.openssh.enable = lib.mkDefault true;
+
     # Surface the evaluated device contract to on-device tools as JSON, mirroring
     # postmarketOS installing deviceinfo into the image (single descriptor consumed
     # at build- and run-time; docs/research/02-postmarketos.md §9 item 9).

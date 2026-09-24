@@ -1,0 +1,11 @@
+fixture-ssh-key / fixture-ssh-key.pub — VM TEST FIXTURE, checked in on purpose.
+
+An ed25519 keypair that authorises `mura` on the on-demand VM tests only (tests/vm/lib.nix
+declares the public half via the standard `users.users.mura.openssh.authorizedKeys.keys`).
+It proves the self-builder path of first-run-onboarding.md §5.3: on an image you built
+yourself, SSH works from first boot with a declared key even though the account has no
+password. Like the fixture password hash in fixture-user.nix, it is never in a shipped image.
+
+Secret scanners will flag the private half. That is expected — treat it as public. Rotating it
+is `ssh-keygen -t ed25519 -N "" -f tests/vm/fixture-ssh-key` (OpenSSH rejects comment lines
+inside the private key file, which is why this note is a sibling file).

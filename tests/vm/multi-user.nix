@@ -50,6 +50,12 @@
         machine.succeed("grep -Rq 'subject.user == \"greeter\"' /etc/polkit-1/rules.d/")
         # NetworkManager itself arrives at D3; the rule's effect is exercised there
 
+    with subtest("D2: sshd is on with upstream defaults on the greeter profile too"):
+        machine.wait_for_unit("sshd.service")
+        assert "passwordauthentication yes" in machine.succeed("sshd -T").lower()
+        # the declared fixture account (a real password) logs in over SSH like on any Linux host
+        machine.succeed("timeout 30 sshpass -p mura ssh -o StrictHostKeyChecking=no -o PubkeyAuthentication=no -o ConnectTimeout=5 mura@127.0.0.1 true")
+
     with subtest("D1: a runtime-created account survives a reboot (userborn hybrid mode on the persisted /etc overlay)"):
         machine.succeed("findmnt -no FSTYPE /etc | grep -qx overlay")
         machine.succeed("useradd -m -G wheel guestadmin && echo 'guestadmin:pw' | chpasswd")

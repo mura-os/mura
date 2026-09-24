@@ -1,23 +1,30 @@
-# modules/os/policy.nix — PAM, sshd, polkit and logind posture (implementation-path §2 (iii),
-# D2). The table in docs/architecture/multi-user.md §3.1 and the static passwordless posture
-# of first-run-onboarding.md §5.3, as code. Everything here is static configuration: nothing
-# detects "the account has no password" at runtime.
+# modules/os/policy.nix — PAM, polkit and logind posture (implementation-path §2 (iii), D2).
+# The table in docs/architecture/multi-user.md §3.1 and the static passwordless posture of
+# first-run-onboarding.md §5.3, as code. Everything here is static configuration: nothing
+# detects "the account has no password" at runtime. The headset is a regular Linux PC: where
+# upstream already has a default, this file does not override it.
 #
 #   greeter / autologin / lock : nullok (a passwordless account logs in), faillock
 #   sudo, polkit                : STANDARD — administration requires a password; passwd is the gate
-#   sshd                        : key-only everywhere except the USB-gadget subnet, where password
-#                                 auth is allowed — the cable is TTY trust (never PermitEmptyPasswords)
+#   sshd                        : UPSTREAM DEFAULTS, on every profile (modules/os/default.nix):
+#                                 password auth on every interface, PermitEmptyPasswords no —
+#                                 so a passwordless account gets SSH after `passwd` or with a
+#                                 declared key (profiles/dev.nix). Only faillock is added here.
 #   polkit                      : exactly one Mura rule (greeter may add system Wi-Fi profiles)
 #   logind                      : the compositor owns the power key (HandlePowerKey=ignore)
 #   faillock                    : real lockout (preauth/authfail/account), counters on /persist
+#
+# NOT here, and why (first-run §5.3 rev 2.5, ADR 0017 rev 2.4 alternatives): no key-only /
+# `Match Address` scoping of sshd (over-hardening beyond upstream; faillock guards every
+# password); no `PermitEmptyPasswords` (OpenSSH's `none` probe then authenticates with an
+# empty password in the parent while the real attempt runs in a forked helper, and
+# `pam_setcred` replays the cached failure — every password login breaks once the account has
+# a password; measured in the D2 VM test).
 { lib, config, ... }:
 let
   cfg = config.mura.xr.session;
   pam = config.security.pam.package;
   faillockSo = "${pam}/lib/security/pam_faillock.so";
-
-  # The USB Ethernet gadget's subnet (first-run-onboarding.md §5.4; D3 owns the link itself).
-  usbGadgetSubnet = "172.16.42.0/24";
 
   # pam_faillock done properly: NixOS's `logFailures` adds a single argument-less line (the
   # authfail action alone), which records failures but never blocks a correct password.
@@ -63,17 +70,11 @@ in
         allowNullPassword = true;
         rules = faillockRules "login";
       };
-      sshd = {
-        # Empty passwords are NOT accepted over SSH (see the sshd section) — no nullok here.
-        allowNullPassword = false;
-        # NixOS drops pam_unix from sshd's stack when the *global* PasswordAuthentication is
-        # off; the scoping lives in sshd's Match block, so the PAM stack must keep pam_unix.
-        unixAuth = lib.mkForce true;
-        rules = faillockRules "sshd";
-      };
+      # sshd keeps NixOS's stack (pam_unix, no nullok — OpenSSH refuses empty passwords anyway)
+      # and gains the same faillock ladder as the greeter.
+      sshd.rules = faillockRules "sshd";
       # sudo and polkit-1 are deliberately NOT configured: a passwordless account cannot
-      # administer until it sets a password (first-run §5.3). `mura-lock` (authd) joins at D5,
-      # `cockpit` at D3.
+      # administer until it sets a password (first-run §5.3). `mura-lock` (authd) joins at D5.
     };
 
     # Counters on /persist so a reboot does not reset the ladder (multi-user.md §3); the
@@ -87,30 +88,6 @@ in
     # The faillock CLI has only `--dir` (it reads no conf file either); point it at the real
     # tally directory so `faillock --user X --reset` does what an administrator expects.
     environment.shellAliases.faillock = "faillock --dir ${faillockDir}";
-
-    ## sshd -------------------------------------------------------------------------------
-    # Key-only on every interface — both PasswordAuthentication and KbdInteractiveAuthentication
-    # (with UsePAM, keyboard-interactive IS PAM password auth) — except the USB-gadget subnet,
-    # where the cable is the authorisation and a password is accepted. Static: it also keeps a
-    # short numeric password off the LAN.
-    #
-    # NOT `PermitEmptyPasswords` (D2 finding, first-run §5.3): with it, sshd's initial `none`
-    # method runs a real PAM authenticate with an empty password in the parent process; the
-    # actual authentication then runs in a *forked* helper, so the parent's PAM handle keeps
-    # the failed probe as its cached chain and `pam_setcred` replays the failure — every SSH
-    # password login breaks the moment the account HAS a password. A passwordless account's
-    # first contact over the cable is Cockpit (PAM nullok, no such probe) or the session;
-    # SSH follows `passwd` — or an authorized key, which is what a self-builder declares.
-    services.openssh.settings = {
-      PasswordAuthentication = false;
-      KbdInteractiveAuthentication = false;
-      PermitEmptyPasswords = false;
-    };
-    services.openssh.extraConfig = ''
-      Match Address ${usbGadgetSubnet}
-        PasswordAuthentication yes
-        KbdInteractiveAuthentication yes
-    '';
 
     ## polkit -----------------------------------------------------------------------------
     # The one Mura polkit rule (multi-user.md §3.1): GDM parity — a Wi-Fi network joined at

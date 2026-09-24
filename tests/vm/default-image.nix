@@ -56,6 +56,21 @@
         machine.succeed("test -s /persist/mura/state/provisioning/seed-state")
         machine.succeed("test -s /var/lib/mura/identity/ssh/ssh_host_ed25519_key")
 
+    # `timeout`: sshpass waits forever for a prompt that never comes; make a hang a failure
+    ssh_pw = "timeout 30 sshpass -p {pw} ssh -o StrictHostKeyChecking=no -o PubkeyAuthentication=no -o ConnectTimeout=5 mura@127.0.0.1 true"
+    ssh_key = "timeout 30 ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -i /etc/mura-test/fixture-ssh-key mura@127.0.0.1 true"
+
+    with subtest("D2: sshd is on with upstream defaults; a passwordless account gets SSH only by key"):
+        machine.wait_for_unit("sshd.service")
+        # `sshd -T` prints the effective config; keyword case varies between versions
+        eff = machine.succeed("sshd -T").lower()
+        assert "passwordauthentication yes" in eff, eff       # every interface, no Match scoping
+        assert "kbdinteractiveauthentication yes" in eff, eff
+        assert "permitemptypasswords no" in eff, eff          # OpenSSH's default; never flipped (policy.nix)
+        machine.fail("sshd -T | grep -qi '^match'")
+        machine.fail(ssh_pw.format(pw=""))                    # the empty password is not a credential
+        machine.succeed(ssh_key)                              # the self-builder path: a declared key, first boot
+
     with subtest("D2: a passwordless mura cannot administer; passwd is the gate"):
         machine.fail("su - mura -c 'sudo -n true'")
         machine.fail("su - mura -c \"printf '\\n' | sudo -S true\"")
@@ -63,36 +78,21 @@
         machine.succeed("su - mura -c \"printf 's3cret\\ns3cret\\n' | passwd\"")
         assert machine.succeed("getent shadow mura").split(":")[1].startswith("$"), "passwd did not set a hash"
         machine.succeed("su - mura -c \"echo s3cret | sudo -S true\"")
-
-    with subtest("D2: sshd is key-only everywhere except the USB-gadget subnet"):
-        probe = "sshd -T -C user=mura,host=h,addr={addr},laddr=172.16.42.1,lport=22"
-        # `sshd -T -C` evaluates Match blocks for a hypothetical connection; keyword case varies
-        off = machine.succeed(probe.format(addr="10.0.2.2")).lower()
-        on = machine.succeed(probe.format(addr="172.16.42.7")).lower()
-        for key in ("passwordauthentication", "kbdinteractiveauthentication"):
-            assert f"{key} no" in off, f"{key} not refused off-subnet:\n{off}"
-            assert f"{key} yes" in on, f"{key} not allowed on the gadget subnet:\n{on}"
-        # never PermitEmptyPasswords: its `none` probe poisons sshd's PAM handle (policy.nix)
-        assert "permitemptypasswords no" in on, on
-        assert "permitemptypasswords no" in off, off
+        machine.succeed(ssh_pw.format(pw="s3cret"))           # and SSH by password now works
 
     with subtest("D2: faillock really locks after the configured failures, counters on /persist"):
-        machine.succeed("ip addr add 172.16.42.1/24 dev lo")
-        # `timeout`: sshpass waits forever for a prompt that never comes; make a hang a failure
-        ssh = "timeout 30 sshpass -p {pw} ssh -o StrictHostKeyChecking=no -o PubkeyAuthentication=no -o ConnectTimeout=5 mura@172.16.42.1 true"
-        machine.succeed(ssh.format(pw="s3cret"))           # sanity: password auth works on-subnet
         machine.succeed("test -d /persist/mura/state/faillock")
         for _ in range(5):
-            machine.fail(ssh.format(pw="wrong"))
+            machine.fail(ssh_pw.format(pw="wrong"))
         # tally on /persist (the compiled default is /run/faillock — nixpkgs' PAM does not read
         # /etc/security/faillock.conf without conf=), and the contract's deny count applies
         machine.succeed("test -e /persist/mura/state/faillock/mura")
         machine.fail("test -e /run/faillock/mura")
-        machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura | grep -q 172.16.42.1")
-        machine.fail(ssh.format(pw="s3cret"))              # locked: the right password is refused
+        machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura | grep -q 127.0.0.1")
+        machine.fail(ssh_pw.format(pw="s3cret"))              # locked: the right password is refused
         machine.succeed("journalctl -b --no-pager | grep -q 'pam_faillock(sshd:auth): Consecutive login failures'")
         machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")
-        machine.succeed(ssh.format(pw="s3cret"))
+        machine.succeed(ssh_pw.format(pw="s3cret"))
 
     with subtest("D2: logind leaves the power key to the compositor; no polkit rule on the default image"):
         out = machine.succeed("busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager HandlePowerKey")
