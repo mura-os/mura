@@ -144,6 +144,36 @@ short numeric password, and Unix does not care.)*
   password — is the gate. The terminal fallback for a forgotten credential is standard admin
   (`sudo passwd`) — recovery-environment reset exists for the machine, not per-user.
 
+### 3.1 PAM services and polkit rules — the complete table (normative for `modules/os/policy.nix`)
+
+Every PAM service Mura declares, and every polkit rule it ships. Anything not in this table is
+NixOS's default. `nullok` = `security.pam.services.<n>.allowNullPassword`.
+
+| PAM service | Declared by | `nullok` | faillock | Notes |
+|---|---|---|---|---|
+| `greetd` | NixOS greetd module (default `allowNullPassword = true`) | yes | yes (counters on `/persist`) | login for the greeter and autologin; the greeter renders the digit pad from the mirrored hint |
+| `greetd-greeter` | NixOS greetd module | — | — | the greeter user's own session; `pam_permit`-class, never a human |
+| `mura-lock` | `modules/os/policy.nix` (authd's service, [specs/session-auth.md](../../specs/session-auth.md)) | yes | yes | no credential ⇒ no lock engages (ADR 0007) |
+| `mura-guest` | policy.nix, only when `guest.enable` | — | — | the gated branch: root check module on the enable flag + provisiond single-use token (§4) |
+| `sshd` | NixOS openssh module; policy.nix sets `nullok` | yes | yes | reachable *with a password* only from the USB-gadget subnet (`Match Address`, first-run §5.3); key-only elsewhere |
+| `cockpit` | NixOS cockpit module; policy.nix sets `nullok` | yes | yes | socket bound to gadget + hotspot addresses only (first-run §5.4) |
+| `sudo` | NixOS default | **no** | — | **standard**: a passwordless account cannot `sudo`; `wheelNeedsPassword` default |
+| `passwd` (password stack) | NixOS default | yes (NixOS's own `password` stack) | — | the gate: no old password asked for a passwordless account |
+| `polkit-1` | NixOS default | **no** | — | `auth_admin` prompts cannot be satisfied by an empty password; standard |
+
+| polkit rule | Grants | To | Condition | Why |
+|---|---|---|---|---|
+| `50-mura-greeter-network.rules` | `org.freedesktop.NetworkManager.settings.modify.system` | the `greeter` user | `subject.local && subject.active` | GDM parity (`gdm/data/polkit-gdm.rules.in`): a Wi-Fi network joined at the greeter becomes a system connection the logged-in user can use (research/11 §11.D) |
+
+That is the whole list. Rejected and recorded (ADR 0017 rev 2.2): a rule relaxing
+`org.freedesktop.accounts.change-own-password` (escalation vector); `nullok` on sudo (root for
+any session process). login1's defaults already grant the displayed greeter session
+power-off/reboot/suspend (`allow_active=yes`, research/11 §11.A) — no rule needed.
+
+**logind** (also policy.nix): `services.logind.settings.Login.HandlePowerKey = "ignore"` (and
+`HandlePowerKeyLongPress = "ignore"`) so the compositor owns the power key through libinput
+(first-run §4.4; the SteamOS-on-Frame arrangement); `KillUserProcesses` default; nothing else.
+
 ## 4. The guest session (optional, off by default)
 
 A **Linux feature with a decade of LightDM precedent** (doc 41 §1.6): an ephemeral account

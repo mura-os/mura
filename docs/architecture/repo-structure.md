@@ -28,10 +28,14 @@ lib/
   donor/                       # acquire/identify/parse/extract/qualify derivation builders
   contract/                    # device-contract option types + assertions
 modules/
-  os/                          # common distribution policy (device-independent)
+  os/                          # common distribution policy (device-independent); one file per concern — see the ownership table below
   xr/                          # Monado runtime, session, StardustXR shell wiring
   adaptation/                  # per-subsystem backend options: native | android-backed | device-specific
     android-compat/            # libhybris/android-headers/late-LXC building blocks (optional)
+profiles/                      # declared *configurations* a device or image imports explicitly (NixOS's profiles/ shape):
+  default.nix                  #   the default image: user `mura`, no password, wheel, autoLogin — the image is the installation
+  multi-user.nix               #   the greeter profile (a declared human account is build-asserted)
+  dev.nix                      #   SSH keys, serial console, VM conveniences — never in a shipped image
 soc/
   msm8998/  sm8250/  sm8550/  sm8650/   # shared per-SoC integration (kernel base, firmware paths, DSP stack)
 families/                      # shared definitions for near-identical models (plain imports)
@@ -56,6 +60,42 @@ references/                    # git-ignored study clones (clone.sh + MANIFEST.j
 This mirrors the convergent device→SoC→family→common decomposition ([00](../research/00-synthesis.md)
 §1) and Jovian's device-module-with-capability-flags layout ([04](../research/04-nix-imaging.md) §3),
 which was the cleanest of the five Nix projects studied.
+
+### `profiles/` — declared configurations, opt-in by import
+
+A **profile** is what a desktop distribution's installer would have produced: the accounts,
+the login profile, the conveniences. Here the image is the installation
+([first-run-onboarding.md §1](first-run-onboarding.md)), so a profile is a NixOS module a device
+or image **imports explicitly** — the shape of NixOS's own `profiles/`. Nothing in `modules/`
+declares a user; `modules/` owns mechanism, `profiles/` owns the declared configuration.
+
+| Profile | Declares | Used by |
+|---|---|---|
+| `profiles/default.nix` | `users.users.mura` (`isNormalUser`, no password, `wheel`), `mura.xr.session.autoLogin = "mura"`; locale/timezone defaults; nothing else | the default image of every device; the default-image VM fixture |
+| `profiles/multi-user.nix` | `mura.xr.session.greeter = "zxr-greeter"`, `multiUser.enable`; declares **no** account — the importer must (the contract's declared-account assertion enforces it) | shared-device images; the multi-user VM fixture adds a `hashedPasswordFile` user |
+| `profiles/dev.nix` | SSH with authorized keys, serial console, `PasswordAuthentication` for the VM only, port forwards, the stand-in swaps' comments | `devices/virtual-headset`; a developer's own image. **Never a shipped image** |
+
+A self-builder who wants neither imports none of them and declares their own users
+(`hashedPasswordFile`) — Path A in the corpus's older vocabulary.
+
+### `modules/os/` — one file per concern (ownership table)
+
+Each file consumes a slice of the `mura.*` contract and owns the NixOS options it sets; no two
+files set the same NixOS option. Design authority in the right-hand column.
+
+| File | Consumes | Owns (NixOS surface) | Design |
+|---|---|---|---|
+| `os/default.nix` | `mura.device.*`, `mura.hardware.soc`, `mura.deployment.bootScheme` | distro identity, D-Bus/polkit enable, `/etc/mura-device.json`, hostname/locale defaults | [overview.md](overview.md) |
+| `os/session.nix` | `mura.xr.session.{autoLogin,greeter,allowNoDeclaredAccount}`, `mura.xr.shell` | `services.greetd` (appliance `initial_session` / multi-user `default_session`), the greeter user, the session wrapper and `mura-session.target` (B6/B6a), the `# STAND-IN` lines | [implementation-path.md §2 (ii)](implementation-path.md), [specs/session-bootstrap.md](../../specs/session-bootstrap.md), ADR 0007 |
+| `os/persist.nix` | `mura.hardware.input.bluetooth`, family mount facts | `/persist/mura` class skeleton, machine-id class, `/var/lib/bluetooth` → `pairing/` bind, F1 per-task units, the `credential-hint` mirror unit | [first-run-onboarding.md §2–§3](first-run-onboarding.md) |
+| `os/policy.nix` | `mura.xr.session.multiUser.*`, `guest.enable`, `mura.hardware.input.*` | PAM services per the posture table (greetd/lock `allowNullPassword`; sshd, cockpit; **standard sudo/polkit**), faillock on `/persist`, the greeter NetworkManager polkit rule, `services.logind.settings.Login.HandlePowerKey = "ignore"` | [first-run-onboarding.md §5.3](first-run-onboarding.md), [multi-user.md §3](multi-user.md) |
+| `os/oob.nix` | `mura.hardware.input.concurrentApSta` | USB gadget (initramfs configfs), `systemd-networkd` DHCP server on the gadget link, sshd `Match Address` block, NetworkManager hotspot profile + `dnsmasq-shared.d`, the launcher HTTP service, `services.cockpit` bound to trusted addresses | [first-run-onboarding.md §5](first-run-onboarding.md) |
+| `os/health.nix` | `mura.qualification.readinessCheck`, `mura.xr.calibration.paths` | `mura-preflight` unit and the recovery ladder (B1b), mark-good + `boot-complete.target` wiring (B9) | [implementation-path.md §3a, §3a-bis](implementation-path.md) |
+| `xr/default.nix` | `mura.xr.{runtime,environment,monado.*}` | `services.monado`, the active runtime manifest | [device-contract.md §xr](device-contract.md) |
+| `adaptation/*` | `mura.adaptation.*` | per-subsystem backend wiring | ADR 0003 |
+
+Rule: a new NixOS option set in `modules/os` lands in the file whose *design* column governs it,
+or the table gains a row first.
 
 ## The flake entry point
 

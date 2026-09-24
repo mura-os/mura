@@ -336,6 +336,40 @@ simply cannot administer it — the welcome surface's "set a password" item says
 words; SSH from a laptop is a `passwd` away from `sudo`; nothing in the system ever depends on
 detecting the passwordless state.
 
+### 5.4 USB gadget and hotspot specifics (decided; discretionary values flagged)
+
+**USB gadget** (`modules/os/oob.nix`, from the initramfs — the pmOS pattern,
+`references/pmaports/main/postmarketos-initramfs/init_functions.sh:836-963`):
+
+| Item | Decision | Note |
+|---|---|---|
+| Gadget function | **NCM** (`usb_f_ncm`) with an **RNDIS** function alongside for Windows hosts | [mine] — NCM is the standards-track class driver every Linux/macOS/Android host binds without drivers; RNDIS remains what stock Windows binds. pmOS ships RNDIS-first for the same reason and is moving to NCM |
+| Interface name | `usb0` (udev-stable) | matches pmOS; the sshd `Match Address` block and Cockpit binding key off the subnet, not the name |
+| Subnet | `172.16.42.1/24` device side, DHCP pool `172.16.42.2–.20` | pmOS's values (`references/pmbootstrap/pmb/config/__init__.py:322`) — mechanism precedent; no reason to differ |
+| DHCP server | **`systemd-networkd` `[DHCPServer]`** on `usb0` (`EmitDNS=no`, `EmitRouter=no` — the link is not a route to anywhere) | the NixOS-native answer; pmOS's `unudhcpd` is the reference, not the tool |
+| Lifetime | the gadget stays configured after boot as an ordinary interface — it is the debugging path forever, not a first-boot special | consistent with "the device is a Linux host" |
+| Vendor/product strings | `Mura` / `<device codename>` from `mura.device.*`; serial = a hash of machine-id | so a laptop distinguishes two headsets |
+| sshd | reachable on `usb0` with password auth (§5.3 `Match Address 172.16.42.0/24`) | — |
+
+**Hotspot** (NetworkManager; exists only while unprovisioned, §5):
+
+| Item | Decision | Note |
+|---|---|---|
+| Profile | NM connection `mura-setup`: `802-11-wireless.mode=ap`, `band=bg` (2.4 GHz for phone compatibility), `ipv4.method=shared` | NM runs dnsmasq and NAT itself (`references/networkmanager/src/core/dnsmasq/nm-dnsmasq-manager.c:140-230`) |
+| SSID | `Mura-<last 4 hex of machine-id>` | two headsets in a room stay distinguishable |
+| Security | WPA2-PSK; **PSK = 8 random digits generated per boot**, shown inside the headset (dev profile: also on the serial console/journal until the compositor scene exists) | ruled (§5); digits only so it is typeable on any phone keyboard |
+| Subnet | `10.42.0.1/24` (NM shared-mode default) | keep NM's default; distinct from the gadget subnet so `Match Address` rules never overlap |
+| DNS | `/etc/NetworkManager/dnsmasq-shared.d/mura-portal.conf`: `address=/#/10.42.0.1` (wildcard — every name resolves to the headset, so `mura.local` works without phone mDNS) and `dhcp-option=114,http://10.42.0.1/` (RFC 8910) | balena wifi-connect / comitup mechanism (research/42 §6.2) |
+| Launcher | one static page served by a minimal HTTP service on `:80` of the hotspot and gadget addresses; answers `/generate_204`, `/hotspot-detect.html`, `/connecttest.txt`, `/success.txt` with a `302` to `/`; `/` says "open `http://mura.local`" (plus the raw IP) and links to Cockpit's port | the portal sheet is a launcher; nothing else survives Apple's CNA / Android's portal WebView |
+| Idle timeout | schema-declared, **default 10 minutes with no station associated**; never counts down while a client is connected; re-armable from settings | [mine] — generous by design; the user is indifferent above "not annoying" |
+| Handoff | the launcher page announces "now at `mura.local` on your network" *before* Cockpit activates the STA connection; on chips without concurrent AP+STA (`mura.hardware.input.concurrentApSta = false`) the AP drops and the phone rejoins its own network | wifi-connect's 20 s handoff wait is the reference |
+| Cockpit | `services.cockpit` socket `ListenStream=` on `172.16.42.1:9090` and `10.42.0.1:9090` only, with `FreeBind=yes` (the hotspot address exists only while the AP is up); LAN listening is an administrator setting | §5.1, §5.3 |
+
+VM verification (implementation-path §3c D3): `mac80211_hwsim` provides the radios (one as the
+headset AP, one as the "phone" STA); `dummy_hcd` provides a virtual USB device controller for
+the gadget — if it is not built into the NixOS kernel, a second virtio NIC renamed to `usb0`
+stands in for the link so the networkd/sshd/Cockpit half is still tested.
+
 A native phone app is optional sugar over the same SSH/HTTP surfaces — no bespoke daemon —
 and its app-store dependency is recorded as an ethos cost. BLE GATT credential provisioning
 (Improv/Fast Pair class) is rejected for v1: a bespoke unauthenticated privileged surface, and

@@ -78,7 +78,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [device-contract.md](architecture/device-contract.md) — the typed `mura.*` device contract
 - [donor-pipeline.md](architecture/donor-pipeline.md) — acquire→identify→parse→extract→qualify
 - [images-and-updates.md](architecture/images-and-updates.md) — image families + two-backend updates
-- [repo-structure.md](architecture/repo-structure.md) — monorepo layout + patch management
+- [repo-structure.md](architecture/repo-structure.md) — monorepo layout + patch management; `profiles/` (default / multi-user / dev — declared configurations, opt-in by import) and the `modules/os/` one-file-per-concern ownership table
 - [zxr-shell-v2-composition.md](architecture/zxr-shell-v2-composition.md) — the XR compositor's renderer-agnostic colour+depth composition model and MVP
 - [perception-passthrough-hands.md](architecture/perception-passthrough-hands.md) — passthrough view-correction + hand cutout as compositor layers
 - [spatial-sharing.md](architecture/spatial-sharing.md) — the five sharing modes (spectate / 2D window / per-observer 3D / share-the-app proxying / workspace join)
@@ -90,9 +90,9 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [places-model.md](architecture/places-model.md) — the places model: typed reference-frame graph (XrSpace-grounded), attachment constraints, per-place layout, decomposed currency with the C1–C7 reconciliation rules, entry policies, protocol/restore/docked/mode-5 bindings
 - [spatial-a11y.md](architecture/spatial-a11y.md) — spatial accessibility design note: AT-SPI2 baseline, zxr's compositor duties, the `zspatial-a11y` spatial-semantics reservation, allow-list posture
 - [component-registry.md](architecture/component-registry.md) — the master component inventory: 6 planes, evidence-based status (specified/partial/missing), the gap list
-- [implementation-path.md](architecture/implementation-path.md) — the boot-forward plan of record: restricted-modes-first rationale (the greeter; default image = first shipped image, G2 = first greeter milestone), the B1–B9 boot chain (persist/hardware readiness, XR preflight + recovery, greetd direct, session bootstrap contract, readiness/mark-good gate), the R0/G1–G3 + F1/F2/F3 + M1–M4 rung ladder, lifecycle (resume/doff/logout), parallel tracks, the deferral register
+- [implementation-path.md](architecture/implementation-path.md) — the plan of record, rev 4, on **two axes**: the compositor rungs (R0 → G1 → G2-as-a-swap → G3; M1–M4) and the **D-track** of compositor-free NixOS distribution groundwork (D0 session-from-contract with stand-ins → D1 persist/F1 → D2 policy → D3 out-of-band → D4 session wrapper → D5 authd → D6 preflight/mark-good → D7 settings daemon), each VM-verified on two fixtures; the boot chain grouped by dependency class; the B1b preflight probe contract (§3a-bis); the stand-in rule; the deferral register incl. the pre-groundwork specifications
 - [first-run-onboarding.md](architecture/first-run-onboarding.md) — the F-track, rev 2: the image is the installation (default image = declared `mura`, no password, autologin; greeter images build-assert a declared account), persistent-state classes, F1 silent provisioning (per-task markers), F2 first-session welcome surface (per-item gated, never a wall; contents open on research/42), F3 out-of-band access (SSH over USB gadget; PSK hotspot + captive portal + Cockpit on trusted links; static passwordless posture — admin requires a password), factory-vs-user calibration, factory reset as device-transfer (never credential recovery)
-- [multi-user.md](architecture/multi-user.md) — standard Linux multi-user (no cap, wheel+polkit admin, **one credential** — a numeric password renders a digit pad, encryption as the user's choice): userborn-persisted account database across A/B, the XR greeter at parity with the standard furniture set and operable at the input floor (GDM's Wi-Fi polkit rule shipped), per-user calibration, optional LightDM-style ephemeral guest, places-by-account
+- [multi-user.md](architecture/multi-user.md) — standard Linux multi-user (no cap, wheel+polkit admin, **one credential** — a numeric password renders a digit pad, encryption as the user's choice): userborn-persisted account database across A/B, the XR greeter at parity with the standard furniture set and operable at the input floor (GDM's Wi-Fi polkit rule shipped), the complete PAM-service + polkit-rule table (§3.1), per-user calibration, optional LightDM-style ephemeral guest, places-by-account
 - [adr/](architecture/adr/) — decision records:
   - [0001](architecture/adr/0001-monorepo-vs-subprojects.md) monorepo vs subprojects
   - [0002](architecture/adr/0002-nixos-vs-nix-built-userspace.md) NixOS vs Nix-built userspace
@@ -130,7 +130,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 Wire and format contracts live outside `docs/`: [protocols/](../protocols/README.md) (Wayland
 XMLs — zxr-shell-v2, zxr-workspace, zxr-layer-anchoring, zspatial-toplevel-export — house style in
 [CONVENTIONS.md](../protocols/CONVENTIONS.md), CI-validated by wayland-scanner) and
-[specs/](../specs/README.md) (perception intake, session/auth, settings schema, SpatialCast
+[specs/](../specs/README.md) (perception intake, session/auth, session bootstrap, settings schema, SpatialCast
 portal). Design docs here say *why*; those say *exactly what*.
 
 ## Reference clones (`../references/`)
