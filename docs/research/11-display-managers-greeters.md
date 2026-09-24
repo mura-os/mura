@@ -268,3 +268,157 @@ system-level so the second instance re-reads it (it must not live in the greeter
    IPD post-login.)
 5. **logind vs seatd on the appliance image** — is a full logind dependency warranted, or does
    seatd/libseat suffice and shrink the closure?
+
+---
+
+## 11. Addendum (2026-09-24) — pre-authentication greeter furniture: inventory and mechanisms
+
+Read-only code study for the XR greeter's "standard set" — what an ordinary Linux greeter exposes
+*before* anyone is authenticated, and the mechanism and permission behind each item. Feeds
+[multi-user.md §2](../architecture/multi-user.md) and the Phase 3 review with
+[doc 42](42-input-bootstrap.md). Enumeration, picker, last-user, switch-user and guest are in
+[doc 41 §1](41-multi-user-login-landscape.md) and are not repeated. Paths are
+`<repo>/<path>:<line>` under `references/` (MANIFEST 2026-09-24). Note on plasma-workspace: the
+pinned master has **no `sddm-theme/` and no lock-screen QML under `lookandfeel/`**; what remains
+shared is `components/loginlockscreen/Footer.qml` and
+`lookandfeel/components/{SessionManagementScreen,UserList,Clock,Battery,ActionButton}.qml`
+(`plasma-workspace/lookandfeel/CMakeLists.txt:5-15`). "SDDM" rows cite SDDM's stock themes plus
+those shared Plasma components; the Breeze login QML now lives in KDE's `plasma-login-manager`
+[external, not pinned].
+
+### 11.A Power menu
+
+| Greeter | Mechanism | Show/hide decision |
+|---|---|---|
+| GDM | gnome-shell → `org.gnome.SessionManager` `Shutdown`/`Reboot` (`gnome-shell/js/misc/systemActions.js:495,502`), gnome-session → login1 [external]; suspend via login1 `Suspend` (`js/misc/loginManager.js`) | `CanShutdown/CanReboot/CanSuspend` ≠ UNAVAILABLE (`systemActions.js:359-365,381-387,403-409`) AND not `org.gnome.login-screen disable-restart-buttons` when `isGreeter` (`systemActions.js:371-378,393-400,415-419`; key `gdm/data/org.gnome.login-screen.gschema.xml:105`). Log out / switch user / lock hidden in greeter mode (`systemActions.js:353,431,446`) |
+| SDDM | Greeter never touches login1: theme calls `sddm.powerOff()` → `GreeterMessages::PowerOff` over the daemon socket (`sddm/src/greeter/GreeterProxy.cpp:91-92`) → **root daemon** `PowerManager::powerOff()` → login1 `PowerOff(true)` (`sddm/src/daemon/SocketServer.cpp:147-183`, `src/daemon/PowerManager.cpp:172-190`); ConsoleKit2 fallback (`PowerManager.cpp:124-126,203-207`); UPower backend runs `HaltCommand`/`RebootCommand` (`PowerManager.cpp:89-98`, `src/common/Configuration.h:43-44`) | Daemon sends `Capabilities` on connect (`SocketServer.cpp:125`) from login1 `Can*` == "yes" (`PowerManager.cpp:144-161`); themes bind `sddm.canSuspend`/`canHibernate` (`sddm/data/themes/elarun/Main.qml:192,201`); power-off/reboot always shown in stock themes (`maldives/Main.qml:258,268`) |
+| LightDM | Greeter process calls login1 `PowerOff/Reboot/Suspend/Hibernate` with `interactive=FALSE`, CK then UPower fallback (`lightdm/liblightdm-gobject/power.c:58-74,162-173,292,343`) | `lightdm_get_can_*` = login1 `Can*` reply `== "yes"` only (`power.c:117-128,257-259,308-310`) — a `"challenge"` answer hides the button |
+| gtkgreet | **None.** Clock, question box, command selector only (`gtkgreet/gtkgreet/window.c:54-61,126-142`) | — |
+| regreet | Spawns `[commands] reboot`/`poweroff` (`regreet/src/gui/model.rs:191-231`), defaults `reboot`/`poweroff` (`src/constants.rs:43-45`; sample `systemctl …`, `regreet.sample.toml:41-46`) | Always shown (`src/gui/templates.rs:213-218`) |
+| tuigreet | Shutdown/reboot default `shutdown -h/-r now`, suspend/hibernate default `loginctl suspend/hibernate`, in `setsid` unless `--power-no-setsid`; overridable `--power-*` (`tuigreet/crates/tuigreet/src/power.rs:41-82`, `src/greeter.rs:767-791,1072-1096`) | Always present |
+
+**Polkit from a greeter session.** login1 defaults (`systemd/src/login/org.freedesktop.login1.policy`):
+`power-off`, `reboot`, `suspend`, `hibernate` and their `-multiple-sessions` variants are
+`allow_any=auth_admin_keep / allow_inactive=auth_admin_keep / allow_active=yes`
+(`:168-186,201-219,267-284,299-316`); the `-ignore-inhibit` variants are `auth_admin_keep` for
+all three (`:190-197,223-230,288-295,320-327`). logind picks the `-multiple-sessions` action iff
+another *user-class* session exists — greeter sessions never count
+(`SESSION_CLASS_IS_INHIBITOR_LIKE` excludes `SESSION_GREETER`; `systemd/src/login/logind-shutdown.c:35-40,106-110`,
+`logind-session.h:69`). A root caller (SDDM's daemon) short-circuits polkit
+(`systemd/src/shared/bus-polkit.c:20-47`).
+
+**Is a greeter session "active"?** `session_is_active` is `seat->active == s`
+(`systemd/src/login/logind-session.c:1114-1121`). On a seat with VTs the active session owns the
+foreground VT (`logind-seat.c:535-564`); on a **VT-less seat every newly attached session is
+auto-activated** (`logind-seat.c:728-733`). A greeter is a real seat session
+(`SESSION_CLASS_CAN_TAKE_DEVICE` includes `SESSION_GREETER`, `logind-session.h:63`), so the
+*displayed* greeter is active and `allow_active=yes` applies: greetd/LightDM greeters power off
+with no authentication and no root helper. [external] polkit reads `Active` from logind for the
+subject's session (polkit `polkitbackendsessionmonitor-systemd.c`).
+
+### 11.B Session chooser
+
+| Greeter | List source | Remembered where | Hidden when single |
+|---|---|---|---|
+| GDM | `libgdm gdm_get_session_ids()` over `$XDG_DATA_DIRS/{xsessions,wayland-sessions}` (`gdm/libgdm/gdm-sessions.c:272-320,354`) plus `gdm/greeter/wayland-sessions` (`gdm/daemon/gdm-session.c:383-409`) | AccountsService per-user `Session`/`SessionType` (`gdm/daemon/gdm-session-settings.c:302-303,391-395`); greeter → daemon `SelectSession` (`gnome-shell/js/gdm/loginDialog.js:552`) | **Yes**: `if (ids.length === 1) return` (`loginDialog.js:566-568`); also hidden if the user is already logged in (`:563-565`) |
+| SDDM | `SessionModel` from `[Wayland] SessionDir` then `[X11] SessionDir`, with dir watcher (`sddm/src/greeter/SessionModel.cpp:50-68`; defaults `Configuration.h:71,82`) | Daemon state `Last.Session` (global, not per-user) when `RememberLastSession` (`sddm/src/daemon/Display.cpp:506-507`); `lastIndex` preselects (`SessionModel.cpp:169-170`) | Theme decision; stock themes always show the combo (`maldives/Main.qml:191-192`) |
+| LightDM | `lightdm_get_sessions()` from `sessions-directory` / `remote-sessions-directory` (`lightdm/liblightdm-gobject/session.c:194-201,222`) | Per-user `~/.dmrc [Desktop] Session` **and** AccountsService `SetXSession` (`lightdm/common/user-list.c:1197,1422-1428`); hint `default-session` = seat `user-session` (`lightdm/src/greeter.c:577`) | Greeter-specific |
+| gtkgreet | `/etc/greetd/environments` or `-c` (`gtkgreet/man/gtkgreet-1.scd:16-17,95-96`) | None | Combo (with free-text entry) only when no `-c` (`window.c:129-136`, `main.c:28`) |
+| regreet | `/usr/share/xsessions:/usr/share/wayland-sessions` or `$XDG_DATA_DIRS` (`regreet/src/constants.rs:51-53`, `src/sysutil.rs:110-124`) | `/var/lib/regreet/state.toml` per-user last session (`src/gui/model.rs:427-430,596`); `skip_selection` (`regreet.sample.toml:6`) | Always shown (`src/gui/component.rs:80`) |
+| tuigreet | `$XDG_DATA_DIRS/{wayland-sessions,xsessions}` (`tuigreet/crates/tuigreet/src/info.rs:50-57`), `--sessions`/`--xsessions` (`greeter.rs:651-663`) | `--remember-session` / `--remember-user-session` (`greeter.rs:707-712,365-395`) | Always a menu |
+
+### 11.C Accessibility menu
+
+| Greeter | Toggles | Mechanism |
+|---|---|---|
+| GDM | High contrast, magnifier, large text, screen reader, on-screen keyboard, visual bell, sticky/slow/bounce/mouse keys (`gnome-shell/js/gdm/loginDialog.js:329-350`) | gsettings on the **gdm user's** dconf: `org.gnome.desktop.a11y.interface high-contrast`, `.a11y.applications screen-magnifier/screen-reader/screen-keyboard-enabled`, `.interface text-scaling-factor`, `.wm.preferences visual-bell`, `.a11y.keyboard *keys-enable` (`js/ui/status/accessibility.js:10-30,150-322`). GDM's dconf profile forces `always-show-universal-access-status=true` (`gdm/data/dconf/defaults/00-upstream-settings:12-13`). Panel also carries `dwellClick` + `keyboard` (input source) (`js/ui/sessionMode.js:62`) |
+| SDDM | Stock themes: keyboard-layout indicator only (`elarun/Main.qml:287`). Plasma shared footer adds **OSK toggle + layout switcher** (`plasma-workspace/components/loginlockscreen/Footer.qml:45-100`) | OSK = `org.kde.KWin /VirtualKeyboard` D-Bus `forceActivate`/`active` (`plasma-workspace/components/keyboardlayout/virtualkeyboard.cpp:13-28`); Plasma's greeter compositor is `kwin_wayland --inputmethod plasma-keyboard` (`plasma-workspace/sddm-wayland-session/plasma-wayland.conf:7`); SDDM sets `QT_IM_MODULE` from `InputMethod` (default `qtvirtualkeyboard`, disabled on Wayland) (`sddm/src/greeter/GreeterApp.cpp:354-361`, `Configuration.h:48`) |
+| LightDM | Core: none. [external] lightdm-gtk-greeter has an a11y indicator (OSK via `onboard`, high-contrast, font scaling) — https://github.com/Xubuntu/lightdm-gtk-greeter | greeter-local |
+| gtkgreet / regreet / tuigreet | None (tuigreet has `--kb-*` key bindings only, `greeter.rs:1098`) | — |
+
+### 11.D Network menu
+
+| Greeter | Present pre-auth? | Can it *connect*? |
+|---|---|---|
+| GDM | Yes: `gdm` mode loads `networkAgent` + quickSettings (`sessionMode.js:56-62`) | **Yes.** Wi-Fi connect uses `add_and_activate_connection_async` (`js/ui/status/network.js:963`); toggles reactive iff `org.freedesktop.NetworkManager.network-control` allowed (`network.js:2171-2177`). If `settings.modify.system` is not allowed, the connection is scoped `permissions=user:gdm` (`network.js:954-961`), which NM authorises as `settings.modify.own` (`networkmanager/src/core/settings/nm-settings.c:2645-2654`). GDM ships a rule granting `settings.modify.system` to the gdm group when `subject.local && subject.active` (`gdm/data/polkit-gdm.rules.in:1-8`), so the connection becomes system-wide and survives into the user session. Captive-portal handling skipped in greeter mode (`network.js:2232`) |
+| SDDM / LightDM / gtkgreet / regreet / tuigreet | No network UI in core/stock themes | — |
+
+NM defaults (`networkmanager/data/org.freedesktop.NetworkManager.policy.in`): `network-control`
+and `wifi.scan` `any=auth_admin / inactive=yes / active=yes` (`:67-83`); `settings.modify.own`
+`any=auth_self_keep / inactive=yes / active=yes` (`:105-111`); `settings.modify.system`
+`auth_admin_keep` ×3 (`:115-121`); `enable-disable-wifi`, `wifi.share.protected/open`
+`inactive=no / active=yes` (`:40-45,87-101`). Any active greeter session may activate existing
+connections and add *own* ones without auth; system-wide ones need a distro rule like GDM's —
+**a discretionary policy choice for Mura** (AGENTS.md rule 4), recorded in doc 42 §7.3.
+
+### 11.E Clock / banner / hostname
+
+| Greeter | One line |
+|---|---|
+| GDM | Panel `dateMenu` clock (`sessionMode.js:61`); banner from `banner-message-enable/-source/-text/-path` with file monitor (`gdm/data/org.gnome.login-screen.gschema.xml:69-96`, `loginDialog.js:879-932`); no hostname |
+| SDDM | Themes: `Clock` + `sddm.hostName` from daemon `HostName` (`maldives/Main.qml:75,102`, `GreeterProxy.cpp:59-60,187`); Plasma `Clock.qml` (`lookandfeel/components/Clock.qml:21,34`); `Battery.qml` (`:28-43`) |
+| LightDM | Greeter-specific; core passes no banner |
+| gtkgreet | Clock label, `strftime` (`window.c:54-61,224-228`); no banner |
+| regreet | `[widget.clock]` format/timezone/locale + `greeting_msg` (`regreet.sample.toml:51-76`, `src/config.rs:19-26`) |
+| tuigreet | `--time`/`--time-format`, `--greeting`, `--issue` (`greeter.rs:684-704,1068-1070`) |
+
+### 11.F Zero accounts and empty password
+
+| Greeter | Empty user list | Empty password |
+|---|---|---|
+| GDM | Daemon: initial-setup (doc 41 §1.2). Shell: `numItems()===0` forces `disableUserList` (`loginDialog.js:847-852`) → "Username" entry (`:1017-1021,1108-1111`); cancel hidden (`:865-876`) | Worker passes `PAM_DISALLOW_NULL_AUTHTOK` **only for non-local displays** (`gdm/daemon/gdm-session-worker.c:1363-1364,1387-1392`); GDM's PAM files carry **no `nullok`** (`pam-arch/gdm-password.pam:3`, `pam-redhat/gdm-password.pam:2`) — the distro decides. PAM success without a prompt → `verification-complete` → session (`js/gdm/authPrompt.js:658-672`, `loginDialog.js:1274`) |
+| SDDM | Stock themes are text-field (`maldives/Main.qml:120-130`); `UserModel.rowCount()==0` (`UserModel.cpp:183`) | `pam_authenticate(flags=0)` (`sddm/src/helper/backend/PamHandle.h:111`, `PamHandle.cpp:87`); **SDDM ships no PAM files** |
+| LightDM | `greeter-show-manual-login` → hint `show-manual-login` (`lightdm/data/lightdm.conf:105`, `src/greeter.c:579`, `liblightdm-gobject/greeter.c:1139`); `hide-users` (`greeter.c:578`) | `pam_authenticate(pam_handle, 0)` (`lightdm/src/session-child.c:337`); shipped `data/pam/lightdm` lacks `nullok`; `lightdm-greeter`/`lightdm-autologin` use `pam_permit` (`data/pam/lightdm-greeter:8`, `lightdm-autologin:12`) |
+| gtkgreet | Always a username question | Relays greetd; greetd `pam_authenticate` with caller flags (`greetd/greetd/src/pam/session.rs:45-49`), ships no PAM files, requires `/etc/pam.d/greetd` (`greetd/src/server.rs:172-174,206-209`). NixOS sets `allowNullPassword = true` for greetd (`nixos/modules/services/display-managers/greetd.nix:78-82`) |
+| regreet / tuigreet | regreet lists AccountsService users with a manual entry; tuigreet text-first with optional `--user-menu` (`greeter.rs:716-727`) | PAM-driven via greetd, as above |
+
+### 11.G Lock screen vs greeter
+
+GNOME: `unlock-dialog` mode drops `dateMenu` but *adds* the `a11y` indicator to the panel
+(greeter mode puts a11y in the dialog's button group), keeps `dwellClick`/`keyboard`/
+`quickSettings`, and loads the same `networkAgent`/`polkitAgent` (`gnome-shell/js/ui/sessionMode.js:51-78`).
+The unlock dialog adds a notification stack (`js/ui/unlockDialog.js:43-101`) and "Switch User…"
+iff `userManager.can_switch()` and not `disable-user-switching` (`unlockDialog.js:668-679,1062-1065`);
+no session chooser, no user list. Power-off/reboot are suppressed on the lock screen when the
+action needs auth or `org.gnome.desktop.screensaver` restart is disabled (`systemActions.js:371-377`).
+Plasma: kscreenlocker's fallback theme offers password + "Switch Users" only
+(`kscreenlocker/greeter/fallbacktheme/Greeter.qml:115-127`, `LockScreen.qml:74-84`), where
+`canSwitchUser` = `KAuthorized start_new_session` ∧ backend (`plasma-workspace/libkworkspace/sessionmanagement.cpp:123-125`,
+`sessionmanagementbackend.cpp:240-243`); the shared `Footer.qml` (OSK toggle, layout switcher,
+battery) serves both login and lock (`Footer.qml:16-19`). GDM's dconf profile hard-locks
+`disable-user-switching=true` and `disable-lock-screen=true` for the greeter user
+(`gdm/data/dconf/defaults/00-upstream-settings:23-30`).
+
+### 11.H The standard set
+
+Every mainstream graphical greeter exposes pre-auth: (1) **a power menu** with at least power-off
+and reboot (all but gtkgreet), suspend/hibernate gated on a login1 `Can*` probe; (2) **a session
+chooser** from `wayland-sessions`/`xsessions` `.desktop` files (gtkgreet reads
+`/etc/greetd/environments`), GDM alone hiding it for a single session; (3) **a clock**; (4) **a
+fallback username entry** when no listable users exist. The mechanism behind (1) is uniform: the
+displayed greeter session is logind-*active*, so `org.freedesktop.login1.power-off/reboot/suspend/hibernate`
+`allow_active=yes` grants it without a privileged helper (SDDM's root-daemon proxy is an
+exception, not a requirement). Optional tier: **a11y toggles** (GDM full set via gsettings; Plasma
+OSK via KWin D-Bus; nothing in the greetd family), **banner/greeting** (GDM, regreet, tuigreet),
+**hostname** (SDDM), **battery** (Plasma), **keyboard-layout switcher** (GDM, Plasma), and — GDM
+only — **a network menu that can join Wi-Fi**, which works because `network-control` and
+`settings.modify.own` are `allow_active=yes` and GDM ships a rule lifting the greeter to
+`settings.modify.system`. Empty-password login is uniformly deferred to the distro's PAM `nullok`;
+no greeter ships `nullok` itself, and GDM alone forbids null tokens (remote displays only).
+
+### 11.I Gaps
+
+- **VT-less seat activeness**: `logind-seat.c:728-733` auto-activates every new session on a
+  VT-less seat. If the greeter and a lingering user session coexist for any window, the *newest*
+  holds `Active`; the greeter's power-menu polkit depends on it — confirm on hardware with greetd's
+  exit-then-start ordering (§4, session-auth §5).
+- **Pre-auth Wi-Fi scope**: parity with GDM needs a Mura polkit rule for the greeter user
+  (`settings.modify.system` when `subject.local && subject.active`); otherwise pre-login
+  connections are `permissions=user:greeter` and invisible to the logged-in user. Discretionary
+  (doc 42 §7.3).
+- **Breeze SDDM theme** not pinned (`plasma-login-manager` [external]).
+- gnome-session's `CanShutdown` → login1 mapping, lightdm-gtk-greeter a11y, and polkit's
+  session-activeness backend are [external].
+- **Empty-password UX**: no greeter special-cases a passwordless account; all rely on PAM success
+  without a prompt. The XR greeter must be tested with `nullok` to confirm the `auth_message`-less
+  `success` path of greetd IPC (`greetd/greetd_ipc/src/lib.rs:56-67`) renders sensibly.
