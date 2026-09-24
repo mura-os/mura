@@ -192,6 +192,30 @@ in
           default = "none";
           description = "Where the wear (don/doff) sensor is read from: IIO proximity (Steam Frame vcnl4040, Lynx), a vendor HID field, or the Qualcomm SSC (Galaxy XR class). research/42 §4.4.";
         };
+        usbGadget = mkOption {
+          type = types.bool;
+          default = true;
+          description = ''
+            The device's USB port has a device-capable controller (UDC), so the USB Ethernet
+            gadget of first-run-onboarding.md §5.4 can be presented from the initramfs (the
+            postmarketOS pattern). false on targets whose port is host-only. The virtual
+            headset provides a UDC through `dummy_hcd`. D3.
+          '';
+        };
+      };
+    };
+
+    ## Out-of-band access (first-run-onboarding.md §5; modules/os/oob.nix, D3) --------
+    oob.hotspot = {
+      idleTimeoutMinutes = mkOption {
+        type = types.ints.positive;
+        default = 10;
+        description = ''
+          Minutes with no station associated after which the provisioning hotspot's radio is
+          taken down for this boot (it returns at the next boot while setup is unfinished;
+          first-run-onboarding.md §5). Never counts down while a phone is connected. A schema
+          value, never compiled in (constraint 9); the default is [mine] per §5.4.
+        '';
       };
     };
 

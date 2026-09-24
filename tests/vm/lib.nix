@@ -46,6 +46,11 @@ pkgs.testers.runNixOSTest {
       mode = "0600"; # ssh refuses world-readable identity files
     };
 
+    # qemu-vm.nix assumes a VM has no radio and mkVMOverride-disables wpa_supplicant; the
+    # virtual headset has a mac80211_hwsim radio and NetworkManager needs the supplicant for
+    # the provisioning hotspot (modules/os/oob.nix), so put it back.
+    networking.wireless.enable = lib.mkOverride 5 true; # beats qemu-vm.nix's mkVMOverride (10)
+
     # The device sets these for a real disk image; the test framework owns the VM's disk
     # and the node name (both sides use mkDefault, so the test must decide).
     boot.loader.systemd-boot.enable = lib.mkForce false;

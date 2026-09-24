@@ -97,6 +97,7 @@
             # (each boots a VM and takes minutes): `nix build .#vm-test-default-image`.
             vm-test-default-image = import ./tests/vm/default-image.nix { pkgs = pkgsFor system; };
             vm-test-multi-user = import ./tests/vm/multi-user.nix { pkgs = pkgsFor system; };
+            vm-test-oob = import ./tests/vm/oob.nix { pkgs = pkgsFor system; };
           }
         // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
           # Steam Frame uefi-rauc artifacts (build via remote aarch64 builder).

@@ -156,6 +156,7 @@ Mirrors Monado's build/runtime surface ([05](../research/05-xr-userspace.md) §9
 | `mura.xr.calibration.paths` | attrs | per-device calibration data locations (per-unit state) |
 | `mura.xr.session.faillock.deny` / `.unlockSeconds` | positive ints (defaults 5 / 300) | the `pam_faillock` ladder shared by greeter, lock and SSH (`modules/os/policy.nix`, D2); tally in `state/faillock/` on `/persist`; schema values, never compiled in (constraint 9) — the rest of `mura.xr.session.*` (greeter/autoLogin/multiUser/guest/lock) is specified in [multi-user.md](multi-user.md) and ADR 0007/0018 |
 | `mura.xr.session.readinessTimeoutSeconds` | positive int (default 30) | how long the session wrapper waits for the compositor to signal readiness before the login is torn down — uwsm's `wayland-wm@.service` `TimeoutStartSec` ([specs/session-bootstrap.md §4](../../specs/session-bootstrap.md), D4); schema value (constraint 9) |
+| `mura.oob.hotspot.idleTimeoutMinutes` | positive int (default 10) | minutes with no station associated before the provisioning hotspot's radio goes down for this boot (first-run §5.4; D3); schema value (constraint 9) |
 
 ### `mura.xr.sensing.*` — expression, gaze, and audio-source facts
 
@@ -237,6 +238,8 @@ buttons, dwell where a button is unusable. Declared facts:
   class (first-run-onboarding §2).
 - `concurrentApSta` (nullable) — hotspot + station at once; drives the provisioning hotspot's
   handoff behaviour (first-run-onboarding §5.2).
+- `usbGadget` (default true) — the USB port has a device-capable controller, so the USB Ethernet
+  gadget of first-run §5.4 is presented from the initramfs (D3; the virtual headset via `dummy_hcd`)
 - `proximitySource` ∈ `none | iio | hid | ssc` — where the wear sensor is read
   (bootstrap policy: research/42 §4.4; native enablement:
   [research/53](../research/53-proximity-presence-native-linux-audit.md)). The value is a qualified

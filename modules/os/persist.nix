@@ -155,6 +155,9 @@ in
           # credential hint (multi-user.md §3): the /tmp shape — every user writes their own
           # <user> file (0644); the greeter/lock trust a file only if its owner is that user.
           install -d -m 1777 ${root}/state/credential-hint
+          # setup-complete marker (first-run §3, §5): the same /tmp shape — the session user
+          # (welcome surface) or mura-setup (web app) creates the file; only owner/root remove it.
+          install -d -m 1777 ${root}/state/setup
         '';
       };
 

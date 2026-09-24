@@ -477,32 +477,42 @@ reachable over the network until changed.
 
 | Item | Decision | Note |
 |---|---|---|
-| Gadget function | **NCM** (`usb_f_ncm`) with an **RNDIS** function alongside for Windows hosts | [mine] — NCM is the standards-track class driver every Linux/macOS/Android host binds without drivers; RNDIS remains what stock Windows binds. pmOS ships RNDIS-first for the same reason and is moving to NCM |
+| Gadget function | **NCM** (`usb_f_ncm`) as `ncm.usb0`; an **RNDIS** function for Windows hosts is a follow-up (two functions in one configuration need `os_desc` so Windows picks the right one — pmOS's fallback logic, `init_functions.sh:849-850`) | [mine] — NCM is the standards-track class driver every Linux/macOS/Android host binds without drivers; RNDIS remains what stock Windows binds. D3 ships NCM only |
 | Interface name | `usb0` (udev-stable) | matches pmOS; `mura-setup`'s listening address keys off the subnet, not the name |
 | Subnet | `172.16.42.1/24` device side, DHCP pool `172.16.42.2–.20` | pmOS's values (`references/pmbootstrap/pmb/config/__init__.py:322`) — mechanism precedent; no reason to differ |
 | DHCP server | **`systemd-networkd` `[DHCPServer]`** on `usb0` (`EmitDNS=no`, `EmitRouter=no` — the link is not a route to anywhere); the link is **unmanaged by NetworkManager** | the NixOS-native answer; pmOS's `unudhcpd` is the reference, not the tool. NM-unmanaged is load-bearing: the hotspot condition counts NM's active connections (§5) |
 | Lifetime | the gadget stays configured after boot as an ordinary interface — it is the debugging path forever, not a first-boot special | consistent with "the device is a Linux host" |
-| Vendor/product strings | `Mura` / `<device codename>` from `mura.device.*`; serial = a hash of machine-id | so a laptop distinguishes two headsets |
+| Vendor/product strings | `Mura` / `<device codename>` from `mura.device.*`; **idVendor/idProduct `0x1d6b:0x0104`** (the Linux Foundation multifunction composite IDs every configfs example and pmOS use — a placeholder until Mura has an allocation, [mine]); serial `mura-<codename>` in stage 1 (a per-unit hash of machine-id needs `/persist`'s `etc-rw` in the initrd — a later item) | so a laptop distinguishes a Mura from other gadgets; two Muras only by name until the serial is per-unit |
 | sshd | on, upstream defaults — nothing gadget-specific (§5.3) | — |
 
 **Hotspot** (NetworkManager; exists until setup is finished and while no other connection is active, §5):
 
 | Item | Decision | Note |
 |---|---|---|
-| Profile | NM connection `mura-setup`: `802-11-wireless.mode=ap`, `band=bg` (2.4 GHz for phone compatibility), `ipv4.method=shared`; `PartOf=mura-setup.service` | NM runs dnsmasq and NAT itself (`references/networkmanager/src/core/dnsmasq/nm-dnsmasq-manager.c:140-230`) |
+| Profile | NM connection `mura-setup` (`ensureProfiles`, PSK/SSID from `/run/mura/hotspot.env`): `802-11-wireless.mode=ap`, `band=bg` (2.4 GHz for phone compatibility), `ipv4.method=shared`, `autoconnect=false`; brought up and down by `mura-hotspot.service` (`PartOf=mura-setup.service`), a 5 s supervisor loop over two inputs NM cannot express — the marker and "no other active connection" | NM runs dnsmasq and NAT itself (`references/networkmanager/src/core/dnsmasq/nm-dnsmasq-manager.c:140-230`) |
 | SSID | `Mura-<last 4 hex of machine-id>` | two headsets in a room stay distinguishable |
 | Security | WPA2-PSK; **PSK = 8 random digits generated per boot**, shown inside the headset (dev profile: also on the serial console/journal until the compositor scene exists) | ruled (§5); digits only so it is typeable on any phone keyboard |
 | Subnet | `10.42.0.1/24` (NM shared-mode default) | keep NM's default; distinct from the gadget subnet so the two listening addresses never coincide |
 | DNS | `/etc/NetworkManager/dnsmasq-shared.d/mura-portal.conf`: `address=/#/10.42.0.1` (wildcard — every name resolves to the headset, so `mura.local` works without phone mDNS) and `dhcp-option=114,http://10.42.0.1/` (RFC 8910) | balena wifi-connect / comitup mechanism (research/42 §6.2) |
 | Launcher + web app | one HTTP service — the `mura-setup` system instance — on `:80` of the hotspot and gadget addresses (`FreeBind=yes`); answers `/generate_204`, `/hotspot-detect.html`, `/connecttest.txt`, `/success.txt` with a `302` to `/`; `/` is the launcher ("open `http://mura.local`", plus the raw IP) and the web app lives behind it in a normal tab | the portal sheet is a launcher; nothing else survives Apple's CNA / Android's portal WebView |
-| Idle timeout | schema-declared, **default 10 minutes with no station associated**; never counts down while a client is connected; per-boot (the hotspot returns next boot while setup is unfinished) | [mine] — generous by design; the user is indifferent above "not annoying" |
+| Idle timeout | `mura.oob.hotspot.idleTimeoutMinutes`, **default 10, with no station associated**; never counts down while a client is connected; per-boot (the hotspot returns next boot while setup is unfinished) | [mine] — generous by design; the user is indifferent above "not annoying" |
 | Wi-Fi join / finish | concurrent AP+STA (`mura.hardware.input.concurrentApSta = true`): activate and verify immediately, phone stays on the hotspot. Otherwise part of *finish*: AP down → STA up → marker on success; STA failure within the handoff window → AP returns, marker absent, error shown on reconnect | §5.2; wifi-connect's 20 s handoff wait is the reference |
 | LAN | **never** — `mura-setup` binds the two addresses above and nothing else | §5, §5.3 |
 
-VM verification (implementation-path §3c D3): `mac80211_hwsim` provides the radios (one as the
-headset AP, one as the "phone" STA); `dummy_hcd` provides a virtual USB device controller for
-the gadget — if it is not built into the NixOS kernel, a second virtio NIC renamed to `usb0`
-stands in for the link so the networkd + `mura-setup` half is still tested.
+VM verification (implementation-path §3c D3, **landed** — `nix build .#vm-test-oob`): the NixOS
+kernel ships `mac80211_hwsim`, `dummy_hcd`, `usb_f_ncm`/`usb_f_rndis` and configfs as modules,
+so both halves run for real — `dummy_hcd` puts the gadget's *host* end in the same kernel (the
+cdc_ncm side takes a lease from `usb0`'s DHCP server, logs in over SSH by key and loads the
+launcher), two `hwsim` radios are the headset's AP and the "phone" STA (associates only with the
+PSK, is captured by the wildcard DNS and the probe redirects). Three facts the VM taught, now in
+`modules/os/oob.nix`: the NixOS firewall must open UDP 67 / TCP 80 on `usb0` (an interface-scoped
+rule; sshd's 22 is open everywhere already) and TCP 80 to the hotspot address; NetworkManager's
+shared mode opens its dnsmasq DHCP/DNS ports **only with its iptables firewall backend** (the
+nftables backend writes NAT/forward rules alone and assumes firewalld) — the module pins
+`firewall-backend=iptables`; and `qemu-vm.nix` force-disables `wpa_supplicant` on the assumption
+that VMs have no radio (`mkVMOverride`), which the virtual headset overrides. Two VM-only
+topology artefacts are confined to the test: the gadget's host end (`usb1`) and the phone radio
+are NM-unmanaged so they do not count as the headset's own connections.
 
 ## 6. Factory calibration vs user calibration (two stages, normatively distinct)
 

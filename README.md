@@ -57,9 +57,11 @@ account, [tests/vm/fixture-user.nix](tests/vm/fixture-user.nix)). virgl-accelera
 cores; `ssh -p 2221 mura@localhost`. State persists in the VM's `.qcow2` beside the working
 tree — delete it for a fresh boot.
 
-**Rung 2 automated — `nix build .#vm-test-default-image` / `.#vm-test-multi-user`**: the
-D-track's exit criteria as NixOS VM tests ([tests/vm/](tests/vm/)). On demand only — they boot
-a VM and take minutes, so they are not part of `nix flake check`.
+**Rung 2 automated — `nix build .#vm-test-default-image` / `.#vm-test-multi-user` /
+`.#vm-test-oob`**: the D-track's exit criteria as NixOS VM tests ([tests/vm/](tests/vm/)); `oob`
+drives the USB gadget (`dummy_hcd`, both ends in the VM), the provisioning hotspot
+(`mac80211_hwsim`, a second radio as the phone) and the `mura-setup` stub. On demand only — they
+boot a VM and take minutes, so they are not part of `nix flake check`.
 
 **Rung 3 — `nix run .#frame-vm-run -- <image.raw[.zst]>`** (image/update machinery only): the
 Steam Frame aarch64 image under full-system emulation, including the RAUC A/B update round-trip

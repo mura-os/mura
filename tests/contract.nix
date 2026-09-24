@@ -261,6 +261,7 @@ let
       faillock = { deny = 3; unlockSeconds = 900; };
       readinessTimeoutSeconds = 45;
     };
+    config.mura.oob.hotspot.idleTimeoutMinutes = 25;
   };
 
   # Assertion helpers.
@@ -326,6 +327,11 @@ let
       (evalContract faillockStrict).config.mura.xr.session.faillock.deny == 3;
     # specs/session-bootstrap.md §4 step 4 / D4: the readiness bound is a schema value.
     readinessTimeoutDefault = eval.config.mura.xr.session.readinessTimeoutSeconds == 30;
+    # first-run §5.4 / D3: the gadget is a hardware fact, the hotspot idle timeout a schema value.
+    usbGadgetDefaultOn = eval.config.mura.hardware.input.usbGadget == true;
+    hotspotIdleDefault = eval.config.mura.oob.hotspot.idleTimeoutMinutes == 10;
+    hotspotIdleOverridable =
+      (evalContract faillockStrict).config.mura.oob.hotspot.idleTimeoutMinutes == 25;
     readinessTimeoutOverridable =
       (evalContract faillockStrict).config.mura.xr.session.readinessTimeoutSeconds == 45;
     # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.

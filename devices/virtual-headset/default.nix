@@ -23,7 +23,19 @@
     displays = 1;
     panel = { width = 1920; height = 1080; refresh = 60; };
     input.bluetooth = false; # no adapter in the VM: no pairing/ bind, no pre-login agent
+    # The VM's Wi-Fi is one mac80211_hwsim radio (below); it cannot run AP and STA at once.
+    input.concurrentApSta = false;
+    # Its USB port is a dummy_hcd UDC (below): the gadget path runs for real, host side too.
+    input.usbGadget = true;
   };
+
+  # Virtual hardware for the out-of-band path (modules/os/oob.nix, D3): dummy_hcd gives a
+  # device-side USB controller whose host side is this same kernel (so the gadget's DHCP
+  # lease and web page are reachable in-VM); mac80211_hwsim gives two radios — one is the
+  # headset's Wi-Fi, the second stands in for the phone in tests/vm/oob.nix.
+  boot.kernelModules = [ "dummy_hcd" "mac80211_hwsim" ];
+  boot.initrd.kernelModules = [ "dummy_hcd" ];
+  boot.extraModprobeConfig = "options mac80211_hwsim radios=2";
 
   # No donor: this is a from-source VM, so donor stays null and no flashable image
   # outputs are produced (null-propagation gating).
@@ -81,6 +93,8 @@
   # image) or the stand-in greeter (multi-user fixture).
   virtualisation.vmVariant = {
     imports = [ ./vm-persist.nix ]; # /persist on a second virtual disk (syspersist stand-in)
+    # qemu-vm.nix assumes no radio and disables wpa_supplicant; this VM has a hwsim radio.
+    networking.wireless.enable = lib.mkOverride 5 true; # beats qemu-vm.nix's mkVMOverride (10)
     virtualisation = {
       memorySize = 8192;
       cores = 4;

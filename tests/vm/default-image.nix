@@ -154,12 +154,14 @@
         machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")
         machine.succeed(ssh_pw.format(pw="s3cret"))
 
-    with subtest("D2: logind leaves the power key to the compositor; no polkit rule on the default image"):
+    with subtest("D2: logind leaves the power key to the compositor; no greeter polkit rule on the default image"):
         out = machine.succeed("busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager HandlePowerKey")
         assert '"ignore"' in out, out
         # -R: the rules file is a symlink into the store; -r would not follow it (vacuous pass)
         machine.succeed("grep -Rq 'polkit.addRule' /etc/polkit-1/rules.d/")
-        machine.fail("grep -Rq 'NetworkManager.settings.modify.system' /etc/polkit-1/rules.d/")
+        # the greeter rule is the greeter profile's; mura-setup's scoped rule (D3) is on both
+        machine.fail("grep -Rq 'subject.user == \"greeter\"' /etc/polkit-1/rules.d/")
+        machine.succeed("grep -Rq 'subject.user == \"mura-setup\"' /etc/polkit-1/rules.d/")
 
     with subtest("D2: the credential-hint directory has the /tmp shape and a user can write their own file"):
         machine.succeed("su - mura -c 'echo numeric > /var/lib/mura/state/credential-hint/mura'")
