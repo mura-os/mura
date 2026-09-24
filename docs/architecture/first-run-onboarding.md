@@ -2,8 +2,11 @@
 
 **Status:** accepted design (2026-09-23; **rev 2, 2026-09-24 — the image-is-the-installation
 reframe**; **rev 2.1 same day — the [research/42](../research/42-input-bootstrap.md) review
-ruled: input floor, welcome-surface contents, one credential, out-of-band mechanisms**).
-Decision record: [ADR 0017](adr/0017-first-run-provisioning.md) (amended in place).
+ruled: input floor, welcome-surface contents, one credential, out-of-band mechanisms**;
+**rev 2.2 same day — security review of the passwordless posture: admin requires a password,
+`passwd` is the gate, SSH key-only off the USB subnet, Cockpit on trusted links, PSK hotspot,
+hint mirror; all static**). Decision record: [ADR 0017](adr/0017-first-run-provisioning.md)
+(amended in place).
 **What this covers:** everything between "the image was flashed" and "a person is using their
 session": what an installer would collect and where it lives here (§1), the persistent-state
 classes (§2), silent machine provisioning F1 (§3), the first-session welcome surface F2 (§4),
@@ -46,8 +49,11 @@ declared NixOS machine. Three consequences:
    you are in your session. A password is the wearer's choice: the welcome surface (§4) offers
    one, the lock engages only once a credential exists (ADR 0007), and **there is exactly one
    credential** — the Unix password; a short numeric one is a PIN (§4.2, [multi-user.md §3](multi-user.md)).
-   While the account has no password, the passwordless wiring of §5.3 applies. The Steam Deck's
-   fixed `deck` account is the mechanism precedent. There is no "appliance wizard": what used to
+   A passwordless `mura` is a full *user*; **administration (`sudo`, polkit `auth_admin`
+   actions) requires setting a password first** — `passwd` asks no old password for a
+   passwordless account, and that is the gate (§5.3; the Steam Deck's `deck` account has exactly
+   this posture, and so does NixOS itself). The Steam Deck's fixed `deck` account is the
+   mechanism precedent. There is no "appliance wizard": what used to
    be called the appliance path is simply a declared image with `autoLogin` set.
 2. **The first account of a multi-user image is declared in the image as well** — like every
    distro installer's first account, it is an ordinary user in `wheel`. A **build-time
@@ -188,11 +194,16 @@ surface's UX design at G1 (decider named in §9).
 
 The surface is **unprivileged session UI**. Privileged writes go through the standard
 mechanisms the rest of the desktop uses: NetworkManager's D-Bus policy for network profiles,
-`localed`/`timedated` for locale and time, BlueZ's agent API for pairing, and a polkit-gated
-own-password action for item 6 — with a Mura polkit rule granting the active local session's
-user `change-own-password` without `auth_admin` (AccountsService's default demands admin
-authentication even for one's own password, [research/42 §3.5](../research/42-input-bootstrap.md);
-a person with no password could not otherwise set one from the UI). `mura-provisiond` (root,
+`localed`/`timedated` for locale and time, BlueZ's agent API for pairing, and — for item 6 —
+**`passwd` itself, driven in a pty** (Cockpit's `passwd_self` mechanism): NixOS's PAM `password`
+stack carries `nullok`, so a passwordless account is asked for no old password
+([research/42 §3.5](../research/42-input-bootstrap.md)). No polkit rule relaxes
+`change-own-password`: making it `allow_active=yes` would let any session process set the
+wearer's password (lock-out, then escalate), which is why AccountsService defaults it to
+`auth_admin`. The `numeric-credential` hint is written by the user into their own
+`enrollment/<user>/`; a root unit publishes the greeter-readable mirror
+`/run/mura/credential-hint/<user>` (`0640 root:greeter`, [multi-user.md §3](multi-user.md)).
+`mura-provisiond` (root,
 private socket, the mura-authd shape) is **left with exactly one load-bearing job — the guest
 token gate** ([multi-user.md §4](multi-user.md)) plus the polkit-gated account-admin
 convenience path; it writes no credentials and has no conversation authorised by the absence of
@@ -251,15 +262,21 @@ holds — from first boot, on every profile. Two surfaces, one trust class:
   (`references/pmaports/main/postmarketos-initramfs/init_functions.sh:12-15, 836-963`), runs a
   tiny DHCP server for the plugged-in computer, and sshd is on
   (`references/pmbootstrap/pmb/install/_install.py:463-470`). Plug in a cable, `ssh
-  mura@<device>`, and `nmcli`, `passwd`, `useradd` are all available before the display has
-  shown anything. Physical possession of the cable is the authorisation — the same trust as
-  sitting at a TTY, which on this OS is already root-equivalent (invariant 10).
+  mura@<device>`, and `nmcli`, `passwd` (then `useradd`, `sudo`) are all available before the
+  display has shown anything. Physical possession of the cable is the authorisation — the same
+  trust as sitting at a TTY; it yields the *user* `mura`, and administration follows a `passwd`
+  (§5.3).
 - **A local web UI**, served over the same USB link, over a headset-hosted Wi-Fi hotspot with a
-  captive portal, and over the LAN once the device is on one. **The provisioning hotspot is
-  open and exists only while the device is unprovisioned** — condition-shaped: it comes up
-  automatically only while no network profile is configured *and* no password is set; it goes
-  down when either changes; afterwards it is an ordinary administrator-controlled setting, never
-  automatic again. Same trust class as the USB link. The captive-portal page is a launcher
+  captive portal, and over the LAN once the device is on one. **The provisioning hotspot exists
+  only while the device is unprovisioned** — condition-shaped: it comes up automatically only
+  while no network profile is configured *and* no password is set; it goes down when either
+  changes, or after a generous idle timeout with **no client associated** (a schema-declared
+  default, proposed 10 min; it never counts down while a phone is connected); afterwards it is
+  an ordinary administrator-controlled setting, never automatic again. **It is WPA2 with a
+  per-boot random 8-digit PSK displayed inside the headset** — the wearer reads it and types it
+  on the phone. Radio range is not the trust class of a cable: an *open* hotspot would have
+  handed a user shell as `mura` to anyone within Wi-Fi range for as long as the device stayed
+  unprovisioned (indefinitely, for an offline wearer). The captive-portal page is a launcher
   ("open `http://mura.local`"); the real UI is built for a normal browser tab (portal
   mini-browsers are hostile by design).
 
@@ -274,7 +291,10 @@ or unpackaged and provisioning-only; the latter two remain mechanism references 
 Two additions, both Cockpit-shaped: a **"Mura setup" Cockpit plugin** page (`services.cockpit.plugins`)
 mirroring §4.2's items for the phone — the guided flow Cockpit lacks, plus the locale page it
 does not have; and the **static captive-portal launcher** in front of it. A bespoke web app is
-written only if Cockpit's Wi-Fi dialog fails on real hardware (condition-shaped).
+written only if Cockpit's Wi-Fi dialog fails on real hardware (condition-shaped). **Cockpit's
+socket is bound to the USB-gadget and hotspot addresses only**; exposing it on the LAN is an
+explicit administrator setting (with `mura.local` advertised over mDNS and PAM accepting an
+empty password, an unrestricted Cockpit would be a user shell for the whole LAN — §5.3).
 
 ### 5.2 Portal mechanics (decided)
 
@@ -291,21 +311,30 @@ network" *before* the hotspot drops; on chips without concurrent AP+STA
 and the same URL works over the LAN. Mechanism references: balena wifi-connect (wildcard DNS +
 `Host` redirect + 20 s handoff wait), comitup (DHCP option 160) — [research/42 §6.2](../research/42-input-bootstrap.md).
 
-### 5.3 The passwordless default user (decided)
+### 5.3 The passwordless default user — the static posture (decided; security review 2026-09-24)
 
-`mura` ships with no password. The greeter logs it in (NixOS sets `allowNullPassword` for
-greetd). Elsewhere, **while and only while the account has no password**:
+`mura` ships with no password. **Everything below is ordinary static NixOS configuration** —
+there is no "while the account has no password" mechanism, no unit watching `shadow`, no
+drop-ins toggled at runtime. Each line is harmless once a password exists, and each stays
+correct if the wearer later removes it. Per-service posture (the table is the specification;
+[multi-user.md §3](multi-user.md) carries the PAM/polkit summary):
 
-- **sshd**: `PermitEmptyPasswords yes` **only** inside a `Match Address` block for the USB-gadget
-  subnet (and the hotspot subnet), with `nullok` on sshd's PAM stack — "you plugged the cable
-  in" is TTY-equivalent trust; over the LAN empty passwords stay refused.
-- **Cockpit**: PAM `cockpit` service with the same scoping (its `passwd` flow then sets a
-  password without asking for an old one — the *first thing* the setup page offers).
-- **sudo**: `nullok` on the sudo PAM stack so an empty password authenticates as empty —
-  the wearer of a passwordless device is already the user; once a password is set, ordinary
-  sudo. *(Discretionary, [mine]: the alternative is `wheelNeedsPassword = false`, which is
-  broader.)*
-- A declared `hashedPasswordFile` user has none of this.
+| Surface | Posture | Why |
+|---|---|---|
+| Greeter / autologin (`greetd`) | `allowNullPassword` (NixOS's own default for greetd); faillock | a passwordless account logs in without a prompt — that is the default image |
+| Lock (`mura-lock` via authd) | `allowNullPassword`; faillock | no credential ⇒ no lock engages (ADR 0007); a numeric one renders the digit pad |
+| **`sudo`** | **standard — no `nullok`**, `wheelNeedsPassword` default | a passwordless `mura` is a full *user*; **administration requires a password**. `nullok` here would make `sudo -S <<< ""` from any session process, or any shell obtained as `mura`, into root |
+| **polkit `auth_admin` actions** | **standard** — no Mura rule relaxes them | same reasoning; the only Mura polkit rule is the greeter's NetworkManager rule ([multi-user.md §2](multi-user.md)) |
+| Setting the first password | **`passwd`** (own account; the welcome item and Cockpit drive it in a pty) | NixOS's PAM `password` stack has `nullok`: no old password is asked. This is the admin gate. No polkit own-password rule (an escalation vector) |
+| **sshd** | **global `PasswordAuthentication no`** (key-only) **+** `Match Address <usb-gadget-subnet>` → `PasswordAuthentication yes`, `PermitEmptyPasswords yes`; `nullok` on the sshd PAM stack | "you plugged the cable in" is TTY-equivalent trust and yields the *user*; over the LAN and the hotspot, password auth is refused — which also protects a short numeric password from remote guessing once one exists |
+| **Cockpit** | PAM `cockpit` with `nullok`; **socket bound to the gadget and hotspot addresses only**; LAN exposure an administrator setting | reachable only on physically- or PSK-authorised links; its `passwd` flow is the first thing the setup page offers; admin operations inside Cockpit use sudo and therefore also wait for a password |
+| Hotspot | WPA2, per-boot 8-digit PSK shown in-headset; exists only while unprovisioned; idle timeout (§5) | radio range is not cable possession |
+| A declared `hashedPasswordFile` user | none of this applies | Path A |
+
+Consequences worth stating: a person who never sets a password keeps a fully usable device and
+simply cannot administer it — the welcome surface's "set a password" item says so in those
+words; SSH from a laptop is a `passwd` away from `sudo`; nothing in the system ever depends on
+detecting the passwordless state.
 
 A native phone app is optional sugar over the same SSH/HTTP surfaces — no bespoke daemon —
 and its app-store dependency is recorded as an ethos cost. BLE GATT credential provisioning
@@ -375,11 +404,18 @@ by overview invariant 10**: this machine has root, and it belongs to its wearer.
 11. A USB keyboard plugged in during the greeter types into the auth scene with no
     configuration; a just-works Bluetooth keyboard pairs from the greeter's agent.
 12. Passwordless `mura`: greeter login succeeds; SSH with an empty password succeeds from the
-    USB subnet and is refused from the LAN; `sudo` succeeds with an empty password; after a
-    password is set all three behave as on any Linux machine. A digits-only password yields the
-    digit pad at greeter and lock; a mixed password yields the keyboard path.
+    USB subnet and is **refused** from every other interface; **`sudo` fails** and polkit
+    `auth_admin` actions fail; `passwd` succeeds without an old password; after a password is
+    set, `sudo` works and SSH password auth is still refused off the USB subnet (key-only). A
+    digits-only password yields the digit pad at greeter and lock; a mixed password yields the
+    keyboard path; the greeter reads the hint only through `/run/mura/credential-hint/`.
 13. A Wi-Fi network joined at the greeter is a system connection visible to the user who then
     logs in ([multi-user.md §2](multi-user.md)).
+14. Cockpit answers only on the gadget and hotspot addresses until the administrator enables it
+    on the LAN; the hotspot refuses association without the in-headset PSK, comes up only while
+    unprovisioned, and goes down after the idle timeout with no client associated.
+15. No process in the session can change the account password except through `passwd`'s own
+    PAM conversation (no D-Bus path sets a password without `auth_admin`).
 
 ## 9. Open items
 

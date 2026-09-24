@@ -4,8 +4,11 @@
 decision 7 added; **rev 2.1 same day** — the [research/42](../../research/42-input-bootstrap.md)
 review ruled: decision 2 (one credential), decision 3 (welcome contents; provisiond = guest gate
 only), decision 7 (Cockpit, portal, passwordless wiring), decision 8 added (the input floor),
-decision 9 added (`pairing/` class). Rev 1 (2026-09-23) designed a pre-login onboarding wizard;
-rev 2 records why it does not exist.
+decision 9 added (`pairing/` class); **rev 2.2 same day** — security review of the passwordless
+posture: decisions 3 and 7 amended (no polkit own-password rule — `passwd` is the gate; no
+`nullok` on sudo/polkit — admin requires a password; SSH key-only off the USB subnet; Cockpit
+bound to trusted links; hotspot WPA2 with an in-headset PSK; all static). Rev 1 (2026-09-23)
+designed a pre-login onboarding wizard; rev 2 records why it does not exist.
 **Date:** 2026-09-23 / 2026-09-24
 **Context sources:** [first-run-onboarding.md](../first-run-onboarding.md) (the design this
 decides), [research/41 §1.2](../../research/41-multi-user-login-landscape.md) (GDM's
@@ -65,9 +68,10 @@ has no such gap. Rev 2 follows that observation to its conclusions.
    peripherals (controllers/Bluetooth), locale (declared preselect, short list, type-to-filter),
    time zone, Wi-Fi or skip, set a password or skip, a "how to reach this device" card
    (first-run-onboarding §4.2). Floor height and boundary are spatial-mapping's, not the
-   surface's. Privileged writes go through standard mechanisms (a Mura polkit rule for
-   frictionless own-password change, NetworkManager D-Bus policy, `localed`/`timedated`, the
-   BlueZ agent API); `mura-provisiond` is left with **exactly one load-bearing job, the guest
+   surface's. Privileged writes go through standard mechanisms (NetworkManager D-Bus policy,
+   `localed`/`timedated`, the BlueZ agent API; the password item drives **`passwd` in a pty** —
+   rev 2.2: no polkit rule relaxes `change-own-password`, which would let any session process
+   set the wearer's password); `mura-provisiond` is left with **exactly one load-bearing job, the guest
    token gate** (plus the polkit-gated account-admin convenience path) and **has no conversation
    authorised by the absence of state**.
 4. **A greeter image declares its first account; the build asserts it.** Multi-user profile ⇒
@@ -93,19 +97,28 @@ has no such gap. Rev 2 follows that observation to its conclusions.
 7. **Out-of-band provisioning exists on every profile from first boot.** The device is an
    ordinary Linux host reachable from a device the wearer holds: (a) SSH over a USB Ethernet
    gadget (the postmarketOS initramfs pattern, `references/pmaports/main/postmarketos-initramfs/init_functions.sh:12-15, 836-963`);
-   (b) a local web UI over the USB link, over a **headset-hosted open hotspot with a captive
-   portal that exists only while the device is unprovisioned** (no network profile configured
-   *and* no password set; afterwards an administrator-controlled setting, never automatic), and
-   over the LAN. Both share the physical-possession trust class of a TTY. **Rev 2.1 rulings:**
+   (b) a local web UI over the USB link, over a **headset-hosted hotspot with a captive portal
+   that exists only while the device is unprovisioned** (no network profile configured *and* no
+   password set; also down after a schema-declared idle timeout with no client associated;
+   afterwards an administrator-controlled setting, never automatic) — **WPA2 with a per-boot
+   random 8-digit PSK displayed inside the headset** (rev 2.2: radio range is not cable
+   possession; an open hotspot would have exposed a user shell as `mura` to anyone in range for
+   as long as the device stayed unprovisioned) — and over the LAN. The USB link carries the
+   physical-possession trust of a TTY and yields the *user*; administration follows a `passwd`.
+   **Rev 2.1 rulings:**
    the web app **is Cockpit** (`services.cockpit`; its NetworkManager page joins Wi-Fi, `passwd`
    sets the password, PAM login) plus a "Mura setup" Cockpit plugin page for the guided flow and
    a static captive-portal launcher in front — a bespoke web app only if Cockpit's Wi-Fi dialog
    fails on hardware; RaspAP/LuCI/wifi-connect/comitup rejected as the tool. Portal = NM AP mode
    + shared IPv4 with a `dnsmasq-shared.d` wildcard address and DHCP option 114, probe redirect
-   to the one static launcher page (first-run-onboarding §5.2). Passwordless `mura`: while no
-   password is set, `PermitEmptyPasswords` only under `Match Address` for the USB/hotspot
-   subnets with `nullok` on the sshd and sudo stacks; the setup page offers a password first
-   (§5.3). A native phone app is optional sugar over the same surfaces, its app-store dependency
+   to the one static launcher page (first-run-onboarding §5.2). **Passwordless `mura` (rev 2.2,
+   all static — first-run §5.3):** sshd is key-only everywhere except a `Match Address` block
+   for the USB-gadget subnet (`PasswordAuthentication yes`, `PermitEmptyPasswords yes`, `nullok`);
+   Cockpit's socket is bound to the gadget and hotspot addresses only (LAN exposure an
+   administrator setting); **`sudo` and polkit `auth_admin` stay standard — a passwordless
+   account cannot administer until it sets a password with `passwd`**, which asks no old
+   password; the setup page offers that first. Nothing in the system detects "no password" at
+   runtime. A native phone app is optional sugar over the same surfaces, its app-store dependency
    recorded as an ethos cost; BLE GATT provisioning (Improv/Fast Pair class) rejected for v1.
 8. **The input floor is a conformance requirement** *(rev 2.1)*: IMU head-aim plus the HMD's
    own buttons, dwell where a button is unusable; every pre-login scene and every welcome item
@@ -154,6 +167,18 @@ has no such gap. Rev 2 follows that observation to its conclusions.
   terms, just a short password; the digit pad is a rendering keyed off a non-secret hint.
 - **BLE GATT credential provisioning** (Improv Wi-Fi / Fast Pair class): recorded in research/42
   as the bespoke-surface alternative to the hotspot; rejected for v1.
+- **`nullok` on the sudo stack while passwordless** (rev 2.1's wiring): rejected in the rev 2.2
+  review — it made `sudo -S <<< ""` from any session process, or any shell obtained as `mura`
+  over USB or radio, into root. Admin requires a password; `passwd` is the gate.
+- **A Mura polkit rule granting `change-own-password` without `auth_admin`** (rev 2.1): rejected
+  — any session process could set the wearer's password; AccountsService defaults to
+  `auth_admin` for this reason, and `passwd` already asks no old password for a passwordless
+  account.
+- **An open provisioning hotspot** (rev 2.1): superseded by WPA2 with an in-headset PSK — radio
+  range is not cable possession, and the unprovisioned state can last indefinitely offline.
+- **A dynamic "while no password" mechanism** (path unit on `shadow`, toggled drop-ins):
+  rejected — with the three rulings above every posture is static and nothing needs to detect
+  the passwordless state.
 - **Headset-shows-QR for phone pairing**: rejected outright — the display is behind lenses.
 - **Monado `qwerty`/evdev driver as the button path**: rejected — SDL-window-bound and disables
   other drivers; the compositor reads HMD buttons via libinput (decision 8).

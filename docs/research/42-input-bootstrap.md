@@ -630,6 +630,14 @@ set; afterwards an ordinary administrator setting, never automatic). PSK or nume
 display problem (a phone cannot scan a QR shown inside the headset) rules out headset-shows-QR as
 the *only* path; Steam Frame's through-the-lens sign-in shows it is not impossible.
 
+**Review outcome (2026-09-24, after the security review of the Phase-4 wiring):** the open
+hotspot was **superseded** — WPA2 with a per-boot random 8-digit PSK displayed inside the
+headset (the wearer reads it and types it on the phone), plus a schema-declared idle timeout that
+counts only while no client is associated. Reason: radio range is not the trust class of a cable,
+and "unprovisioned" can persist indefinitely for an offline wearer; with the original sudo
+wiring an open hotspot would have been one `sudo` from root, and even with standard sudo it
+would have exposed a user shell as `mura`. Recorded in first-run-onboarding §5 / ADR 0017 rev 2.2.
+
 ### 6.5 The passwordless default user vs SSH and web login
 
 `mura` ships with no password (ADR 0017 rev 2). Consequences and candidate resolutions (§3.5):
@@ -647,6 +655,19 @@ the *only* path; Steam Frame's through-the-lens sign-in shows it is not impossib
   `auth_admin` even for one's own account by default — a Mura polkit rule would be needed to make
   a "set a password" welcome-surface item frictionless.
 - A declared `hashedPasswordFile` user has none of these problems.
+
+**Review outcome (2026-09-24):** candidate **(b) adopted for the USB-gadget subnet only** —
+sshd global `PasswordAuthentication no`, a `Match Address` block for the gadget subnet with
+`PasswordAuthentication yes` + `PermitEmptyPasswords yes`, `nullok` on the sshd stack; never over
+radio. **(c) adopted** as the setup page's first item. **(a) rejected** (a default password
+nobody chose). **`nullok` on sudo rejected** — `sudo -S <<< ""` from any session process would be
+root; a passwordless account cannot administer until `passwd`, which asks no old password (the
+Steam Deck / NixOS posture). **The polkit own-password rule rejected** — `allow_active=yes` on
+`change-own-password` lets any session process set the wearer's password; `passwd` in a pty (the
+Cockpit mechanism) needs no rule. Cockpit's socket bound to gadget + hotspot addresses. The
+`numeric-credential` hint is mirrored for the greeter at `/run/mura/credential-hint/<user>`
+(`0640 root:greeter`). Everything static — no mechanism detects the passwordless state.
+Recorded in first-run-onboarding §5.3 / ADR 0017 rev 2.2 / multi-user §3.
 
 ### 6.6 Native companion app
 

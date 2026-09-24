@@ -117,10 +117,14 @@ as amended: the separate optional `pam_mura_pin` module of rev 3 is withdrawn �
 short numeric password, and Unix does not care.)*
 
 - **The digit pad is a rendering choice, not a credential.** When a user sets a digits-only
-  password, a **non-secret `numeric-credential` hint** is written to `enrollment/<user>/` (by
-  the same polkit-gated own-password action that set it; the hash itself cannot reveal its
-  alphabet); the greeter and lock render a digit pad for that user, the full virtual-keyboard
-  path otherwise — both operable at the input floor ([first-run-onboarding.md §4.4](first-run-onboarding.md)).
+  password (through `passwd` — the welcome item and Cockpit drive it in a pty; no D-Bus path
+  sets a password without `auth_admin`), a **non-secret `numeric-credential` hint** is written
+  by the user into their own `enrollment/<user>/` (the hash itself cannot reveal its alphabet).
+  The greeter runs as `greeter` and needs the hint pre-auth, so a root unit publishes a mirror
+  `/run/mura/credential-hint/<user>` (`0640 root:greeter`); the alphabet leak is bounded to
+  local users and covered by faillock. The greeter and lock render a digit pad for that user,
+  the full virtual-keyboard path otherwise — both operable at the input floor
+  ([first-run-onboarding.md §4.4](first-run-onboarding.md)).
   Session-auth's `style=secret` fast path keys off this hint plus service config, never
   prompt-text parsing ([specs/session-auth.md §2.3](../../specs/session-auth.md)). A user may
   change to a strong password at any time; the hint follows. No `enrollment/<user>/secret/`
@@ -133,11 +137,12 @@ short numeric password, and Unix does not care.)*
 - **A short numeric password is weak against remote guessing; the design carries that, the
   user chooses it.** `pam_faillock` with counters persisted on `/persist` (tmpfs counters
   reset on the reboot a locked device forces), scoped per-account with a device-level ladder
-  above; and sshd accepts password authentication for empty/short passwords only on the
-  physically-trusted subnets ([first-run-onboarding.md §5.3](first-run-onboarding.md)) — over the
-  LAN, SSH password auth is standard sshd policy for the administrator to set. The terminal
-  fallback for a forgotten credential is standard admin (`sudo passwd`) — recovery-environment
-  reset exists for the machine, not per-user.
+  above; and **sshd is key-only on every interface except the USB-gadget subnet**
+  ([first-run-onboarding.md §5.3](first-run-onboarding.md)), so a short numeric password is never
+  exposed to LAN guessing. **A passwordless account cannot administer**: `sudo` and polkit
+  `auth_admin` stay standard (no `nullok`); setting a password with `passwd` — which asks no old
+  password — is the gate. The terminal fallback for a forgotten credential is standard admin
+  (`sudo passwd`) — recovery-environment reset exists for the machine, not per-user.
 
 ## 4. The guest session (optional, off by default)
 
@@ -209,7 +214,9 @@ family's own options (uefi-rauc owns its partition scheme).
    persisted; early-boot NSS resolves the persisted files, no root-slot decoy).
 2. The one password works everywhere always: greeter, lock, SSH, TTY, `su`, `sudo`; a
    digits-only password renders the digit pad at greeter and lock, any other password the
-   keyboard path; changing between them flips the rendering with no other state change.
+   keyboard path; changing between them flips the rendering with no other state change. A
+   passwordless account logs in everywhere it is allowed to and **cannot `sudo`** or pass a
+   polkit `auth_admin` prompt; `passwd` succeeds for it without an old password.
 3. Guest disabled: raw-socket guest `create_session` fails at both privileged points; guest
    teardown on logout/doff/power-cut leaves no uid, bytes, or places; sweep completes before
    greetd starts.
