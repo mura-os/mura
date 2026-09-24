@@ -102,6 +102,12 @@
         machine.fail("pgrep -u mura -x sleep")
         machine.fail(userctl + "is-active wayland-wm@sleep.service wayland-session@sleep.target")
 
+    with subtest("D6: on the greeter profile the blessing tier is a stable greeter, never a login"):
+        machine.succeed("systemctl show -p Result --value mura-preflight.service | grep -qx success")
+        machine.wait_for_unit("mura-readiness.service", timeout=360)
+        machine.wait_for_unit("boot-complete.target", timeout=60)
+        assert machine.succeed("cat /var/lib/mura/state/health/crashloop").strip() == "0"
+
     with subtest("D1: a runtime-created account survives a reboot (userborn hybrid mode on the persisted /etc overlay)"):
         machine.succeed("findmnt -no FSTYPE /etc | grep -qx overlay")
         machine.succeed("useradd -m -G wheel guestadmin && echo 'guestadmin:pw' | chpasswd")

@@ -7,6 +7,8 @@
   profileModules = [ ../../profiles/default.nix ];
 
   testScript = ''
+    import re
+
     machine.start()
     machine.wait_for_unit("multi-user.target")
 
@@ -48,15 +50,18 @@
         machine.fail("journalctl -b --no-pager _UID=1000 | grep -qi 'libseat.*\\(fail\\|error\\|could not\\)'")
 
     with subtest("D4: the wrapper is the greetd session's leader and stays alive"):
-        sid = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}' | head -1").strip()
-        leader = machine.succeed(f"loginctl show-session {sid} -p Leader --value").strip()
         # greetd's session worker is the logind leader and forks the session command: the
         # wrapper is its child, in the same session scope. uwsm binds the graphical session to
-        # the wrapper's PID (wayland-session-bindpid@<pid>): that PID must be in the scope,
-        # descend from the leader, and be alive.
+        # the wrapper's PID (wayland-session-bindpid@<pid>): that PID must be in a session
+        # scope, descend from that session's leader, and be alive. (The session is derived
+        # from the wrapper's cgroup — other mura sessions may exist, e.g. the readiness gate's.)
         bind = machine.succeed(userctl + "list-units --no-legend --plain 'wayland-session-bindpid@*' | awk '{print $1}'").strip()
         wpid = bind.split("@", 1)[1].split(".", 1)[0]
-        assert f"session-{sid}.scope" in machine.succeed(f"cat /proc/{wpid}/cgroup"), f"wrapper {wpid} not in session-{sid}.scope"
+        cg = machine.succeed(f"cat /proc/{wpid}/cgroup")
+        m = re.search(r"session-(\d+)\.scope", cg)
+        assert m, f"wrapper {wpid} is not in a logind session scope: {cg}"
+        sid = m.group(1)
+        leader = machine.succeed(f"loginctl show-session {sid} -p Leader --value").strip()
         cmd = machine.succeed(f"tr '\\0' ' ' < /proc/{wpid}/cmdline").strip()
         assert "signal-handler" in cmd or "uwsm" in cmd, f"bound pid is not the wrapper: {cmd}"
         p = wpid
@@ -169,6 +174,22 @@
         # -f: without it rm prompts on the write-protected file and waits on stdin forever
         machine.fail("su - nobody -s /bin/sh -c 'rm -f /var/lib/mura/state/credential-hint/mura'")
         machine.succeed("test -e /var/lib/mura/state/credential-hint/mura")
+
+    with subtest("D6: the preflight ran before greetd, wrote its report, and the boot was blessed"):
+        machine.succeed("systemctl show -p Result --value mura-preflight.service | grep -qx success")
+        pre = machine.succeed("systemctl show -p ExecMainExitTimestampMonotonic --value mura-preflight.service").strip()
+        gr = machine.succeed("systemctl show -p ExecMainStartTimestampMonotonic --value greetd.service").strip()
+        assert int(pre) <= int(gr), f"preflight finished at {pre} but greetd started at {gr}"
+        import json
+        rep = json.loads(machine.succeed("cat /run/mura/preflight.json"))
+        assert rep["result"] in (0, 1), rep    # a soft failure is allowed (no select key in the VM)
+        passed = {c["check"] for c in rep["checks"] if c["pass"]}
+        for name in ("P1 persist", "P2 factory calibration", "P3 display path", "P4 vulkan", "P5 tracking nodes", "P6 monado probe"):
+            assert name in passed, f"{name} did not pass: {rep}"
+        machine.wait_for_unit("mura-readiness.service", timeout=360)
+        machine.wait_for_unit("boot-complete.target", timeout=60)
+        assert machine.succeed("cat /var/lib/mura/state/health/crashloop").strip() == "0"
+        machine.fail("systemctl is-active mura-recovery.target")
 
     with subtest("D1: passwd persists across a reboot; F1 does not re-run; machine-id stable"):
         hashed = machine.succeed("getent shadow mura").split(":")[1]

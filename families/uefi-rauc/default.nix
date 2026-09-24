@@ -32,22 +32,35 @@ let
 
   # RAUC custom bootloader backend (interface: rauc calls with
   # get-primary | set-primary <bootname> | get-state <bootname> | set-state <bootname> good|bad).
-  # Primary selection = systemd-boot `default` line in /esp/loader/loader.conf;
-  # slot state lives in /esp/loader/mura-slot-state. steamos-bootconf shape, minimal.
+  # Primary selection = systemd-boot `default` line in /esp/loader/loader.conf (entry ID `a`/`b`
+  # — the ID is the file name minus `.conf` and minus any boot-counting suffix, so it stays
+  # stable across `a+3.conf` → `a+2-1.conf` → `a.conf`); slot state lives in
+  # /esp/loader/mura-slot-state. steamos-bootconf shape, minimal.
+  #
+  # Boot counting (D6, implementation-path §3a; references/systemd/docs/AUTOMATIC_BOOT_ASSESSMENT.md):
+  # `set-primary S` arms the target slot's entry with `+N` tries (`a.conf` → `a+3.conf`);
+  # systemd-boot renames it per attempt (`a+2-1.conf`, …) and falls back to the other entry when
+  # the counter hits zero; `systemd-bless-boot good` (upstream, after boot-complete.target ←
+  # mura-readiness) strips the counters; `mura-mark-good.service` then tells RAUC — the third,
+  # separate transition. A slot that was never armed boots uncounted (the factory image).
+  bootTries = toString cfg.deployment.bootTries;
   bootconf = pkgs.writeShellApplication {
     name = "mura-bootconf";
     text = ''
       LOADER=/esp/loader/loader.conf
       STATE=/esp/loader/mura-slot-state
+      ENTRIES=/esp/loader/entries
       cmd="''${1:-}"; slot="''${2:-}"; val="''${3:-}"
-      to_entry() { case "$1" in A) echo a.conf ;; B) echo b.conf ;; *) echo "unknown slot $1" >&2; exit 1 ;; esac; }
+      to_id() { case "$1" in A) echo a ;; B) echo b ;; *) echo "unknown slot $1" >&2; exit 1 ;; esac; }
       case "$cmd" in
         get-primary)
-          d=$(sed -n 's/^default[[:space:]]*//p' "$LOADER")
-          case "$d" in a.conf) echo A ;; b.conf) echo B ;; *) echo "unknown default $d" >&2; exit 1 ;; esac ;;
+          d=$(sed -n 's/^default[[:space:]]*//p' "$LOADER" | sed 's/\.conf$//')
+          case "$d" in a) echo A ;; b) echo B ;; *) echo "unknown default $d" >&2; exit 1 ;; esac ;;
         set-primary)
-          e=$(to_entry "$slot")
-          tmp=$(mktemp); sed "s/^default[[:space:]].*/default $e/" "$LOADER" > "$tmp"; cat "$tmp" > "$LOADER"; rm -f "$tmp" ;;
+          id=$(to_id "$slot")
+          # arm the entry with +N tries if it carries no counter yet (a.conf or none → a+N.conf)
+          if [ -e "$ENTRIES/$id.conf" ]; then mv "$ENTRIES/$id.conf" "$ENTRIES/$id+${bootTries}.conf"; fi
+          tmp=$(mktemp); sed "s/^default[[:space:]].*/default $id/" "$LOADER" > "$tmp"; cat "$tmp" > "$LOADER"; rm -f "$tmp" ;;
         get-state)
           touch "$STATE"
           s=$(sed -n "s/^$slot=//p" "$STATE"); echo "''${s:-good}" ;;
@@ -56,7 +69,12 @@ let
           tmp=$(mktemp); { grep -v "^$slot=" "$STATE" || true; echo "$slot=$val"; } > "$tmp"; cat "$tmp" > "$STATE"; rm -f "$tmp" ;;
         get-current)
           sed -n 's/.*rauc\.slot=\([AB]\).*/\1/p' /proc/cmdline ;;
-        *) echo "usage: mura-bootconf get-primary|set-primary S|get-state S|set-state S good|bad|get-current" >&2; exit 1 ;;
+        get-tries)
+          # observability: the counted entry for a slot, if any (a+2-1.conf → "2 tries left, 1 done")
+          id=$(to_id "$slot")
+          f=$(ls "$ENTRIES"/"$id"+*.conf 2>/dev/null | head -n1)
+          [ -n "$f" ] && basename "$f" || echo "$id.conf (not counted)" ;;
+        *) echo "usage: mura-bootconf get-primary|set-primary S|get-state S|set-state S good|bad|get-current|get-tries S" >&2; exit 1 ;;
       esac
     '';
   };
@@ -100,7 +118,7 @@ in
           "/EFI/mura/initrd".source =
             "${config.system.build.initialRamdisk}/${config.system.boot.loader.initrdFile}";
           "/loader/loader.conf".source = pkgs.writeText "loader.conf" ''
-            default a.conf
+            default a
             timeout 3
             editor yes
           '';
@@ -198,7 +216,7 @@ in
     [system]
     compatible=${compatible}
     bootloader=custom
-    statusfile=/tmp/rauc.status
+    statusfile=/var/lib/mura/state/health/rauc.status
 
     [handlers]
     bootloader-custom-backend=${bootconf}/bin/mura-bootconf
@@ -221,10 +239,27 @@ in
   systemd.services.rauc = {
     description = "RAUC update service";
     wantedBy = [ "multi-user.target" ];
+    after = [ "mura-persist-setup.service" ]; # the status file lives on /persist
     serviceConfig = {
       Type = "dbus";
       BusName = "de.pengutronix.rauc";
       ExecStart = "${pkgs.rauc}/bin/rauc service";
+    };
+  };
+
+  # Health-gated success (images-and-updates.md; implementation-path §3a): the THIRD transition.
+  # boot-complete.target is reached only after mura-readiness (modules/os/health.nix);
+  # systemd-bless-boot then strips the +N counters from the ESP entry (second transition); only
+  # then is RAUC told the slot is good. Three observable steps, each on its own.
+  systemd.services.mura-mark-good = {
+    description = "Mura: mark the booted RAUC slot good after the boot was blessed";
+    wantedBy = [ "boot-complete.target" ];
+    after = [ "boot-complete.target" "systemd-bless-boot.service" "rauc.service" ];
+    requires = [ "boot-complete.target" "rauc.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${pkgs.rauc}/bin/rauc status mark-good";
     };
   };
 

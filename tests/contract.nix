@@ -262,6 +262,7 @@ let
       readinessTimeoutSeconds = 45;
     };
     config.mura.oob.hotspot.idleTimeoutMinutes = 25;
+    config.mura.health.crashLoopThreshold = 5;
   };
 
   # Assertion helpers.
@@ -329,6 +330,11 @@ let
     readinessTimeoutDefault = eval.config.mura.xr.session.readinessTimeoutSeconds == 30;
     # first-run §5.4 / D3: the gadget is a hardware fact, the hotspot idle timeout a schema value.
     usbGadgetDefaultOn = eval.config.mura.hardware.input.usbGadget == true;
+    # implementation-path §3a/§3a-bis / D6: health values are schema values.
+    crashLoopDefault = eval.config.mura.health.crashLoopThreshold == 3;
+    readinessStabilityDefault = eval.config.mura.health.readinessStabilitySeconds == 20;
+    bootTriesDefault = eval.config.mura.deployment.bootTries == 3;
+    crashLoopOverridable = (evalContract faillockStrict).config.mura.health.crashLoopThreshold == 5;
     hotspotIdleDefault = eval.config.mura.oob.hotspot.idleTimeoutMinutes == 10;
     hotspotIdleOverridable =
       (evalContract faillockStrict).config.mura.oob.hotspot.idleTimeoutMinutes == 25;

@@ -83,8 +83,13 @@ hardware adaptation + state-schema expectations** — not just the rootfs. Two b
 **Status: implemented Frame-scoped and VM-boot-proven** ([families/uefi-rauc](../../families/uefi-rauc/default.nix);
 evidence [33 §9](../research/33-steam-frame-donor.md)): repart GPT with donor-mirroring partlabels,
 systemd-boot A/B entries carrying the `rauc.slot=` contract, custom bootloader backend, test-signed
-`format=plain` bundle, and a demonstrated A→B install/reboot/mark-good round-trip in QEMU. Still
-ahead: casync/desync-seeded deltas, a boot-time mark-good service wired to the readiness check, and
+`format=plain` bundle, and a demonstrated A→B install/reboot/mark-good round-trip in QEMU (the
+mark-good was a manual `rauc status mark-good` in that spike). **D6 (2026-09-24)** wired the
+boot-time path: `mura-bootconf set-primary` arms `+N` tries on the target entry, `mura-readiness`
+gates `boot-complete.target`, upstream `systemd-bless-boot` clears the counters, and
+`mura-mark-good.service` marks the slot good in RAUC — VM-verified up to `boot-complete.target`;
+the counted-entry fallback and RAUC transitions await a scripted run of the QEMU image proof.
+Still ahead: casync/desync-seeded deltas, that scripted A/B fallback run, and
 closure slimming ([33 §10](../research/33-steam-frame-donor.md)).
 Steam Frame already uses this ([07](../research/07-device-landscape.md),
 [06](../research/06-donor-pipeline.md) §2.2), all tooling is in nixpkgs, and the bundle format is
@@ -108,7 +113,7 @@ booted, the adaptation services started, and the XR path passed `mura.qualificat
 — not merely "the kernel booted." Rollback must account for mutable-data migrations and AVB
 rollback-protection (arbitrary downgrades cannot be promised). The full design is
 [implementation-path.md §3a](implementation-path.md): profile-specific blessing tiers (appliance =
-stable locked owner session; multi-user = stable greeter — never waiting for a login), a stability
+stable `mura` session, locked only if a credential exists; multi-user = stable greeter — never waiting for a login), a stability
 interval rather than a first frame, and systemd-boot `+tries` counting / `boot-complete.target` /
 `systemd-bless-boot` / RAUC slot-status as three separately observable transitions, wired
 explicitly in the uefi-rauc family (it manages systemd-boot manually).

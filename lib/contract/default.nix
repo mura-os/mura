@@ -205,6 +205,35 @@ in
       };
     };
 
+    ## Health: preflight, crash-loop ladder, readiness (implementation-path §3a/§3a-bis; D6) --
+    health = {
+      crashLoopThreshold = mkOption {
+        type = types.ints.positive;
+        default = 3;
+        description = ''
+          Consecutive boots on which the XR preflight (`mura-preflight`, implementation-path
+          §3a-bis) failed a hard check before the boot enters `mura-recovery.target` (the
+          diagnostic target: sshd + serial, no greeter). Reset by a blessed boot. Schema value
+          (constraint 9); the default is [mine].
+        '';
+      };
+      deviceWaitSeconds = mkOption {
+        type = types.ints.positive;
+        default = 20;
+        description = "How long the preflight waits for the tracking device nodes (P5) and the Monado probe (P6) before failing them.";
+      };
+      readinessStabilitySeconds = mkOption {
+        type = types.ints.positive;
+        default = 20;
+        description = ''
+          Seconds the compositor (appliance) or the greeter (multi-user) must stay up without a
+          restart before the boot is blessed (`mura-readiness` → `boot-complete.target`,
+          implementation-path §3a G3-minimum tier). A first frame alone can precede a crash
+          loop; the interval is what makes blessing mean something. Schema value; [mine].
+        '';
+      };
+    };
+
     ## Out-of-band access (first-run-onboarding.md §5; modules/os/oob.nix, D3) --------
     oob.hotspot = {
       idleTimeoutMinutes = mkOption {
@@ -657,6 +686,17 @@ in
         description = "Boot scheme; selects the image family and update backend.";
       };
       abSlots = mkOption { type = types.bool; default = false; description = "Device uses A/B slots."; };
+      bootTries = mkOption {
+        type = types.ints.positive;
+        default = 3;
+        description = ''
+          Boot attempts a freshly installed slot gets before systemd-boot falls back to the
+          previous one (the `+N` BLS counter armed by `mura-bootconf set-primary`;
+          implementation-path §3a, images-and-updates.md health-gated success). A blessed boot
+          (mura-readiness → boot-complete.target → systemd-bless-boot) clears it. Schema value;
+          the default is systemd's own.
+        '';
+      };
       flashMethod = mkOption {
         type = types.enum [ "fastboot" "heimdall" "edl-qdl" "rauc" "none" ];
         default = "none";

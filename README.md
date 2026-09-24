@@ -58,9 +58,11 @@ cores; `ssh -p 2221 mura@localhost`. State persists in the VM's `.qcow2` beside 
 tree — delete it for a fresh boot.
 
 **Rung 2 automated — `nix build .#vm-test-default-image` / `.#vm-test-multi-user` /
-`.#vm-test-oob`**: the D-track's exit criteria as NixOS VM tests ([tests/vm/](tests/vm/)); `oob`
-drives the USB gadget (`dummy_hcd`, both ends in the VM), the provisioning hotspot
-(`mac80211_hwsim`, a second radio as the phone) and the `mura-setup` stub. On demand only — they
+`.#vm-test-oob` / `.#vm-test-health`**: the D-track's exit criteria as NixOS VM tests
+([tests/vm/](tests/vm/)); `oob` drives the USB gadget (`dummy_hcd`, both ends in the VM), the
+provisioning hotspot (`mac80211_hwsim`, a second radio as the phone) and the `mura-setup` stub;
+`health` forces a hard preflight failure and walks the crash-loop ladder to the recovery target
+and back. On demand only — they
 boot a VM and take minutes, so they are not part of `nix flake check`.
 
 **Rung 3 — `nix run .#frame-vm-run -- <image.raw[.zst]>`** (image/update machinery only): the

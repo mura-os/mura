@@ -158,6 +158,8 @@ in
           # setup-complete marker (first-run §3, §5): the same /tmp shape — the session user
           # (welcome surface) or mura-setup (web app) creates the file; only owner/root remove it.
           install -d -m 1777 ${root}/state/setup
+          # health (modules/os/health.nix): the crash-loop counter, RAUC's status file (family)
+          install -d -m 0755 ${root}/state/health
         '';
       };
 

@@ -75,7 +75,7 @@
     abSlots = true;
     flashMethod = "rauc";
     imageVariants = [ "uefi-rauc" ];
-    protectedPartitions = [ "syspersist" ]; # donor: PARTLABEL syspersist, mounted ro
+    protectedPartitions = [ "syspersist" ]; # donor: PARTLABEL syspersist; Mura mounts it rw at /persist (stage 1, D1)
   };
 
   ###### Userspace ######

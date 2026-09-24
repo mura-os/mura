@@ -113,8 +113,8 @@ class (iv) is the compositor axis.
 
 | # | Stage | Exists today | To build |
 |---|---|---|---|
-| B1b | XR preflight + recovery ladder | registry names the XR-init preflight probe (**partial**; pattern from KWin VR's `kwinvr-xrtest`, [ADR 0013 §2](adr/0013-kwin-vr-disposition.md); composition §7.3 makes it normative; [research/44](../research/44-hardware-enablement-audit-methodology.md) indexes domain readiness bundles) | gate before greeter/session start: runtime-created Vulkan device, GPU match, factory-calibration validity, backend-defined DRM/IMU transport enumeration, advancing sensor/pose proof, and a dedicated Monado probe compositor/client reaching stable per-eye presentation. Profile-dependent accessory checks remain qualification-only until attachment policy exists. Crash-loop threshold → flat/SSH/diagnostic fallback; failure must never leave a permanently dark headset |
-| B9 | Session-ready gate + update mark-good | `mura.qualification.readinessCheck` contract option + tier assertion exist ([lib/contract](../../lib/contract/default.nix)); the mark-good service is the recorded "still ahead" item ([images-and-updates §RAUC](images-and-updates.md)) | see §3a: readiness tiers, the mark-good service, and systemd-boot boot-counting wired explicitly in the uefi-rauc family |
+| B1b | XR preflight + recovery ladder | **implemented at D6** (`modules/os/health.nix`: `mura-preflight` P1–P7 before greetd, `mura-crashloop` counter, `mura-recovery.target`; VM-verified incl. the forced ladder). Flat-output fallback on a docked connector is the docked-mode rung's; the greeter's a11y exposure of a soft result is G1's | gate before greeter/session start: runtime-created Vulkan device, GPU match, factory-calibration validity, backend-defined DRM/IMU transport enumeration, advancing sensor/pose proof, and a dedicated Monado probe compositor/client reaching stable per-eye presentation. Profile-dependent accessory checks remain qualification-only until attachment policy exists. Crash-loop threshold → flat/SSH/diagnostic fallback; failure must never leave a permanently dark headset |
+| B9 | Session-ready gate + update mark-good | **implemented at D6**: `mura-readiness` (blessing tier) `RequiredBy=boot-complete.target` on every profile; uefi-rauc arms `+N` in `set-primary`, `systemd-bless-boot` strips it, `mura-mark-good` tells RAUC — three transitions; `mura.qualification.readinessCheck` stays the device's named check the tier consumes | see §3a: readiness tiers, the mark-good service, and systemd-boot boot-counting wired explicitly in the uefi-rauc family |
 
 ## 3. The rung ladder
 
@@ -165,7 +165,7 @@ security acceptance checks are [first-run-onboarding.md §8](first-run-onboardin
 | **D3** | F3 — **landed**: `modules/os/oob.nix` — configfs NCM gadget from the initrd (`mura-usb-gadget`, first UDC), `systemd-networkd` DHCP on `usb0` (NM-unmanaged; firewall opens 67/80 there); hotspot as an NM AP profile with a per-boot PSK (`mura-hotspot-psk`), `dnsmasq-shared.d` wildcard + option 114, the `mura-hotspot` supervisor (marker absent AND no other active connection; per-boot idle timeout from `mura.oob.hotspot.idleTimeoutMinutes`; NM `firewall-backend=iptables` so shared mode opens its own DHCP/DNS); the **`mura-setup` identity** with `50-mura-setup.rules` (exact actions), the **stub** launcher/web page on `:80` of the gadget + hotspot addresses only (`IP_FREEBIND`, `ConditionPathExists=!…/setup-complete`, exits when the marker appears); sticky `state/setup/`; `mura.hardware.input.usbGadget`; Avahi `mura.local` | D1, D2 | `nix build .#vm-test-oob` (both `dummy_hcd` and `mac80211_hwsim` are in the NixOS kernel — no renamed-NIC fallback needed): gadget bound from the initrd, host end leases from `usb0`, SSH by key + launcher over the cable; `mura-setup` under its identity, conditioned, refusing the LAN address; hotspot up with the PSK, wrong PSK refused, right PSK associates + lease + wildcard DNS + probe `302`; yields to a dummy uplink and returns; idle timeout takes the radio down for the boot; `POST /finish` writes the marker → both stop; marker survives a reboot; removing it brings both back |
 | **D4** | B6a: the session wrapper + `mura-session.target` around sway — **uwsm adopted** (AGENTS rule 1; evaluated against the spec, no `mura-session-wrapper` written); `programs.uwsm`, the `mura-session` script, two drop-ins (`wayland-wm@`: `Restart=on-failure` + `RestartMode=direct`, `TimeoutStartSec` from `mura.xr.session.readinessTimeoutSeconds`, `UnsetEnvironment=WAYLAND_DISPLAY DISPLAY`; `wayland-session@`: `Wants=mura-session.target`), `environment.d/60-mura.conf`, sway's config `exec uwsm finalize` (STAND-IN); [specs/session-bootstrap.md](../../specs/session-bootstrap.md) rev 2 written from this rung | D0 | **landed**: compositor in `wayland-wm@sway.service` with the seat acquired from inside the unit (`XDG_SESSION_ID` in the unit, not the manager); the wrapper is the leader's child in the session scope and `bindpid`-bound; static vars present, `WAYLAND_DISPLAY` names a bound socket, nothing of greetd's leaked; `kill -9 sway` → restarted in the same logind session; logout → gtkgreet with no DRM race; a never-ready stub torn down at the 30 s bound; `mura-session.target` + `monado.socket` active; no ordering cycle |
 | **D5** | `mura-authd` + the lock path against sway ([specs/session-auth.md](../../specs/session-auth.md) §6 conformance, every item except the composition-introspection half of L2) | D4 | session-auth §6 checklist |
-| **D6** | B1b preflight probe (§3a-bis contract) + B9 mark-good + systemd-boot `+N`-tries boot counting in the uefi-rauc family | D1 | forced crash loop → fallback slot; readiness → `systemd-bless-boot` → RAUC state as three observable transitions |
+| **D6** | **landed** — `modules/os/health.nix`: `mura-preflight` (P1–P7, exit 0/1/2, `/run/mura/preflight.json`), `greetd` `Requires=` it; `mura-crashloop` (OnFailure counter in `state/health/`) + `mura-recovery.target`; `mura-readiness` → `boot-complete.target` (pulled in on every profile); contract `mura.health.{crashLoopThreshold,deviceWaitSeconds,readinessStabilitySeconds}`, `mura.deployment.bootTries`. `families/uefi-rauc`: `mura-bootconf set-primary` arms `+N`, loader `default` by entry ID, `mura-mark-good.service` after `systemd-bless-boot`, RAUC status file on `/persist` | D1 | VM (`vm-test-default-image`, `vm-test-multi-user`): preflight finished before greetd started, report present, readiness → `boot-complete.target`, counter 0; `vm-test-health`: forced hard failure → no greeter/session, counter 1; threshold → recovery target with sshd up; passing boot blessed, counter reset. **Slot fallback and the bless/RAUC transitions**: deckard uefi-rauc QEMU image, manual proof step (§3a status) |
 | **D7** | The settings daemon process ([specs/settings-schema.md §10](../../specs/settings-schema.md)) | — | VM-standalone; feeds M1's constraint-9 compliance |
 
 Order is dependency, not calendar: D0 first (everything imports the profiles and the session
@@ -200,7 +200,10 @@ exercised: logout returning to the greeter (D4); §8 check 13's greeter half (ne
 backend; the NixOS firewall needs `usb0` 67/80 and the hotspot address :80 opened; `qemu-vm.nix`
 disables `wpa_supplicant` by `mkVMOverride` (priority 10 — the VM device and the harness override
 at 5). NCM only (RNDIS + `os_desc` later); fixed gadget serial until the machine-id derivation is
-in stage 1; the web UI itself is its own rung. D5–D7 not started.
+in stage 1; the web UI itself is its own rung. **D6** landed the same day (`modules/os/health.nix`,
+family boot counting + mark-good, `tests/vm/health.nix`): preflight, ladder and readiness gate
+VM-verified; slot fallback + bless + RAUC state recorded as a manual proof on the deckard image.
+D5 and D7 not started.
 
 ### R0 — the bring-up spike (risk retirement, not a decision gate)
 
@@ -297,11 +300,19 @@ the previous slot's entry when exhausted; the readiness unit is a prerequisite o
 blessing); RAUC slot-status marking via the custom bootconf backend is the third, separate step.
 Three distinct transitions — readiness, boot blessing, RAUC state — each observable on its own.
 
-**Implementation status (explicit):** none of this §3a machinery exists yet. The family's
-bootconf backend today selects plain `a.conf`/`b.conf` and stores slot state in a flat file
-([families/uefi-rauc](../../families/uefi-rauc/default.nix)); it does not arm `+N`-tries
-entries, and nothing connects readiness, `systemd-bless-boot`, and RAUC state. It is **D6** on
-the D-track.
+**Implementation status (explicit, D6 landed 2026-09-24):** `modules/os/health.nix` carries the
+readiness gate — `mura-readiness.service` (blessing tier: the autologin user's compositor unit,
+or the greeter on the multi-user profile, stable for `mura.health.readinessStabilitySeconds`,
+`/persist/mura` writable; it resets the crash-loop counter) is `RequiredBy=boot-complete.target`,
+which every profile now reaches (transition 1, VM-verified on both fixtures). The uefi-rauc
+family wires the slot side: `mura-bootconf set-primary S` arms the slot's ESP entry with
+`+<mura.deployment.bootTries>` (`a.conf` → `a+3.conf`; `loader.conf` selects by entry ID `a`/`b`,
+which survives the counter renames), upstream `systemd-bless-boot` strips the counters after
+`boot-complete.target` (transition 2), and `mura-mark-good.service` runs `rauc status mark-good`
+after that (transition 3); RAUC's status file moved from `/tmp` to `state/health/`. Transitions
+2 and 3 need an ESP with counted entries and RAUC — the deckard uefi-rauc image (doc 33 §9's
+QEMU proof), not the virtual headset, and are **recorded as a manual proof step**: arm `+3`,
+force two failed boots, watch systemd-boot fall back, then a good boot → bless → RAUC good.
 
 ### §3a-bis — B1b: the preflight probe contract
 
@@ -320,11 +331,23 @@ autologin session) and `After=` the persist mount and udev settle; it is also wh
 | P7 | input floor | at least one evdev device exposes `hmdButtons.<selectRole>` (or a keyboard is present) | soft (warn; the greeter still starts — dwell remains) |
 
 Exit codes: `0` all pass; `1` a soft check failed (start, log, expose in the a11y menu); `2` a
-hard check failed (do not start the greeter/session; increment the crash-loop counter; on the
-N-th consecutive failure enter the recovery ladder — flat-output fallback where a docked/dev
-connector exists, else the diagnostic target with SSH/serial). Results are written as
-`/run/mura/preflight.json` for the readiness check and for `mura-device.json`-style tooling. The
-probe never modifies persistent state.
+hard check failed — the unit fails, and `greetd.service` `Requires=` it, so this boot has no
+greeter or session. **The probe never modifies persistent state**; the crash-loop counter is a
+separate unit's: `OnFailure=mura-crashloop.service` increments `state/health/crashloop` on
+`/persist`, and at `mura.health.crashLoopThreshold` consecutive hard failures starts
+`mura-recovery.target` (the diagnostic target: sshd stays reachable, nothing graphical; the
+flat-output fallback on a docked/dev connector is the docked-mode rung's). A blessed boot
+(`mura-readiness`) resets the counter. Results are written as `/run/mura/preflight.json` for the
+readiness check and for `mura-device.json`-style tooling. **Landed at D6** (`mura-preflight`,
+Python; `modules/os/health.nix`): P1 real; P2 = every declared `calibration.paths` file exists
+and is non-empty (the version check is the runtime's); P3 = a connected connector, or any DRM
+card for the `window` backend; P4 via `vulkaninfo --summary`; P5 = an IIO accel+gyro within
+`mura.health.deviceWaitSeconds`, n/a when the runtime simulates tracking; P6 = `monado-cli probe`
+succeeds within the wait (needs a HOME/XDG home — found at D6; the first-frame criterion is the
+blessing tier's, where the session's Monado runs); P7 from `/proc/bus/input/devices` key
+bitmaps. VM: `nix build .#vm-test-health` forces a P2 failure — no greeter, counter 1; second
+boot → threshold (2 in the test) → `mura-recovery.target` with SSH reachable; a passing boot is
+blessed and the counter returns to 0.
 
 ### M2–M4 — widening the session (composition §7.5, unchanged)
 
