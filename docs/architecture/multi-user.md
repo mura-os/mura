@@ -6,14 +6,16 @@ imported policy from closed consumer platforms (an account cap, PIN-as-the-crede
 Rev 2's engineering corrections (userborn boot ordering, guest PAM gating, sweep ordering, PAM
 input hardening) survive — they were correctness, not policy. **Rev 3.1 (2026-09-24):** the
 first account is declared in the image and asserted at build; the runtime account-bootstrap
-screen is gone ([ADR 0017 rev 2](adr/0017-first-run-provisioning.md)).
+screen is gone ([ADR 0017 rev 2](adr/0017-first-run-provisioning.md)); **one credential** — the
+separate `pam_mura_pin` module is withdrawn, a PIN is a numeric password with a rendering hint
+(§3); the greeter's standard furniture and the input floor are normative (§2).
 **Decision record:** [ADR 0018](adr/0018-multi-user-accounts.md).
 **Evidence base:** [research/41](../research/41-multi-user-login-landscape.md) — its Linux
 mechanics sections (§1, §3); the closed-platform sections are context and anti-patterns.
 **The frame:** multi-user on Mura **is standard Linux multi-user** — passwd/shadow, PAM,
 NSS, wheel + polkit. The XR layer adds exactly four things: per-user calibration, the spatial
-greeter scene, an *optional* PIN input method, and the A/B durability wiring. Nothing else is
-special.
+greeter scene (operable at the head-aim + button input floor), a digit-pad *rendering* for
+numeric passwords, and the A/B durability wiring. Nothing else is special.
 **Budget impact** (overview invariant 9): login/enrollment-time work; nothing on the frame path.
 
 ## 1. Accounts
@@ -71,13 +73,23 @@ past a handful of entries, and `/home` sizing/quotas are the administrator's bus
 
 ## 2. The greeter account picker
 
-**The greeter is an ordinary Linux greeter** — the GDM/SDDM shape: the account picker below,
-free-text entry, the standard furniture (power menu, session chooser, accessibility and network
-menus) whose per-item mechanisms are inventoried in the [research/11](../research/11-display-managers-greeters.md)
-greeter-furniture addendum. It is `zxr --greeter`, launched directly by greetd's
-`default_session` — nothing dispatches around it, and it never hosts onboarding. It must still
-render when it finds **zero pickable accounts** (corrupted userdb, userborn failure): free-text
-username entry and the power menu stay available, never a dark headset.
+**The greeter is an ordinary Linux greeter** — the GDM/SDDM shape, at parity with the standard
+set inventoried in [research/11 §11](../research/11-display-managers-greeters.md): the account
+picker below; free-text username entry; a **power menu** (power-off/reboot always; suspend/
+hibernate when login1 `Can*` says yes — granted without a root helper because the displayed
+greeter session is logind-*active* and `org.freedesktop.login1.*` is `allow_active=yes`); a
+**session chooser** from `wayland-sessions` `.desktop` files, hidden when only one session exists
+(GDM's rule); a **clock**; an **accessibility menu** (large text, high contrast, dwell timing,
+the on-screen keyboard toggle — the input-floor controls of [first-run-onboarding.md §4.4](first-run-onboarding.md));
+and a **network menu that can join Wi-Fi**. For that last item Mura ships the GDM rule: a polkit
+rule granting the `greeter` user `org.freedesktop.NetworkManager.settings.modify.system` when
+`subject.local && subject.active`, so a network joined at the greeter is a *system* connection
+that the person who then logs in can use — without it the profile would be `permissions=user:greeter`
+and useless (research/11 §11.D; `gdm/data/polkit-gdm.rules.in`). It is `zxr --greeter`, launched
+directly by greetd's `default_session` — nothing dispatches around it, and it never hosts
+onboarding. Every element is operable at the input floor (head-aim + HMD button; dwell). It must
+still render when it finds **zero pickable accounts** (corrupted userdb, userborn failure):
+free-text username entry and the power menu stay available, never a dark headset.
 
 Extends the G1 auth scene; greetd needs zero changes for the picker because
 `create_session(username)` precedes authentication (doc 41 §1.4):
@@ -97,27 +109,35 @@ Extends the G1 auth scene; greetd needs zero changes for the picker because
   session-auth §2.3 → `start_session`. TOCTOU (account removed between pick and PAM) produces
   the uniform failure + a list refresh. **Switch user** = logout → greeter (one HMD, one seat).
 
-## 3. Credentials: passwords primary, PIN optional
+## 3. Credentials: one credential — the Unix password; a numeric one is a PIN
 
-**The Unix account password is the login credential.** SSH, TTY, `su`, the greeter — one
-credential system, PAM all the way down, like every Linux machine.
+**The Unix account password is the only credential.** SSH, TTY, `su`, `sudo`, the greeter, the
+lock — one credential, one PAM stack, like every Linux machine. *(Rev 3.1, ADR 0018 decision 3
+as amended: the separate optional `pam_mura_pin` module of rev 3 is withdrawn — a PIN is simply a
+short numeric password, and Unix does not care.)*
 
-- **`pam_mura_pin` is an optional per-user convenience**, stacked *beside* the password in
-  the greeter/lock stacks — the fprintd model — because typing a strong password on a ray-cast
-  keyboard is miserable, not because the password goes away. A user enrolls a PIN (or doesn't)
-  from their own session; a user who wants PIN-only may lock their own password — their
-  choice, never the design's. The lock scene's PIN pad appears only for users with a PIN
-  enrolled; everyone always has the full virtual-keyboard password path.
-- **Module input contract (normative, unchanged from rev 2):** the username arrives
-  attacker-controlled over greetd IPC; the module validates charset/length, resolves via NSS,
-  and requires `uid` in the enumeration window **before any path construction**; nonexistent/
-  out-of-range users verify against a dummy argon2 hash so timing and failure shape are
-  uniform. The hash lives in `enrollment/<user>/secret/` (root); verification crosses via a
-  `unix_chkpwd`-style helper.
-- **Rate limiting:** `pam_faillock` with counters persisted on `/persist` (tmpfs counters
+- **The digit pad is a rendering choice, not a credential.** When a user sets a digits-only
+  password, a **non-secret `numeric-credential` hint** is written to `enrollment/<user>/` (by
+  the same polkit-gated own-password action that set it; the hash itself cannot reveal its
+  alphabet); the greeter and lock render a digit pad for that user, the full virtual-keyboard
+  path otherwise — both operable at the input floor ([first-run-onboarding.md §4.4](first-run-onboarding.md)).
+  Session-auth's `style=secret` fast path keys off this hint plus service config, never
+  prompt-text parsing ([specs/session-auth.md §2.3](../../specs/session-auth.md)). A user may
+  change to a strong password at any time; the hint follows. No `enrollment/<user>/secret/`
+  exists.
+- **Greeter input contract (normative, kept from rev 2):** the username arrives
+  attacker-controlled over greetd IPC; the greeter validates charset/length before
+  `create_session`, PAM failures are uniform (GDM's `PAM_USER_UNKNOWN` collapse), and the
+  numeric-hint lookup requires `uid` in the enumeration window **before any path construction**
+  (a nonexistent user renders the keyboard path, never an error).
+- **A short numeric password is weak against remote guessing; the design carries that, the
+  user chooses it.** `pam_faillock` with counters persisted on `/persist` (tmpfs counters
   reset on the reboot a locked device forces), scoped per-account with a device-level ladder
-  above. The terminal fallback for a forgotten credential is standard admin (`sudo passwd`) —
-  recovery-environment reset exists for the machine, not per-user.
+  above; and sshd accepts password authentication for empty/short passwords only on the
+  physically-trusted subnets ([first-run-onboarding.md §5.3](first-run-onboarding.md)) — over the
+  LAN, SSH password auth is standard sshd policy for the administrator to set. The terminal
+  fallback for a forgotten credential is standard admin (`sudo passwd`) — recovery-environment
+  reset exists for the machine, not per-user.
 
 ## 4. The guest session (optional, off by default)
 
@@ -167,8 +187,8 @@ family's own options (uefi-rauc owns its partition scheme).
   relocalization is not per-person) — resolves places-model §9. Shared places between users:
   condition-shaped on the mode-5 rights vocabulary, added when someone wants it.
 - **Settings:** per-user preferences/state are already per-account via XDG strata; nothing new.
-- **Per-user XR state:** `enrollment/<user>/secret/` (0700 root: PIN hash if enrolled) and
-  `enrollment/<user>/calibration/` (0700 `<user>`: IPD, floor, boundary prefs). First login of
+- **Per-user XR state:** `enrollment/<user>/calibration/` (0700 `<user>`: IPD, floor, boundary
+  prefs) and the non-secret `enrollment/<user>/numeric-credential` hint (§3). First login of
   a new account meets the same first-session welcome surface every account does
   ([first-run-onboarding.md §4](first-run-onboarding.md)) — per-item gated, skippable,
   re-runnable from settings; **never a wall between a user and their machine**.
@@ -187,8 +207,9 @@ family's own options (uefi-rauc owns its partition scheme).
 
 1. `useradd` over SSH → A/B slot switch → the account logs in on the new slot (userdb
    persisted; early-boot NSS resolves the persisted files, no root-slot decoy).
-2. Passwords work everywhere always: greeter, lock, SSH, TTY, `su` — with and without a PIN
-   enrolled; PIN pad appears only for enrolled users.
+2. The one password works everywhere always: greeter, lock, SSH, TTY, `su`, `sudo`; a
+   digits-only password renders the digit pad at greeter and lock, any other password the
+   keyboard path; changing between them flips the rendering with no other state change.
 3. Guest disabled: raw-socket guest `create_session` fails at both privileged points; guest
    teardown on logout/doff/power-cut leaves no uid, bytes, or places; sweep completes before
    greetd starts.

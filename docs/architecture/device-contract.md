@@ -169,6 +169,29 @@ Monado-side eye-tracking service (gaze via `XR_EXT_eye_gaze_interaction`, rotati
 per-device rows — *IPD source*, *eye-camera access class*, *ET capability*, *iris auth* — with
 current values in [research/29](../research/29-eye-hardware-ipd-per-target.md).
 
+### `mura.hardware.input.*` — the input floor (research/42, ADR 0017 rev 2.1)
+
+What the headset can accept as input **before anything is configured** — the floor every
+pre-login scene and welcome item must be operable at
+([first-run-onboarding.md §4.4](first-run-onboarding.md)): IMU head-aim plus the HMD's own
+buttons, dwell where a button is unusable. Declared facts:
+
+- `hmdButtons` — buttons on the HMD body as evdev key names keyed by role (default
+  `power`/`volumeUp`/`volumeDown`; declare `select` where a dedicated button exists — the Steam
+  Frame's Aux is `KEY_SELECT` in its DTS, [research/42 §4.3](../research/42-input-bootstrap.md)).
+  The compositor reads them through libinput; logind's power-key handling is ignored or
+  inhibited so the compositor owns the key.
+- `selectRole` — which `hmdButtons` role is "select" at the floor (default `volumeUp`, the
+  PICO Head-Control-Mode shape); **asserted** to name an existing button.
+- `controllers` ∈ `none | imu-3dof | optical-6dof` — the controller class available before
+  cameras are up (`optical-6dof` counts as `imu-3dof` pre-login).
+- `bluetooth` — adapter present; gates the pre-login pairing agent and the `pairing/` state
+  class (first-run-onboarding §2).
+- `concurrentApSta` (nullable) — hotspot + station at once; drives the provisioning hotspot's
+  handoff behaviour (first-run-onboarding §5.2).
+- `proximitySource` ∈ `none | iio | hid | ssc` — where the wear sensor is read
+  (research/42 §4.4).
+
 ### `mura.hardware.externalDisplay` and docked mode (ADR 0015)
 
 `mura.hardware.externalDisplay` ∈ `none | dp-altmode | usb-display` declares whether the

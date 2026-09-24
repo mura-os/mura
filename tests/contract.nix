@@ -218,6 +218,21 @@ let
     };
   };
 
+  # research/42: a dedicated select button (Steam Frame Aux) passes...
+  inputSelectAux = {
+    imports = [ validDevice ];
+    config.mura.hardware.input = {
+      hmdButtons = { power = "KEY_POWER"; volumeUp = "KEY_VOLUMEUP"; volumeDown = "KEY_VOLUMEDOWN"; select = "KEY_SELECT"; };
+      selectRole = "select";
+    };
+  };
+
+  # ...and a select role naming a button the HMD does not have must fail.
+  inputSelectMissing = {
+    imports = [ validDevice ];
+    config.mura.hardware.input.selectRole = "select";
+  };
+
   # Assertion helpers.
   assertsPass = e: builtins.all (a: a.assertion) e.config.assertions;
 
@@ -259,6 +274,14 @@ let
     multiUserWindowLoginDefs =
       eval.config.mura.xr.session.multiUser.uidRange.max == 60000;
     multiUserBadUidRangeFails = !assertsPass (evalContract multiUserBadUidRange);
+    # research/42 §7 / first-run-onboarding §4.4: input-floor facts default to power +
+    # volume with volumeUp as select (the PICO Head-Control-Mode shape); a dedicated select
+    # passes; a select role the HMD lacks fails.
+    inputDefaultSelectVolumeUp = eval.config.mura.hardware.input.selectRole == "volumeUp";
+    inputDefaultControllersNone = eval.config.mura.hardware.input.controllers == "none";
+    inputDefaultApStaUnknown = eval.config.mura.hardware.input.concurrentApSta == null;
+    inputSelectAuxPasses = assertsPass (evalContract inputSelectAux);
+    inputSelectMissingFails = !assertsPass (evalContract inputSelectMissing);
     # Lock triggers default sensibly.
     lockDefaultsOn = eval.config.mura.xr.session.lock.enable == true;
     # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.

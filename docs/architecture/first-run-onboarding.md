@@ -1,7 +1,9 @@
 # First run: the image is the installation, silent provisioning, the welcome surface, and factory reset
 
 **Status:** accepted design (2026-09-23; **rev 2, 2026-09-24 — the image-is-the-installation
-reframe**). Decision record: [ADR 0017](adr/0017-first-run-provisioning.md) (amended in place).
+reframe**; **rev 2.1 same day — the [research/42](../research/42-input-bootstrap.md) review
+ruled: input floor, welcome-surface contents, one credential, out-of-band mechanisms**).
+Decision record: [ADR 0017](adr/0017-first-run-provisioning.md) (amended in place).
 **What this covers:** everything between "the image was flashed" and "a person is using their
 session": what an installer would collect and where it lives here (§1), the persistent-state
 classes (§2), silent machine provisioning F1 (§3), the first-session welcome surface F2 (§4),
@@ -42,11 +44,11 @@ declared NixOS machine. Three consequences:
 1. **The default image is a declared configuration too.** It declares user **`mura`**, no
    password, member of `wheel`, and `mura.xr.session.autoLogin = "mura"`. Power on, put it on,
    you are in your session. A password is the wearer's choice: the welcome surface (§4) offers
-   one, the lock engages only once a credential exists (ADR 0007), and `sudo`/`passwd`/SSH
-   behave as they do on any Linux box with a passwordless account — the exact wiring for that
-   default is an open question with a decider (§9). The Steam Deck's fixed `deck` account is
-   the mechanism precedent. There is no "appliance wizard": what used to be called the
-   appliance path is simply a declared image with `autoLogin` set.
+   one, the lock engages only once a credential exists (ADR 0007), and **there is exactly one
+   credential** — the Unix password; a short numeric one is a PIN (§4.2, [multi-user.md §3](multi-user.md)).
+   While the account has no password, the passwordless wiring of §5.3 applies. The Steam Deck's
+   fixed `deck` account is the mechanism precedent. There is no "appliance wizard": what used to
+   be called the appliance path is simply a declared image with `autoLogin` set.
 2. **The first account of a multi-user image is declared in the image as well** — like every
    distro installer's first account, it is an ordinary user in `wheel`. A **build-time
    assertion** enforces this: a greeter profile must declare at least one human account
@@ -65,8 +67,8 @@ declared NixOS machine. Three consequences:
 
 On the multi-user profile the account database is mutable through standard tools
 (`useradd` over SSH works — [multi-user.md §1](multi-user.md)); the in-headset settings UI is a
-polkit-gated convenience path executing the same operations. Secrets (PIN hashes, Wi-Fi
-credentials, device keys) are **never Nix option values** — the store is world-readable;
+polkit-gated convenience path executing the same operations. Secrets (password hashes, Wi-Fi
+credentials, Bluetooth link keys, device keys) are **never Nix option values** — the store is world-readable;
 declared secrets are *paths* (`hashedPasswordFile`, NetworkManager keyfiles with
 `psk-flags`/agent-owned secrets), runtime secrets live only under protected persistent storage.
 
@@ -81,15 +83,14 @@ treat them by class, never the tree as one blob:
 |---|---|---|---|
 | `factory/` | factory calibration (panel/optics/camera intrinsics, per-unit, flashed at manufacture or bring-up) | survives | **survives** (invariant 4) |
 | `identity/` | device keys, attestation material | survives | survives; regenerated only by explicit re-provisioning |
-| `enrollment/<user>/` | optional PIN hash (`secret/`, root), user calibration (`calibration/`, §6) | survives | **wiped** |
+| `enrollment/<user>/` | user calibration (`calibration/`, §6) and the non-secret `numeric-credential` hint that selects the digit pad ([multi-user.md §3](multi-user.md)); no secret material — the credential is the Unix password in the userdb | survives | **wiped** |
+| `pairing/` (exists only when `mura.hardware.input.bluetooth`) | BlueZ state — `/var/lib/bluetooth` bound here: adapter settings and per-peer **link keys** (shared secrets with each paired controller/keyboard/phone) | survives | **wiped** — link keys are secrets; the next owner must not inherit the previous owner's paired devices (every phone and consumer headset does the same; bundled controllers are re-paired after a reset) |
 | `state/` | F1 per-task markers (`state/provisioning/<task>`), update/migration bookkeeping, quarantine records | survives | reset per settings-schema policy |
 | `/persist/userdb/` (multi-user profile; **its own class**, beside `mura/` — dir 0755, passwd/group 0644, shadow 0000; see [multi-user.md §1.1/§6](multi-user.md)) | userdb | survives | human rows removed; **declared accounts re-materialise at next boot** (userborn from the image), runtime-created accounts are gone |
 | machine-id | `/etc/machine-id`, persisted here and committed **before D-Bus/logind start** | **survives** (one identity per unit, not per slot) | **rotated** — privacy; machine identity is not hardware identity |
 
 Per-user preferences and remembered state stay in `$XDG_CONFIG_HOME` / `$XDG_STATE_HOME` on
-`/home` (settings-schema §2); factory reset wipes `/home` wholesale. Whether paired-peripheral
-state (`/var/lib/bluetooth`) is a device-level class that survives reset is an open question
-(§9).
+`/home` (settings-schema §2); factory reset wipes `/home` wholesale.
 
 ## 3. F1 — silent machine provisioning
 
@@ -140,36 +141,92 @@ compositor, not gated by a marker, and never mandatory. Rules (normative):
   change as the user's ([specs/settings-schema.md §3](../../specs/settings-schema.md)). **This
   project has no telemetry — none exists, none is planned, and no setting refers to it.**
 
-### 4.2 Contents — open question, decider named
+### 4.2 Contents — decided (research/42 review, 2026-09-24)
 
-*What the surface must be able to offer is not decided here.* It depends on what a headset can
-accept as input with nothing configured, and how text is entered on it — the subject of the
-input-bootstrap study ([research/42](../research/42-input-bootstrap.md), in progress) and the
-greeter-furniture addendum to [research/11](../research/11-display-managers-greeters.md).
-**Decider:** the findings review of those two documents. Candidate items recorded so the study
-knows what to test, none adopted: establishing/upgrading the input method (pair a controller or
-Bluetooth peripheral), user calibration (IPD, floor, boundary — §6), Wi-Fi, "set a password"
-(and optionally a PIN — [multi-user.md §3](multi-user.md)), locale.
+**See, then walk, then speak.** The items, in the only order that works when nothing is
+configured: the wearer must first be able to see the display clearly, then be able to point
+and click well, and only then can text be shown in a language they read. Each item is
+per-item gated (§4.1) and skippable; the list is closed — anything else is a setting.
+
+1. **See — IPD.** Language-free: no text, only shapes. What it does follows
+   `mura.hardware.ipd.source` (ADR 0011, [device-contract.md](device-contract.md)):
+   `manual` — an alignment target (two shapes to bring into overlap / a sharpness pattern)
+   while the wearer turns the wheel; `manual-sensed` — the same target plus the live readout
+   and an in-range indication, the sensed value stored as the user's preference;
+   `motorized-auto` — the ADR 0011 fixation-target measurement drives the servo; `stored` /
+   `fixed` — never offered. Output: one value into `enrollment/<user>/calibration/`, applied to
+   the session's Monado. This screen is also the wearer's first use of head-aim + button, so the
+   input floor (§4.4) is learned without a word. Precedents, mechanism only: Quest 3's live
+   readout + in-range indicator, the Index's sensed slider value, Vision Pro's automatic servo
+   ([research/42 §1](../research/42-input-bootstrap.md)). Floor height and boundary are **not**
+   welcome items — they belong to spatial mapping and appear when a feature first needs them.
+2. **Walk — peripherals.** Pair controllers and Bluetooth devices; language-free (icons, device
+   names as reported). BlueZ just-works pairing for HID needs no dialog; numeric comparison
+   renders digits ([research/42 §3.3](../research/42-input-bootstrap.md)). A USB keyboard needs
+   no step (§4.4). Offered only when `mura.hardware.input.bluetooth` or a controller class exists.
+3. **Speak — locale.** Preselect the image's declared locale; a short list (≈10, ordered by
+   speaker population or as the build declares) with "more…" opening the full list with
+   type-to-filter — usable because *walk* came first. If skipped, the list is re-sorted from
+   the network's country once Wi-Fi is up. Over the web path (§5) locale comes from the phone's
+   `Accept-Language` for free.
+4. **Time zone** — one confirmation; derived from locale, refined from the network when
+   available.
+5. **Connect — Wi-Fi**, or skip. After locale because the passphrase prompt needs words. In-session
+   the passthrough cameras may later scan a Wi-Fi QR from a phone (Quest 3 / Vive mechanism);
+   never pre-login (§4.4).
+6. **Secure — set a password**, or skip. **One credential**: the Unix password. If the wearer
+   chooses digits only, the greeter and lock show a digit pad (the non-secret
+   `numeric-credential` hint, [multi-user.md §3](multi-user.md)); no second module, no second
+   secret. `pam_faillock` and the §5.3 SSH scoping carry a short numeric password's weakness.
+7. **How to reach this device** — a closing card: `ssh mura@<address>`, `http://mura.local`,
+   the USB-cable path (§5). Shown once, always in settings.
+
+No consent ceremony (§4.1). Locale-list ordering heuristics beyond the above are the welcome
+surface's UX design at G1 (decider named in §9).
 
 ### 4.3 Authority split
 
 The surface is **unprivileged session UI**. Privileged writes go through the standard
-mechanisms the rest of the desktop uses: polkit-gated actions for account operations (own
-password change, AccountsService-class), NetworkManager's D-Bus policy for network profiles,
-`localed`/`timedated` for locale and time. `mura-provisiond` (root, private socket, the
-mura-authd shape) remains for the XR-specific writes only — a PIN hash into
-`enrollment/<user>/secret/` and the guest-token gate ([multi-user.md §4](multi-user.md)); it has
-**no** conversation that is authorised by the absence of state. The surface writes only runtime
-state — preferences into the settings stores with provenance, network profiles into
-NetworkManager, enrollment into `enrollment/` — never generated `/etc` files or NixOS
-configuration.
+mechanisms the rest of the desktop uses: NetworkManager's D-Bus policy for network profiles,
+`localed`/`timedated` for locale and time, BlueZ's agent API for pairing, and a polkit-gated
+own-password action for item 6 — with a Mura polkit rule granting the active local session's
+user `change-own-password` without `auth_admin` (AccountsService's default demands admin
+authentication even for one's own password, [research/42 §3.5](../research/42-input-bootstrap.md);
+a person with no password could not otherwise set one from the UI). `mura-provisiond` (root,
+private socket, the mura-authd shape) is **left with exactly one load-bearing job — the guest
+token gate** ([multi-user.md §4](multi-user.md)) plus the polkit-gated account-admin
+convenience path; it writes no credentials and has no conversation authorised by the absence of
+state. The surface writes only runtime state — preferences into the settings stores with
+provenance, network profiles into NetworkManager, calibration and the numeric hint into
+`enrollment/<user>/` — never generated `/etc` files or NixOS configuration.
 
-### 4.4 Input requirement — open question, decider named
+### 4.4 Input requirement — decided (conformance, normative)
 
-Every pre-login scene (greeter, lock) and the welcome surface must be operable with whatever
-input the device has *before anything is configured*. What that floor is on each target, and
-what it costs to enter text with it, is what [research/42](../research/42-input-bootstrap.md)
-establishes; the conformance requirement is written when its review rules.
+**The input floor is IMU head-aim plus the HMD's own buttons; dwell where a button is
+unusable. Every pre-login scene (greeter, lock) and every welcome-surface item is fully
+operable at the floor**, on every target, with nothing configured. Grounding
+([research/42 §4, §7](../research/42-input-bootstrap.md)): every relevant Monado driver keeps a
+3DoF IMU path; every target has power + volume and most a third button
+(`mura.hardware.input.hmdButtons`, `selectRole`); PICO ships this as "Head Control Mode" and
+the Steam Frame as its Aux button (mechanism precedents); measured cost ≈10 WPM.
+
+- **Buttons reach the compositor through libinput** as ordinary key events. logind's power-key
+  handling is `HandlePowerKey=ignore` or inhibited by the session (`handle-power-key`) — the
+  Steam Deck's `powerbuttond` arrangement — never grabbed inside Monado (the Galaxy XR fork's
+  `EVIOCGRAB` is recorded and not followed). Volume keys are never logind's.
+- **Constraint 7's stabiliser** ([zxr-shell-v2-composition.md §7.3](zxr-shell-v2-composition.md):
+  deadzone, smoothing, dwell, magnetism, event-time compensation) has the greeter as its first
+  consumer. Defaults: dwell 400–600 ms, targets ≥2.5–3° with ≥12 mm spacing — from the settings
+  schema, never compiled in (constraint 9).
+- **USB HID works at the greeter with zero configuration** (logind `TakeDevice` + libinput
+  hotplug); the auth scene accepts hardware-keyboard focus.
+- **On-screen keyboards are clients**: zxr implements layer-shell + `virtual-keyboard-v1` +
+  `input-method-v2`, so the wearer may run any keyboard (wvkbd, squeekboard, Mura's own —
+  implementation-time choice); the compositor's auth scene keeps its own floor-operable digit
+  pad and minimal text entry so the greeter never depends on an external client.
+- **Not part of the floor**: hands, eyes, optical controllers, passthrough (perception plane
+  down pre-login); Monado's `qwerty` driver (SDL-bound); any QR shown *inside* the headset
+  (lens distortion, absurd ergonomics — rejected outright).
 
 ## 5. Out-of-band provisioning
 
@@ -193,13 +250,54 @@ holds — from first boot, on every profile. Two surfaces, one trust class:
   ("open `http://mura.local`"); the real UI is built for a normal browser tab (portal
   mini-browsers are hostile by design).
 
-Open questions, each with its decider (§9): the web tool (Cockpit — `services.cockpit` exists in
-NixOS — versus a purpose-built provisioning page, scored in research/42 §6), portal mechanics
-(probe handling, `.local` resolution on phones, RFC 8910/8908), and the passwordless-default-user
-login interaction, which is **identical for SSH and web** (`PermitEmptyPasswords`/`Match
-Address` scoping, PAM `nullok`, own-password change via polkit). A native phone app is optional
-sugar over the same SSH/HTTP surfaces — no bespoke daemon — and its app-store dependency is
-recorded as an ethos cost.
+### 5.1 The web surface — Cockpit (decided)
+
+The configuration web app **is Cockpit** (`services.cockpit`, a first-class NixOS module): it
+joins Wi-Fi (its NetworkManager page scans and creates `wpa-psk` connections), sets the user's
+own password through `passwd`, sets hostname and time zone, and authenticates through PAM —
+scored against the alternatives in [research/42 §6.3](../research/42-input-bootstrap.md)
+(RaspAP, LuCI, balena wifi-connect, comitup rejected as the tool: hostapd-bound, OpenWrt-bound,
+or unpackaged and provisioning-only; the latter two remain mechanism references for the portal).
+Two additions, both Cockpit-shaped: a **"Mura setup" Cockpit plugin** page (`services.cockpit.plugins`)
+mirroring §4.2's items for the phone — the guided flow Cockpit lacks, plus the locale page it
+does not have; and the **static captive-portal launcher** in front of it. A bespoke web app is
+written only if Cockpit's Wi-Fi dialog fails on real hardware (condition-shaped).
+
+### 5.2 Portal mechanics (decided)
+
+The hotspot is NetworkManager AP mode with `ipv4.method=shared` — NM runs dnsmasq itself; a
+`dnsmasq-shared.d` fragment adds the wildcard `address=/#/<gateway>` (so `mura.local` resolves
+on the hotspot regardless of phone mDNS support) and DHCP option 114 (RFC 8910) with the launcher
+URL. The launcher answers the phone OSes' cleartext probes (`generate_204`,
+`hotspot-detect.html`, `connecttest.txt`) with a redirect, so the OS opens its portal sheet; the
+sheet shows one static page: "open `http://mura.local`" — nothing more survives Apple's CNA or
+Android's portal WebView. Both OSes will ask "no internet — stay connected?"; the page and the
+in-headset display say yes. AP→STA handoff: the page announces "now at `mura.local` on your
+network" *before* the hotspot drops; on chips without concurrent AP+STA
+(`mura.hardware.input.concurrentApSta`) the hotspot goes down, the phone rejoins its own network,
+and the same URL works over the LAN. Mechanism references: balena wifi-connect (wildcard DNS +
+`Host` redirect + 20 s handoff wait), comitup (DHCP option 160) — [research/42 §6.2](../research/42-input-bootstrap.md).
+
+### 5.3 The passwordless default user (decided)
+
+`mura` ships with no password. The greeter logs it in (NixOS sets `allowNullPassword` for
+greetd). Elsewhere, **while and only while the account has no password**:
+
+- **sshd**: `PermitEmptyPasswords yes` **only** inside a `Match Address` block for the USB-gadget
+  subnet (and the hotspot subnet), with `nullok` on sshd's PAM stack — "you plugged the cable
+  in" is TTY-equivalent trust; over the LAN empty passwords stay refused.
+- **Cockpit**: PAM `cockpit` service with the same scoping (its `passwd` flow then sets a
+  password without asking for an old one — the *first thing* the setup page offers).
+- **sudo**: `nullok` on the sudo PAM stack so an empty password authenticates as empty —
+  the wearer of a passwordless device is already the user; once a password is set, ordinary
+  sudo. *(Discretionary, [mine]: the alternative is `wheelNeedsPassword = false`, which is
+  broader.)*
+- A declared `hashedPasswordFile` user has none of this.
+
+A native phone app is optional sugar over the same SSH/HTTP surfaces — no bespoke daemon —
+and its app-store dependency is recorded as an ethos cost. BLE GATT credential provisioning
+(Improv/Fast Pair class) is rejected for v1: a bespoke unauthenticated privileged surface, and
+Web Bluetooth has no iOS Safari.
 
 ## 6. Factory calibration vs user calibration (two stages, normatively distinct)
 
@@ -218,9 +316,9 @@ in-session calibration UI.
 
 ## 7. Factory reset
 
-The inverse of provisioning, per the §2 class table: wipe `enrollment/`, wipe `/home`, remove
-human rows from the persisted userdb, reset `state/` per policy, **rotate machine-id**, preserve
-`factory/` and `identity/`. Next boot: declared accounts re-materialise from the image
+The inverse of provisioning, per the §2 class table: wipe `enrollment/`, wipe `pairing/`
+(link keys), wipe `/home`, remove human rows from the persisted userdb, reset `state/` per
+policy, **rotate machine-id**, preserve `factory/` and `identity/`. Next boot: declared accounts re-materialise from the image
 (userborn on the multi-user profile, the declared user on the appliance profile), runtime-created
 accounts are gone, and each account's first session meets the welcome surface again. Reset is a
 recovery-environment operation (not an in-session `rm`).
@@ -245,27 +343,42 @@ by overview invariant 10**: this machine has root, and it belongs to its wearer.
 5. Build fails for a greeter profile with zero declared human accounts unless
    `allowNoDeclaredAccount` is set; a greeter facing zero pickable accounts at runtime still
    renders free-text entry and the power menu.
-6. The welcome-surface process holds no capability to write `enrollment/` directly (fs
-   permissions + no privileged sockets beyond provisiond/NetworkManager/polkit-gated D-Bus).
-7. Factory reset: `factory/` and `identity/` byte-identical before/after; machine-id rotated;
-   declared accounts log in on the next boot; the welcome surface reappears.
+6. The welcome-surface process holds no capability to write another user's `enrollment/` or any
+   credential directly (fs permissions + no privileged sockets beyond provisiond's guest gate,
+   NetworkManager, BlueZ, and polkit-gated D-Bus).
+7. Factory reset: `factory/` and `identity/` byte-identical before/after; `pairing/` empty
+   (no link key survives); machine-id rotated; declared accounts log in on the next boot; the
+   welcome surface reappears.
 8. Out-of-band: SSH over the USB gadget reachable from the first boot; the provisioning hotspot
    is up only while unprovisioned and is down within one state change of either condition
-   flipping; it never comes up automatically on a provisioned device.
+   flipping; it never comes up automatically on a provisioned device; a phone joining it is
+   shown the launcher page and reaches Cockpit at `http://mura.local` in a normal tab.
 9. Multi-user G2 fixture: pre-seeded declared accounts authenticate with no first-run UI ever
    having run.
+10. **Input floor (§4.4):** with no controller paired, no peripheral attached, and cameras off,
+    the greeter, the lock, and every welcome item complete using only head-aim and
+    `hmdButtons.<selectRole>` (and, with the select button masked, dwell alone); the power key
+    reaches the compositor and does not power the device off while a scene owns it.
+11. A USB keyboard plugged in during the greeter types into the auth scene with no
+    configuration; a just-works Bluetooth keyboard pairs from the greeter's agent.
+12. Passwordless `mura`: greeter login succeeds; SSH with an empty password succeeds from the
+    USB subnet and is refused from the LAN; `sudo` succeeds with an empty password; after a
+    password is set all three behave as on any Linux machine. A digits-only password yields the
+    digit pad at greeter and lock; a mixed password yields the keyboard path.
+13. A Wi-Fi network joined at the greeter is a system connection visible to the user who then
+    logs in ([multi-user.md §2](multi-user.md)).
 
 ## 9. Open items
 
-Each names its decider: **welcome-surface contents** (decider: the findings review of
-research/42 + the research/11 addendum); **the pre-login/welcome input requirement** (same
-decider); **the web provisioning tool** — Cockpit vs purpose-built, scored in research/42 §6
-(same decider); **portal mechanics** (same decider); **the passwordless default user's login
-wiring** across greeter/SSH/web/`sudo`/`passwd` (same decider — candidates: PAM `nullok` scoped
-to local/USB, `PermitEmptyPasswords` under `Match Address`, own-password via polkit-gated
-AccountsService-class action, a welcome-surface nudge to set one); **paired-peripheral state
-class** — does `/var/lib/bluetooth` survive factory reset (same decider); recovery-environment
-design (where factory reset executes — owner: each family's recovery story; the Frame workstream
-shapes the first one); account-layering (store accounts, cloud identity) — a non-goal,
-explicitly out of OS scope; whether boundary drawing moves entirely to first passthrough use on
-controller-less devices (decider: the welcome-surface UX design at G1 implementation).
+Each names its decider: **locale short-list ordering and the visual design of the IPD alignment
+target** (decider: the welcome-surface UX design at G1 implementation); **a Monado 3DoF HMD
+driver per target** — none exists upstream for IIO or the Qualcomm SSC; the input floor is
+universal in principle and new driver code per target in practice (owner: each device's
+bring-up workstream; ordering in implementation-path §5.1); **whether Cockpit's Wi-Fi dialog
+holds up on real hardware** (condition-shaped fallback in §5.1; decider: F3 implementation);
+recovery-environment design (where factory reset executes — owner: each family's recovery
+story; the Frame workstream shapes the first one); account-layering (store accounts, cloud
+identity) — a non-goal, explicitly out of OS scope. Resolved by the research/42 review and no
+longer open: welcome contents (§4.2), input requirement (§4.4), web tool and portal (§5.1–5.2),
+passwordless wiring (§5.3), paired-peripheral class (§2, wiped), boundary placement (spatial
+mapping, not the welcome surface).

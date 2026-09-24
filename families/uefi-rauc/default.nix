@@ -169,15 +169,16 @@ in
   # Per-unit persistent state. Read-write: per-unit state durability is a contract
   # requirement (device-contract `mura.xr.calibration.paths`, overview invariant 4)
   # — the earlier `ro` mount was donor-mirroring that couldn't survive first contact
-  # with the lock/PIN/calibration design (PIN hashes, user calibration, and the F1
-  # per-task markers all live here; docs/architecture/first-run-onboarding.md).
+  # with the lock/calibration design (user calibration, Bluetooth link keys, and the
+  # F1 per-task markers all live here; docs/architecture/first-run-onboarding.md).
   #
-  # /persist/mura subtree classes (first-run-onboarding.md §state classes —
+  # /persist/mura subtree classes (first-run-onboarding.md §2 —
   # factory reset treats each differently, never the tree as one blob):
   #   factory/    factory calibration — survives factory reset
   #   identity/   device keys — survive reset; regenerated only by re-provisioning
-  #   enrollment/ PIN hash, user credentials — wiped on reset
-  #   state/      update/migration state — reset per policy
+  #   enrollment/ per-user calibration + non-secret numeric-credential hint — wiped on reset
+  #   pairing/    BlueZ state (/var/lib/bluetooth: link keys) — wiped on reset
+  #   state/      F1 per-task markers, update/migration state — reset per policy
   #   machine-id  own class: survives A/B slot updates, rotated on factory reset
   fileSystems."/persist" = {
     device = "/dev/disk/by-partlabel/syspersist";
@@ -211,6 +212,10 @@ in
       install -d -m 0750 /persist/mura/factory
       install -d -m 0700 /persist/mura/identity
       install -d -m 0700 /persist/mura/enrollment
+      # pairing class (first-run-onboarding §2): BlueZ's /var/lib/bluetooth binds here
+      # (bluetoothd runs as root; link keys are secrets) — the bind mount itself lands
+      # with the Bluetooth module, gated on mura.hardware.input.bluetooth.
+      install -d -m 0700 /persist/mura/pairing
       install -d -m 0750 /persist/mura/state
       # userdb class (multi-user profile; multi-user.md §1.1): world-traversable —
       # /etc/passwd symlinks here and getpwuid is universal, so it cannot live under

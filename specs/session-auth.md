@@ -46,7 +46,7 @@ authd → compositor:
 
 | `type` | Fields | Semantics |
 |---|---|---|
-| `prompt_batch` | `nonce`, `conversation` (int), `prompts`: array of `{index, style, text?, data?}` | One PAM conversation callback, delivered whole. `style` ∈ `secret` \| `visible` \| `info` \| `error` \| `radio` \| `binary`. `text` for textual styles; `data` (base64) with `mime` for `binary`. The UI renders **generic** prompts (the PIN-pad fast path keys off `style=secret` + service config, never prompt-text parsing). `info`/`error` entries require empty response slots. If a style is unsupported by the deployment, authd answers PAM with `PAM_CONV_ERR` itself and reports `failure(unsupported_prompt)`. |
+| `prompt_batch` | `nonce`, `conversation` (int), `prompts`: array of `{index, style, text?, data?}` | One PAM conversation callback, delivered whole. `style` ∈ `secret` \| `visible` \| `info` \| `error` \| `radio` \| `binary`. `text` for textual styles; `data` (base64) with `mime` for `binary`. The UI renders **generic** prompts (the digit-pad fast path keys off `style=secret` + the user's non-secret `numeric-credential` hint per multi-user.md §3, never prompt-text parsing; the hint lookup happens only after the uid-window check). `info`/`error` entries require empty response slots. If a style is unsupported by the deployment, authd answers PAM with `PAM_CONV_ERR` itself and reports `failure(unsupported_prompt)`. |
 | `success` | `nonce` | Authentication + account checks passed. authd exits 0 after sending. |
 | `failure` | `nonce`, `reason` ∈ `auth` \| `maxtries` \| `abort` \| `unsupported_prompt` \| `internal`, `delay_ms` | Conversation failed; authd exits nonzero. The compositor enforces `delay_ms` before offering retry UI. |
 

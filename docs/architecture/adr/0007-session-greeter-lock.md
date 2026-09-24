@@ -76,9 +76,11 @@ Authentication runs in a small `mura-authd` helper over a socketpair (swaylock's
 kscreenlocker's auth-boundary split), so the compositor never links libpam and a hung/crashing PAM
 module (fprintd timeout, network modules) can't stall `xrWaitFrame`. NixOS service
 `security.pam.services.mura-lock` (owned by the module), `pam_faillock` included; the lock UI
-renders **generic** PAM prompts (`visible`/`secret`/`info`/`error`) with a controller-ray PIN-pad
-fast path and a ray-reachable virtual keyboard fallback. PIN is a `pam_mura_pin`-style
-argon2-hashed credential in per-unit system state (MVP: owner-password-is-PIN). Biometrics (iris/
+renders **generic** PAM prompts (`visible`/`secret`/`info`/`error`) with a head-aim-operable
+digit-pad fast path and a virtual keyboard path. *(Amended by ADR 0017 rev 2.1 / ADR 0018 rev 3.1:
+there is one credential, the Unix password; the digit pad is a rendering selected by a
+non-secret numeric hint for users whose password is digits-only — no PIN module exists.)*
+Biometrics (iris/
 face) come later as a parallel unlock path beside PAM, never replacing it — the eye-camera privacy
 boundary and hardware substrate for iris auth are specified in
 [adr/0011-eye-tracking-ipd.md](0011-eye-tracking-ipd.md).
@@ -148,7 +150,7 @@ target (qualification-matrix item); grace-window default and any "same head re-d
 logind** at implementation-path B2, forced at G2; seatd stays an appliance-minimization option);
 and whether the desktop profile's `ext-session-lock-v1` support should extend to third-party
 headset lockers. *PIN storage/enrollment UX is **closed** by
-[ADR 0017](0017-first-run-provisioning.md) rev 2: option (b) `pam_mura_pin` (argon2 hash in
-the `enrollment/<user>/secret/` state class, enrolled in-session through `mura-provisiond` from
-the welcome surface or settings), an optional convenience stacked beside the Unix password
-(ADR 0018 rev 3); the owner-password-is-PIN bridge is withdrawn.*
+[ADR 0017](0017-first-run-provisioning.md) rev 2.1: one credential — the Unix password; a
+digits-only password sets a non-secret `numeric-credential` hint in `enrollment/<user>/` that
+selects the digit-pad rendering (ADR 0018 rev 3.1, multi-user.md §3); no PIN module, no secret
+store, the owner-password-is-PIN bridge withdrawn.*

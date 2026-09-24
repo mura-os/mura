@@ -121,6 +121,63 @@ in
           description = "Safe default IPD used pre-auth (greeter/lock, ADR 0007) and when no measured/stored value exists.";
         };
       };
+
+      ## Input facts (docs/research/42, first-run-onboarding.md §4.4) -------
+      # What the headset can accept as input before anything is configured. The
+      # input floor every pre-login and welcome scene must be operable at is IMU
+      # head-aim + the HMD's own buttons (dwell where a button is unusable).
+      input = {
+        hmdButtons = mkOption {
+          type = types.attrsOf types.str;
+          default = { power = "KEY_POWER"; volumeUp = "KEY_VOLUMEUP"; volumeDown = "KEY_VOLUMEDOWN"; };
+          description = ''
+            Buttons on the HMD body as evdev key names, keyed by role. Every target has
+            power + volume; declare a dedicated `select` where one exists (Steam Frame
+            "Aux" = KEY_SELECT, Quest 3S action button, Lynx "R"). The compositor reads
+            them through libinput as ordinary key events; logind's power-key handling is
+            set to ignore or inhibited so the compositor owns the key (research/42 §4.3).
+          '';
+          example = literalExpression ''{ power = "KEY_POWER"; volumeUp = "KEY_VOLUMEUP"; volumeDown = "KEY_VOLUMEDOWN"; select = "KEY_SELECT"; }'';
+        };
+        selectRole = mkOption {
+          type = types.str;
+          default = "volumeUp";
+          description = ''
+            Which `hmdButtons` role acts as "select" at the input floor (PICO's Head Control
+            Mode uses the volume keys; Steam Frame has a dedicated Aux). Must name a key of
+            `hmdButtons` — asserted.
+          '';
+        };
+        controllers = mkOption {
+          type = types.enum [ "none" "imu-3dof" "optical-6dof" ];
+          default = "none";
+          description = ''
+            Controller class available *before cameras are up*: none; imu-3dof (buttons +
+            orientation-only pose from the controller's IMU — the WMR/Rift S/Index-dongle
+            class, research/42 §4.2); optical-6dof (needs the perception plane, so counts as
+            imu-3dof pre-login). Informational for the greeter's input ladder.
+          '';
+        };
+        bluetooth = mkOption {
+          type = types.bool;
+          default = true;
+          description = "The device has a Bluetooth adapter (pre-login pairing agent + `pairing/` state class exist only when true).";
+        };
+        concurrentApSta = mkOption {
+          type = types.nullOr types.bool;
+          default = null;
+          description = ''
+            Whether the Wi-Fi chip supports a hotspot and a station link at the same time
+            (research/42 §6.1). null = unknown; the provisioning hotspot's handoff behaviour
+            depends on it (first-run-onboarding.md §5).
+          '';
+        };
+        proximitySource = mkOption {
+          type = types.enum [ "none" "iio" "hid" "ssc" ];
+          default = "none";
+          description = "Where the wear (don/doff) sensor is read from: IIO proximity (Steam Frame vcnl4040, Lynx), a vendor HID field, or the Qualcomm SSC (Galaxy XR class). research/42 §4.4.";
+        };
+      };
     };
 
     ## Donor manifest (see lib/donor + docs/architecture/donor-pipeline.md) --
@@ -615,6 +672,12 @@ in
         || cfg.xr.session.allowNoDeclaredAccount
         || declaredHumanAccounts != [ ];
       message = "mura.xr.session.greeter requires at least one declared human account (users.users.<name>.isNormalUser = true); the image is the installation and no runtime bootstrap screen exists (ADR 0017 rev 2 / first-run-onboarding.md §1). Declare one, or set mura.xr.session.allowNoDeclaredAccount = true if you really want an image nobody can log in to.";
+    }
+    {
+      # research/42 §7 / first-run-onboarding §4.4: the input floor needs a "select" button
+      # that actually exists on the HMD.
+      assertion = builtins.hasAttr cfg.hardware.input.selectRole cfg.hardware.input.hmdButtons;
+      message = "mura.hardware.input.selectRole = \"${cfg.hardware.input.selectRole}\" must name a key of mura.hardware.input.hmdButtons (the input-floor select button; first-run-onboarding.md §4.4).";
     }
     {
       # ADR 0017 rev 2: the appliance profile's autologin user must exist in the image.
