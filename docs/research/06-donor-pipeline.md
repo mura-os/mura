@@ -26,7 +26,7 @@ flashable outputs (from the brick appliance's "boot contract").
 
 ### 2.1 The brick appliance (local, detailed walkthrough)
 
-Path: `/home/j/experiments/m8tracker-re/reconstruction/frontends/brick/appliance`. A Nix-built
+Path: a local, unpublished reconstruction checkout (`m8tracker-re/reconstruction/frontends/brick/appliance`, not in this repository). A Nix-built
 appliance for the TRIMUI Brick (Allwinner A133) handheld that uses a published KNULLI SD image as
 donor. It is the most directly transferable prior art because it solves the same problem shape:
 a non-redistributable vendor image supplies the boot chain, and Nix supplies the userspace.

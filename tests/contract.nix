@@ -60,13 +60,13 @@ let
   xrFunctionalWithReadiness = {
     imports = [ validDevice ];
     config.mura.device.supportTier = lib.mkForce "xr-functional";
-    config.mura.device.maintainers = lib.mkForce [ "j" ];
+    config.mura.device.maintainers = lib.mkForce [ "someone" ];
     config.mura.qualification.readinessCheck = "xr-smoke";
   };
   xrFunctionalNoReadiness = {
     imports = [ validDevice ];
     config.mura.device.supportTier = lib.mkForce "xr-functional";
-    config.mura.device.maintainers = lib.mkForce [ "j" ];
+    config.mura.device.maintainers = lib.mkForce [ "someone" ];
   };
 
   # A device with an XR shell + a valid appliance session profile (ADR 0007): the default
