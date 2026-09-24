@@ -202,7 +202,12 @@ NixOS's default. `nullok` = `security.pam.services.<n>.allowNullPassword`.
 | `50-mura-greeter-network.rules` | `org.freedesktop.NetworkManager.settings.modify.system` | the `greeter` user | `subject.local && subject.active` | GDM parity (`gdm/data/polkit-gdm.rules.in`): a Wi-Fi network joined at the greeter becomes a system connection the logged-in user can use (research/11 §11.D). Needed because upstream NM keeps `modify.system` at `auth_admin_keep` even for active sessions (`references/networkmanager/data/org.freedesktop.NetworkManager.policy.in:115-123`) |
 | `50-mura-setup.rules` (rev 3.5; lands with `mura-setup`, D3) | exactly: `org.freedesktop.NetworkManager.settings.modify.system`, `org.freedesktop.timedate1.set-timezone`, `org.freedesktop.hostname1.set-static-hostname`, `org.freedesktop.accounts.user-administration`, BlueZ agent registration | the `mura-setup` system identity only (`subject.user`) | none beyond the identity — the service itself exists only while `state/setup/setup-complete` is absent | the gnome-initial-setup pattern (`references/gnome-initial-setup/data/20-gnome-initial-setup.rules.in:8-30`, which grants its setup user whole action prefixes; Mura names the exact actions). The privileged work is done by the standard daemons; the setup web app has no root helper (first-run §5.1) |
 
-That is the whole list: the greeter rule plus `mura-setup`'s scoped set. **No rule relaxes
+That is the whole list: the greeter rule plus `mura-setup`'s scoped set. One candidate row is
+**pending a ruling** ([research/54 §4](../research/54-first-run-authority.md)): `50-mura-session-timedate.rules`
+granting active local sessions exactly `org.freedesktop.timedate1.set-timezone` and
+`org.freedesktop.hostname1.set-static-hostname` — the SteamOS `holo-set-timezone` /
+`holo-set-hostname` precedent (`references/jupiter-hw-support/usr/share/polkit-1/actions/org.valve.holo.policy:88-109`,
+`allow_any=yes` there; narrowed to `subject.local && subject.active` here). **No rule relaxes
 anything for ordinary sessions** — the welcome surface runs as the logged-in user with
 active-session authority only (first-run §4.3): a passwordless user's Wi-Fi is a user-scoped
 connection (`settings.modify.own`, `allow_active=yes`, `policy.in:105-113`), and the

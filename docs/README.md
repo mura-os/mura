@@ -82,6 +82,7 @@ updates · reproducibility · adopt · reject · open questions) so they compare
 - [51-android-boot-donor-extraction-audit.md](research/51-android-boot-donor-extraction-audit.md) — target/build-specific boot chain, partition/protected-state evidence, safe extraction, unlock/root separation and recovery gates
 - [52-eye-camera-ipd-actuator-native-linux-audit.md](research/52-eye-camera-ipd-actuator-native-linux-audit.md) — inward cameras/illuminators, IPD readback/motor actuation, raw versus derived gaze and motor-safety gates
 - [53-proximity-presence-native-linux-audit.md](research/53-proximity-presence-native-linux-audit.md) — wear-sensor hardware through IIO/SSC to Monado/OpenXR presence, including profile occlusion semantics
+- [54-first-run-authority.md](research/54-first-run-authority.md) — how shipping Linux first-run flows let the first user set system state (gnome-initial-setup's two modes and `new_user_only` pages; SteamOS `holo-polkit-helpers` granting the passwordless `deck` user `set-timezone`/`set-hostname`; elementary's `lightdm`-identity rule; Lomiri; Calamares; the tours), Mura's seven steps with authority per instance, candidates for the in-headset time-zone confirm judged on UX (recommendation: derive + a Mura rule for exactly two actions; decider: owner)
 
 ## Architecture (`architecture/`)
 

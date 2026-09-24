@@ -213,6 +213,22 @@ repos=(
   'cockpit|https://github.com/cockpit-project/cockpit.git|'
   'wifi-connect|https://github.com/balena-os/wifi-connect.git|'
   'comitup|https://github.com/davesteele/comitup.git|'
+  # --- first-run authority study (docs/research/48) ---
+  # How shipping Linux first-run flows let the FIRST user set system state (time zone,
+  # hostname, network, accounts) before any password exists. jupiter-hw-support = SteamOS's
+  # holo-polkit-helpers (pkexec helpers + org.valve.holo.policy for the passwordless deck
+  # user); plasma-welcome / elementary initial-setup / phosh-tour / lomiri-system-settings =
+  # the desktop and mobile welcome/wizard lineages; calamares = installer-side first-boot
+  # hooks; gnome-initial-setup (above) = the two-mode reference. rauc = the update client
+  # whose slot-state/mark-good behaviour D6 wires (was cited unpinned).
+  'jupiter-hw-support|https://github.com/Jovian-Experiments/jupiter-hw-support.git|'
+  'plasma-welcome|https://invent.kde.org/plasma/plasma-welcome.git|'
+  'elementary-initial-setup|https://github.com/elementary/initial-setup.git|'
+  'phosh-tour|https://gitlab.gnome.org/World/Phosh/phosh-tour.git|'
+  'phosh-mobile-settings|https://gitlab.gnome.org/World/Phosh/phosh-mobile-settings.git|'
+  'lomiri-system-settings|https://gitlab.com/ubports/development/core/lomiri-system-settings.git|'
+  'calamares|https://github.com/calamares/calamares.git|'
+  'rauc|https://github.com/rauc/rauc.git|'
   'raspap|https://github.com/RaspAP/raspap-webgui.git|'
   'luci|https://github.com/openwrt/luci.git|'
   'unudhcpd|https://gitlab.postmarketos.org/postmarketOS/unudhcpd.git|'

@@ -14,7 +14,9 @@ regular-Linux-PC correction: sshd on every profile with upstream defaults (the r
 / `Match Address` scoping withdrawn), the password is the wearer's choice, Cockpit dropped for
 a bespoke setup web app that is the phone-facing instance of one `mura-setup` program (§5.1),
 "set up" = an explicit `setup-complete` marker, the welcome surface's authority split verified
-per card against the pinned clones (§4.3)**).
+per card against the pinned clones (§4.3)**; **rev 2.6, same day — two rulings recorded (dismiss =
+finish; Wi-Fi joined by a passwordless session user is user-scoped) and the time-zone step
+rewritten as derived-after-Connect with its authority an open item surveyed in research/54**).
 Decision record: [ADR 0017](adr/0017-first-run-provisioning.md) (amended in place).
 **What this covers:** everything between "the image was flashed" and "a person is using their
 session": what an installer would collect and where it lives here (§1), the persistent-state
@@ -210,19 +212,25 @@ per-item gated (§4.1) and skippable; the list is closed — anything else is a 
    only, the greeter and lock show a digit pad (the non-secret `numeric-credential` hint,
    [multi-user.md §3](multi-user.md)); no second module, no second secret. `pam_faillock`
    guards every password equally (§5.3).
-6. **Time zone** (and hostname, if offered) — one confirmation; derived from language, refined
-   from the network when available. **After the password because it is an administrator
-   action**: `timedate1.set-timezone` is `auth_admin_keep` for an active session
-   (`references/systemd/src/timedate/org.freedesktop.timedate1.policy:32-38`), which a
-   passwordless wheel user cannot satisfy — the Steam Deck's desktop mode behaves the same.
-   Consequence, recorded so nobody "fixes" it with a polkit rule without a ruling: the wearer
-   who just set a password answers a prompt for it on this card. If the password was skipped,
-   the card says so and defers to settings (rev 2.5; a Mura rule granting active sessions
-   `set-timezone` is the alternative — [discretionary; decider: the project owner]).
+6. **Time zone** (and hostname, if offered) — one confirmation, **derived, never typed**: on the
+   web app from the phone's own zone (the browser's `Intl` zone, as `Accept-Language` gives the
+   language), in-headset from the joined network / geoclue where available, else the image's
+   default. It therefore sits **after Connect** and has **no relation to the password step**,
+   which may not exist. *How the in-headset confirm/override is authorised* — `timedate1.set-timezone`
+   is `auth_admin_keep` even for an active session
+   (`references/systemd/src/timedate/org.freedesktop.timedate1.policy:32-38`) — is the one open
+   authority question of this flow; it is surveyed from shipping first-run flows in
+   [research/54](../research/54-first-run-authority.md) (GNOME never shows a logged-in user a
+   system step; SteamOS grants the seat user `set-timezone`/`set-hostname` permanently through
+   `holo-polkit-helpers`), with the recommendation "derive + a Mura rule for exactly these two
+   actions in active local sessions" — **decider: the project owner** (rev 2.6; the rev 2.5
+   "after the password card" text is withdrawn as nothing shipping does that).
 7. **Finish** — the closing card: "how to reach this device" (`ssh mura@<address>`, the
    USB-cable path, §5) and *finish setup*, which writes `state/setup/setup-complete` (§3) and
-   ends the provisioning hotspot and web app. Dismissing the surface writes it too; the surface
-   stays re-runnable from settings and the card is idempotent.
+   ends the provisioning hotspot and web app. **Dismissing the surface counts as finishing**
+   (ruled 2026-09-24): one marker, one meaning — closing the surface on first boot writes the
+   marker too; the surface stays re-runnable from settings, the card is idempotent, and the
+   hotspot/web app return only as an administrator setting or after a factory reset.
 
 No consent ceremony (§4.1). Locale-list ordering heuristics beyond the above are the welcome
 surface's UX design at G1 (decider named in §9).
@@ -239,9 +247,9 @@ verified against the pinned clones):
 | IPD | the settings store, `enrollment/<user>/calibration/` | own files |
 | Peripherals | BlueZ agent API | BlueZ's D-Bus policy admits any caller (`references/bluez/src/bluetooth.conf:26-28`, `context="default"`) |
 | Language | AccountsService `SetLanguage` on the own account | `org.freedesktop.accounts.change-own-user-data` = `yes` (`references/accountsservice/data/org.freedesktop.accounts.policy.in:10-16`) |
-| Wi-Fi | NetworkManager `AddConnection` | `settings.modify.own` = `yes` (`references/networkmanager/data/org.freedesktop.NetworkManager.policy.in:105-113`) → the user's own connection; `settings.modify.system` is `auth_admin_keep` even when active (`:115-123`; the `modify_system` build flag is refused upstream, `references/networkmanager/meson.build:557-560`) → a system connection only once a password exists. The card asks `CheckAuthorization` and picks the widest scope allowed — GNOME's "available to all users" behaviour, not a Mura rule. [Discretionary: user-scoped rather than "behind the password" or a greeter-style rule; decider: the project owner] |
+| Wi-Fi | NetworkManager `AddConnection` | `settings.modify.own` = `yes` (`references/networkmanager/data/org.freedesktop.NetworkManager.policy.in:105-113`) → the user's own connection; `settings.modify.system` is `auth_admin_keep` even when active (`:115-123`; the `modify_system` build flag is refused upstream, `references/networkmanager/meson.build:557-560`) → a system connection only once a password exists. The card asks `CheckAuthorization` and picks the widest scope allowed — GNOME's "available to all users" behaviour, not a Mura rule. **Ruled 2026-09-24: user-scoped** (over a greeter-style rule or moving the card) |
 | Password | **`passwd` itself, driven in a pty** (the pattern Cockpit's `passwd_self` uses) | NixOS's PAM `password` stack carries `nullok`, so no old password is asked ([research/42 §3.5](../research/42-input-bootstrap.md)) |
-| Time zone, hostname | `timedated` / `hostnamed` | `auth_admin_keep` → the session's **polkit agent** prompts for the password just set (registry: the agent is a named gap) |
+| Time zone, hostname | `timedated` / `hostnamed` | `auth_admin_keep` (`org.freedesktop.timedate1.policy:32-38`) — **open; decider: the project owner**, from [research/54 §4](../research/54-first-run-authority.md): derive automatically + a Mura rule granting active local sessions exactly `set-timezone` / `set-static-hostname` (SteamOS's `holo-set-timezone` shape, narrowed) is the recommendation |
 | Finish | the `setup-complete` file | sticky `state/setup/` (§3) |
 
 No polkit rule relaxes `change-own-password` (`auth_admin` by default,
@@ -592,11 +600,11 @@ Each names its decider: **locale short-list ordering and the visual design of th
 target** (decider: the welcome-surface UX design at G1 implementation); **a Monado 3DoF HMD
 driver per target** — none exists upstream for IIO or the Qualcomm SSC; the input floor is
 universal in principle and new driver code per target in practice (owner: each device's
-bring-up workstream; ordering in implementation-path §5.1); **whether "dismiss" should write
-`setup-complete` like "finish"** (§4.2 item 7 says yes; decider: the project owner); **a Mura
-polkit rule for `set-timezone` in active sessions** instead of placing the card behind the
-password (§4.2 item 6; decider: the project owner); **the Wi-Fi card's user-scoped connection
-for a passwordless session user** (§4.3; decider: the project owner);
+bring-up workstream; ordering in implementation-path §5.1); **how the in-headset time-zone /
+hostname confirm is authorised** — [research/54 §4](../research/54-first-run-authority.md)
+recommends derive + a Mura rule for exactly `timedate1.set-timezone` and
+`hostname1.set-static-hostname` in active local sessions (decider: the project owner; ruled
+2026-09-24 and no longer open: dismiss = finish, Wi-Fi user-scoped);
 recovery-environment design (where factory reset executes — owner: each family's recovery
 story; the Frame workstream shapes the first one); account-layering (store accounts, cloud
 identity) — a non-goal, explicitly out of OS scope. Resolved by the research/42 review and no

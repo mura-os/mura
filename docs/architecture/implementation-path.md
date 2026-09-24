@@ -106,7 +106,7 @@ class (iv) is the compositor axis.
 |---|---|---|---|
 | B4 | `zxr --greeter` | the mode's restrictions and exit contract are normative ([session-auth §5](../../specs/session-auth.md)); per-unit calibration paths in the contract; safe default IPD pre-auth; the standard furniture set (multi-user.md §2, research/11 §11) | the binary itself: G1's deliverable (§3), running on R0's core; swapped in for the stand-in greeter at G2 |
 | B7 | The session | rung-1/rung-2 loops run sway as the stand-in session | zxr session mode: M1 onward (§3) |
-| F2 | First-session welcome surface | design in [first-run-onboarding.md §4](first-run-onboarding.md); ADR 0017 rev 2.4 | shell-plane session content (downstream of M1's window model) **and the session instance of `mura-setup`** (one library with the D3 web-app instance; ADR 0017 decision 10): per-item gated, skippable, re-runnable; **see → walk → speak** (IPD language-free per `ipd.source` class → peripherals → the account's language → Wi-Fi/skip → one password/skip via `passwd` → **time zone + hostname after the password** (`auth_admin_keep`; needs the session **polkit agent**, registry gap #10) → finish, which writes `setup-complete`); every item operable at the §4.4 input floor; runs as the logged-in user with active-session authority only (§4.3, verified per card). **`mura-provisiond`** is left with the guest token gate only |
+| F2 | First-session welcome surface | design in [first-run-onboarding.md §4](first-run-onboarding.md); ADR 0017 rev 2.4 | shell-plane session content (downstream of M1's window model) **and the session instance of `mura-setup`** (one library with the D3 web-app instance; ADR 0017 decision 10): per-item gated, skippable, re-runnable; **see → walk → speak** (IPD language-free per `ipd.source` class → peripherals → the account's language → Wi-Fi/skip → time zone + hostname (derived after Connect; in-headset authority per research/54, pending ruling) → one password/skip via `passwd` → finish, which writes `setup-complete`; dismiss = finish); every item operable at the §4.4 input floor; runs as the logged-in user with active-session authority only (§4.3, verified per card). **`mura-provisiond`** is left with the guest token gate only |
 | B8 | Lock | lock state machine + invariants specified (ADR 0007, session-auth §2–§3); `ext-session-lock-v1` dev-profile-only | `mura-authd` + the in-compositor lock states — authd is D-track (D5, testable against sway); the lock *scene* is the compositor's |
 
 ### (v) Health
@@ -395,8 +395,8 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   `mura-setup` service half lands at D3 with no compositor dependency; the in-headset PSK
   display is a compositor scene (G1+), so the dev profile prints the PSK to serial/journal until
   then; the setup **web UI** itself (the phone-facing pages behind the D3 stub) is its own rung
-  after D3 (JS build tooling). The **polkit agent** (registry gap #10) precedes F2's time-zone
-  card. **F4**: the logind half is D2; the constraint-7 stabiliser
+  after D3 (JS build tooling). Whether F2's time-zone card needs the **polkit agent** (registry
+  gap #10) or a Mura rule is research/54's pending ruling. **F4**: the logind half is D2; the constraint-7 stabiliser
   and button handling are G1's exit criteria; the **per-target Monado 3DoF HMD driver** precedes
   any *in-headset* greeter on that target and belongs to each device's bring-up ladder — the
   rung-1/rung-2 harnesses (simulated HMD) need none of it.

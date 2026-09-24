@@ -15,8 +15,11 @@ decision 7 rewritten (sshd on every profile with upstream defaults, the key-only
 scoping withdrawn; the setup web app is bespoke and lives with the hotspot, Cockpit dropped;
 "set up" = the explicit `setup-complete` marker), decision 2 (the password is the wearer's
 choice; passwordless + declared key), decision 3 (welcome-surface authority verified per card;
-time zone after the password), decision 10 added (`mura-setup`, one program in two instances),
-seven alternatives recorded. Rev 1 (2026-09-23)
+time zone after the password — **withdrawn in rev 2.5**), decision 10 added (`mura-setup`, one
+program in two instances), seven alternatives recorded; **rev 2.5 same day** — decision 3: the
+time-zone step is derived after Connect and independent of the password step, its in-headset
+authority an open item surveyed in research/54; dismiss = finish; Wi-Fi user-scoped for a
+passwordless session user (rulings 2026-09-24). Rev 1 (2026-09-23)
 designed a pre-login onboarding wizard; rev 2 records why it does not exist.
 **Date:** 2026-09-23 / 2026-09-24
 **Context sources:** [first-run-onboarding.md](../first-run-onboarding.md) (the design this
@@ -91,9 +94,16 @@ has no such gap. Rev 2 follows that observation to its conclusions.
    passwordless user, a system connection once `modify.system`'s `auth_admin_keep` can be met —
    and the password item drives **`passwd` in a pty** (rev 2.2: no polkit rule relaxes
    `change-own-password`, which would let any session process set the wearer's password).
-   Time zone and hostname are `auth_admin_keep` and therefore sit *after* the password card
-   (the Steam Deck's desktop mode behaves identically); rev 2.1's "via `localed`/`timedated`"
-   without that ordering could not have worked for a passwordless wheel user. The surface is
+   Time zone and hostname are `auth_admin_keep`; **rev 2.5**: the step is *derived* (phone zone
+   on the web app, network/geoclue in-headset) after Connect and does not depend on the password
+   step, which is optional; how the in-headset confirm is authorised is an open item with the
+   survey in [research/54](../../research/54-first-run-authority.md) recommending a Mura rule
+   for exactly those two actions (SteamOS precedent) — decider: the project owner. Rev 2.4's
+   "after the password card" is withdrawn: no shipping first-run flow orders a step behind an
+   optional credential. Rev 2.1's "via `localed`/`timedated`" as an unprivileged session write
+   could not have worked for a passwordless wheel user. Ruled 2026-09-24: **dismiss = finish**
+   (closing the surface writes `setup-complete`), and a passwordless session user's Wi-Fi is a
+   **user-scoped** connection widened only when polkit allows. The surface is
    the in-session instance of the one `mura-setup` program (decision 10). `mura-provisiond` is
    left with **exactly one load-bearing job, the guest token gate** (plus the polkit-gated
    account-admin convenience path) and **has no conversation authorised by the absence of
