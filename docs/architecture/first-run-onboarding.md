@@ -6,7 +6,10 @@ ruled: input floor, welcome-surface contents, one credential, out-of-band mechan
 **rev 2.2 same day — security review of the passwordless posture: admin requires a password,
 `passwd` is the gate, SSH key-only off the USB subnet, Cockpit on trusted links, PSK hotspot,
 hint mirror; all static**; **rev 2.3, D1 — the account database, machine-id and other `/etc`
-state persist through a mutable `/etc` overlay whose upper layer is the `etc-rw/` class**).
+state persist through a mutable `/etc` overlay whose upper layer is the `etc-rw/` class**;
+**rev 2.4, D2 — no `PermitEmptyPasswords` over SSH (OpenSSH's `none` probe poisons the PAM
+handle for every later password login); the credential hint is a sticky-directory file with an
+owner check, not a mirror; faillock is a schema value with `conf=`**).
 Decision record: [ADR 0017](adr/0017-first-run-provisioning.md) (amended in place).
 **What this covers:** everything between "the image was flashed" and "a person is using their
 session": what an installer would collect and where it lives here (§1), the persistent-state
@@ -205,9 +208,11 @@ stack carries `nullok`, so a passwordless account is asked for no old password
 ([research/42 §3.5](../research/42-input-bootstrap.md)). No polkit rule relaxes
 `change-own-password`: making it `allow_active=yes` would let any session process set the
 wearer's password (lock-out, then escalate), which is why AccountsService defaults it to
-`auth_admin`. The `numeric-credential` hint is written by the user into their own
-`enrollment/<user>/`; a root unit publishes the greeter-readable mirror
-`/run/mura/credential-hint/<user>` (`0640 root:greeter`, [multi-user.md §3](multi-user.md)).
+`auth_admin`. The `numeric-credential` hint is written by the user into their own file
+`state/credential-hint/<user>` — a **sticky, world-writable directory** (`1777`, the `/tmp`
+shape; rev 2.4, D2): any user creates their own file, only its owner (or root) can replace or
+remove it, and the greeter reads a hint only after checking the file's owner is the account it
+is about to prompt. No mirror unit, no root involvement ([multi-user.md §3](multi-user.md)).
 `mura-provisiond` (root,
 private socket, the mura-authd shape) is **left with exactly one load-bearing job — the guest
 token gate** ([multi-user.md §4](multi-user.md)) plus the polkit-gated account-admin
@@ -331,15 +336,19 @@ correct if the wearer later removes it. Per-service posture (the table is the sp
 | **`sudo`** | **standard — no `nullok`**, `wheelNeedsPassword` default | a passwordless `mura` is a full *user*; **administration requires a password**. `nullok` here would make `sudo -S <<< ""` from any session process, or any shell obtained as `mura`, into root |
 | **polkit `auth_admin` actions** | **standard** — no Mura rule relaxes them | same reasoning; the only Mura polkit rule is the greeter's NetworkManager rule ([multi-user.md §2](multi-user.md)) |
 | Setting the first password | **`passwd`** (own account; the welcome item and Cockpit drive it in a pty) | NixOS's PAM `password` stack has `nullok`: no old password is asked. This is the admin gate. No polkit own-password rule (an escalation vector) |
-| **sshd** | **global `PasswordAuthentication no`** (key-only) **+** `Match Address <usb-gadget-subnet>` → `PasswordAuthentication yes`, `PermitEmptyPasswords yes`; `nullok` on the sshd PAM stack | "you plugged the cable in" is TTY-equivalent trust and yields the *user*; over the LAN and the hotspot, password auth is refused — which also protects a short numeric password from remote guessing once one exists |
+| **sshd** | **global `PasswordAuthentication no` + `KbdInteractiveAuthentication no`** (key-only; with `UsePAM`, keyboard-interactive *is* PAM password auth) **+** `Match Address <usb-gadget-subnet>` → both `yes`. **Never `PermitEmptyPasswords`**, no `nullok` on the sshd stack (rev 2.4, D2 finding) | "you plugged the cable in" is TTY-equivalent trust and yields the *user*; over the LAN and the hotspot, password auth is refused — which also protects a short numeric password from remote guessing once one exists. Empty passwords over SSH are out because of OpenSSH itself: with `PermitEmptyPasswords` the initial `none` method runs a real PAM authenticate with an empty password in the parent process, the actual authentication runs in a *forked* helper, and the parent's PAM handle keeps the failed probe as its cached chain — `pam_setcred` then fails **every** password login the moment the account *has* a password (measured in the D2 VM test). A passwordless `mura`'s first contact over the cable is therefore Cockpit (PAM `nullok`, no such probe) or the session itself; SSH follows `passwd` — or an authorized key, which is what a self-builder declares anyway |
 | **Cockpit** | PAM `cockpit` with `nullok`; **socket bound to the gadget and hotspot addresses only**; LAN exposure an administrator setting | reachable only on physically- or PSK-authorised links; its `passwd` flow is the first thing the setup page offers; admin operations inside Cockpit use sudo and therefore also wait for a password |
 | Hotspot | WPA2, per-boot 8-digit PSK shown in-headset; exists only while unprovisioned; idle timeout (§5) | radio range is not cable possession |
 | A declared `hashedPasswordFile` user | none of this applies | Path A |
 
 Consequences worth stating: a person who never sets a password keeps a fully usable device and
 simply cannot administer it — the welcome surface's "set a password" item says so in those
-words; SSH from a laptop is a `passwd` away from `sudo`; nothing in the system ever depends on
-detecting the passwordless state.
+words; SSH from a laptop is a `passwd` away (run in the session or in Cockpit over the cable),
+and `sudo` one step further; nothing in the system ever depends on detecting the passwordless
+state. The faillock ladder (`mura.xr.session.faillock.{deny,unlockSeconds}`, defaults 5 / 300 s)
+is shared by the greeter, the lock and SSH, with its tally in `state/faillock/` on `/persist`;
+nixpkgs' Linux-PAM does not read `/etc/security/faillock.conf` unaided, so every
+`pam_faillock` line carries `conf=` and the `faillock` CLI needs `--dir` (aliased).
 
 ### 5.4 USB gadget and hotspot specifics (decided; discretionary values flagged)
 
@@ -443,12 +452,14 @@ by overview invariant 10**: this machine has root, and it belongs to its wearer.
     reaches the compositor and does not power the device off while a scene owns it.
 11. A USB keyboard plugged in during the greeter types into the auth scene with no
     configuration; a just-works Bluetooth keyboard pairs from the greeter's agent.
-12. Passwordless `mura`: greeter login succeeds; SSH with an empty password succeeds from the
-    USB subnet and is **refused** from every other interface; **`sudo` fails** and polkit
-    `auth_admin` actions fail; `passwd` succeeds without an old password; after a password is
-    set, `sudo` works and SSH password auth is still refused off the USB subnet (key-only). A
-    digits-only password yields the digit pad at greeter and lock; a mixed password yields the
-    keyboard path; the greeter reads the hint only through `/run/mura/credential-hint/`.
+12. Passwordless `mura`: greeter login succeeds; **`sudo` fails** and polkit `auth_admin`
+    actions fail; `passwd` succeeds without an old password; after a password is set, `sudo`
+    works, SSH password auth succeeds from the USB subnet and is **refused** from every other
+    interface (key-only); `PermitEmptyPasswords` is `no` everywhere; the faillock ladder locks
+    after `faillock.deny` failures with its tally under `/persist/mura/state/faillock/`, and
+    the right password is refused while locked. A digits-only password yields the digit pad at
+    greeter and lock; a mixed password yields the keyboard path; the greeter reads a hint from
+    `state/credential-hint/<user>` only when that file is owned by `<user>`.
 13. A Wi-Fi network joined at the greeter is a system connection visible to the user who then
     logs in ([multi-user.md §2](multi-user.md)).
 14. Cockpit answers only on the gadget and hotspot addresses until the administrator enables it

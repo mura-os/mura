@@ -144,6 +144,30 @@ Mirrors Monado's build/runtime surface ([05](../research/05-xr-userspace.md) §9
 | `mura.xr.environment` | attrs | → systemd unit env (the proven config channel) |
 | `mura.xr.tracking.slam.package` | pkg | provides `libbasalt.so`, sets `VIT_SYSTEM_LIBRARY_PATH` |
 | `mura.xr.calibration.paths` | attrs | per-device calibration data locations (per-unit state) |
+| `mura.xr.session.faillock.deny` / `.unlockSeconds` | positive ints (defaults 5 / 300) | the `pam_faillock` ladder shared by greeter, lock and SSH (`modules/os/policy.nix`, D2); tally in `state/faillock/` on `/persist`; schema values, never compiled in (constraint 9) — the rest of `mura.xr.session.*` (greeter/autoLogin/multiUser/guest/lock) is specified in [multi-user.md](multi-user.md) and ADR 0007/0018 |
+
+### `mura.xr.sensing.*` — expression, gaze, and audio-source facts
+
+The Persona sensing ladder declares what the device's **Linux runtime path exposes**, not every
+sensor physically fitted to the product:
+
+| Option | Type | Meaning |
+|---|---|---|
+| `mura.xr.sensing.gaze` | enum `none`\|`combined`\|`per-eye` | gaze pose available from the runtime |
+| `mura.xr.sensing.eyelid` | enum `none`\|`weights`\|`openness` | eyelid signal shape |
+| `mura.xr.sensing.faceWeights` | enum `none`\|`fb2-visual`\|`fb2-audio`\|`android`\|`htc` | exposed expression schema/source |
+| `mura.xr.sensing.mouthCamera` | enum `none`\|`internal`\|`addon` | optical mouth-view source |
+| `mura.xr.sensing.micChannels` | unsigned int | logical channels in the native session's default capture source available to the audio-inference consumer |
+
+`micChannels` is deliberately **not** physical capsule count, the largest stock-Android capture
+mode, raw ALSA width when normal PipeWire policy downmixes it, or WiVRn's relayed width. It stays
+`0` until the board path reaches the application-facing runtime gate: firmware/topology loads,
+capture endpoint and routing exist, PipeWire publishes the intended source, and an ordinary
+session client records from it. The per-target physical/stock/native facts and A0/S1/S2/R1–R5
+evidence states are canonical in
+[research/43](../research/43-microphone-native-linux-capture-audit.md). The assertion that
+`faceWeights = "fb2-audio"` requires `micChannels > 0` therefore means “qualified input exists,”
+not “the vendor specification lists a microphone.”
 
 ### `mura.deployment.*` — partitions, images, flashing
 

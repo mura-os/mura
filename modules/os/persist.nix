@@ -112,7 +112,7 @@ in
           RemainAfterExit = true;
         };
         script = ''
-          mkdir -p -m 0750 /sysroot${root}
+          mkdir -p -m 0755 /sysroot${root}
           mkdir -p -m 0755 /sysroot${etcRw}
         '';
       };
@@ -140,14 +140,21 @@ in
           RemainAfterExit = true;
         };
         script = ''
-          install -d -m 0750 ${root}
+          # The tree is traversable (0755): users reach their own enrollment/<user>/ and the
+          # shared credential-hint directory; each class protects itself with its own mode.
+          install -d -m 0755 ${root}
           install -d -m 0750 ${root}/factory
           install -d -m 0700 ${root}/identity
           install -d -m 0755 ${root}/identity/ssh
-          install -d -m 0700 ${root}/enrollment
+          install -d -m 0755 ${root}/enrollment
           install -d -m 0700 ${root}/pairing
-          install -d -m 0750 ${root}/state
+          install -d -m 0755 ${root}/state
           install -d -m 0750 ${root}/state/provisioning
+          # faillock counters (modules/os/policy.nix): pam_faillock runs as root
+          install -d -m 0750 ${root}/state/faillock
+          # credential hint (multi-user.md §3): the /tmp shape — every user writes their own
+          # <user> file (0644); the greeter/lock trust a file only if its owner is that user.
+          install -d -m 1777 ${root}/state/credential-hint
         '';
       };
 

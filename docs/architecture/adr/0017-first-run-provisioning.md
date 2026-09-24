@@ -7,7 +7,10 @@ only), decision 7 (Cockpit, portal, passwordless wiring), decision 8 added (the 
 decision 9 added (`pairing/` class); **rev 2.2 same day** — security review of the passwordless
 posture: decisions 3 and 7 amended (no polkit own-password rule — `passwd` is the gate; no
 `nullok` on sudo/polkit — admin requires a password; SSH key-only off the USB subnet; Cockpit
-bound to trusted links; hotspot WPA2 with an in-headset PSK; all static). Rev 1 (2026-09-23)
+bound to trusted links; hotspot WPA2 with an in-headset PSK; all static); **rev 2.3 same day,
+D2** — decision 7: no `PermitEmptyPasswords`/`nullok` over SSH (OpenSSH+PAM finding, measured
+in the VM test); decision 3: the credential hint is an owner-checked file in a sticky
+directory, not a root-published mirror. Rev 1 (2026-09-23)
 designed a pre-login onboarding wizard; rev 2 records why it does not exist.
 **Date:** 2026-09-23 / 2026-09-24
 **Context sources:** [first-run-onboarding.md](../first-run-onboarding.md) (the design this
@@ -115,8 +118,11 @@ has no such gap. Rev 2 follows that observation to its conclusions.
    + shared IPv4 with a `dnsmasq-shared.d` wildcard address and DHCP option 114, probe redirect
    to the one static launcher page (first-run-onboarding §5.2). **Passwordless `mura` (rev 2.2,
    all static — first-run §5.3):** sshd is key-only everywhere except a `Match Address` block
-   for the USB-gadget subnet (`PasswordAuthentication yes`, `PermitEmptyPasswords yes`, `nullok`);
-   Cockpit's socket is bound to the gadget and hotspot addresses only (LAN exposure an
+   for the USB-gadget subnet (`PasswordAuthentication` + `KbdInteractiveAuthentication yes`;
+   **rev 2.3, D2: not `PermitEmptyPasswords`, no `nullok` on sshd** — OpenSSH's `none` probe
+   with an empty password poisons the parent's PAM handle and `pam_setcred` then fails every
+   password login once the account has one; a passwordless account's first contact over the
+   cable is Cockpit or the session, SSH follows `passwd` or a declared key); Cockpit's socket is bound to the gadget and hotspot addresses only (LAN exposure an
    administrator setting); **`sudo` and polkit `auth_admin` stay standard — a passwordless
    account cannot administer until it sets a password with `passwd`**, which asks no old
    password; the setup page offers that first. Nothing in the system detects "no password" at

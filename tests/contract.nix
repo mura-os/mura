@@ -254,6 +254,12 @@ let
     config.mura.hardware.input.backRole = "aux";
   };
 
+  # D2: a device may tighten the faillock ladder.
+  faillockStrict = {
+    imports = [ validDevice ];
+    config.mura.xr.session.faillock = { deny = 3; unlockSeconds = 900; };
+  };
+
   # Assertion helpers.
   assertsPass = e: builtins.all (a: a.assertion) e.config.assertions;
 
@@ -309,6 +315,12 @@ let
     inputBackMissingFails = !assertsPass (evalContract inputBackMissing);
     # Lock triggers default sensibly.
     lockDefaultsOn = eval.config.mura.xr.session.lock.enable == true;
+    # multi-user.md §3 / D2: the faillock ladder is a schema value (constraint 9), never
+    # compiled in; defaults are 5 failures, 5 minutes.
+    faillockDefaultDeny = eval.config.mura.xr.session.faillock.deny == 5;
+    faillockDefaultUnlock = eval.config.mura.xr.session.faillock.unlockSeconds == 300;
+    faillockOverridable =
+      (evalContract faillockStrict).config.mura.xr.session.faillock.deny == 3;
     # ADR 0011: eyes defaults to none; ipd defaults to fixed @ 63mm.
     eyesDefaultNone = eval.config.mura.adaptation.eyes.backend == "none";
     ipdDefaultFixed = eval.config.mura.hardware.ipd.source == "fixed";

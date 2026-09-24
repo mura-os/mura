@@ -534,6 +534,22 @@ in
             '';
           };
         };
+        faillock = {
+          deny = mkOption {
+            type = types.ints.positive;
+            default = 5;
+            description = ''
+              Consecutive authentication failures before pam_faillock locks the account
+              (greeter, lock, SSH). Counters persist on /persist so a reboot does not reset the
+              ladder (multi-user.md §3). A schema value, never compiled in (constraint 9).
+            '';
+          };
+          unlockSeconds = mkOption {
+            type = types.ints.positive;
+            default = 300;
+            description = "Seconds after which a faillock lockout clears (pam_faillock unlock_time).";
+          };
+        };
         allowNoDeclaredAccount = mkOption {
           type = types.bool;
           default = false;

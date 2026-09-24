@@ -11,6 +11,9 @@ separate `pam_mura_pin` module is withdrawn, a PIN is a numeric password with a 
 (§3); the greeter's standard furniture and the input floor are normative (§2). **Rev 3.3
 (2026-09-24, D1):** the account database persists through a **mutable `/etc` overlay whose
 upper layer is on `/persist`** — the `/persist/userdb` + symlink design is withdrawn (§1, §1.1).
+**Rev 3.4 (2026-09-24, D2):** the credential hint is an owner-checked file in a sticky
+directory (no mirror unit); sshd carries no `nullok` and never `PermitEmptyPasswords`; the
+faillock rules are spelled out with `conf=` (§3, §3.1).
 **Decision record:** [ADR 0018](adr/0018-multi-user-accounts.md).
 **Evidence base:** [research/41](../research/41-multi-user-login-landscape.md) — its Linux
 mechanics sections (§1, §3); the closed-platform sections are context and anti-patterns.
@@ -140,10 +143,13 @@ short numeric password, and Unix does not care.)*
 - **The digit pad is a rendering choice, not a credential.** When a user sets a digits-only
   password (through `passwd` — the welcome item and Cockpit drive it in a pty; no D-Bus path
   sets a password without `auth_admin`), a **non-secret `numeric-credential` hint** is written
-  by the user into their own `enrollment/<user>/` (the hash itself cannot reveal its alphabet).
-  The greeter runs as `greeter` and needs the hint pre-auth, so a root unit publishes a mirror
-  `/run/mura/credential-hint/<user>` (`0640 root:greeter`); the alphabet leak is bounded to
-  local users and covered by faillock. The greeter and lock render a digit pad for that user,
+  by the user as their own file `state/credential-hint/<user>` (the hash itself cannot reveal
+  its alphabet). That directory is **sticky and world-writable** (`1777`, the `/tmp` shape;
+  rev 3.4, D2): any user creates their own file, only its owner or root can replace or remove
+  it, and the greeter — which runs as `greeter` and needs the hint pre-auth — reads it only after
+  checking the file is owned by the account it is about to prompt. No mirror unit, nothing
+  runs as root for it. The alphabet leak is bounded to local users and covered by faillock.
+  The greeter and lock render a digit pad for that user,
   the full virtual-keyboard path otherwise — both operable at the input floor
   ([first-run-onboarding.md §4.4](first-run-onboarding.md)).
   Session-auth's `style=secret` fast path keys off this hint plus service config, never
@@ -172,11 +178,12 @@ NixOS's default. `nullok` = `security.pam.services.<n>.allowNullPassword`.
 
 | PAM service | Declared by | `nullok` | faillock | Notes |
 |---|---|---|---|---|
-| `greetd` | NixOS greetd module; **policy.nix pins `nullok` explicitly** (nixpkgs has flipped between setting `allowNullPassword` on `greetd` directly and substacking the `login` service, which carries it — `programs/shadow.nix:253-258` in the pinned revision; D0 verified the latter) | yes | yes (counters on `/persist`) | login for the greeter and autologin; the greeter renders the digit pad from the mirrored hint |
+| `greetd` | NixOS greetd module; **policy.nix pins `nullok` explicitly** (nixpkgs has flipped between setting `allowNullPassword` on `greetd` directly and substacking the `login` service, which carries it — `programs/shadow.nix:253-258` in the pinned revision; D0 verified the latter) | yes | yes (counters on `/persist`) | login for the greeter and autologin; the greeter renders the digit pad from the owner-checked hint file |
+| *faillock itself* | policy.nix: three rules per service — `preauth` (required, before `pam_unix`), `authfail` (`[default=die]`, after it), `account` (required; resets on success) — each with **`conf=/etc/security/faillock.conf`**, because nixpkgs builds Linux-PAM with its sysconfdir inside the store and pam_faillock otherwise runs on compiled defaults (deny 3, 10 min, `/run/faillock`); NixOS's own `logFailures` is one argument-less `authfail` line and never blocks anything | — | — | `dir = /var/lib/mura/state/faillock`, `deny`/`unlock_time` from `mura.xr.session.faillock.{deny,unlockSeconds}` (defaults 5 / 300 s; constraint 9 — schema values), `silent`; the `faillock` CLI reads no conf file, so it is aliased with `--dir` |
 | `greetd-greeter` | NixOS greetd module | — | — | the greeter user's own session; `pam_permit`-class, never a human |
 | `mura-lock` | `modules/os/policy.nix` (authd's service, [specs/session-auth.md](../../specs/session-auth.md)) | yes | yes | no credential ⇒ no lock engages (ADR 0007) |
 | `mura-guest` | policy.nix, only when `guest.enable` | — | — | the gated branch: root check module on the enable flag + provisiond single-use token (§4) |
-| `sshd` | NixOS openssh module; policy.nix sets `nullok` | yes | yes | reachable *with a password* only from the USB-gadget subnet (`Match Address`, first-run §5.3); key-only elsewhere |
+| `sshd` | NixOS openssh module; policy.nix forces `pam_unix` back into the stack (`unixAuth`, which NixOS drops when the global `PasswordAuthentication` is off) | **no** (rev 3.4) | yes | reachable *with a password* only from the USB-gadget subnet (`Match Address` → `PasswordAuthentication` + `KbdInteractiveAuthentication yes`, first-run §5.3); key-only elsewhere. **Never `PermitEmptyPasswords`**: OpenSSH's `none` probe then authenticates with an empty password in the parent while the real attempt runs in a forked helper, and `pam_setcred` replays the probe's failure for every password login once the account has one (D2 finding). Passwordless first contact over the cable is Cockpit or the session; SSH follows `passwd` or a declared key |
 | `cockpit` | NixOS cockpit module; policy.nix sets `nullok` | yes | yes | socket bound to gadget + hotspot addresses only (first-run §5.4) |
 | `sudo` | NixOS default | **no** | — | **standard**: a passwordless account cannot `sudo`; `wheelNeedsPassword` default |
 | `passwd` (password stack) | NixOS default | yes (NixOS's own `password` stack) | — | the gate: no old password asked for a passwordless account |

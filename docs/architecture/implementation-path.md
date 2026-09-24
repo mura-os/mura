@@ -159,7 +159,7 @@ security acceptance checks are [first-run-onboarding.md §8](first-run-onboardin
 |---|---|---|---|
 | **D0** | `profiles/{default,multi-user,dev}.nix` ([repo-structure.md](repo-structure.md)); `modules/os/session.nix` consuming `mura.xr.session.*` → `services.greetd` (autologin → sway; greeter → `cage -s -- gtkgreet`, stand-in); `modules/xr` Monado stub removed; the VM device drops the getty hack and permanent groups; both fixtures in `checks`. **B2 forced: logind** | — | both VMs boot with zero manual steps — one straight into sway as `mura`; one to gtkgreet where the declared user logs in and logout returns to gtkgreet; a greeter fixture with no declared user fails to *evaluate*; `sudo` as passwordless `mura` fails, `passwd` succeeds without an old password |
 | **D1** | `modules/os/persist.nix`: `/persist` (family: `syspersist` stage 1, no `nofail`; VM: a second virtual disk as the stand-in) + class skeleton incl. `pairing/`; **`/etc` as a mutable overlay whose upper layer is `/persist/etc-rw/`** (userborn hybrid mode on every profile — the account database, machine-id, network profiles all persist through it; multi-user.md §1.1 rev 3.3); `/var/lib/bluetooth` → `pairing/` when the device has an adapter; F1 reference: SSH host key in `identity/ssh/` + the marker-gated `mura-f1-seed-state` pattern; `tests/persist.nix` pins the image layout in `nix flake check` | D0 | VM tests: `/etc` is an overlay with its upper on `/persist`; `passwd` persists across a reboot into the upper; F1 unit ran once and is condition-skipped on the second boot; machine-id stable; `useradd` survives a reboot (multi-user); no failed units, no ordering cycles |
-| **D2** | `modules/os/policy.nix`: the §5.3 posture table as declared PAM services; sshd global key-only + gadget-subnet `Match Address`; standard sudo/polkit; faillock counters on `/persist`; the greeter NetworkManager polkit rule; `HandlePowerKey=ignore`; the `credential-hint` mirror unit | D0 | SSH with an empty password succeeds from the gadget subnet and is refused from every other interface; a 4-digit password is refused over SSH from the LAN; `sudo` fails until `passwd`; a Wi-Fi profile added as `greeter` is a system connection; a session process cannot set the password except through `passwd`'s PAM conversation |
+| **D2** | `modules/os/policy.nix`: the §5.3 posture table as declared PAM services; sshd global key-only + gadget-subnet `Match Address`; standard sudo/polkit; faillock counters on `/persist`; the greeter NetworkManager polkit rule; `HandlePowerKey=ignore`; the sticky `state/credential-hint/` directory (the mirror unit is withdrawn — first-run rev 2.4) | D0 | password SSH succeeds from the gadget subnet and is refused from every other interface, `PermitEmptyPasswords` is `no` everywhere (D2 finding, first-run §5.3); faillock locks after `faillock.deny` failures with its tally on `/persist` and refuses the right password while locked; `sudo` fails until `passwd`; the greeter profile ships the NetworkManager rule and the default image does not (its effect is exercised at D3, which brings NetworkManager); a user writes their own hint file and another user cannot remove it; a session process cannot set the password except through `passwd`'s PAM conversation |
 | **D3** | F3: USB gadget (configfs, from the initramfs) + `systemd-networkd` DHCP server + sshd; hotspot (NM AP/shared, WPA2, per-boot PSK, `dnsmasq-shared.d` wildcard + option 114, probe redirect, idle timeout) + the static launcher page; `services.cockpit` bound to gadget + hotspot addresses; "Mura setup" plugin **stub page** | D1, D2 | **`dummy_hcd`** provides a virtual UDC so the gadget path runs in the VM — *verify it is built in the NixOS kernel*; fallback: udev-rename a second virtio NIC to the gadget interface name so the networkd + sshd `Match Address` half is still tested. **`mac80211_hwsim`** provides virtual radios so AP+STA and the captive-portal handoff are tested (verify module presence). Cockpit answers only on gadget/hotspot addresses; the hotspot refuses association without the PSK and drops after the idle timeout |
 | **D4** | B6a: the session wrapper + `mura-session.target` around sway; [specs/session-bootstrap.md](../../specs/session-bootstrap.md) written from this rung | D0 | logout returns to the stand-in greeter without racing device release; the three environment classes verified (`WAYLAND_DISPLAY` visible to user services only after readiness); the wrapper is the greetd session's lifetime |
 | **D5** | `mura-authd` + the lock path against sway ([specs/session-auth.md](../../specs/session-auth.md) §6 conformance, every item except the composition-introspection half of L2) | D4 | session-auth §6 checklist |
@@ -178,8 +178,17 @@ account in to sway. **T0** landed the same day: both criteria are now VM tests
 same day and passes both VM tests; it produced one design correction — the
 `passwordFilesLocation`/symlink userdb of multi-user rev 2/3 does not survive shadow-utils'
 `rename(2)`; the account database now persists through a mutable `/etc` overlay on `/persist`
-(multi-user.md rev 3.3, first-run rev 2.3). Not yet exercised: logout returning to the greeter
-(D4), the §8 checks 12–15 (D2). D2–D7 not started.
+(multi-user.md rev 3.3, first-run rev 2.3). **D2** landed the same day
+(`modules/os/policy.nix`, `mura.xr.session.faillock.*`) and passes both VM tests; it produced a
+second design correction — `PermitEmptyPasswords` over the gadget subnet is withdrawn because
+OpenSSH's `none` probe poisons the parent's PAM handle for every later password login
+(first-run rev 2.4, multi-user rev 3.4, ADR 0017 rev 2.3, research/42 §6.5) — and three
+nixpkgs facts now encoded in the module: NixOS drops `pam_unix` from sshd when the global
+`PasswordAuthentication` is off (`unixAuth` forced), Linux-PAM's sysconfdir is in the store
+(`pam_faillock conf=`), and OpenSSH's `PerSourcePenalties` throttles independently of PAM
+(disabled in the test harness only). Not yet exercised: logout returning to the greeter (D4);
+§8 check 13 (needs NetworkManager, D3); check 15 (needs the D-Bus surfaces, D5/D7). D3–D7 not
+started.
 
 ### R0 — the bring-up spike (risk retirement, not a decision gate)
 
@@ -254,7 +263,9 @@ returns to the greeter without racing device release; the spec is revised from w
   **Blessing is profile-specific**: default image = a stable `mura` session (locked only if a
   credential exists); multi-user = a stable *greeter* — mark-good never waits for a human to log
   in, so `/home` and per-user migration state can never gate it.
-- **Desktop-usable (post-login qualification, never blocks blessing):** PipeWire + audio policy,
+- **Desktop-usable (post-login qualification, never blocks blessing):** PipeWire + audio policy
+  including the intended default capture source, declared channel width, and ordinary-client
+  recording ([research/43 §10](../research/43-microphone-native-linux-capture-audit.md) R4);
   virtual keyboard/input method, settings daemon, polkit agent, portals, launcher +
   notifications — each a registry row, several honestly **missing** today (the registry's gap
   list is the work queue; without a polkit agent privileged operations silently fail, and
@@ -381,7 +392,10 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   criteria; neither stand-in is ever in a shipped image.
 - **All hardware-gated work**: the Lynx spike rule stands (design-backlog standing rule);
   the Steam Frame donor workstream continues in parallel on its own ladder; nothing in this
-  path requires hardware before M4's exit.
+  path requires hardware before M4's exit. Per-device microphone support likewise advances only
+  through the A0/S1/S2/R1–R5 evidence states in
+  [research/43](../research/43-microphone-native-linux-capture-audit.md); `fb2-audio` cannot pass
+  S-1 from a vendor mic specification or stock-Android recording.
 - **Docked mode, sharing bridges, avatar, mapping**: each behind its own recorded gate
   (ADR 0015; spatial-sharing; S-1/R-1; M0), joined to this path only after G3.
 
@@ -398,7 +412,8 @@ claim that the gated work waits:
 - [mapping-design-backlog.md](mapping-design-backlog.md) — the **M0 foundations spike** gate
   (keyframe packet, online mapper, reset epochs) + design-before-milestone items.
 - [avatar-design-backlog.md](avatar-design-backlog.md) — the **S-1 sensing / R-1 render**
-  kill-gates + pre-implementation items.
+  kill-gates + pre-implementation items; where the audio-inferred rung is selected, S-1 consumes
+  research/43's R4 native-source result before model/timestamp qualification.
 
 ## 6. Standing references
 

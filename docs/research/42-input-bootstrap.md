@@ -669,6 +669,24 @@ Cockpit mechanism) needs no rule. Cockpit's socket bound to gadget + hotspot add
 (`0640 root:greeter`). Everything static — no mechanism detects the passwordless state.
 Recorded in first-run-onboarding §5.3 / ADR 0017 rev 2.2 / multi-user §3.
 
+**D2 correction (2026-09-24, measured in the VM test):** the `PermitEmptyPasswords` half of
+(b) is withdrawn. OpenSSH's initial `none` method, with that option on, performs a real PAM
+authenticate with an empty password in the parent `sshd-session`; the subsequent
+keyboard-interactive/password attempt runs in a **forked** helper (nixpkgs' OpenSSH is not built
+with `USE_POSIX_THREADS`), so the parent's PAM handle keeps the failed probe as its cached chain
+and `pam_setcred` replays it — `Permission denied` with NixOS's `likeauth`, `Failure setting user
+credentials` without. Net effect: every SSH password login fails as soon as the account *has* a
+password, i.e. right after the wearer follows the design's own advice. So: the gadget-subnet
+`Match Address` block keeps `PasswordAuthentication` + `KbdInteractiveAuthentication yes` only;
+no `nullok` on sshd; a passwordless `mura` reaches the device over the cable through Cockpit
+((c), PAM has no such probe) or through the session, and SSH follows `passwd` — or an
+authorized key, the ordinary self-builder answer. The hint mirror is also gone: the hint is the
+user's own file in a sticky `state/credential-hint/` directory, owner-checked by the greeter
+(first-run rev 2.4, multi-user rev 3.4, ADR 0017 rev 2.3). Two more nixpkgs facts found on the
+way: Linux-PAM's sysconfdir is inside the store, so `pam_faillock` needs `conf=` to see
+`/etc/security/faillock.conf`; and OpenSSH ≥ 9.8's `PerSourcePenalties` throttles a source
+address after failures independently of PAM.
+
 ### 6.6 Native companion app
 
 Optional sugar over the same SSH/HTTP surfaces (KDE Connect / gnome-remote-desktop class); the

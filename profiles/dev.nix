@@ -8,8 +8,15 @@
 {
   services.openssh = {
     enable = true;
-    # DEV ONLY — the shipped posture is key-only except the USB-gadget subnet (§5.3, D2).
-    settings.PasswordAuthentication = lib.mkDefault true;
+    # DEV ONLY — the shipped posture (modules/os/policy.nix) is key-only except the
+    # USB-gadget subnet; the VM's forwarded SSH arrives from user-mode networking, so the
+    # dev profile forces password auth on every interface. Both knobs: with UsePAM,
+    # keyboard-interactive is password auth too. Priority 60 (below mkForce): the VM tests
+    # mkForce the shipped posture back on to verify it.
+    settings = {
+      PasswordAuthentication = lib.mkOverride 60 true;
+      KbdInteractiveAuthentication = lib.mkOverride 60 true;
+    };
   };
 
   # The serial console (`console=` kernel parameter, serial-getty unit) is the device's:

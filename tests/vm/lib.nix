@@ -30,6 +30,17 @@ pkgs.testers.runNixOSTest {
     virtualisation.qemu.options = [ "-vga none -device virtio-gpu-pci" ];
     environment.sessionVariables.WLR_RENDERER = "pixman";
     fonts.packages = [ pkgs.dejavu_fonts ];
+    environment.systemPackages = [ pkgs.sshpass ];
+
+    # The device imports profiles/dev.nix, which loosens sshd for the interactive VM; the
+    # tests verify the *shipped* posture (modules/os/policy.nix), so force it back on.
+    services.openssh.settings = {
+      PasswordAuthentication = lib.mkForce false;
+      KbdInteractiveAuthentication = lib.mkForce false;
+      # Test-only: the faillock subtest hammers sshd from one address; OpenSSH's per-source
+      # penalties would otherwise drop the post-reset login for reasons unrelated to PAM.
+      PerSourcePenalties = "no";
+    };
 
     # The device sets these for a real disk image; the test framework owns the VM's disk
     # and the node name (both sides use mkDefault, so the test must decide).
