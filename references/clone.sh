@@ -193,6 +193,29 @@ repos=(
   'weston|https://gitlab.freedesktop.org/wayland/weston.git|'
   'louvre|https://github.com/CuarzoSoftware/Louvre.git|'
   'mir|https://github.com/canonical/mir.git|'
+  # --- input bootstrap + out-of-band provisioning study (docs/research/42) ---
+  # What a headset can accept as input before anything is configured, and how a
+  # person reaches it from a device they already hold. bluez = pre-login pairing
+  # agents + PAN; libinput = HID hotplug into the greeter seat; systemd = logind seat
+  # ACLs + sshd/gadget ordering; NetworkManager = AP/shared mode (hotspot), keyfile
+  # secrets, inactive-session D-Bus policy; gnome-initial-setup = the desktop wizard
+  # we deliberately do NOT have (mechanism evidence only); squeekboard/wvkbd = the two
+  # Wayland on-screen-keyboard lineages (input-method-v2 vs virtual-keyboard-v1);
+  # cockpit/wifi-connect/comitup/raspap/luci = the web-provisioning tool candidates
+  # scored in doc 42 §6; unudhcpd = postmarketOS's first-boot USB-network DHCP server.
+  'bluez|https://github.com/bluez/bluez.git|'
+  'libinput|https://gitlab.freedesktop.org/libinput/libinput.git|'
+  'systemd|https://github.com/systemd/systemd.git|'
+  'networkmanager|https://gitlab.freedesktop.org/NetworkManager/NetworkManager.git|'
+  'gnome-initial-setup|https://gitlab.gnome.org/GNOME/gnome-initial-setup.git|'
+  'squeekboard|https://gitlab.gnome.org/World/Phosh/squeekboard.git|'
+  'wvkbd|https://github.com/jjsullivan5196/wvkbd.git|'
+  'cockpit|https://github.com/cockpit-project/cockpit.git|'
+  'wifi-connect|https://github.com/balena-os/wifi-connect.git|'
+  'comitup|https://github.com/davesteele/comitup.git|'
+  'raspap|https://github.com/RaspAP/raspap-webgui.git|'
+  'luci|https://github.com/openwrt/luci.git|'
+  'unudhcpd|https://gitlab.postmarketos.org/postmarketOS/unudhcpd.git|'
 )
 
 mkdir -p .logs
