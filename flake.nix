@@ -64,10 +64,12 @@
           { nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }
           ./profiles/multi-user.nix
           # VM FIXTURE ONLY: a declared human account so the greeter has someone to log in
-          # (the contract refuses a greeter image without one). Password "mura". A shipped
-          # image declares `hashedPasswordFile` — never a hash in the store (ADR 0017 d.5).
+          # (the contract refuses a greeter image without one). Log in as `mura` / `mura` —
+          # note this `mura` is a *fixture* user with a password, not profiles/default.nix's
+          # passwordless one (that profile is not imported here). A shipped image declares
+          # `hashedPasswordFile` — never a hash in the store (ADR 0017 d.5).
           {
-            users.users.j = {
+            users.users.mura = {
               isNormalUser = true;
               extraGroups = [ "wheel" ];
               hashedPassword = "$6$murafixture00001$/OEUueXZ0lBL.stcb70lwUr3UvdBSYEP1cSWJIS2jVQODmeW1J/6dyoFfV5tMpOQ.c1TTZVyRyzfeLt7l6pJf/";
