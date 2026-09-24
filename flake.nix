@@ -43,11 +43,37 @@
       # Helper re-exported so downstream flakes can build their own devices.
       lib.muraSystem = muraSystem;
 
-      # Device evaluations.
+      # Device evaluations. A device is composed with a *profile* (profiles/ — the declared
+      # configuration an installer would have produced; docs/architecture/repo-structure.md).
+      # The VM device exists in two fixtures so every D-track rung is verified on both
+      # login profiles (implementation-path §3c):
+      #   virtual-headset            — the default-image shape: `mura`, no password, autologin
+      #   virtual-headset-multiuser  — the greeter shape: a declared account + the stand-in greeter
       nixosConfigurations.virtual-headset = muraSystem {
         device = ./devices/virtual-headset;
         system = "x86_64-linux";
-        extraModules = [{ nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }];
+        extraModules = [
+          { nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }
+          ./profiles/default.nix
+        ];
+      };
+      nixosConfigurations.virtual-headset-multiuser = muraSystem {
+        device = ./devices/virtual-headset;
+        system = "x86_64-linux";
+        extraModules = [
+          { nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }
+          ./profiles/multi-user.nix
+          # VM FIXTURE ONLY: a declared human account so the greeter has someone to log in
+          # (the contract refuses a greeter image without one). Password "mura". A shipped
+          # image declares `hashedPasswordFile` — never a hash in the store (ADR 0017 d.5).
+          {
+            users.users.j = {
+              isNormalUser = true;
+              extraGroups = [ "wheel" ];
+              hashedPassword = "$6$murafixture00001$/OEUueXZ0lBL.stcb70lwUr3UvdBSYEP1cSWJIS2jVQODmeW1J/6dyoFfV5tMpOQ.c1TTZVyRyzfeLt7l6pJf/";
+            };
+          }
+        ];
       };
 
       # Valve Steam Frame (deckard): the first real device target. aarch64 artifacts
@@ -63,8 +89,10 @@
       packages = forAll (system:
         nixpkgs.lib.optionalAttrs (system == "x86_64-linux")
           {
-            # The dev-vm smoke target: a bootable NixOS VM running the common userspace.
+            # The dev-vm smoke targets: bootable NixOS VMs running the common userspace —
+            # the default-image fixture (autologin) and the multi-user fixture (greeter).
             virtual-headset-vm = self.nixosConfigurations.virtual-headset.config.system.build.vm;
+            virtual-headset-multiuser-vm = self.nixosConfigurations.virtual-headset-multiuser.config.system.build.vm;
 
             # QEMU runner + smoke checks for the Frame image (runs the aarch64 disk
             # image via qemu-system-aarch64 full-system emulation on the dev host).
@@ -116,8 +144,9 @@
           contract = import ./tests/contract.nix { inherit nixpkgs system; };
           # protocols/*.xml: well-formed + wayland-scanner generates cleanly.
           protocols = import ./tests/protocols.nix { inherit nixpkgs system; };
-          # End-to-end smoke check: the virtual-headset VM builds.
+          # End-to-end smoke checks: both VM fixtures build (D-track, implementation-path §3c).
           virtual-headset-vm = self.packages.${system}.virtual-headset-vm;
+          virtual-headset-multiuser-vm = self.packages.${system}.virtual-headset-multiuser-vm;
           # The rung-1 dev-loop harness builds (script-level shellcheck via writeShellApplication).
           dev-session = self.packages.${system}.dev-session;
         };

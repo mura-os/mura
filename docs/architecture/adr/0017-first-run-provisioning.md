@@ -42,10 +42,12 @@ has no such gap. Rev 2 follows that observation to its conclusions.
    (`users.users.<name>` with `isNormalUser`/`hashedPasswordFile`/`wheel`, locale, NetworkManager
    profiles with path-based secrets, `mura.xr.session.autoLogin` or `.greeter`). The **default
    image declares user `mura`, no password, `wheel`, `autoLogin = "mura"`** — power on and you
-   are in your session; a password is the wearer's choice, offered by the welcome surface. On the
-   appliance profile the declared account is the account (`users.mutableUsers = false`, the Steam
-   Deck `deck` mechanism); on the multi-user profile ADR 0018 governs mutability (userborn,
-   standard tools). "Paths" are gone from the vocabulary: there is the image and the two profiles
+   are in your session; a password is the wearer's choice, offered by the welcome surface. The
+   declared account is the account on every profile; **its password is mutable state**
+   (`initialHashedPassword = ""`, `users.mutableUsers = true`, userborn's persisted userdb — the
+   ADR 0018 wiring, on the default image too; rev 2.2 correction found at D0: `mutableUsers =
+   false` would re-impose the empty password at every activation). "Paths" are gone from the
+   vocabulary: there is the image and the two profiles
    it may declare. *Amends rev 1's "fixed declared owner account": the name is `mura`, and the
    word "owner" is not a role (ADR 0018 rev 3).*
 2. **One credential — the Unix password; a PIN is a numeric one** *(rev 2.1; supersedes rev 2's
@@ -151,9 +153,12 @@ has no such gap. Rev 2 follows that observation to its conclusions.
   rejected — see decision 4; a build assertion catches the misconfiguration, userborn
   re-materialises declared accounts after any wipe, and the fallback would have kept alive the
   one provisiond conversation with no authenticated principal.
-- **Imperative user creation at first run** (`mutableUsers = true` on the appliance profile):
-  rejected — the declared account already exists; on multi-user, ADR 0018's userborn wiring is
-  the mutability mechanism, driven by standard tools.
+- **Imperative user creation at first run**: rejected — the declared account already exists on
+  every profile. (`mutableUsers = true` itself is *not* rejected: it is what lets the wearer's
+  `passwd` persist; ADR 0018's userborn wiring is the mutability mechanism on every profile.)
+- **`mutableUsers = false` on the default image** (rev 2's "Steam Deck `deck` mechanism"
+  reading): rejected at D0 — it regenerates `shadow` from configuration at every activation and
+  would erase the password the wearer set.
 - **systemd-homed**: not adopted for v1 (ADR 0018 rev 3 keeps it condition-shaped on NixOS
   declarative homed support).
 - **`ConditionFirstBoot` as the first-run signal**: rejected — wrong across A/B slot

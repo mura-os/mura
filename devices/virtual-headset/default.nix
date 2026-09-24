@@ -6,7 +6,9 @@
 # Phase 1 implementation order (docs/research/00-synthesis.md §7 item 9), not a real port.
 { lib, pkgs, config, ... }:
 {
-  imports = [ ../../soc/virtual ];
+  # The dev profile (SSH, serial) is part of the VM device; the *login* profile is
+  # composed by the flake so both fixtures share this file.
+  imports = [ ../../soc/virtual ../../profiles/dev.nix ];
 
   mura.device = {
     codename = "virtual-headset";
@@ -39,6 +41,9 @@
 
   mura.xr = {
     runtime = "monado";
+    # The XR shell this device runs (ADR 0006). Selecting it is what turns the login chain
+    # on (modules/os/session.nix); until M1 the session body is the sway stand-in.
+    shell = "zxr";
     compositor.backend = "window"; # windowed compositor inside the VM, not vk-display
     environment = {
       # Monado's simulated-HMD setup for a VM without real hardware: the simulated
@@ -56,27 +61,23 @@
     imageVariants = [ "dev-vm" ];
   };
 
-  # Standard NixOS bits that make the VM boot and present a Wayland session.
+  # Standard NixOS bits that make the VM boot.
   # (Kept at the top level: mixing these with an explicit `config` block is rejected
   # by the module system when top-level `mura.*` options are also set.)
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = false;
   fileSystems."/" = lib.mkDefault { device = "/dev/disk/by-label/nixos"; fsType = "ext4"; };
 
-  services.getty.autologinUser = lib.mkDefault "mura";
-  users.users.mura = {
-    isNormalUser = true;
-    password = "mura";
-    extraGroups = [ "wheel" "video" "input" ];
-  };
-
-  # A minimal Wayland compositor so the "common userspace under Wayland" contract
-  # is actually exercised in the VM.
-  programs.sway.enable = lib.mkDefault true;
+  # The login chain comes from the contract (modules/os/session.nix: greetd autologin or
+  # the stand-in greeter) and the accounts from the profile the flake composes with this
+  # device (profiles/default.nix or profiles/multi-user.nix + a fixture user). No getty
+  # hack, no declared user here, and no permanent video/input group membership — device
+  # access is logind's seat ACLs (implementation-path B1a).
 
   # Rung-2 dev-loop tuning (VM builds only; docs: README §Development). The VM
   # shares the host /nix/store, so iteration never builds an image: edit modules,
-  # `nix run .#virtual-headset-vm`, and the QEMU window boots straight into sway.
+  # `nix run .#virtual-headset-vm`, and the QEMU window boots into the session (default
+  # image) or the stand-in greeter (multi-user fixture).
   virtualisation.vmVariant = {
     virtualisation = {
       memorySize = 8192;
@@ -90,19 +91,6 @@
         { from = "host"; host.port = 2221; guest.port = 22; }
       ];
     };
-
-    services.openssh = {
-      enable = true;
-      settings.PasswordAuthentication = true;
-    };
-
-    # Boot to a visible session with zero manual steps: the autologin getty on
-    # tty1 execs sway. (Guarded so serial/ssh shells stay plain shells.)
-    programs.bash.loginShellInit = ''
-      if [ "$(tty)" = /dev/tty1 ] && [ -z "''${WAYLAND_DISPLAY:-}" ]; then
-        exec sway
-      fi
-    '';
   };
 
   system.stateVersion = lib.mkDefault "25.05";

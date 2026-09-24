@@ -7,7 +7,13 @@
 # future work gated on hardware.
 { lib, pkgs, config, ... }:
 {
-  imports = [ ../../soc/sm8650 ../../families/uefi-rauc ];
+  imports = [
+    ../../soc/sm8650
+    ../../families/uefi-rauc
+    # The default image (user `mura`, no password, autologin) + dev conveniences (SSH).
+    ../../profiles/default.nix
+    ../../profiles/dev.nix
+  ];
 
   mura.device = {
     codename = "deckard";
@@ -57,6 +63,7 @@
 
   mura.xr = {
     runtime = "monado";
+    shell = "zxr"; # turns the login chain on (modules/os/session.nix); sway stand-in until M1
     compositor.backend = "window"; # VM proof: windowed; vk-display on hardware
     environment = { };
   };
@@ -71,26 +78,15 @@
     protectedPartitions = [ "syspersist" ]; # donor: PARTLABEL syspersist, mounted ro
   };
 
-  ###### VM-proof userspace (parity with devices/virtual-headset) ######
-  services.getty.autologinUser = lib.mkDefault "mura";
-  users.users.mura = {
-    isNormalUser = true;
-    password = "mura";
-    extraGroups = [ "wheel" "video" "input" ];
-  };
-  security.sudo.wheelNeedsPassword = false;
+  ###### Userspace ######
+  # Accounts and the login chain come from profiles/default.nix (imported above) through
+  # modules/os/session.nix; the dev profile adds SSH. No declared password, no NOPASSWD
+  # sudo, no permanent video/input membership here (first-run-onboarding §5.3,
+  # implementation-path B1a).
 
-  services.openssh = {
-    enable = true;
-    settings.PasswordAuthentication = true;
-  };
-
-  # Serial console for qemu -nographic and headless smoke runs.
+  # Serial console for qemu -nographic and headless smoke runs (the UART is the device's).
   boot.kernelParams = [ ];
   systemd.services."serial-getty@ttyAMA0".enable = true;
-
-  # Wayland userspace exercised in the VM, as on virtual-headset.
-  programs.sway.enable = lib.mkDefault true;
 
   system.stateVersion = lib.mkDefault "25.05";
 }

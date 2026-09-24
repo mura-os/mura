@@ -54,8 +54,13 @@ past a handful of entries, and `/home` sizing/quotas are the administrator's bus
    administrator-created rows; immutable mode drains any user absent from the declared config
    (shell → `nologin`, password locked) and remounts the files read-only. The "`mutableUsers =
    true` is a trap" line elsewhere in the corpus refers to the Perl regeneration path *without*
-   userborn; here the value is required and safe. The appliance profile keeps
-   `mutableUsers = false`, no userborn.
+   userborn; here the value is required and safe. **The default image uses the same wiring**
+   (rev 3.2, found at D0): its declared `mura` account has no password until the wearer sets one
+   with `passwd`, and that password is mutable state that must survive reboots and A/B slot
+   switches — so `mutableUsers = true` + userborn's persisted userdb on every profile, with the
+   account itself still declared (`initialHashedPassword = ""`; userborn's hybrid mode keeps the
+   declared row and leaves the password alone). `mutableUsers = false` would re-impose the empty
+   password at every activation.
 2. **Mount ordering:** `userborn.service` runs `Before=sysinit.target` with
    `DefaultDependencies=false` and will `mkdir -p` its location on the wrong filesystem if the
    mount isn't up. Therefore: `syspersist` + `/persist/userdb` mount in the **initrd**, no
@@ -151,7 +156,7 @@ NixOS's default. `nullok` = `security.pam.services.<n>.allowNullPassword`.
 
 | PAM service | Declared by | `nullok` | faillock | Notes |
 |---|---|---|---|---|
-| `greetd` | NixOS greetd module (default `allowNullPassword = true`) | yes | yes (counters on `/persist`) | login for the greeter and autologin; the greeter renders the digit pad from the mirrored hint |
+| `greetd` | NixOS greetd module; **policy.nix pins `nullok` explicitly** (nixpkgs has flipped between setting `allowNullPassword` on `greetd` directly and substacking the `login` service, which carries it — `programs/shadow.nix:253-258` in the pinned revision; D0 verified the latter) | yes | yes (counters on `/persist`) | login for the greeter and autologin; the greeter renders the digit pad from the mirrored hint |
 | `greetd-greeter` | NixOS greetd module | — | — | the greeter user's own session; `pam_permit`-class, never a human |
 | `mura-lock` | `modules/os/policy.nix` (authd's service, [specs/session-auth.md](../../specs/session-auth.md)) | yes | yes | no credential ⇒ no lock engages (ADR 0007) |
 | `mura-guest` | policy.nix, only when `guest.enable` | — | — | the gated branch: root check module on the enable flag + provisiond single-use token (§4) |
