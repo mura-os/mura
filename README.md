@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./docs/mura-art/logo-mascot-loaf.png" alt="Mura — spatial computing for everyone">
+</p>
+
 # Mura
 
 A Nix-built, NixOS-based, Wayland-based Linux XR distribution targeting many standalone VR headsets
