@@ -18,7 +18,18 @@ let
       default = [ ];
     };
     options.warnings = lib.mkOption { type = lib.types.listOf lib.types.str; default = [ ]; };
+    # Minimal stand-in for NixOS's `users.users` so the declared-account assertions
+    # (ADR 0017 rev 2) can be exercised standalone.
+    options.users.users = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule {
+        options.isNormalUser = lib.mkOption { type = lib.types.bool; default = false; };
+      });
+      default = { };
+    };
   };
+
+  # The default image's declared user (first-run-onboarding.md §1).
+  declaredMura = { users.users.mura.isNormalUser = true; };
 
   # Evaluate a device module against the contract alone — we only want the mura.*
   # options and assertions, not a full NixOS toplevel.
@@ -58,42 +69,81 @@ let
     config.mura.device.maintainers = lib.mkForce [ "j" ];
   };
 
-  # A device with an XR shell + a valid appliance session profile (ADR 0007).
+  # A device with an XR shell + a valid appliance session profile (ADR 0007): the default
+  # image shape — declared `mura`, autologin (ADR 0017 rev 2).
   applianceSession = {
+    imports = [ validDevice declaredMura ];
+    config = {
+      mura.xr.shell = "zxr";
+      mura.xr.session.autoLogin = "mura";
+    };
+  };
+
+  # ADR 0017 rev 2: autologin naming an undeclared user must fail...
+  applianceUndeclaredUser = {
     imports = [ validDevice ];
     config = {
       mura.xr.shell = "zxr";
-      mura.xr.session.autoLogin = "owner";
+      mura.xr.session.autoLogin = "nobody-here";
+    };
+  };
+
+  # ...unless the escape hatch is set.
+  applianceUndeclaredUserEscape = {
+    imports = [ validDevice ];
+    config = {
+      mura.xr.shell = "zxr";
+      mura.xr.session.autoLogin = "nobody-here";
+      mura.xr.session.allowNoDeclaredAccount = true;
     };
   };
 
   # A device with an XR shell + a valid multi-user greeter profile.
-  # ADR 0017: a greeter requires onboarding placement (greeter-gated dispatcher).
+  # ADR 0017 rev 2: the image is the installation — a greeter image declares its first account.
   greeterSession = {
-    imports = [ validDevice ];
+    imports = [ validDevice declaredMura ];
     config = {
       mura.xr.shell = "zxr";
       mura.xr.session.greeter = "zxr-greeter";
-      mura.xr.session.provisioning.mode = "greeter-gated";
     };
   };
 
-  # ADR 0017: a greeter WITHOUT onboarding placement must fail.
-  greeterNoProvisioning = {
+  # ADR 0017 rev 2: a greeter WITHOUT any declared human account must fail (no runtime
+  # bootstrap screen exists to rescue it)...
+  greeterNoAccount = {
     imports = [ validDevice ];
     config = {
       mura.xr.shell = "zxr";
       mura.xr.session.greeter = "zxr-greeter";
+    };
+  };
+
+  # ...unless the administrator insists (the users.allowNoPasswordLogin pattern).
+  greeterNoAccountEscape = {
+    imports = [ validDevice ];
+    config = {
+      mura.xr.shell = "zxr";
+      mura.xr.session.greeter = "zxr-greeter";
+      mura.xr.session.allowNoDeclaredAccount = true;
+    };
+  };
+
+  # A system account (isNormalUser = false) does not satisfy the declared-account rule.
+  greeterOnlySystemAccount = {
+    imports = [ validDevice ];
+    config = {
+      mura.xr.shell = "zxr";
+      mura.xr.session.greeter = "zxr-greeter";
+      users.users.svc.isNormalUser = false;
     };
   };
 
   # ADR 0018: multi-account + guest on the multi-user profile passes.
   multiUserWithGuest = {
-    imports = [ validDevice ];
+    imports = [ validDevice declaredMura ];
     config = {
       mura.xr.shell = "zxr";
       mura.xr.session.greeter = "zxr-greeter";
-      mura.xr.session.provisioning.mode = "greeter-gated";
       mura.xr.session.multiUser.enable = true;
       mura.xr.session.guest.enable = true;
     };
@@ -101,21 +151,20 @@ let
 
   # ADR 0018: multi-account on the appliance profile must fail (single-owner by design).
   multiUserOnAppliance = {
-    imports = [ validDevice ];
+    imports = [ validDevice declaredMura ];
     config = {
       mura.xr.shell = "zxr";
-      mura.xr.session.autoLogin = "owner";
+      mura.xr.session.autoLogin = "mura";
       mura.xr.session.multiUser.enable = true;
     };
   };
 
   # multi-user.md §1.1: a malformed uid window must fail (min > max).
   multiUserBadUidRange = {
-    imports = [ validDevice ];
+    imports = [ validDevice declaredMura ];
     config = {
       mura.xr.shell = "zxr";
       mura.xr.session.greeter = "zxr-greeter";
-      mura.xr.session.provisioning.mode = "greeter-gated";
       mura.xr.session.multiUser.enable = true;
       mura.xr.session.multiUser.uidRange = {
         min = 1099;
@@ -126,11 +175,10 @@ let
 
   # ADR 0018: guest without multiUser must fail (greeter-scene affordance).
   guestWithoutMultiUser = {
-    imports = [ validDevice ];
+    imports = [ validDevice declaredMura ];
     config = {
       mura.xr.shell = "zxr";
       mura.xr.session.greeter = "zxr-greeter";
-      mura.xr.session.provisioning.mode = "greeter-gated";
       mura.xr.session.guest.enable = true;
     };
   };
@@ -145,10 +193,10 @@ let
 
   # Invalid: shell set but BOTH profiles chosen.
   bothProfiles = {
-    imports = [ validDevice ];
+    imports = [ validDevice declaredMura ];
     config = {
       mura.xr.shell = "zxr";
-      mura.xr.session.autoLogin = "owner";
+      mura.xr.session.autoLogin = "mura";
       mura.xr.session.greeter = "zxr-greeter";
     };
   };
@@ -190,13 +238,17 @@ let
     # ADR 0007: neither / both profiles must fail the exactly-one assertion.
     noProfileFails = !assertsPass (evalContract noProfile);
     bothProfilesFail = !assertsPass (evalContract bothProfiles);
-    # ADR 0017: greeter without onboarding placement fails; provisioning defaults off;
-    # the marker default lives in the enrollment state class.
-    greeterNoProvisioningFails = !assertsPass (evalContract greeterNoProvisioning);
-    provisioningDefaultNone = eval.config.mura.xr.session.provisioning.mode == "none";
-    provisioningMarkerInEnrollment =
-      eval.config.mura.xr.session.provisioning.markerPath
-      == "/var/lib/mura/enrollment/provisioned";
+    # ADR 0017 rev 2: the image is the installation — declared-account assertions.
+    greeterNoAccountFails = !assertsPass (evalContract greeterNoAccount);
+    greeterNoAccountEscapePasses = assertsPass (evalContract greeterNoAccountEscape);
+    greeterOnlySystemAccountFails = !assertsPass (evalContract greeterOnlySystemAccount);
+    applianceUndeclaredUserFails = !assertsPass (evalContract applianceUndeclaredUser);
+    applianceUndeclaredUserEscapePasses = assertsPass (evalContract applianceUndeclaredUserEscape);
+    allowNoDeclaredAccountDefaultOff =
+      eval.config.mura.xr.session.allowNoDeclaredAccount == false;
+    # ADR 0017 rev 2: no onboarding-placement or provisioning-marker options exist any more
+    # (no pre-login wizard, no dispatcher, no marker gating UI).
+    noProvisioningOptions = !(eval.options.mura.xr.session ? provisioning);
     # ADR 0018: multi-account/guest profile coupling + defaults.
     multiUserWithGuestPasses = assertsPass (evalContract multiUserWithGuest);
     multiUserOnApplianceFails = !assertsPass (evalContract multiUserOnAppliance);

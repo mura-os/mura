@@ -148,6 +148,7 @@ target (qualification-matrix item); grace-window default and any "same head re-d
 logind** at implementation-path B2, forced at G2; seatd stays an appliance-minimization option);
 and whether the desktop profile's `ext-session-lock-v1` support should extend to third-party
 headset lockers. *PIN storage/enrollment UX is **closed** by
-[ADR 0017](0017-first-run-provisioning.md): option (b) `pam_mura_pin` (argon2 hash in the
-`enrollment/` state class, enrolled through `mura-provisiond` at OOBE), with
-owner-password-is-PIN as the recorded appliance bridge.*
+[ADR 0017](0017-first-run-provisioning.md) rev 2: option (b) `pam_mura_pin` (argon2 hash in
+the `enrollment/<user>/secret/` state class, enrolled in-session through `mura-provisiond` from
+the welcome surface or settings), an optional convenience stacked beside the Unix password
+(ADR 0018 rev 3); the owner-password-is-PIN bridge is withdrawn.*

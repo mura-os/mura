@@ -169,8 +169,8 @@ in
   # Per-unit persistent state. Read-write: per-unit state durability is a contract
   # requirement (device-contract `mura.xr.calibration.paths`, overview invariant 4)
   # — the earlier `ro` mount was donor-mirroring that couldn't survive first contact
-  # with the lock/PIN/calibration design (PIN hashes, user calibration, and the
-  # provisioning marker all live here; docs/architecture/first-run-onboarding.md).
+  # with the lock/PIN/calibration design (PIN hashes, user calibration, and the F1
+  # per-task markers all live here; docs/architecture/first-run-onboarding.md).
   #
   # /persist/mura subtree classes (first-run-onboarding.md §state classes —
   # factory reset treats each differently, never the tree as one blob):

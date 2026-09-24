@@ -2,7 +2,9 @@
 
 **Status:** accepted plan of record (2026-09-23; rev 2 same day — the boot-to-desktop coverage
 review absorbed: stages B1a/B1b/B6a/B9, the F-track from
-[first-run-onboarding.md](first-run-onboarding.md), and the lifecycle section).
+[first-run-onboarding.md](first-run-onboarding.md), and the lifecycle section; **rev 3,
+2026-09-24** — ADR 0017 rev 2 absorbed: no `--oobe` mode, no dispatcher, F2 = welcome surface
+after M1, F3 out-of-band access added, G2 keyed on a declared account).
 **What this is:** the ordered build path from power-on to a zxr session, derived from the
 dependency graph ([desktop-environment.md §6](desktop-environment.md)) — not a replacement for
 it. Rungs are ordered only where a hard dependency exists; everything else is a parallel track.
@@ -21,16 +23,15 @@ them ([specs/session-auth.md §5](../../specs/session-auth.md)). A restricted mo
 OpenXR loop, the Vulkan renderer, an internal (non-client) scene, input, and a greetd IPC
 client — and none of the 2D client tier, no protocol server, no window model, no Xwayland. Every
 one of those pieces is also the irreducible core of the session compositor, so nothing built for
-them is throwaway. There are two siblings on this rung, and which one a user meets first is
-**profile-dependent**:
+them is throwaway. The restricted modes are exactly two — `--greeter` and the lock scene it
+shares machinery with — and the first build target is:
 
-- **`zxr --greeter`** — the every-boot login scene (multi-user profile). The first *build*
-  target (G1): it has the fewest dependencies (a fake greetd suffices; no provisiond, no
-  network step).
-- **`zxr --oobe`** — the first-run onboarding wizard
-  ([first-run-onboarding.md](first-run-onboarding.md)), the same scene machinery plus the
-  wizard ladder, `mura-provisiond`, and the Wi-Fi step. It extends G1's core; it never
-  precedes it in the build order.
+- **`zxr --greeter`** — the every-boot login scene (multi-user profile), an ordinary Linux
+  greeter ([multi-user.md §2](multi-user.md)). The first *build* target (G1): it has the fewest
+  dependencies (a fake greetd suffices; no provisiond, no network step). There is **no
+  `--oobe` sibling**: first-run setup is shell-plane session content (F2, the welcome surface —
+  [first-run-onboarding.md §4](first-run-onboarding.md)), which lands downstream of M1 like any
+  other shell content and is gated on the research/42 findings review for its contents.
 
 Meanwhile the harnesses already exist: rung 1 (`nix run .#dev-session`) runs a nested session
 against simulated-HMD Monado on the desktop, and rung 2 (`nix run .#virtual-headset-vm`) boots a
@@ -40,13 +41,13 @@ until zxr's M1 lands; swap COMPOSITOR_CMD then"
 ([pkgs/dev-session](../../pkgs/dev-session/default.nix)).
 
 **The first-profile question, settled** (this paragraph reconciles G2 with
-first-run-onboarding §7): the **appliance profile is the first *shipped* profile** — autologin
-as the fixed owner, the OOBE as first session content, no greeter at all; the Steam Deck model
-the whole account design (ADR 0017) is built on. **G2 remains the first *greeter* milestone**,
-not the first profile: it deliberately exercises the multi-user path (real greetd → dispatcher →
-greeter → session) in the VM with enrollment pre-seeded by the test fixture, because that is the
-path with the hard ordering problems (device release, PAM authority, dispatcher) worth proving
-early. The two claims are about different axes — what ships first (appliance) vs what the G-track
+first-run-onboarding §1): the **default image is the first *shipped* image** — a declared
+configuration with user `mura`, no password, `autoLogin = "mura"`, no greeter at all; the image
+is the installation (ADR 0017 rev 2). **G2 remains the first *greeter* milestone**, not the
+first image: it deliberately exercises the multi-user path (real greetd → `zxr --greeter` →
+session) in the VM with a declared account in the fixture, because that is the path with the
+hard ordering problems (device release, PAM authority, seat handoff) worth proving early. The two
+claims are about different axes — what ships first (the default image) vs what the G-track
 verifies first (the greeter chain) — and both stand.
 
 The end state of the greeter track — **G2** — is still the first thing that *feels* like
@@ -64,10 +65,11 @@ stages marked ▲ are forced decisions this path surfaces.
 | B1 | Firmware → bootloader → initrd | per-family (uefi-rauc proven in the Frame workstream; android-bootimg gated on the Lynx spike) | nothing for this path — the VM boots systemd-boot already |
 | B1a | Persistent state + hardware readiness | uefi-rauc mounts `syspersist` rw with `/var/lib/mura` bound via `mura-persist-setup.service` (pull-in dependency, not tmpfiles ordering) and the state-class skeleton (factory/identity/enrollment/state; machine-id its own class — [first-run-onboarding.md §2](first-run-onboarding.md)) | validation of the mounts + **factory** calibration presence/version *before* Monado starts (user calibration is F2's, not this stage's); firmware/module/udev discovery with a device-wait timeout policy; machine-id committed from `/persist` **before D-Bus/logind start**. Device access is **logind/libseat ACL acquisition, never permanent group membership** — the seat broker grants/revokes DRM+evdev per session; only nodes logind cannot broker (hidraw/IMU/camera) get narrowly scoped per-VID/PID udev rules (`TAG+="uaccess"` or a `mura-xr` group documented as seat-revocation-exempt, with rationale). An explicit stage, not "NixOS default" |
 | B1b | XR preflight + recovery ladder | registry names the XR-init preflight probe (**partial**; pattern from KWin VR's `kwinvr-xrtest`, [ADR 0013 §2](adr/0013-kwin-vr-disposition.md); composition §7.3 makes it normative) | the probe as a gate before greeter/session start: runtime-created Vulkan device, GPU/device match, factory-calibration validity, required DRM/IMU nodes present, Monado reaches first frame. Plus the distro obligation: a **crash-loop threshold and recovery path** — N consecutive greeter/session failures → flat-output fallback on a docked/dev connector where present, SSH/serial always reachable on the dev profile, a diagnostic target otherwise. A runtime or driver failure must never leave a permanently dark headset |
-| F1 | First-boot machine provisioning | uefi-rauc state skeleton (§B1a) | silent provisioning per [first-run-onboarding.md §3](first-run-onboarding.md): per-unit keys, settings-store seeding, partition growth. Gated on the **durable `/persist` marker, not `ConditionFirstBoot`** (a fresh A/B root slot looks like first boot to the latter); idempotent units + atomic marker = interrupted-first-boot recovery |
+| F1 | First-boot machine provisioning | uefi-rauc state skeleton (§B1a) | silent provisioning per [first-run-onboarding.md §3](first-run-onboarding.md): per-unit keys, settings-store seeding, partition growth. Each unit gated on its **own durable per-task marker on `/persist`, not `ConditionFirstBoot`** (a fresh A/B root slot looks like first boot to the latter); idempotent units + atomic markers = interrupted-first-boot recovery. No marker gates any UI |
+| F3 | Out-of-band access | pmOS pattern studied (`references/pmaports`, `references/pmbootstrap`) | per [first-run-onboarding.md §5](first-run-onboarding.md): USB Ethernet gadget from the initramfs + DHCP + sshd on every profile; the local web UI over USB/hotspot/LAN with the **provisioning hotspot condition-shaped on "unprovisioned"** (no network profile and no password); tool choice (Cockpit vs purpose-built), portal mechanics, and the passwordless-`mura` login wiring wait on the research/42 review (§5.1) |
 | B2 | ▲ Seat broker | ADR 0007 names logind/seatd as the DRM-master/hidraw broker and leaves "logind vs seatd on the appliance image" open | **the decision is forced at G2**: greetd's session worker needs a seat. Default: logind (NixOS default, zero work, `SetLockedHint` needs it anyway per ADR 0007, and B1a's ACL model assumes it); seatd remains an appliance-minimization option to revisit with image-size work |
-| B3 | greetd + session dispatch | contract options `mura.xr.session.{autoLogin,greeter}` + profile-exclusivity assertion ([lib/contract](../../lib/contract/default.nix)); research [11](../research/11-display-managers-greeters.md); the VM currently bypasses this (getty autologin → `exec sway` in [devices/virtual-headset](../../devices/virtual-headset/default.nix)) | the NixOS module consuming the contract: `services.greetd` for both profiles, where `default_session` is the **dispatcher wrapper** (greetd cannot select a session from runtime state itself). It runs as greetd's configured session user, so it reads the **non-secret `/run/mura/provisioned` flag** published by a boot-time root unit — never the root-0700 marker itself — and launches `zxr --oobe` (F2) or execs `zxr --greeter`; continuation semantics (multi-user re-dispatch vs appliance launch-wait-exec) in [first-run-onboarding §4.1](first-run-onboarding.md); appliance → `initial_session`. Replaces the VM's getty hack at G2 |
-| F2 | Onboarding (OOBE) | design in [first-run-onboarding.md §4](first-run-onboarding.md); ADR 0017 (account model, UI/authority split) | `zxr --oobe` (unprivileged wizard UI on the G1 scene machinery) + **`mura-provisiond`** (the privileged authority owning PIN-hash writes, key generation, and the root-owned transactional marker); wizard = locale → Wi-Fi → identity → PIN → **user** calibration (IPD/floor/boundary/pairing) → privacy defaults |
+| B3 | greetd + session dispatch | contract options `mura.xr.session.{autoLogin,greeter}` + profile-exclusivity assertion ([lib/contract](../../lib/contract/default.nix)); research [11](../research/11-display-managers-greeters.md); the VM currently bypasses this (getty autologin → `exec sway` in [devices/virtual-headset](../../devices/virtual-headset/default.nix)) | the NixOS module consuming the contract: `services.greetd` for both profiles — multi-user `default_session` runs `zxr --greeter` **directly** as the `greeter` user; appliance `initial_session` autologins the declared user (`mura` on the default image) into the session. **No dispatcher, no runtime-state session selection**: nothing pre-login depends on provisioning state (ADR 0017 rev 2). The build asserts a greeter image declares a human account ([lib/contract](../../lib/contract/default.nix)). Replaces the VM's getty hack at G2 |
+| F2 | First-session welcome surface | design in [first-run-onboarding.md §4](first-run-onboarding.md); ADR 0017 rev 2 | shell-plane session content (downstream of M1's window model, like all shell presentation): per-item gated, skippable, re-runnable; **contents and input floor wait on the research/42 review** (§5.1). Privileged writes via standard polkit-gated actions, NetworkManager, `localed`; **`mura-provisiond`** shrinks to PIN-hash enrollment + the guest token gate |
 | B4 | `zxr --greeter` | the mode's restrictions and exit contract are normative ([session-auth §5](../../specs/session-auth.md)); per-unit calibration paths in the contract; safe default IPD pre-auth | the binary itself: G1's deliverable (§3), running on R0's core |
 | B5 | Login authority | greetd's session worker is the **sole** login PAM authority; the greeter is an unprivileged greetd IPC client (session-auth §1, review-hardened) | the greeter's greetd client half (`create_session` → `post_auth_message_response` → `start_session`), rendering `auth_message`s in the auth scene. PAM stacks declared via NixOS modules: standard account-password login everywhere, with `pam_mura_pin` as an **optional per-user convenience stacked beside it** (greeter/lock; the fprintd model) and the guest-scoped gated branch where guest is enabled (ADR 0018 rev 3, multi-user.md §3–§4) |
 | B6 | Session start | `mura.xr.shell` contract enum (zxr/stardust/wayvr/kwin-vr/none) | `mura-session.target` (systemd user target owning Monado + compositor + shell services; crash/restart semantics per ADR 0007), enumerating sessions from the module system |
@@ -82,10 +84,9 @@ stages marked ▲ are forced decisions this path surfaces.
 flowchart TD
     R0["R0 bring-up spike (risk retirement)\nsmithay skeleton in the dev-session slot\n4 measured gates (doc 39 s5)"] --> G1["G1 zxr --greeter in dev-session\nOpenXR loop + ash renderer + auth scene\nfake greetd over $GREETD_SOCK"]
     R0 --> M1["M1 spatial 2D desktop in a window\nxdg-shell, ray-to-pointer, move/rotate/resize\n(composition s7.5 acceptance)"]
-    G1 --> G2["G2 XR greeter in the rung-2 VM\nreal greetd module + dispatcher, start_session into sway\nzero manual steps"]
-    G1 --> F2["F2 onboarding (OOBE)\nzxr --oobe wizard UI + mura-provisiond\n(first-run-onboarding.md)"]
-    F2 --> ENR["a credentialed account exists\n(F2 has run, or fixture-seeded)"]
-    ENR --> G2
+    G1 --> G2["G2 XR greeter in the rung-2 VM\nreal greetd module, zxr --greeter direct, start_session into sway\nzero manual steps"]
+    DECL["a declared human account exists\n(build-asserted; VM fixture declares one)"] --> G2
+    M1 --> F2["F2 first-session welcome surface\nshell-plane content, per-item gated\n(contents: research/42 review)"]
     M1 --> M2["M2 mixed 2D/3D composition\nzxr-shell-v2 protocol goes live"]
     G2 --> G3["G3 greeter hands off to the zxr session\nsession wrapper (B6a) + mura-session.target"]
     M1 --> G3
@@ -121,15 +122,15 @@ the scene is really mura.
 ### G2 — the XR greeter in the VM (the first shippable artifact)
 
 The greetd NixOS module (B3) replaces the getty hack in `devices/virtual-headset`; multi-user
-profile with `mura.xr.session.greeter = "zxr-greeter"`; the real greetd runs the **dispatcher
-wrapper**, which finds the enrollment marker present (F2 or a pre-seeded VM fixture) and execs
-zxr-greeter as the `greeter` user; login lands in **sway** as the stand-in session (B6's target
+profile with `mura.xr.session.greeter = "zxr-greeter"`; the real greetd runs **`zxr --greeter`
+directly** as the `greeter` user; login lands in **sway** as the stand-in session (B6's target
 can start any `mura.xr.shell`). Forced decision B2 (logind default) lands here, as does B1a's
-ACL model. **Multi-user G2 requires at least one account with a credential to exist** — either F2 has run or the VM fixture
-seeds `enrollment/`; the appliance MVP path (autologin + in-session OOBE, the Steam Deck model)
-needs neither. Exit: VM cold boot → XR auth scene with zero manual steps → correct PAM
-conversation (real PAM, greetd worker) → sway session; re-lock/logout returns to the greeter;
-the greeter process never loads PAM symbols (session-auth §6.6).
+ACL model. **Multi-user G2 requires a declared human account** — the VM fixture declares one
+with a `hashedPasswordFile` (the build assertion would refuse the image otherwise); the default
+image (autologin `mura`) needs no greeter at all. Exit: VM cold boot → XR auth scene with zero
+manual steps → correct PAM conversation (real PAM, greetd worker) → sway session;
+re-lock/logout returns to the greeter; the greeter with zero pickable accounts still renders
+free-text entry + power menu; the greeter process never loads PAM symbols (session-auth §6.6).
 
 ### M1 — the spatial 2D desktop (composition §7.5)
 
@@ -207,7 +208,7 @@ revalidation — and **the lock is asserted before any restored client frame is 
 exactly as to the suspend edge). Device loss mid-session (HMD unplug on dev hardware, tracking
 loss) routes through the same revalidation. The doff ladder and the docked-mode branch are
 ADR 0015's (doff-grace suppression while docked-in-use); logout tears down through the B6a
-wrapper (user target stopped, wrapper returns, greetd restarts the dispatcher → greeter);
+wrapper (user target stopped, wrapper returns, greetd restarts `zxr --greeter`);
 user switching on the multi-user profile is logout + login (no concurrent graphical sessions —
 one HMD, one seat), recorded as the deliberate v1 simplification.
 
@@ -253,6 +254,12 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
 - **Multi-account + guest activation on the ladder**: designed in
   [multi-user.md](multi-user.md) / ADR 0018; implementation joins after G2 (the picker extends
   the greeter scene; per-account enrollment extends provisiond).
+- **Welcome-surface contents (F2) and the pre-login/welcome input requirement**: wait on the
+  findings review of [research/42](../research/42-input-bootstrap.md) (input bootstrap) and the
+  [research/11](../research/11-display-managers-greeters.md) greeter-furniture addendum; F2
+  itself lands after M1 as shell content. **F3's** tool choice (Cockpit vs purpose-built),
+  portal mechanics, and the passwordless-`mura` login wiring wait on the same review; the USB
+  gadget + sshd half of F3 has no such dependency.
 - **All hardware-gated work**: the Lynx spike rule stands (design-backlog standing rule);
   the Steam Frame donor workstream continues in parallel on its own ladder; nothing in this
   path requires hardware before M4's exit.

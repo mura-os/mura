@@ -467,7 +467,7 @@ variant chosen by `{cutout, temporal}` (`:2571-2618`).
 Rectus is an API layer, so it *reads* the app's depth rather than producing it — but the mechanics
 are exactly what zxr-shell-v2 needs in reverse.
 
-- Detection for telemetry: walk the `next` chain of `layer->views[0]` looking for
+- Detection (Rectus's own diagnostic logging): walk the `next` chain of `layer->views[0]` looking for
   `XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR` (`passthrough_system.cpp:483-506`).
 - Per-eye consumption (`:961-992`): read `nearZ`/`farZ`, detect **reversed depth** when
   `farZ < nearZ` and swap, so the passthrough projection matches the app's convention exactly.

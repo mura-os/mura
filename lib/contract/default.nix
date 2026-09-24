@@ -26,6 +26,14 @@ let
   };
 
   cfg = config.mura;
+
+  # Human accounts declared in the image (ADR 0017 rev 2). Read from NixOS's own
+  # `users.users` when the contract is evaluated inside a NixOS configuration; empty when
+  # evaluated standalone (lib/eval-device.nix, tests) with no `users` option declared.
+  declaredHumanAccounts =
+    lib.attrNames
+      (lib.filterAttrs (_: u: (u.isNormalUser or false))
+        (lib.attrByPath [ "users" "users" ] { } config));
 in
 {
   options.mura = {
@@ -412,7 +420,7 @@ in
             (greetd `initial_session`, no greeter UI). null selects the multi-user profile,
             which requires `session.greeter != "none"`. See ADR 0007.
           '';
-          example = "owner";
+          example = "mura";
         };
         greeter = mkOption {
           type = types.enum [ "none" "zxr-greeter" ];
@@ -454,33 +462,18 @@ in
             '';
           };
         };
-        provisioning = {
-          mode = mkOption {
-            type = types.enum [ "greeter-gated" "in-session" "none" ];
-            default = "none";
-            description = ''
-              First-run onboarding placement (ADR 0017, first-run-onboarding.md).
-              - greeter-gated: greetd's default_session runs the root-owned dispatcher,
-                which execs `zxr --oobe` while the provisioning marker is absent and
-                `zxr --greeter` once it exists (multi-user profile).
-              - in-session: the wizard runs as first session content after autologin
-                (appliance MVP, Steam Deck model). Same wizard, same mura-provisiond
-                authority, same marker.
-              - none: no onboarding (bring-up/headless images; enrollment must be
-                seeded out of band, e.g. the VM test fixture).
-              The marker is runtime state on /persist consumed at dispatch time — never
-              a Nix option; this option selects only the *placement* of the wizard.
-            '';
-          };
-          markerPath = mkOption {
-            type = types.str;
-            default = "/var/lib/mura/enrollment/provisioned";
-            description = ''
-              The root-owned, transactionally written provisioning marker
-              (first-run-onboarding.md §4.2; enrollment state class — wiped by factory
-              reset, which re-opens onboarding).
-            '';
-          };
+        allowNoDeclaredAccount = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Escape hatch for the declared-account assertions (ADR 0017 rev 2,
+            first-run-onboarding.md §1). The image is the installation: a greeter profile
+            must declare at least one human account (`users.users.<n>.isNormalUser`), and
+            an appliance profile's `autoLogin` user must be declared — otherwise nobody can
+            ever log in and no runtime bootstrap screen exists to fix it. Set this to true
+            only if you really want to build such an image (the NixOS
+            `users.allowNoPasswordLogin` pattern); recovery is then root over TTY/SSH.
+          '';
         };
         multiUser = {
           enable = mkOption {
@@ -613,12 +606,22 @@ in
       message = "mura.xr.session must select exactly one profile when mura.xr.shell is set: session.autoLogin (appliance) OR session.greeter != \"none\" (multi-user), not both and not neither (ADR 0007).";
     }
     {
-      # ADR 0017: a multi-user greeter needs a credential to verify, so onboarding must
-      # be placed somewhere. Test images that seed enrollment out of band still use
-      # "greeter-gated": the dispatcher sees the marker present and never runs the OOBE.
+      # ADR 0017 rev 2: the image is the installation. A greeter image must declare at
+      # least one human account — there is no runtime account-bootstrap screen, and GDM's
+      # zero-users fallback is not translated (our OEM-preinstall equivalent is the default
+      # image). Mirrors NixOS's users.allowNoPasswordLogin check, which is silent for the
+      # multi-user profile because it runs mutableUsers = true under userborn.
       assertion = cfg.xr.session.greeter == "none"
-        || cfg.xr.session.provisioning.mode != "none";
-      message = "mura.xr.session.greeter requires mura.xr.session.provisioning.mode != \"none\" (multi-user login needs enrolled credentials; ADR 0017 / first-run-onboarding.md). Use mode = \"greeter-gated\", or an appliance profile.";
+        || cfg.xr.session.allowNoDeclaredAccount
+        || declaredHumanAccounts != [ ];
+      message = "mura.xr.session.greeter requires at least one declared human account (users.users.<name>.isNormalUser = true); the image is the installation and no runtime bootstrap screen exists (ADR 0017 rev 2 / first-run-onboarding.md §1). Declare one, or set mura.xr.session.allowNoDeclaredAccount = true if you really want an image nobody can log in to.";
+    }
+    {
+      # ADR 0017 rev 2: the appliance profile's autologin user must exist in the image.
+      assertion = cfg.xr.session.autoLogin == null
+        || cfg.xr.session.allowNoDeclaredAccount
+        || builtins.elem cfg.xr.session.autoLogin declaredHumanAccounts;
+      message = "mura.xr.session.autoLogin = \"${toString cfg.xr.session.autoLogin}\" names a user that is not declared as a human account (users.users.<name>.isNormalUser = true); the default image declares `mura` (ADR 0017 rev 2). Declare the user, or set mura.xr.session.allowNoDeclaredAccount = true.";
     }
     {
       # ADR 0018: multi-account rides the greeter (picker + per-account PIN); the
@@ -630,13 +633,6 @@ in
       # ADR 0018: the guest tile lives in the greeter scene and is owner-granted there.
       assertion = !cfg.xr.session.guest.enable || cfg.xr.session.multiUser.enable;
       message = "mura.xr.session.guest.enable requires mura.xr.session.multiUser.enable (the guest tile is a greeter-scene affordance; ADR 0018 / multi-user.md §4).";
-    }
-    {
-      # ADR 0018/multi-user.md §1.1: add-account and the owner OOBE both run through
-      # provisiond, so multi-account requires an onboarding placement explicitly (not
-      # merely transitively via the greeter assertion).
-      assertion = !cfg.xr.session.multiUser.enable || cfg.xr.session.provisioning.mode != "none";
-      message = "mura.xr.session.multiUser.enable requires mura.xr.session.provisioning.mode != \"none\" (accounts are created only through mura-provisiond; ADR 0018).";
     }
     {
       # multi-user.md §2: the picker enumeration window must be well-formed and start at

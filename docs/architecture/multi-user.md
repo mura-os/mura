@@ -4,7 +4,9 @@
 imported policy from closed consumer platforms (an account cap, PIN-as-the-credential, an
 "owner" role); all of it is removed per [AGENTS.md](../../AGENTS.md) / overview invariant 10.
 Rev 2's engineering corrections (userborn boot ordering, guest PAM gating, sweep ordering, PAM
-input hardening) survive — they were correctness, not policy.
+input hardening) survive — they were correctness, not policy. **Rev 3.1 (2026-09-24):** the
+first account is declared in the image and asserted at build; the runtime account-bootstrap
+screen is gone ([ADR 0017 rev 2](adr/0017-first-run-provisioning.md)).
 **Decision record:** [ADR 0018](adr/0018-multi-user-accounts.md).
 **Evidence base:** [research/41](../research/41-multi-user-login-landscape.md) — its Linux
 mechanics sections (§1, §3); the closed-platform sections are context and anti-patterns.
@@ -25,14 +27,17 @@ past a handful of entries, and `/home` sizing/quotas are the administrator's bus
   it natively. The in-headset settings UI is a convenience path for the same operation: a
   polkit-gated admin action that `mura-provisiond` executes (it is *a* path, not an
   authority — the only place provisiond remains load-bearing is the guest token gate, §4).
-- **Admin is wheel + polkit.** No "owner" role exists. The first account created at setup is a
-  normal user in `wheel`, like every desktop installer's first account. Privilege is per-action
-  escalation (sudo in a terminal, polkit prompts in UI, authenticated requests to root
-  daemons); **no session — autologin, greeter, or logged-in — ever carries ambient root**, on
-  any profile. The appliance profile's `autoLogin = "owner"` names an ordinary unprivileged
-  account; "owner" there means "the human this single-person device belongs to," nothing more.
-  Resetting another user's forgotten credential is `sudo passwd <user>`-class standard admin —
-  not a designed feature of this OS.
+- **Admin is wheel + polkit.** No "owner" role exists. The first account is **declared in the
+  image** — the image is the installation ([first-run-onboarding.md §1](first-run-onboarding.md))
+  — and is a normal user in `wheel`, like every desktop installer's first account; a greeter
+  image without one fails to build (`mura.xr.session.allowNoDeclaredAccount` is the escape
+  hatch, the `users.allowNoPasswordLogin` pattern). No runtime "create the first account"
+  screen exists. Privilege is per-action escalation (sudo in a terminal, polkit prompts in UI,
+  authenticated requests to root daemons); **no session — autologin, greeter, or logged-in —
+  ever carries ambient root**, on any profile. The appliance profile's `autoLogin = "mura"`
+  (the default image's declared user) names an ordinary unprivileged account. Resetting another
+  user's forgotten credential is `sudo passwd <user>`-class standard admin — not a designed
+  feature of this OS, and never factory reset.
 - **Durability across A/B (the one genuinely novel problem):** on an image-based A/B system,
   `/etc/passwd` is slot-local, so conventionally-created accounts would vanish at the next OTA
   (doc 41 §3.1 — this bites a Linux PC exactly as hard as anything else). The fix: **userborn**
@@ -65,6 +70,14 @@ past a handful of entries, and `/home` sizing/quotas are the administrator's bus
    (doc 41 §3.2 caveats) — harmless, since declared users are system components.
 
 ## 2. The greeter account picker
+
+**The greeter is an ordinary Linux greeter** — the GDM/SDDM shape: the account picker below,
+free-text entry, the standard furniture (power menu, session chooser, accessibility and network
+menus) whose per-item mechanisms are inventoried in the [research/11](../research/11-display-managers-greeters.md)
+greeter-furniture addendum. It is `zxr --greeter`, launched directly by greetd's
+`default_session` — nothing dispatches around it, and it never hosts onboarding. It must still
+render when it finds **zero pickable accounts** (corrupted userdb, userborn failure): free-text
+username entry and the power menu stay available, never a dark headset.
 
 Extends the G1 auth scene; greetd needs zero changes for the picker because
 `create_session(username)` precedes authentication (doc 41 §1.4):
@@ -156,15 +169,19 @@ family's own options (uefi-rauc owns its partition scheme).
 - **Settings:** per-user preferences/state are already per-account via XDG strata; nothing new.
 - **Per-user XR state:** `enrollment/<user>/secret/` (0700 root: PIN hash if enrolled) and
   `enrollment/<user>/calibration/` (0700 `<user>`: IPD, floor, boundary prefs). First login of
-  a new account offers the per-user setup (calibration, optional PIN) as session content —
-  skippable, re-runnable from settings; **never a wall between a user and their machine**.
+  a new account meets the same first-session welcome surface every account does
+  ([first-run-onboarding.md §4](first-run-onboarding.md)) — per-item gated, skippable,
+  re-runnable from settings; **never a wall between a user and their machine**.
 - **Lock:** per-session, ADR 0007 unchanged; a locked session holds the seat (reboot lands in
   the greeter — recorded consequence; a destructive owner-confirmed "log out other session"
   lock affordance is an open item, §8). Boot with any credentialed account lands in the
   greeter.
 - **Factory reset** (recovery environment): removes human-window rows from the persisted
-  userdb, wipes `enrollment/*` and homes, rotates machine-id; the next boot runs first-time
-  setup again. userborn's hybrid mode tolerates the external edit (load-bearing, stated).
+  userdb, wipes `enrollment/*` and homes, rotates machine-id; on the next boot userborn
+  re-materialises the image's declared accounts, runtime-created accounts are gone, and each
+  account's first session meets the welcome surface again. userborn's hybrid mode tolerates
+  the external edit (load-bearing, stated). Reset is the device-transfer path, never
+  credential recovery (first-run-onboarding §7).
 
 ## 7. Conformance checks
 
