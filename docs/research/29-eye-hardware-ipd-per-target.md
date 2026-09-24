@@ -3,6 +3,9 @@
 **Research date:** 2026-09-22  
 **Scope:** Oculus Quest 1, Lynx R1, Samsung Galaxy XR, Play For Dream MR, and
 Valve Steam Frame; Meta Quest Pro, Meta Quest 3, and Apple Vision Pro are reference designs.
+This document remains the hardware/capability matrix and algorithm-facing context. The joined
+per-target native camera/readback/actuator paths, profile states and motor-safety qualification are
+canonical in [52-eye-camera-ipd-actuator-native-linux-audit.md](52-eye-camera-ipd-actuator-native-linux-audit.md).
 
 ## Executive result
 

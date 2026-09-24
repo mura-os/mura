@@ -6,6 +6,9 @@ per-eye colour **and depth** at display time, as the *environment layer* of the 
 composition model in [architecture/zxr-shell-v2-composition.md](../architecture/zxr-shell-v2-composition.md).
 **Out of scope (sibling doc):** *which* depth backend to use. This doc only fixes the interface
 passthrough needs from it (§9.1).
+The per-target physical/stock/native path that obtains world-camera frames is also out of scope;
+it is canonical in
+[47-world-camera-native-linux-ingestion-audit.md](47-world-camera-native-linux-ingestion-audit.md).
 
 **Evidence legend.** `[V]` verified by reading the cited code or primary source; `[R]` reported by
 a primary source (paper/vendor) but not independently verified here; `[I]` inference or design

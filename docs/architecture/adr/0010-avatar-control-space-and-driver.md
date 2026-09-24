@@ -90,13 +90,18 @@ access.
 ## Consequences
 
 - Device contract gains `mura.xr.sensing.*` (declared facts: gaze, eyelid, face-weight
-  source/schema, mouth camera, mic channels) populated from the verified matrix in
-  [25 §3](../../research/25-avatar-driving-sensing.md), and a minimal `mura.xr.avatar.enable`.
+  source/schema, mouth camera, mic channels) populated from the verified expression/gaze matrix in
+  [25 §3](../../research/25-avatar-driving-sensing.md) and, for microphone channels, the
+  application-facing native-source qualification in
+  [43 §1.2/§10](../../research/43-microphone-native-linux-capture-audit.md), and a minimal
+  `mura.xr.avatar.enable`. Physical microphone count and WiVRn relay width never populate
+  `micChannels`.
   Per-device **S-1 sensing** and **R-1 render** kill-gates precede any model/renderer investment
   ([avatar-persona.md §kill-gates](../avatar-persona.md)).
 - The audio rung needs a small upstream-shaped piece: a Monado `xrt_device` registering
   `XRT_INPUT_FB_FACE_TRACKING2_AUDIO` (the state tracker already routes it; no device registers
-  it today — verified).
+  it today — verified). That device exists only after the target reaches research/43's R4 native
+  capture-source gate; the subsequent model/timestamp checks remain S-1.
 - The persona asset is biometric data with **three distinct trust classes** (the review caught
   the earlier wording contradicting remote rendering): the trusted local runtime holds the
   user's own asset; **untrusted local apps** see only composited output — never assets,

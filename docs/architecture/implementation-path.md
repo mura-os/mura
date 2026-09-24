@@ -96,7 +96,7 @@ class (iv) is the compositor axis.
 | # | Stage | Exists today | To build |
 |---|---|---|---|
 | F3 | Out-of-band access | pmOS pattern studied (`references/pmaports`, `references/pmbootstrap`); Cockpit's NixOS module exists; the posture table [first-run-onboarding.md §5.3](first-run-onboarding.md) | per [first-run-onboarding.md §5](first-run-onboarding.md): USB Ethernet gadget from the initramfs + DHCP + sshd on every profile (sshd key-only except the gadget-subnet `Match Address` block); **Cockpit** as the web UI bound to the gadget and hotspot addresses (+ a "Mura setup" plugin page — a stub until its own rung — + the static captive-portal launcher); the **provisioning hotspot** condition-shaped on "unprovisioned", WPA2 with the in-headset PSK, idle timeout with no client associated (NM AP/shared mode, `dnsmasq-shared.d` wildcard + DHCP option 114, probe redirect). The USB gadget + sshd half has no compositor dependency at all; the PSK display does (it is a compositor scene) — until G1 the PSK is also printed to the serial console/journal on the dev profile |
-| F4 | Input floor (policy half) | research/42 §4 (every relevant Monado driver keeps a 3DoF path; HMD buttons are evdev keys logind does not grab); contract `mura.hardware.input.*` with the `selectRole`/`backRole` assertions | `HandlePowerKey=ignore` (or a session inhibitor) so the compositor owns the power key via libinput — the SteamOS-on-Frame arrangement (`10-logind-no-powerbutton.conf`); the constraint-7 stabiliser and the auth scene's floor operability are the compositor's (class iv); **a Monado 3DoF HMD driver per target** (IIO or SSC — none exists upstream) is each device's bring-up prerequisite for any in-headset greeter |
+| F4 | Input floor (policy half) | research/42 §4 covers UX/policy; [research/45](../research/45-imu-3dof-monado-native-linux-audit.md) covers the per-target native IMU→Monado chain and [research/53](../research/53-proximity-presence-native-linux-audit.md) presence; contract `mura.hardware.input.*` has `selectRole`/`backRole` assertions | `HandlePowerKey=ignore` (or a session inhibitor) so the compositor owns the power key via libinput; the constraint-7 stabiliser and button handling are compositor-owned; **a runtime-qualified Monado 3DoF HMD driver per target** is each in-headset greeter's prerequisite — physical/stock IMU and a node/service alone do not satisfy it |
 
 ### (iv) Compositor deliverables
 
@@ -111,7 +111,7 @@ class (iv) is the compositor axis.
 
 | # | Stage | Exists today | To build |
 |---|---|---|---|
-| B1b | XR preflight + recovery ladder | registry names the XR-init preflight probe (**partial**; pattern from KWin VR's `kwinvr-xrtest`, [ADR 0013 §2](adr/0013-kwin-vr-disposition.md); composition §7.3 makes it normative) | the probe as a gate before greeter/session start, per the §3a-bis contract: runtime-created Vulkan device, GPU/device match, factory-calibration validity, required DRM/IMU nodes present, Monado reaches first frame. Plus the distro obligation: a **crash-loop threshold and recovery path** — N consecutive greeter/session failures → flat-output fallback on a docked/dev connector where present, SSH/serial always reachable on the dev profile, a diagnostic target otherwise. A runtime or driver failure must never leave a permanently dark headset |
+| B1b | XR preflight + recovery ladder | registry names the XR-init preflight probe (**partial**; pattern from KWin VR's `kwinvr-xrtest`, [ADR 0013 §2](adr/0013-kwin-vr-disposition.md); composition §7.3 makes it normative; [research/44](../research/44-hardware-enablement-audit-methodology.md) indexes domain readiness bundles) | gate before greeter/session start: runtime-created Vulkan device, GPU match, factory-calibration validity, backend-defined DRM/IMU transport enumeration, advancing sensor/pose proof, and a dedicated Monado probe compositor/client reaching stable per-eye presentation. Profile-dependent accessory checks remain qualification-only until attachment policy exists. Crash-loop threshold → flat/SSH/diagnostic fallback; failure must never leave a permanently dark headset |
 | B9 | Session-ready gate + update mark-good | `mura.qualification.readinessCheck` contract option + tier assertion exist ([lib/contract](../../lib/contract/default.nix)); the mark-good service is the recorded "still ahead" item ([images-and-updates §RAUC](images-and-updates.md)) | see §3a: readiness tiers, the mark-good service, and systemd-boot boot-counting wired explicitly in the uefi-rauc family |
 
 ## 3. The rung ladder
@@ -395,7 +395,10 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   path requires hardware before M4's exit. Per-device microphone support likewise advances only
   through the A0/S1/S2/R1–R5 evidence states in
   [research/43](../research/43-microphone-native-linux-capture-audit.md); `fb2-audio` cannot pass
-  S-1 from a vendor mic specification or stock-Android recording.
+  S-1 from a vendor mic specification or stock-Android recording. The same shared method and
+  per-domain gates for IMU, display, camera, radios, power, playback, boot, eyes/IPD and presence
+  are canonical in [research/44–53](../research/44-hardware-enablement-audit-methodology.md);
+  these evidence docs do not add rungs or reorder this path.
 - **Docked mode, sharing bridges, avatar, mapping**: each behind its own recorded gate
   (ADR 0015; spatial-sharing; S-1/R-1; M0), joined to this path only after G3.
 

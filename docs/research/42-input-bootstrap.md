@@ -7,6 +7,10 @@ session? Feeds [first-run-onboarding.md §4.2/§4.4/§5](../architecture/first-r
 (welcome-surface contents, input requirement, out-of-band provisioning) and
 [multi-user.md §2](../architecture/multi-user.md); companion to the
 [doc 11 greeter-furniture addendum](11-display-managers-greeters.md).
+This document owns bootstrap UX and policy. Native per-target IMU→Monado and wear-sensor paths are
+canonical in [45](45-imu-3dof-monado-native-linux-audit.md) and
+[53](53-proximity-presence-native-linux-audit.md); physical/stock availability here does not imply
+those paths are qualified.
 
 **Method.** Code study of the pinned clones (`references/`, MANIFEST 2026-09-24: gnome-shell,
 gdm, sddm, plasma-workspace, kwin, lightdm, greetd family, squeekboard, wvkbd, bluez, systemd,

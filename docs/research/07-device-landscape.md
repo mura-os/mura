@@ -348,10 +348,52 @@ flagship docked-mode target has working silicon for it; Steam Frame, the stronge
 Linux target, can never dock over its port — docked mode must remain an optional, fact-gated
 feature, never assumed.
 
+## Microphone and native-audio status (audited 2026-09-24)
+
+All six targets have documented built-in microphone hardware, but physical capsule count is not
+the number of logical channels Mura can consume. The complete evidence and the static/runtime
+qualification ladder are in [43-microphone-native-linux-capture-audit.md](43-microphone-native-linux-capture-audit.md).
+
+| Device | Physical hardware | Native Linux capture status |
+|---|---|---|
+| Oculus Quest 1 | two capsules community-reported; Android's two-mic configuration corroborates | complete downstream CM710x/Q6 blueprint; mainline MSM8998 audio and CM710x driver missing |
+| Lynx R1 | built-in mics vendor-confirmed; production count two community-reported | ADSP/codec foundations exist, but the published mainline board DT is playback-only |
+| Samsung Galaxy XR | six-microphone array vendor-documented | downstream GNU/Linux PAL/AudioReach PipeWire source is statically defined; recording unverified |
+| Play For Dream MR | four omnidirectional mics vendor-documented | no PFDM board DT, firmware closure, ALSA/PAL endpoint, UCM, or PipeWire source |
+| Valve Steam Frame | dual array vendor-documented and DT/UCM-corroborated | full static DT→ADSP→ALSA/UCM→PipeWire path; no Mura runtime recording yet |
+| Meta Quest 3 | four mics verified from firmware metadata; stock modes use one to four | generic SM8550 foundations exist; Eureka/Anorak board, SWR-DMIC, topology, and UCM path missing |
+
+Stock Android recording and WiVRn's mono AAudio relay are useful mechanism evidence, not native
+Mura support. `mura.xr.sensing.micChannels` therefore stays `0` until the application-facing native
+PipeWire source passes runtime qualification; it is never populated from this table's capsule
+count.
+
+## Hardware-enablement audit index (2026-09-24)
+
+[Research 44](44-hardware-enablement-audit-methodology.md) defines the common physical→stock→native
+L0–L7 chain and A0/S1/S2/R1–R5 evidence ladder. Detailed facts live in their canonical audits:
+
+| Domain | Canonical audit | Strongest static/runtime evidence |
+|---|---|---|
+| Microphone capture | [43](43-microphone-native-linux-capture-audit.md) | Frame static ALSA/UCM/PipeWire closure; no Mura runtime |
+| IMU/3DoF | [45](45-imu-3dof-monado-native-linux-audit.md) | Galaxy SSC→Monado source with reported runtime; all targets unqualified |
+| HMD display | [46](46-display-panel-drm-native-linux-audit.md) | Galaxy dual-lease source/runtime report; Frame exact MP DT/config |
+| World cameras | [47](47-world-camera-native-linux-ingestion-audit.md) | Galaxy Titan reference; Frame base CAMSS and separate Arcturus A0 profile |
+| Wi-Fi/Bluetooth | [48](48-wifi-bluetooth-native-linux-audit.md) | Frame WCN7850 source coverage; no native runtime |
+| Power/thermal | [49](49-power-thermal-charging-native-linux-audit.md) | Frame board/services source coverage; no native runtime |
+| Speaker output | [50](50-speaker-output-audio-native-linux-audit.md) | Frame MAX98390/UCM/PipeWire source coverage; no native runtime |
+| Boot/donor | [51](51-android-boot-donor-extraction-audit.md) | Lynx open/QDL evidence; Frame rootfs reconstruction; exact gaps fail closed |
+| Eye/IPD | [52](52-eye-camera-ipd-actuator-native-linux-audit.md) | Galaxy derived gaze/IPD readback reported; no safe native motor write |
+| Presence | [53](53-proximity-presence-native-linux-audit.md) | Galaxy SSC source/report; Frame VCNL static path; no qualified target |
+
+Profile identities are canonical in doc 44. `deckard:base` remains monochrome;
+`deckard:acc:arcturus-vision` alone carries vendor-documented color-camera capability. Galaxy XR,
+PFDM and Quest 3 uses of `anorak` are artifact-local aliases, never evidence joins.
+
 ## Implications for the build system
 
 Mura needs at least two image families. Quest 1, Lynx, Galaxy XR, Play For Dream, and eventually Quest 3 require Android/Qualcomm-aware artifacts: raw `Image`/DTB assembly where possible, Android boot-image packing for each verified header version, AVB metadata policy, A/B slot handling, and optional `vendor_boot`/dynamic-partition support. Steam Frame instead needs an EFI/UEFI and RAUC-oriented target capable of producing signed A/B rootfs updates and, once its actual boot map is confirmed, the appropriate ESP/UKI or Valve-specific boot payload.
 
-Kernel packaging must separate SoC support from board support. MSM8998 and SM8250 can share mature linux-msm foundations, SM8550-like XR2 Gen 2/XR2+ devices need newer GKI/mainline branches, and Steam Frame's SM8650 can track a modern upstream kernel. Each headset still needs its own DTS, panel/camera topology, firmware manifest, calibration preservation rules, and hardware enablement status; “SoC boots” must not be represented as “XR headset works.”
+Kernel packaging must separate SoC support from board support. MSM8998 and SM8250 can share mature linux-msm foundations, SM8550-like XR2 Gen 2/XR2+ devices need newer GKI/mainline branches, and Steam Frame's SM8650 can track a modern upstream kernel. Each headset still needs its own DTS, panel/camera/audio topology, firmware manifest, calibration preservation rules, and hardware enablement status; “SoC boots” must not be represented as “XR headset works.” Audio is a versioned board closure of ADSP firmware/topology, codec and machine-card routes, UCM or PAL configuration, and session policy — a generic SoC audio driver or a stock-Android recording proves none of those joins for Mura.
 
 Donor acquisition must be a first-class, reproducible input rather than committed blobs. Lynx can use an official versioned ZIP; Samsung needs model/CSC-aware FUS acquisition and careful launch-firmware pinning; Meta requires official latest-only recovery plus user-supplied historical archives; Play For Dream currently requires capture from an owned device; Steam Frame can reconstruct official RAUC/casync images directly. Nix derivations should record URL, cryptographic hash, license/redistribution status, extraction recipe, and a strict boundary between redistributable firmware and per-unit calibration/identity data.

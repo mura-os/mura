@@ -156,15 +156,24 @@ Legend: ✔=present, ✘=absent, cells marked V/R/U = VERIFIED/REPORTED/UNKNOWN.
 | Face expression weights | ✔ V — 70 FB2 weights end-to-end (§1); visual source only | ✘ R — no face sensors; MIPI/PCIe expansion port earmarked for future face-camera add-ons (vr.org) | U — no vendor claim of face tracking found; likely ✘ | ✘ (no sensors) | ✔ V — 68 ANDROID params; full WiVRn+Monado path exists (`wivrn_android_face_tracker.cpp`, `oxr_face_tracking_android.c`); VRCFT docs confirm working eye+face on device R |
 | Raw eye-camera access | ✘ R — Horizon OS exposes no eye images to apps | U (SteamOS is Linux; Valve has not stated) | U | n/a | ✘ R — Android XR permissions expose weights/poses only |
 | Any mouth view | inward face cameras exist, images not app-accessible R | ✘ today; Babble-style mouth cam via MIPI expansion is plausible R | U | ✘ — no downward camera claim found U | face-tracking sensors see the lower face (visual FT works) R; raw images ✘ R |
-| Mic array | ✔ V — WiVRn `headset_info_packet.microphone` + virtual PipeWire source | ✔ R (vr.org lists mic; unconfirmed count) U | U | ✔ R — 2 mics under the lenses (VR-Expert KB) | ✔ R |
+| Mic hardware / relay | ✔ V — AAudio→WiVRn mono relay + virtual PipeWire source | ✔ V — dual raw DMICs in donor DT/UCM; stock processing publishes mono | ✔ V — vendor specifies 4 omnidirectional capsules; no native path | ✔ R — production count 2 under the lenses; mainline DT has no capture DAI | ✔ V — vendor specifies 6 capsules; downstream PAL PipeWire source statically defined, runtime U |
+| Native on-device capture | ✘ — this column is the stock-runtime WiVRn reference path | S2 — complete static DT→ADSP→ALSA/UCM→PipeWire closure; R1+ U | A0 — no PFDM-specific board/DSP/userspace artifacts | A0 — generic drivers/firmware exist, board capture topology absent | S1 — PAL/AudioReach source definition exists; real samples U |
 | WiVRn/Monado path exists | ✔ V — traits `seacliff` (`hmd_traits.cpp:184`) | ✘ V — SteamOS/SteamVR device, not an Android WiVRn client (upstream README: "Non-Android VR ✖") | ✘ V — upstream README marks Play for Dream unsupported (issue #465) despite a traits entry (`hmd_traits.cpp:222`) | native Monado target; traits entry exists for the vendor-runtime client (`hmd_traits.cpp:217`) | ✔ V — traits `SM-I610` (`hmd_traits.cpp:303`), upstream README ✓ |
 
 Notes: the Quest Pro column applies to Quest 3/3S with audio-driven FB2 weights on-headset
 (REPORTED, Meta docs); WiVRn would still transport them as the same fb_face2 packet but its client
 requests VISUAL only (VERIFIED, `fb_face_tracker2.cpp:34`) — see §4. Steam Frame's gaze reaching a
 *Linux Monado* session (as opposed to SteamVR) has no evidence either way: **UNKNOWN, and it is a
-kill-gate question** (§5). For Lynx R1 the honest cell set is: head pose + mic only — the Persona
-driver's floor.
+kill-gate question** (§5). For Lynx R1 the honest native cell set is head pose plus procedural
+output: microphone hardware is reported, but its published mainline DT has no capture path.
+
+This is an expression/gaze source matrix, not the six-target hardware inventory: Quest Pro remains
+because it is the verified FB2 reference device. Target Quest 1 has two microphones
+community-reported and a downstream CM710x blueprint; target Quest 3 has four firmware-verified
+microphones and stock one-to-four-channel modes. Neither has a qualified native Mura capture
+source. Physical counts, stock modes, complete per-device paths, and the A0/S1/S2/R1–R5 labels are
+canonical in [43](43-microphone-native-linux-capture-audit.md). WiVRn's forced-mono relay is not
+`mura.xr.sensing.micChannels`.
 
 ---
 
@@ -225,7 +234,10 @@ avatars and any downstream calibration.
 3. **Device contract options** under `mura.xr.sensing.*` (typed, per device-contract
    conventions): `gaze = none|combined|per-eye`, `eyelid = none|weights|openness`,
    `faceWeights = none|fb2-visual|fb2-audio|android|htc`, `mouthCamera = none|internal|addon`,
-   `micChannels = int`, each with a `provenance` note. The §3 matrix is the initial population.
+   `micChannels = int`, each with a `provenance` note. For microphones, [43 §1.2 and §10](43-microphone-native-linux-capture-audit.md)
+   are the population source and runtime gate: `micChannels` is the logical channel width of the
+   native session's default capture source after routing/processing, never the physical capsule
+   count or WiVRn relay width. It remains zero until that path reaches R4.
    Assertions: `faceWeights != none` requires the matching Monado build flag category
    (`XRT_FEATURE_OPENXR_FACE_TRACKING2_FB` etc.); `fb2-audio` requires a mic.
 4. **Baballonia/EyeTrackVR as the add-on-hardware path** for devices with expansion (Steam Frame
@@ -271,7 +283,7 @@ avatars and any downstream calibration.
 2. Eye gaze is a separate verified path: `XR_EXT_eye_gaze_interaction` combined pose only (WiVRn `eyes`-role device; PSVR2 native driver proves the role sans WiVRn); no per-eye pose or pupil on Linux today.
 3. Parallel verified schemas: HTC 14 eye+37 lip and ANDROID-68 (Galaxy XR) have complete WiVRn+Monado plumbing too; ANDROID-68 ≡ FB2's first 63 + 5 tongue.
 4. Schema decision: normalize internally to the Unified-Expressions factoring (88 shapes + separate gaze/lid/pupil block), keep FB2 as the OpenXR wire schema; conversion code exists for every source (Pico→FB2, SRanipal→UE, Baballonia→UE, OFERA's learned FB2→ARKit→FLAME).
-5. Device matrix: Quest Pro & Galaxy XR = full gaze+face verified; Steam Frame = gaze hardware yes but Linux exposure UNKNOWN (kill-gate); Play for Dream = eye tracking reported, WiVRn unsupported; Lynx R1 = head pose + 2 mics only.
+5. Device matrix: Quest Pro & Galaxy XR = full gaze+face verified; Steam Frame = gaze hardware yes but Linux exposure UNKNOWN; Play for Dream = eye tracking reported, WiVRn unsupported; Lynx R1 = head pose plus reported mic hardware, but its mainline DT has no capture path. Microphone qualification for all six targets is doc 43, not capsule count.
 6. FB2's AUDIO data source is real in spec and plumbed through Monado's state tracker, but no device registers the AUDIO input; the rumored WiVRn audio fork could not be verified (found only a Pico visual fork).
 7. LAM_Audio2Expression: 16 kHz wav2vec2 → ARKit-52 @30 fps with streaming context, VERIFIED contract; CPU real-time and weight size UNVERIFIED — spike before relying on it.
 8. Baballonia is the verified add-on path (Linux tarballs, V4L2 capture, ONNX 45-shape face + 6-channel eye models) for mouth cams on expansion-port devices.

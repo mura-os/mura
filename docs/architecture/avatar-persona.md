@@ -217,8 +217,15 @@ Modeled on perception's P-1: cheap, binary, per-device.
   sampling run with monotonic sample timestamps, bounded jitter, and bounded skew against
   Monado's clock. Initial matrix ([25 §3](../research/25-avatar-driving-sensing.md)): Quest Pro
   and Galaxy XR pass on paper (verified plumbing); Steam Frame gaze exposure on Linux is
-  UNKNOWN (this gate decides); Play for Dream is WiVRn-unsupported; Lynx R1's floor is head pose
-  + mics (audio/procedural rungs only).
+  UNKNOWN (this gate decides); Play for Dream is WiVRn-unsupported; Lynx R1's floor is currently
+  head pose plus procedural output — its microphone hardware is reported, but the published
+  mainline DT has no capture DAI.
+- **S-1 microphone sub-gate** (only when the audio-inferred rung is selected): the device first
+  reaches R4 in [research/43 §10](../research/43-microphone-native-linux-capture-audit.md) — the
+  intended native PipeWire source records for an ordinary session client with the declared
+  logical channel width. Only then do the audio model's sample-clock, buffering, inference
+  latency, and semantic-output checks run. Physical capsules, stock-Android capture, and WiVRn's
+  remote mono source do not satisfy this native gate.
 - **A-1 adapter spike** (the review's top risk): record one coverage-defined calibration
   performance observed *simultaneously* by a verified FB2/UE source and an independently fitted
   FLAME tracker; fit the smallest allowed adapter; hold-out jaw/lip/lid/gaze error thresholds.

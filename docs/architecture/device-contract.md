@@ -131,6 +131,16 @@ Assertions: an `android-backed` subsystem requires `mura.donor` to expose the ne
 and the kconfig contract to include the Android-HAL prerequisite category; a `native` subsystem
 requires its mainline kconfig category.
 
+Per-target physical/stock/native evidence is canonical in the hardware-enablement audit series:
+IMU/sensors [45](../research/45-imu-3dof-monado-native-linux-audit.md), display/panels
+[46](../research/46-display-panel-drm-native-linux-audit.md), world cameras
+[47](../research/47-world-camera-native-linux-ingestion-audit.md), Wi-Fi/Bluetooth
+[48](../research/48-wifi-bluetooth-native-linux-audit.md), power/thermal qualification
+[49](../research/49-power-thermal-charging-native-linux-audit.md), and speaker output
+[50](../research/50-speaker-output-audio-native-linux-audit.md). The shared method and profile
+vocabulary are [44](../research/44-hardware-enablement-audit-methodology.md). Profiles remain
+research/qualification identities; no `activeProfiles` contract is specified here.
+
 ### `mura.xr.*` — XR runtime and device driver
 
 Mirrors Monado's build/runtime surface ([05](../research/05-xr-userspace.md) §9 item 4):
@@ -180,6 +190,10 @@ not “the vendor specification lists a microphone.”
 | `mura.deployment.protectedPartitions` | listOf str | persist/calib/NV — never touched without a separately-reviewed op |
 | `mura.deployment.imageVariants` | listOf str | which `lib/images/` variants to build |
 
+The exact boot/donor facts, root-versus-unlock boundary, protected-state evidence and recovery gates
+for each build are in [research/51](../research/51-android-boot-donor-extraction-audit.md).
+No donor-independent default may fill a header, slot or flash fact that audit leaves unknown.
+
 ### `mura.hardware.ipd.*` and the `eyes` subsystem (ADR 0011)
 
 `mura.hardware.ipd.source` ∈ `fixed | manual | manual-sensed | stored | motorized-auto` declares
@@ -192,6 +206,9 @@ Monado-side eye-tracking service (gaze via `XR_EXT_eye_gaze_interaction`, rotati
 [adr/0011-eye-tracking-ipd.md](adr/0011-eye-tracking-ipd.md). The qualification matrix gains
 per-device rows — *IPD source*, *eye-camera access class*, *ET capability*, *iris auth* — with
 current values in [research/29](../research/29-eye-hardware-ipd-per-target.md).
+The joined camera/readback/actuator paths and their runtime/motor-safety gates are canonical in
+[research/52](../research/52-eye-camera-ipd-actuator-native-linux-audit.md). A fitted motor and a
+working gaze backend do not prove native actuation.
 
 ### `mura.hardware.input.*` — the input floor (research/42, ADR 0017 rev 2.1)
 
@@ -220,7 +237,9 @@ buttons, dwell where a button is unusable. Declared facts:
 - `concurrentApSta` (nullable) — hotspot + station at once; drives the provisioning hotspot's
   handoff behaviour (first-run-onboarding §5.2).
 - `proximitySource` ∈ `none | iio | hid | ssc` — where the wear sensor is read
-  (research/42 §4.4).
+  (bootstrap policy: research/42 §4.4; native enablement:
+  [research/53](../research/53-proximity-presence-native-linux-audit.md)). The value is a qualified
+  native producer fact, not merely a fitted stock sensor.
 
 ### `mura.hardware.externalDisplay` and docked mode (ADR 0015)
 

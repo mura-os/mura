@@ -104,9 +104,12 @@ The donor ships the full qcom DTB set for 6.18 including **eight deckard board r
 > the model string**; `compatible = "qcom,sm8650-dv1", "qcom,sm8650"` (MP retains the dv1
 > compatible); a `simple-framebuffer` chosen node exists (boot splash path).
 
-The DTS is the per-device adaptation bundle's requirements document (camera buses, panels,
-regulators, DSP nodes) — to be mined further when adaptation work starts. Doc 07's "no public
-Galaxy-class DTS" caveat does not apply here: **the Frame's production DTS is in the donor.**
+The DTS is the per-device adaptation bundle's requirements document. Its panel/DRM, world-camera,
+radio, power/thermal and speaker paths are now mined in
+[46](46-display-panel-drm-native-linux-audit.md)–[50](50-speaker-output-audio-native-linux-audit.md);
+those audits preserve static/runtime boundaries rather than promoting the donor to support. Doc
+07's "no public Galaxy-class DTS" caveat does not apply here: **the Frame's production DTS is in
+the donor.**
 
 ## 6. Userspace inventory
 
@@ -123,6 +126,60 @@ Galaxy-class DTS" caveat does not apply here: **the Frame's production DTS is in
   units — the Deck service architecture.
 - **Firmware:** standard linux-firmware tree plus `qcom/sm8650/` (SoC blobs) and `qcom/vpu/`;
   `CAMERA_ICP.mbn` at top level (camera ICP firmware).
+
+### 6.1 Audio capture chain — static donor evidence
+
+The reconstructed donor contains the only end-to-end, product-specific Linux microphone
+configuration currently available for a Mura target. This is **static closure**, not a
+headset-generated capture result; the qualification states and cross-target comparison are in
+[43 §7 and §10](43-microphone-native-linux-capture-audit.md).
+
+**Hardware/kernel join:**
+
+- Valve specifies a dual-microphone array. The production DT uses
+  `qcom,sm8650-lpass-va-macro` at a 2.4 MHz DMIC clock
+  (`extracted/sm8650-mp.dts:3734-3747`).
+- The board sound card is `qcom,lpass-sndcard`, model **`SM8250 LPASS`** — a compatibility card
+  name on an SM8650 device, not evidence of an SM8250 SoC. Its `VA Capture` link terminates at the
+  VA macro (`extracted/sm8650-mp.dts:9434-9468`).
+- The extracted config enables QDSP6, Q6V5 ADSP remoteproc, Qualcomm SoundWire, and LPASS
+  VA/RX/TX/WSA macros (`extracted/config-6.18.0-deckard:4872-4890,5175-5180,6182-6214`).
+  WCD937x/938x/939x is disabled: the built-in digital microphones do not use an external WCD
+  capture codec. MAX98390 is the playback amplifier.
+
+**Firmware/topology in the rootfs** (read-only `guestfish` inspection):
+
+```
+/usr/lib/firmware/qcom/sm8650/adsp.mbn
+/usr/lib/firmware/qcom/sm8650/adsp_dtb.mbn
+/usr/lib/firmware/qcom/sm8650/SM8650-MTP-tplg.bin
+/usr/lib/firmware/qcom/sm8650/SM8650-QRD-tplg.bin
+```
+
+**ALSA/UCM:**
+
+- `/usr/share/alsa/ucm2/conf.d/SM8250_LPASS/{SM8250_LPASS,HiFi}.conf` maps speaker playback to
+  `hw:${CardId},0` and the `Mic` device to capture `hw:${CardId},1`.
+- `/usr/share/alsa/ucm2/codecs/sm8250-lpass/VAEnableSeq.conf` routes DEC0/DEC1 to DMIC0/DMIC1,
+  enables those two AIF capture mixers, and zeros DMIC2/DMIC3.
+- `deckard-audio-setup.service` runs
+  `/usr/share/deckard-audio-config/soundsetup.sh`, clears stale WirePlumber mic-route state,
+  chooses product speaker tuning, and links the microphone filter chain.
+
+**PipeWire/WirePlumber:** Valve's public
+[external] [`deckard-audio-config-20260914.1-1`](https://holo-packages.steamos.cloud/archlinux-deckard-hotfixes/deckard-audio-config-20260914.1-1-any.pkg.tar.zst)
+defines a 48 kHz stereo S16LE built-in capture source. The current product chain applies a
+two-channel Deckard LV2 EQ, downmixes to mono, applies WebRTC AEC3/gain control, and then uses
+SteamVR's proprietary `audiofilter.so` for noise suppression. The kernel/UCM/PipeWire/WebRTC
+portion is reusable open mechanism; the Valve EQ and noise-suppression binaries remain
+donor/reference components with a separate redistribution decision.
+
+SteamOS 0.3.0 later fixed a vendor-described “garbled audio” microphone bug
+([external] [Valve patch notes](https://store.steampowered.com/news/app/4165890/view/711161056325533925)).
+That proves the stock path was exercised, but the archive contains no `arecord -l`,
+`/proc/asound/pcm`, `wpctl status`, successful WAV, physical channel map, or suspend/resume
+result. Mura therefore records two physical/raw channels and one stock processed application
+channel as separate facts and leaves `mura.xr.sensing.micChannels = 0` until runtime R4.
 
 ## 7. Reconciliation verdicts (donor-pipeline stages)
 
