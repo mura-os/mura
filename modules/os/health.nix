@@ -56,8 +56,8 @@ let
         # /persist writable
         touch /var/lib/mura/state/health/.readiness-probe 2>/dev/null && rm -f /var/lib/mura/state/health/.readiness-probe || ok=0
         ${if cfg.xr.session.autoLogin != null then ''
-          # appliance: the autologin user's compositor unit is active (uwsm's wayland-wm@<id>)
-          systemctl --user -M ${cfg.xr.session.autoLogin}@ is-active --quiet 'wayland-wm@*.service' 2>/dev/null || ok=0
+          # appliance: the autologin user's compositor unit is active (session.nix, D4 rev 3)
+          systemctl --user -M ${cfg.xr.session.autoLogin}@ is-active --quiet mura-compositor.service 2>/dev/null || ok=0
         '' else ''
           # multi-user: greetd is up and its greeter process is alive
           systemctl is-active --quiet greetd.service || ok=0

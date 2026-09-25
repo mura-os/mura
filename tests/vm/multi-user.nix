@@ -7,6 +7,33 @@
 (import ./lib.nix { inherit pkgs; }) {
   name = "mura-vm-multi-user";
   profileModules = [ ../../profiles/multi-user.nix ./fixture-user.nix ];
+  extraModules = [
+    # TEST-ONLY session units for the readiness-bound subtest (D4): a compositor that never
+    # signals readiness, behind its own target so the real mura-session.target is untouched.
+    # The wrapper is pointed at it with its test-only `--target` flag. Same shape as the real
+    # units (modules/os/session.nix): Type=notify, TimeoutStartSec from the contract, the target
+    # bound to the service so a timed-out service ends the target and `start --wait` returns.
+    ({ config, pkgs, ... }: {
+      systemd.user.services.mura-compositor-stub = {
+        description = "TEST-ONLY never-ready compositor stand-in";
+        bindsTo = [ "mura-session-stub.target" ];
+        before = [ "mura-session-stub.target" ];
+        serviceConfig = {
+          Type = "notify";
+          NotifyAccess = "all";
+          ExecStart = "${pkgs.coreutils}/bin/sleep 600";
+          TimeoutStartSec = "${toString config.mura.xr.session.readinessTimeoutSeconds}s";
+          Slice = "session.slice";
+        };
+      };
+      systemd.user.targets.mura-session-stub = {
+        description = "TEST-ONLY session target around the never-ready stub";
+        requires = [ "mura-compositor-stub.service" ];
+        bindsTo = [ "mura-compositor-stub.service" ];
+        unitConfig.StopWhenUnneeded = true;
+      };
+    })
+  ];
 
   testScript = ''
     GREETER = "pgrep -u greeter -f bin/gtkgreet"
@@ -58,18 +85,20 @@
 
     userctl = "systemctl --user -M mura@ "
 
-    with subtest("D4: the session came up through the wrapper (uwsm) with the static environment of the greeter profile"):
-        machine.wait_until_succeeds(userctl + "is-active wayland-wm@sway.service graphical-session.target mura-session.target", timeout=60)
+    with subtest("D4: the session came up through the wrapper (mura-session) with the static environment of the greeter profile"):
+        machine.wait_until_succeeds(userctl + "is-active mura-compositor.service graphical-session.target mura-session.target", timeout=60)
         env = machine.succeed(userctl + "show-environment")
         assert "MURA_PROFILE=multi-user" in env and "WAYLAND_DISPLAY=" in env, env
-        # the session vars reach the compositor unit through uwsm's env_session.conf (F1)
-        machine.succeed("grep -q '^XDG_SESSION_ID=' /run/user/1000/uwsm/env_session.conf")
+        # the session vars reach the compositor unit through the wrapper's session.env (F1)
+        machine.succeed("grep -q '^XDG_SESSION_ID=' /run/user/1000/mura/session.env")
+        machine.fail("pgrep -u mura -f 'uwsm|python'")
 
     with subtest("D4: logout tears the session down through the wrapper and returns to the greeter, without racing device release"):
         sid = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
         machine.succeed("journalctl --rotate && journalctl --vacuum-time=1s >/dev/null 2>&1 || true")
         # a logout is: the session target stops -> the wrapper returns -> greetd restarts the greeter
-        machine.succeed(userctl + "stop wayland-session@sway.target")
+        machine.succeed(userctl + "stop mura-session.target")
+        machine.wait_until_fails("test -e /run/user/1000/mura/session.env", timeout=60)  # the wrapper cleaned up
         machine.wait_until_fails("pgrep -u mura -x sway", timeout=60)
         machine.wait_until_succeeds(GREETER, timeout=120)
         machine.wait_until_fails(f"loginctl show-session {sid} >/dev/null 2>&1", timeout=60)
@@ -82,25 +111,26 @@
         # user manager is idle after the logout above), running the wrapper on a stub
         # A real logind session for mura without the greeter: SSH (pam_systemd gives it a
         # session, XDG_RUNTIME_DIR and a user manager; `su -` does none of that here). An SSH
-        # session has no seat/VT, and uwsm's env preloader refuses to guess one from the
-        # foreground VT (the greeter's); the bound under test is the unit machinery's, not seat
-        # semantics, so the stub is handed a seat and VT explicitly.
+        # session has no seat/VT; the bound under test is the unit machinery's, not seat
+        # semantics, so the stub is handed a seat and VT explicitly. The stub units are
+        # TEST-ONLY (below, extraModules): a Type=notify sleep that never notifies, behind a
+        # target the wrapper is pointed at with its test-only --target flag.
         import time
-        stub = "XDG_SEAT=seat0 XDG_VTNR=1 DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus uwsm start -F -N Stub -- /run/current-system/sw/bin/sleep 600"
+        stub = "XDG_SEAT=seat0 XDG_VTNR=1 mura-session start --target mura-session-stub.target"
         t0 = time.monotonic()
         rc, out = machine.execute(f"timeout 120 sshpass -p mura ssh -o StrictHostKeyChecking=no -o PubkeyAuthentication=no mura@127.0.0.1 '{stub}' 2>&1; echo rc=$?")
         took = time.monotonic() - t0
         assert "rc=124" not in out, f"the wrapper hung past the bound:\n{out}"
         # torn down BECAUSE of the readiness bound (30 s, the contract default): the unit result
-        # and the journal carry the failure — the wrapper's exit status does not (uwsm waits on
-        # the session *target*, and targets do not fail; spec §4 step 7 rev 2)
-        jr = machine.execute("journalctl -b --no-pager _UID=1000 | grep -i 'preloader\\|sleep\\|shutdown\\|envelope\\|error\\|fatal' | tail -40")[1]
+        # and the journal carry the failure — the wrapper's exit status does not (it waits on
+        # the session *target*, and targets do not fail; spec §4 step 7)
+        jr = machine.execute("journalctl -b --no-pager _UID=1000 | grep -i 'mura-session\\|stub\\|shutdown\\|error\\|fatal' | tail -40")[1]
         assert 20 < took < 90, f"wrapper returned after {took:.0f}s, not at the readiness bound:\n{out}\n--- journal ---\n{jr}"
         # (the unit is CollectMode=inactive-or-failed and already collected; the journal is the record)
-        machine.succeed("journalctl -b --no-pager _UID=1000 | grep -q 'wayland-wm@sleep.service: start operation timed out'")
-        machine.succeed("journalctl -b --no-pager _UID=1000 | grep -q \"wayland-wm@sleep.service: Failed with result 'timeout'\"")
+        machine.succeed("journalctl -b --no-pager _UID=1000 | grep -q 'mura-compositor-stub.service: start operation timed out'")
+        machine.succeed("journalctl -b --no-pager _UID=1000 | grep -q \"mura-compositor-stub.service: Failed with result 'timeout'\"")
         machine.fail("pgrep -u mura -x sleep")
-        machine.fail(userctl + "is-active wayland-wm@sleep.service wayland-session@sleep.target")
+        machine.fail(userctl + "is-active mura-compositor-stub.service mura-session-stub.target")
 
     with subtest("D5: the lock authenticates the declared fixture account through mura-lock"):
         h = "su - mura -c 'mura-authd-harness --authd /run/current-system/sw/bin/mura-authd --user mura --scenario basic --password {pw}{extra}'"

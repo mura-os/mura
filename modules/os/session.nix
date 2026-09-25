@@ -1,26 +1,30 @@
 # modules/os/session.nix — the login chain from the contract (implementation-path §2 (ii)).
 #
 # Consumes mura.xr.session.{autoLogin,greeter,readinessTimeoutSeconds} and mura.xr.shell and
-# owns services.greetd plus the session wrapper. Two profiles, exactly one selected by the
-# contract's exclusivity assertion:
+# owns services.greetd, the session wrapper and the session's user units. Two profiles,
+# exactly one selected by the contract's exclusivity assertion:
 #
 #   appliance  : greetd initial_session autologins the declared user into the session
 #                (ADR 0007 §Two profiles; the default image, profiles/default.nix)
 #   multi-user : greetd default_session runs the greeter DIRECTLY as the `greeter` user —
 #                no dispatcher, no runtime-state session selection (ADR 0017 rev 2)
 #
-# The session wrapper (B6a, specs/session-bootstrap.md, D4) is **uwsm** — the standard
-# "display manager execs a program that starts the compositor as a user unit, publishes its
-# environment after readiness, and stays alive until the session is torn down" mechanism
-# (AGENTS rule 1; evaluated against the spec in D4, ruled). What uwsm gives us, by file:
-#   - seat acquisition inside a user unit: `uwsm start` saves XDG_SESSION_ID/XDG_SEAT/XDG_VTNR
-#     into env_session.conf, the EnvironmentFile of wayland-wm@.service, so libseat's logind
-#     backend finds the session (uwsm/main.py Varnames.session_specific) — review finding F1;
-#   - readiness: wayland-wm@.service is Type=notify with TimeoutStartSec; the compositor runs
-#     `uwsm finalize` (sway stand-in) or sd_notify natively (zxr) — spec §4.4/§4.5;
-#   - lifetime: `uwsm start` waits on the session target and stops it on SIGTERM/SIGHUP,
-#     returning only when the session is down (uwsm-libexec/signal-handler.sh) — spec §4.6/4.7.
-# Mura adds two drop-ins (below) and a thin `mura-session.target` so the corpus name is true.
+# The session wrapper (B6a, specs/session-bootstrap.md, D4 rev 3) is **mura-session**
+# (pkgs/mura-session, Rust, libc only). It implements the mechanism uwsm demonstrated and D4
+# verified — "the display manager execs a program that starts the compositor as a user unit,
+# publishes its environment after readiness, and stays alive until the session is torn down"
+# (AGENTS rule 1) — over the STATIC units below instead of uwsm's login-time unit generation:
+#   - seat acquisition inside a user unit: `mura-session start` writes XDG_SESSION_ID/XDG_SEAT/
+#     XDG_VTNR to $XDG_RUNTIME_DIR/mura/session.env, the EnvironmentFile of
+#     mura-compositor.service, so libseat's logind backend finds the session — finding F1;
+#   - readiness: mura-compositor.service is Type=notify with TimeoutStartSec from the contract;
+#     the compositor runs `mura-session finalize` (sway stand-in) or sd_notify natively (zxr);
+#   - lifetime: `mura-session start` waits on mura-session.target and stops it on
+#     SIGTERM/SIGHUP, returning only when the session is down — spec §4.6/4.7.
+# Why not uwsm itself: it is 6.4k lines of Python and three interpreter starts on every login
+# (~1.8 s measured in the VM, D4); the ruling is that no interpreter sits on the session-start
+# path (AGENTS.md; specs/session-bootstrap.md §9). Unit semantics are copied 1:1 from uwsm's
+# templates (uwsm 0.26.7 lib/systemd/user/*) minus the per-compositor templating we do not need.
 #
 # Stand-ins (implementation-path §1, the stand-in rule): until the zxr compositor exists,
 # sway is the session body and cage+gtkgreet the greeter. Both are development fixtures
@@ -30,87 +34,145 @@ let
   cfg = config.mura.xr.session;
   shell = config.mura.xr.shell;
 
-  uwsm = lib.getExe pkgs.uwsm;
-
   # STAND-IN — replaced at M1 by the zxr session binary. Until then every mura.xr.shell
-  # value lands in sway. uwsm derives the unit instance name from the binary: sway →
-  # wayland-wm@sway.service / wayland-session@sway.target.
+  # value lands in sway, as ExecStart of mura-compositor.service.
   compositorBinary = "${pkgs.sway}/bin/sway";
 
-  # The session command greetd execs (both profiles): uwsm in front of the compositor.
-  # -F hardcodes the command line into the unit drop-in; -N/-D give the session its name
-  # and XDG_CURRENT_DESKTOP (the static environment class, spec §3). Wrapped in a named
-  # script so greetd's config and gtkgreet's session list read `mura-session`.
-  muraSession = pkgs.writeShellScriptBin "mura-session" ''
-    exec ${uwsm} start -F -N Mura -D mura -- ${compositorBinary}
-  '';
-  sessionCommand = "${muraSession}/bin/mura-session";
+  # The session command greetd execs (both profiles). The compositor is not an argument: it
+  # is the static unit's ExecStart. greetd's config and gtkgreet's session list read
+  # `mura-session`.
+  sessionCommand = "${lib.getExe pkgs.mura.session} start";
 
   # STAND-IN — replaced at G2 by zxr --greeter (registry: zxr --greeter mode row;
   # implementation-path §3 G2: gtkgreet and cage leave the closure at the swap).
   greeterCommand = "${pkgs.cage}/bin/cage -s -- ${pkgs.gtkgreet}/bin/gtkgreet";
 
   profileName = if cfg.autoLogin != null then "appliance" else "multi-user";
+
+  # Every session unit ends with the session (uwsm's shutdown-target shape): a unit that
+  # stops or fails pulls in mura-session-shutdown.target, which conflicts with the whole
+  # graphical session, irreversibly.
+  endsSession = {
+    OnSuccess = "mura-session-shutdown.target";
+    OnSuccessJobMode = "replace-irreversibly";
+    OnFailure = "mura-session-shutdown.target";
+    OnFailureJobMode = "replace-irreversibly";
+    CollectMode = "inactive-or-failed";
+  };
 in
 {
   config = lib.mkIf (shell != "none") (lib.mkMerge [
     {
       services.greetd.enable = true;
 
-      ## The wrapper: uwsm ---------------------------------------------------------------
-      programs.uwsm.enable = true;
-      environment.systemPackages = [ muraSession pkgs.mura.authd ];
+      ## The wrapper ------------------------------------------------------------------------
+      environment.systemPackages = [ pkgs.mura.session pkgs.mura.authd ];
+      # uwsm's module chose dbus-broker for the user bus; the reason (activation-environment
+      # handling for units the session starts) holds without uwsm, so the choice stays.
+      services.dbus.implementation = lib.mkDefault "broker";
 
-      # Drop-ins on uwsm's units (NixOS merges these as overrides.conf on the packaged units;
-      # the uwsm module already marks them restartIfChanged=false / enableDefaultPath=false).
-      systemd.user.services."wayland-wm@" = {
-        # ADR 0007 crash semantics: a compositor crash restarts it INSIDE the session (into
-        # the locked state once authd exists, D5). uwsm ships Restart=no + OnFailure=
-        # wayland-session-shutdown.target (compositor death = session end). Since systemd
-        # v254 a failing service passes through `failed` before an auto-restart and
-        # OnFailure= fires each time (found at D4, references/systemd/src/core/unit.c
-        # unit_notify + service.c SERVICE_FAILED_BEFORE_AUTO_RESTART) — RestartMode=direct
-        # is the standard answer: restarts skip the failed state, OnFailure= only fires when
-        # the start-rate limit is hit, and the session then shuts down as uwsm intends.
-        # [engineering judgment, D4; recorded in specs/session-bootstrap.md §5]
-        unitConfig = {
+      ## The session units (static; specs/session-bootstrap.md §5) ---------------------------
+      # `mura-compositor.service`: the compositor as a user unit. Never wantedBy anything —
+      # only mura-session.target (Requires=) starts it, and only the wrapper starts that.
+      systemd.user.services.mura-compositor = {
+        description = "Mura compositor (XR session body)";
+        bindsTo = [ "mura-session.target" ];
+        before = [ "mura-session.target" "graphical-session.target" "mura-session-shutdown.target" ];
+        after = [ "graphical-session-pre.target" ];
+        wants = [ "graphical-session-pre.target" ];
+        conflicts = [ "mura-session-shutdown.target" ];
+        # No unit-private PATH: the compositor (and everything it execs) inherits the user
+        # manager's session PATH from environment.d/50-systemd-path.conf — /run/wrappers,
+        # the per-user profile, the system profile — like any desktop session unit. NixOS's
+        # default `path` for services would otherwise pin PATH to coreutils+systemd and sway's
+        # `exec` lines (which run through `sh -c`) fail with ENOENT (found at D4 rev 3).
+        path = lib.mkForce [ ];
+        unitConfig = endsSession // {
+          PropagatesStopTo = "mura-session.target graphical-session.target";
+          # ADR 0007 crash semantics: a compositor crash restarts it INSIDE the session (into
+          # the locked state once authd exists, D5). uwsm ships Restart=no + OnFailure=
+          # (compositor death = session end). Since systemd v254 a failing service passes
+          # through `failed` before an auto-restart and OnFailure= fires each time (found at
+          # D4, references/systemd/src/core/unit.c unit_notify + service.c
+          # SERVICE_FAILED_BEFORE_AUTO_RESTART) — RestartMode=direct is the standard answer:
+          # restarts skip the failed state, OnFailure= only fires when the start-rate limit is
+          # hit, and the session then shuts down. [engineering judgment, D4; spec §5]
           StartLimitIntervalSec = "60s";
           StartLimitBurst = 3;
         };
         serviceConfig = {
+          Type = "notify";
+          NotifyAccess = "all";
+          # STAND-IN — replaced at M1 by zxr, which notifies READY=1 natively.
+          ExecStart = compositorBinary;
+          # The session-specific class (spec §3), written by `mura-session start` step 2.
+          EnvironmentFile = "-%t/mura/session.env";
           Restart = "on-failure";
           RestartMode = "direct";
           RestartSec = "1s";
           # The readiness bound, from the contract (spec §4 step 4).
           TimeoutStartSec = "${toString cfg.readinessTimeoutSeconds}s";
+          TimeoutStopSec = "10s";
           # The compositor creates these (spec §3); on a direct restart the user manager still
           # holds the dead instance's values, and a compositor that inherits WAYLAND_DISPLAY
           # will try to run nested inside itself (found at D4 with sway). Never inherit them.
           UnsetEnvironment = "WAYLAND_DISPLAY DISPLAY";
+          Slice = "session.slice";
+          SyslogIdentifier = "mura-compositor";
         };
       };
 
       # `mura-session.target`: the XR session body named throughout the corpus (B6, ADR 0007;
-      # specs/session-bootstrap.md §5). Under uwsm it is a thin target pulled in by the
-      # compositor's session target, ordered before graphical-session.target (which the
-      # compositor reaches on readiness) and stopped with it; it owns the session's Monado
-      # socket. Ordering note: target units implicitly order After= their Wants=, so this
-      # target must NOT be After=graphical-session.target — that is an ordering cycle with
-      # wayland-session@.target (found at D4).
+      # spec §5). The wrapper's `start --wait` target: active while the session runs, gone
+      # when it is torn down. BindsTo=graphical-session.target starts the standard target
+      # (which shell services and portals hang off) and stops with it. Ordering note: target
+      # units implicitly order After= their Requires=/Wants= units, so this target must NOT
+      # be After=graphical-session.target — that is an ordering cycle (found at D4).
       systemd.user.targets.mura-session = {
         description = "Mura XR session (Monado + compositor + shell services)";
+        requires = [ "mura-compositor.service" ];
         wants = lib.optional config.services.monado.enable "monado.socket";
-        partOf = [ "graphical-session.target" ];
+        bindsTo = [ "graphical-session.target" ];
+        before = [ "graphical-session.target" "mura-session-shutdown.target" ];
         after = [ "graphical-session-pre.target" ];
-        before = [ "graphical-session.target" ];
+        conflicts = [ "mura-session-shutdown.target" ];
+        unitConfig = {
+          PropagatesStopTo = "graphical-session.target";
+          StopWhenUnneeded = true;
+        };
       };
-      systemd.user.targets."wayland-session@" = {
-        wants = [ "mura-session.target" ];
+
+      # `mura-session-bindpid@PID.service`: the session ends if the wrapper dies (greetd
+      # killed it, the login was torn down) — util-linux waitpid on the wrapper's pid.
+      systemd.user.services."mura-session-bindpid@" = {
+        description = "Bind the Mura session to wrapper PID %i";
+        before = [ "mura-session-shutdown.target" ];
+        conflicts = [ "mura-session-shutdown.target" ];
+        unitConfig = endsSession;
+        serviceConfig = {
+          Type = "exec";
+          ExecStart = "${pkgs.util-linux}/bin/waitpid -e %i";
+          Restart = "no";
+          Slice = "background.slice";
+          SyslogIdentifier = "mura-session-bindpid";
+        };
+      };
+
+      # `mura-session-shutdown.target`: the one-way exit. Conflicts with the whole graphical
+      # session; StopWhenUnneeded so it vanishes once everything it conflicted with is down.
+      systemd.user.targets.mura-session-shutdown = {
+        description = "Shut down the Mura session";
+        conflicts = [ "graphical-session-pre.target" "graphical-session.target" "xdg-desktop-autostart.target" ];
+        after = [ "graphical-session-pre.target" "graphical-session.target" "xdg-desktop-autostart.target" ];
+        unitConfig = {
+          DefaultDependencies = false;
+          StopWhenUnneeded = true;
+        };
       };
 
       # Static environment class (spec §3): read by the user manager from environment.d.
-      # XDG_CURRENT_DESKTOP comes from `uwsm start -D`; XR_RUNTIME_JSON is not needed
-      # (services.monado installs the active_runtime.json the loader finds on its own).
+      # XDG_CURRENT_DESKTOP is set by `mura-session start` (step 2); XR_RUNTIME_JSON is not
+      # needed (services.monado installs the active_runtime.json the loader finds on its own).
       environment.etc."environment.d/60-mura.conf".text = ''
         MURA_PROFILE=${profileName}
         XDG_SESSION_TYPE=wayland
@@ -121,19 +183,19 @@ in
       # real session will provide itself.
       programs.sway.enable = lib.mkDefault true;
       # STAND-IN — replaced at M1 by zxr. The NixOS sway config starts sway-session.target →
-      # graphical-session.target itself, *before* uwsm's readiness ordering; under uwsm the
-      # compositor must instead publish its variables and signal readiness through
-      # `uwsm finalize` (spec §4.5; uwsm README "sway"). Override the NixOS drop-in.
+      # graphical-session.target itself, *before* our readiness ordering; under mura-session
+      # the compositor must instead publish its variables and signal readiness through
+      # `mura-session finalize` (spec §4.5). Override the NixOS drop-in.
       environment.etc."sway/config.d/nixos.conf".source = lib.mkForce (pkgs.writeText "nixos.conf" ''
-        # STAND-IN (D4) — sway under uwsm: export the compositor-created variables to the
-        # user manager and D-Bus, then notify wayland-wm@sway.service READY=1.
-        exec ${uwsm} finalize SWAYSOCK I3SOCK
+        # STAND-IN (D4) — sway under mura-session: export the compositor-created variables to
+        # the user manager and D-Bus, then notify mura-compositor.service READY=1.
+        exec ${lib.getExe pkgs.mura.session} finalize SWAYSOCK I3SOCK
       '');
 
       # gtkgreet's session list — the stand-in greeter offers the stand-in session, through
       # the wrapper. (zxr --greeter enumerates sessions from mura.xr.shell instead;
       # session-auth §5.)
-      environment.etc."greetd/environments".text = "mura-session\n";
+      environment.etc."greetd/environments".text = "mura-session start\n";
     }
 
     # Appliance / default image: autologin. greetd's module sets `restart = false` when
