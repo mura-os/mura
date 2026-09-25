@@ -49,13 +49,18 @@ pkgs/                          # overlay: XR components, kernels, tools (nixpkgs
   mura-session/                # the session wrapper greetd execs, `start`/`finalize` (Rust, libc only; D4 rev 3) — pkgs.mura.session
   mura-preflight/              # the XR preflight probe P1–P7 → /run/mura/preflight.json (Rust; D6) — pkgs.mura.preflight
   mura-setup/                  # the setup program's system instance — D3 STUB (Rust, libc only) — pkgs.mura.setup
+  mura-plymouth-theme/         # the boot / failure-feedback / recovery screen: the master illustration composited per
+                               # device from the contract's panel geometry (called by modules/os/recovery.nix, not an overlay attr)
+assets/
+  branding/                    # checked-in artwork: recovery-mode.png (the mascot; 2048², 8 bpc RGBA, black background)
 patches/                       # patch sets, organized per upstream + per donor build (see below)
 protocols/                     # Mura Wayland protocol XMLs (zxr-shell-v2, the zspatial
                                # shell-integration family incl. zspatial-toplevel-export) + governance
                                # notes + CONVENTIONS.md; CI: wayland-scanner + xmllint (tests/protocols.nix)
 specs/                         # normative non-Wayland contracts (IPC framings, storage formats,
                                # D-Bus/PipeWire interfaces) — the peer of protocols/
-tests/                         # eval assertions (contract, persist, protocols, closure), VM tests, reproducibility + hardware tests
+tests/                         # eval assertions (contract, persist, protocols, closure), VM tests (vm/: default-image,
+                               # multi-user, oob, health, recovery), reproducibility + hardware tests
 contracts/                     # reviewed, hash-bound donor contracts (the qualify-stage gate)
 docs/
   research/                    # the seven research docs + synthesis
@@ -96,7 +101,8 @@ files set the same NixOS option. Design authority in the right-hand column.
 | `os/persist.nix` | `mura.hardware.input.bluetooth`, family mount facts | `/persist/mura` class skeleton, the `/etc` overlay (`system.etc.overlay`, upper on `/persist/etc-rw`) and userborn, `/var/lib/bluetooth` → `pairing/` bind, F1 reference units (SSH host key, `mura-f1-seed-state`) | [first-run-onboarding.md §2–§3](first-run-onboarding.md), [multi-user.md §1.1](multi-user.md) |
 | `os/policy.nix` | `mura.xr.session.faillock.*`, `mura.xr.session.greeter` | PAM services per the posture table (`login` `allowNullPassword`; `mura-lock` without it; faillock rules with `conf=` on `login`, `sshd` and `mura-lock`; **standard sudo/polkit**); the greeter NetworkManager polkit rule; `services.logind.settings.Login.HandlePowerKey = "ignore"`. **Never touches `services.openssh`** — sshd is enabled with upstream defaults in `os/default.nix` (`mkDefault`), D2 posture correction | [first-run-onboarding.md §5.3](first-run-onboarding.md), [multi-user.md §3.1](multi-user.md) |
 | `os/oob.nix` | `mura.hardware.input.{usbGadget,concurrentApSta}`, `mura.oob.hotspot.idleTimeoutMinutes` | USB gadget (initrd configfs, `mura-usb-gadget`), `systemd-networkd` DHCP server on `usb0` (NM-unmanaged; firewall 67/80), NetworkManager hotspot profile + per-boot PSK + `dnsmasq-shared.d` + the `mura-hotspot` supervisor (marker + no other active connection + idle timeout), NM `firewall-backend=iptables`, the `mura-setup` identity + `50-mura-setup.rules` + the system-instance unit (stub page on the gadget + hotspot addresses), Avahi `mura.local`. No Cockpit, no sshd `Match` block | [first-run-onboarding.md §5](first-run-onboarding.md) |
-| `os/health.nix` | `mura.health.{crashLoopThreshold,deviceWaitSeconds}`, `mura.xr.calibration.paths`, `mura.qualification.readinessCheck` | `mura-preflight` (P1–P7 → `/run/mura/preflight.json`; greetd `Requires=` it), `mura-crashloop` + `mura-recovery.target` (B1b), `mura-readiness` → `boot-complete.target` (B9). The slot half (`+N` arming in `mura-bootconf`, `mura-mark-good`, `mura.deployment.bootTries`) is the uefi-rauc family's | [implementation-path.md §3a, §3a-bis](implementation-path.md) |
+| `os/health.nix` | `mura.health.{crashLoopThreshold,deviceWaitSeconds}`, `mura.xr.calibration.paths`, `mura.qualification.readinessCheck` | `mura-preflight` (P1–P7 → `/run/mura/preflight.json` + `.summary`; greetd `Requires=` it), `mura-crashloop` (at the threshold: `mura.recovery.rebootCommand`, else `mura-recovery.target`) (B1b), `mura-readiness` → `boot-complete.target` (B9, target-reached). The slot half (`+N` arming in `mura-bootconf`, `mura-mark-good`, `mura.deployment.bootTries`) is the uefi-rauc family's | [implementation-path.md §3a, §3a-bis](implementation-path.md) |
+| `os/recovery.nix` | `mura.hardware.{panel,displays}` (theme geometry); sets `mura.recovery.{rebootCommand,switchSlotCommand}` (family-provided) | plymouth in the initrd with the per-device Mura theme; `mura-preflight-feedback` (the failing checks + the ways in on the panels on the first hard failure; `plymouth-quit` skipped on the `/run/mura/preflight.failed` marker); the stage-1 `mura-recovery.target` (networkd on `usb0`, `mura-recovery-identity` — the device's host key from `/persist` or a generated one — `mura-recovery-sshd`, `mura-recovery-screen`, the `mura-recovery` menu: factory reset via `systemd-repart --factory-reset`, slot switch, reboot). The family adds the boot entry (`uefi-rauc`: `recovery.conf`, `FactoryReset=yes` on `syspersist`/`home`) | [implementation-path.md §4 Mura recovery environment](implementation-path.md), [research/57](../research/57-recovery-environments-and-boot-failure-feedback.md) |
 | `xr/default.nix` | `mura.xr.{runtime,environment,monado.*}` | `services.monado`, the active runtime manifest | [device-contract.md §xr](device-contract.md) |
 | `adaptation/*` | `mura.adaptation.*` | per-subsystem backend wiring | ADR 0003 |
 

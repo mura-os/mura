@@ -34,7 +34,7 @@
   # lease and web page are reachable in-VM); mac80211_hwsim gives two radios — one is the
   # headset's Wi-Fi, the second stands in for the phone in tests/vm/oob.nix.
   boot.kernelModules = [ "dummy_hcd" "mac80211_hwsim" ];
-  boot.initrd.kernelModules = [ "dummy_hcd" ];
+  boot.initrd.kernelModules = [ "dummy_hcd" "virtio_gpu" ]; # virtio_gpu: the DRM device plymouth draws on in stage 1 (recovery.nix)
   boot.extraModprobeConfig = "options mac80211_hwsim radios=2";
 
   # No donor: this is a from-source VM, so donor stays null and no flashable image

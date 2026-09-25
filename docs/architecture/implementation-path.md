@@ -431,8 +431,19 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   initrd (`display-message` from a unit after the preflight). Exit (uefi-rauc): `tests/vm/recovery.nix`
   green (initrd ssh over the gadget, the menu, factory reset wiping a GPT `syspersist` stand-in);
   `vm-test-health` shows the plymouth message on a hard failure; counter → `recovery.conf` →
-  recovery target proven on the deckard image via `frame-vm-run`. Follow-up in the track:
-  reflash from recovery (a RAUC bundle over ssh).
+  recovery target proven on the deckard image via `frame-vm-run`. **Status (2026-09-25):** landed
+  — `modules/os/recovery.nix`, `pkgs/mura-plymouth-theme`, `assets/branding`, the uefi-rauc
+  entry and `FactoryReset=yes` definitions, `tests/vm/recovery.nix` (green: environment up,
+  plymouth drew the screen, ssh from the cable's host end with the administrator's key shows the
+  menu and the fingerprint, the device's own host key once `/persist` is readable, factory reset
+  asks then wipes and re-creates exactly the `syspersist` partition), `vm-test-health` (the first
+  hard failure's panel message; `plymouth-quit` skipped on the marker), `tests/persist.nix` pins
+  the entry and the reboot command on the Frame configuration. **Pending:** the counter →
+  `recovery.conf` reboot on the deckard image itself — this host has no aarch64 builder; the
+  proof is `frame-vm-run` with a forced P2 failure until the threshold, then `recovery.conf` on
+  the ESP and `mura-recovery.target` in the journal. Follow-up in the track: reflash from
+  recovery (a RAUC bundle over ssh); the hotspot in the recovery initrd; a button-driven menu on
+  the panels (research/57 §6).
 - **USB identity + descriptor correctness** ([research/55](../research/55-usb-identities-and-gadget-policy.md);
   posture ruled 2026-09-25: the comparables' pattern — a distro-wide well-known default overridden
   per device with the device's own identity, values from research/55 §4, confirmed when the

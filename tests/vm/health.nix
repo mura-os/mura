@@ -32,6 +32,16 @@
         machine.fail("systemctl is-active boot-complete.target")   # never blessed
         machine.succeed("test -e /run/mura/preflight.json")
 
+    with subtest("recovery: the first hard failure puts what failed and the ways in on the panels (plymouth stays)"):
+        machine.wait_for_unit("mura-preflight-feedback.service")
+        fb = machine.succeed("cat /run/mura/feedback.txt")
+        assert "P2 factory calibration" in fb and "ssh mura@172.16.42.1" in fb, fb
+        # plymouth-quit was skipped on the marker, so the splash is still up in stage 2
+        machine.succeed("test -e /run/mura/preflight.failed")
+        assert machine.succeed("systemctl show -p ConditionResult --value plymouth-quit.service").strip() == "no"
+        machine.succeed("systemctl is-active plymouth-start.service")
+        machine.fail("journalctl -b --no-pager -u mura-preflight-feedback | grep -q 'plymouth is not running'")
+
     with subtest("D6: at the threshold the boot enters mura-recovery.target; sshd stays reachable"):
         machine.shutdown()
         machine.start()

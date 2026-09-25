@@ -29,6 +29,16 @@ let
     initrd /EFI/mura/initrd
     options root=PARTLABEL=rootfs_${slot} rauc.slot=${lib.toUpper slot} ${kernelParamsCommon}
   '';
+  # The recovery environment (modules/os/recovery.nix; research/57 §3): the SAME kernel and
+  # initrd booted to mura-recovery.target — systemd's boot-menu-entry shape. Never counted,
+  # never the default; reached with `systemctl reboot --boot-loader-entry=recovery` (the
+  # LoaderEntryOneShot EFI variable), which is what the crash-loop counter does at its threshold.
+  recoveryEntry = pkgs.writeText "entry-recovery.conf" ''
+    title Mura recovery
+    linux /EFI/mura/Image
+    initrd /EFI/mura/initrd
+    options rd.systemd.unit=mura-recovery.target ${kernelParamsCommon}
+  '';
 
   # RAUC custom bootloader backend (interface: rauc calls with
   # get-primary | set-primary <bootname> | get-state <bootname> | set-state <bootname> good|bad).
@@ -124,6 +134,7 @@ in
           '';
           "/loader/entries/a.conf".source = bootEntry "a";
           "/loader/entries/b.conf".source = bootEntry "b";
+          "/loader/entries/recovery.conf".source = recoveryEntry;
         };
       };
       "20-rootfs-a" = {
@@ -154,6 +165,7 @@ in
           Label = "syspersist";
           Format = "ext4";
           SizeMinBytes = "64M";
+          FactoryReset = true; # the recovery menu's factory reset deletes and re-creates it (repart.d(5))
         };
       };
       "40-home" = {
@@ -162,6 +174,7 @@ in
           Label = "home";
           Format = "ext4";
           SizeMinBytes = "512M";
+          FactoryReset = true;
         };
       };
     };
@@ -202,6 +215,17 @@ in
 
   boot.initrd.systemd.enable = true;
   boot.initrd.supportedFilesystems = [ "btrfs" ];
+
+  # The runtime repart definitions the recovery environment's factory reset operates on: the
+  # two state partitions, marked FactoryReset=yes (systemd-repart --factory-reset deletes and
+  # re-creates exactly these; the slots and the ESP are untouched). Present in the initrd via
+  # boot.initrd.systemd.repart; a normal boot's repart run is a no-op on a populated disk.
+  systemd.repart.partitions = {
+    "30-syspersist" = { Type = "linux-generic"; Label = "syspersist"; Format = "ext4"; FactoryReset = true; };
+    "40-home" = { Type = "home"; Label = "home"; Format = "ext4"; FactoryReset = true; };
+  };
+  boot.initrd.systemd.repart.enable = true;
+  mura.recovery.rebootCommand = "systemctl reboot --boot-loader-entry=recovery";
   # QEMU aarch64 virt machine devices for the VM proof.
   boot.initrd.availableKernelModules = [ "virtio_pci" "virtio_blk" "virtio_scsi" "virtio_net" ];
   # No bootloader installer runs inside the image build; entries are baked above.

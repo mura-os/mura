@@ -18,5 +18,8 @@ final: prev: {
     preflight = final.callPackage ./mura-preflight { };
     # The setup program's system instance — D3 stub (first-run §5.1; modules/os/oob.nix).
     setup = final.callPackage ./mura-setup { };
+    # The plymouth theme (boot / failure feedback / recovery screen) is device-specific — it is
+    # composited from assets/branding with the panel geometry — so modules/os/recovery.nix calls
+    # pkgs/mura-plymouth-theme directly with the contract's values; no fixed overlay attribute.
   };
 }

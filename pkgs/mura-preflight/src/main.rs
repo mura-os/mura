@@ -289,5 +289,20 @@ fn main() {
         let tag = if c.pass { "PASS " } else if c.class == "hard" { "FAIL " } else { "WARN " };
         println!("{tag}{}: {}", c.check, c.detail);
     }
+    // The failed checks as plain lines for the panel (modules/os/recovery.nix puts them on the
+    // plymouth splash on a hard failure — pmOS's shape: what failed, on the first failure); and a
+    // marker plymouth-quit is conditioned on, so the splash stays up when there is no greeter.
+    let failed: Vec<String> = report
+        .checks
+        .iter()
+        .filter(|c| !c.pass)
+        .map(|c| format!("{}{}: {}", if c.class == "hard" { "" } else { "(soft) " }, c.check, c.detail))
+        .collect();
+    let _ = fs::write("/run/mura/preflight.summary", failed.join("\n") + "\n");
+    if hard_fail {
+        let _ = fs::write("/run/mura/preflight.failed", "");
+    } else {
+        let _ = fs::remove_file("/run/mura/preflight.failed");
+    }
     std::process::exit(rc);
 }

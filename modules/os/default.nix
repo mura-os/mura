@@ -9,7 +9,7 @@ let
 in
 {
   # One file per concern (docs/architecture/repo-structure.md §modules/os ownership table).
-  imports = [ ./session.nix ./persist.nix ./policy.nix ./oob.nix ./health.nix ];
+  imports = [ ./session.nix ./persist.nix ./policy.nix ./oob.nix ./health.nix ./recovery.nix ];
 
   config = {
     # Identify the distribution.

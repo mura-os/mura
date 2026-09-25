@@ -62,10 +62,25 @@ let
     frame-pairing-bound =
       frame.fileSystems."/var/lib/bluetooth".device == "/persist/mura/pairing";
     vm-no-pairing-bind = !(vm.fileSystems ? "/var/lib/bluetooth");
-    # The VM stand-in disk (vmVariant): /persist over /dev/vdb, formatted, stage 1.
+    # The VM stand-in disk (vmVariant): a GPT `syspersist` partition on /dev/vdb created by
+    # systemd-repart in stage 1 and marked FactoryReset=yes — the same shape as the image, so the
+    # recovery environment's factory reset is exercised the same way (recovery.nix).
     vm-persist-standin-disk =
-      let fs = configurations.virtual-headset.config.virtualisation.vmVariant.virtualisation.fileSystems."/persist"; in
-      fs.device == "/dev/vdb" && fs.autoFormat && fs.neededForBoot;
+      let
+        vmv = configurations.virtual-headset.config.virtualisation.vmVariant;
+        fs = vmv.virtualisation.fileSystems."/persist";
+        part = vmv.systemd.repart.partitions."30-syspersist";
+      in
+      fs.device == "/dev/disk/by-partlabel/syspersist" && fs.neededForBoot
+        && vmv.boot.initrd.systemd.repart.enable && vmv.boot.initrd.systemd.repart.device == "/dev/vdb"
+        && part.Label == "syspersist" && part.FactoryReset == true;
+    # The image's state partitions are the ones a factory reset deletes and re-creates.
+    frame-factory-reset-partitions =
+      frame.systemd.repart.partitions."30-syspersist".FactoryReset == true
+        && frame.systemd.repart.partitions."40-home".FactoryReset == true
+        && frame.mura.recovery.rebootCommand == "systemctl reboot --boot-loader-entry=recovery"
+        # and the ESP carries the entry that command selects (same kernel/initrd, the recovery target)
+        && frame.image.repart.partitions."10-esp".contents ? "/loader/entries/recovery.conf";
   };
 
   failures = lib.filterAttrs (_: v: v != true) results;

@@ -17,6 +17,19 @@ use std::time::Duration;
 const MARKER: &str = "/var/lib/mura/state/setup/setup-complete";
 const ADDRS: [&str; 2] = ["172.16.42.1", "10.42.0.1"];
 const PROBES: [&str; 6] = ["/generate_204", "/hotspot-detect.html", "/connecttest.txt", "/success.txt", "/ncsi.txt", "/canonical.html"];
+/// The launcher page, with the preflight's failure feedback when this boot has one: the same
+/// lines the panels show (modules/os/recovery.nix writes /run/mura/feedback.txt on a hard
+/// failure), so a phone on the hotspot or a laptop on the cable sees what the wearer sees.
+fn page() -> String {
+    match std::fs::read_to_string("/run/mura/feedback.txt") {
+        Ok(fb) if !fb.trim().is_empty() => {
+            let esc = fb.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+            format!("{PAGE}<h2>This headset could not start its session</h2><pre>{esc}</pre>\n")
+        }
+        _ => PAGE.to_string(),
+    }
+}
+
 const PAGE: &str = "<!doctype html><meta charset=utf-8><title>Mura setup</title>\n<h1>Mura</h1><p>Open <a href=\"http://mura.local/\">http://mura.local/</a> in your browser\nto set up this headset.</p><p>(D3 stub: the setup pages arrive with their own rung.)</p>\n<form method=post action=/finish><button>Finish setup</button></form>\n";
 
 fn listen_freebind(addr: &str) -> std::io::Result<TcpListener> {
@@ -110,7 +123,7 @@ fn handle(mut s: TcpStream) {
 
     match (method, path) {
         ("GET", p) if PROBES.contains(&p) => respond(&mut s, "302 Found", &[("Location", "http://mura.local/")], b""),
-        ("GET", _) | ("HEAD", _) => respond(&mut s, "200 OK", &[("Content-Type", "text/html; charset=utf-8")], PAGE.as_bytes()),
+        ("GET", _) | ("HEAD", _) => respond(&mut s, "200 OK", &[("Content-Type", "text/html; charset=utf-8")], page().as_bytes()),
         ("POST", "/finish") => {
             // the marker is the LAST write (first-run §5.2); the stub has no Wi-Fi step
             let tmp = format!("{MARKER}.tmp");

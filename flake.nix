@@ -108,6 +108,7 @@
             vm-test-multi-user = import ./tests/vm/multi-user.nix { pkgs = pkgsFor system; };
             vm-test-oob = import ./tests/vm/oob.nix { pkgs = pkgsFor system; };
             vm-test-health = import ./tests/vm/health.nix { pkgs = pkgsFor system; };
+            vm-test-recovery = import ./tests/vm/recovery.nix { pkgs = pkgsFor system; };
           }
         // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
           # Steam Frame uefi-rauc artifacts (build via remote aarch64 builder).

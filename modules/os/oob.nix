@@ -85,7 +85,11 @@ in
       boot.initrd.systemd.services.mura-usb-gadget = {
         description = "Mura USB Ethernet gadget (configfs, NCM)";
         wantedBy = [ "initrd.target" ];
-        after = [ "systemd-modules-load.service" "sys-kernel-config.mount" ];
+        # After udevd: the gadget's netdev uevent must be processed live, or systemd-networkd in
+        # the recovery initrd (recovery.nix) sees usb0 as "pending" forever (found at the
+        # recovery rung: the netdev appeared in the gap before udevd, and coldplug missed it).
+        after = [ "systemd-modules-load.service" "sys-kernel-config.mount" "systemd-udevd.service" ];
+        wants = [ "systemd-udevd.service" ];
         requires = [ "sys-kernel-config.mount" ];
         unitConfig.DefaultDependencies = false;
         serviceConfig = {

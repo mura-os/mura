@@ -118,8 +118,15 @@ in
         echo "$n" > ${counter}.tmp && mv ${counter}.tmp ${counter}
         echo "preflight hard failure; consecutive count now $n (threshold ${toString cfg.health.crashLoopThreshold})"
         if [ "$n" -ge ${toString cfg.health.crashLoopThreshold} ]; then
-          echo "threshold reached: entering mura-recovery.target"
-          systemctl start --no-block mura-recovery.target
+          ${if cfg.recovery.rebootCommand != null then ''
+            # the step systemd's boot counting cannot take (research/56 §3): into the family's
+            # recovery entry — the same initrd booted to mura-recovery.target (recovery.nix)
+            echo "threshold reached: rebooting into the recovery environment"
+            ${cfg.recovery.rebootCommand}
+          '' else ''
+            echo "threshold reached: no recovery entry on this family; entering mura-recovery.target (the failure-feedback state)"
+            systemctl start --no-block mura-recovery.target
+          ''}
         fi
       '';
     };
