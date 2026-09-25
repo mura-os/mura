@@ -79,7 +79,16 @@
 
       # Named, discoverable outputs (no untyped grab-bag).
       packages = forAll (system:
-        nixpkgs.lib.optionalAttrs (system == "x86_64-linux")
+        {
+          # Mura's own programs (all Rust; AGENTS.md rule 6). Built on both architectures;
+          # the x86_64 ones are also `checks`, and tests/closure.nix proves their closure
+          # carries no interpreter.
+          mura-authd = (pkgsFor system).mura.authd; # the lock-path PAM helper (D5)
+          mura-session = (pkgsFor system).mura.session; # the session wrapper greetd execs (D4 rev 3)
+          mura-preflight = (pkgsFor system).mura.preflight; # the XR preflight probe (D6)
+          mura-setup = (pkgsFor system).mura.setup; # the setup program's system instance, D3 stub
+        }
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux")
           {
             # The dev-vm smoke targets: bootable NixOS VMs running the common userspace —
             # the default-image fixture (autologin) and the multi-user fixture (greeter).
@@ -92,9 +101,6 @@
 
             # Rung-1 dev loop: nested session window + simulated-HMD Monado.
             dev-session = (pkgsFor system).callPackage ./pkgs/dev-session { };
-
-            # The lock-path PAM helper (D5) — built in `nix flake check` through `checks`.
-            mura-authd = (pkgsFor system).mura.authd;
 
             # D-track VM tests (implementation-path §3c) — on demand, NOT in `nix flake check`
             # (each boots a VM and takes minutes): `nix build .#vm-test-default-image`.
@@ -152,8 +158,19 @@
           # End-to-end smoke checks: both VM fixtures build (D-track, implementation-path §3c).
           virtual-headset-vm = self.packages.${system}.virtual-headset-vm;
           virtual-headset-multiuser-vm = self.packages.${system}.virtual-headset-multiuser-vm;
-          # The rung-1 dev-loop harness builds (script-level shellcheck via writeShellApplication).
+          # Mura's programs build (Rust; AGENTS.md rule 6).
           mura-authd = self.packages.${system}.mura-authd;
+          mura-session = self.packages.${system}.mura-session;
+          mura-preflight = self.packages.${system}.mura-preflight;
+          mura-setup = self.packages.${system}.mura-setup;
+          # The interpreter proof and the Python fence (tests/closure.nix): the closure of every
+          # Mura program plus greetd carries no interpreter; the toplevels' residual nixpkgs
+          # Python is a pinned, shrinking allowlist.
+          closure = import ./tests/closure.nix {
+            pkgs = pkgsFor system;
+            configurations = self.nixosConfigurations;
+          };
+          # The rung-1 dev-loop harness builds (script-level shellcheck via writeShellApplication).
           dev-session = self.packages.${system}.dev-session;
         };
     };
