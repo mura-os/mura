@@ -232,6 +232,18 @@ repos=(
   'raspap|https://github.com/RaspAP/raspap-webgui.git|'
   'luci|https://github.com/openwrt/luci.git|'
   'unudhcpd|https://gitlab.postmarketos.org/postmarketOS/unudhcpd.git|'
+  # --- settings stores (docs/research/58, specs/settings-schema.md, D7) ---
+  # The desktop settings stores themselves, not their clients: dconf (single-writer
+  # session service behind GSettings), glib (GSettings schemas/backends/lockdown),
+  # kconfig (KConfig + KConfigXT + kconf_update), libcosmic (cosmic-config: the Rust
+  # file-per-key store), cosmic-settings-daemon (its notification concentrator),
+  # gsettings-desktop-schemas (the canonical desktop keys + org.gnome.desktop.lockdown).
+  'dconf|https://gitlab.gnome.org/GNOME/dconf.git|'
+  'glib|https://gitlab.gnome.org/GNOME/glib.git|'
+  'kconfig|https://invent.kde.org/frameworks/kconfig.git|'
+  'libcosmic|https://github.com/pop-os/libcosmic.git|'
+  'cosmic-settings-daemon|https://github.com/pop-os/cosmic-settings-daemon.git|'
+  'gsettings-desktop-schemas|https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas.git|'
 )
 
 mkdir -p .logs

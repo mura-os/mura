@@ -162,5 +162,11 @@
   "phosh-mobile-settings": {"url": "https://gitlab.gnome.org/World/Phosh/phosh-mobile-settings.git", "commit": "c2fdf9f05380417a5528dfcb8a4253525e76cb86", "ref": "main", "cloned": "2026-09-24T17:58:12Z"},
   "lomiri-system-settings": {"url": "https://gitlab.com/ubports/development/core/lomiri-system-settings.git", "commit": "7c1fc0ce885070f3e78248e91a59671cbb6207a8", "ref": "main", "cloned": "2026-09-24T17:58:12Z"},
   "calamares": {"url": "https://github.com/calamares/calamares.git", "commit": "95aa33fd2f0ea6f081fe604fb84eb829fc806d86", "ref": "calamares", "cloned": "2026-09-24T17:58:12Z"},
-  "rauc": {"url": "https://github.com/rauc/rauc.git", "commit": "1a412fe80badb9cf91f5374ea2ef791de4db55a9", "ref": "master", "cloned": "2026-09-24T17:58:12Z"}
+  "rauc": {"url": "https://github.com/rauc/rauc.git", "commit": "1a412fe80badb9cf91f5374ea2ef791de4db55a9", "ref": "master", "cloned": "2026-09-24T17:58:12Z"},
+  "dconf": {"url": "https://gitlab.gnome.org/GNOME/dconf.git", "commit": "264e6598863fc1d9ad6edb4c58d86f82ea669927", "ref": "main", "cloned": "2026-09-25T16:12:49Z"},
+  "glib": {"url": "https://gitlab.gnome.org/GNOME/glib.git", "commit": "404a67944c809efe858a7e137ab89115ff01c368", "ref": "main", "cloned": "2026-09-25T16:12:49Z"},
+  "kconfig": {"url": "https://invent.kde.org/frameworks/kconfig.git", "commit": "975405122decec19e7952a304cd7c19d60f59e62", "ref": "master", "cloned": "2026-09-25T16:12:49Z"},
+  "libcosmic": {"url": "https://github.com/pop-os/libcosmic.git", "commit": "03d7dcb832bc6d15bc1bb07327a1aa426b2d5bc0", "ref": "master", "cloned": "2026-09-25T16:12:49Z"},
+  "cosmic-settings-daemon": {"url": "https://github.com/pop-os/cosmic-settings-daemon.git", "commit": "6ac574e4ff5a4a86af82610e644dca2ae3df3516", "ref": "master", "cloned": "2026-09-25T16:12:49Z"},
+  "gsettings-desktop-schemas": {"url": "https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas.git", "commit": "d6dd3cf6f94c1e96801f26c419f9a6f8a7e158c4", "ref": "main", "cloned": "2026-09-25T16:12:49Z"}
 }
