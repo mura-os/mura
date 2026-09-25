@@ -88,6 +88,7 @@
           mura-preflight = (pkgsFor system).mura.preflight; # the XR preflight probe (D6)
           mura-setup = (pkgsFor system).mura.setup; # the setup program's system instance, D3 stub
           mura-recovery = (pkgsFor system).mura.recovery; # the recovery menu + actions (specs/recovery-menu.md)
+          mura-perception-intake = (pkgsFor system).mura.perceptionIntake; # the intake protocol library + §8 harness (specs/perception-intake.md)
           mura-settingsd = (pkgsFor system).mura.settingsd; # the settings daemon + CLI (specs/settings-daemon.md; D7)
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux")
@@ -111,6 +112,7 @@
             vm-test-oob = import ./tests/vm/oob.nix { pkgs = pkgsFor system; };
             vm-test-health = import ./tests/vm/health.nix { pkgs = pkgsFor system; };
             vm-test-recovery = import ./tests/vm/recovery.nix { pkgs = pkgsFor system; };
+            vm-test-perception-intake = import ./tests/vm/perception-intake.nix { pkgs = pkgsFor system; };
             vm-test-settings = import ./tests/vm/settings.nix { pkgs = pkgsFor system; };
           }
         // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
@@ -168,6 +170,7 @@
           mura-preflight = self.packages.${system}.mura-preflight;
           mura-setup = self.packages.${system}.mura-setup;
           mura-recovery = self.packages.${system}.mura-recovery;
+          mura-perception-intake = self.packages.${system}.mura-perception-intake;
           mura-settingsd = self.packages.${system}.mura-settingsd;
           # The interpreter proof and the Python fence (tests/closure.nix): the closure of every
           # Mura program plus greetd carries no interpreter; the toplevels' residual nixpkgs

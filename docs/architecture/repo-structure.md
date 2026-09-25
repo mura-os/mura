@@ -51,6 +51,9 @@ pkgs/                          # overlay: XR components, kernels, tools (nixpkgs
   mura-preflight/              # the XR preflight probe P1–P7 → /run/mura/preflight.json (Rust; D6) — pkgs.mura.preflight
   mura-setup/                  # the setup program's system instance — D3 STUB (Rust, libc only); `--recovery` = the
                                # recovery page in stage 1 — pkgs.mura.setup
+  mura-perception-intake/      # the perception→compositor intake: protocol library (perception_intake) + the §8
+                               # harness bins intake-fake-producer / intake-test-consumer (test-only) —
+                               # specs/perception-intake.md (Rust, libc only) — pkgs.mura.perceptionIntake
   mura-recovery/               # the recovery menu: actions once, three frontends (panel/evdev+plymouth, shell, web via
                                # mura-setup) — specs/recovery-menu.md (Rust) — pkgs.mura.recovery
   mura-settingsd/              # the settings daemon (org.mura.Settings1) + mura-settings CLI over the generated schema

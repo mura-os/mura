@@ -426,7 +426,22 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
 - **The perception intake harness** ([specs/perception-intake.md §8](../../specs/perception-intake.md)):
   fake producer + test consumer exercising registration, generations, overrun, epoch teardown,
   and the structural never-block check — validates the protocol before either real end exists.
-  Feeds the M4-adjacent perception work without gating it.
+  Feeds the M4-adjacent perception work without gating it. **Status (2026-09-25): landed** —
+  `pkgs/mura-perception-intake` (Rust, libc only): the protocol *library* (`perception_intake`:
+  §7 framing + SCM_RIGHTS, §3 tables, §4 memfd register, DRM syncobj timelines and udmabuf as raw
+  ioctls) the real ends are meant to link, plus the test-only `intake-fake-producer` /
+  `intake-test-consumer`; `nix build .#vm-test-perception-intake` (11 subtests on the VM's
+  virtio-gpu render node + `/dev/udmabuf`): every §8 item, registration over `REGISTER_MORE`,
+  epoch supersession, the §7 framing rules, `hand_top`; check 4 traced with strace between the
+  consumer's pass markers (window = `clock_gettime`, `ioctl` query/signal, `recvmsg(MSG_DONTWAIT)`
+  only). **The harness found a protocol gap**: fence-only reclamation (§4 rev 2) cannot tell a
+  never-used generation from one in flight and wedges the pool under a slow consumer; rev 3
+  adds the consumer's *use page* (`pending[]` + `intent`, one fd in `REGISTER_ACK`) and a two-flag
+  slot agreement (Dekker) — the explicit-sync release-point obligation's shape
+  (`linux-drm-syncobj-v1.xml:210-222`), adapted to a consumer that reads only the latest. Marked
+  ⚠ in the spec: **the owner rules on rev 3**. §8.2 corrected as observed: a conforming consumer
+  never causes a drop; the OVERRUN path exists for a consumer exceeding its declared
+  `max_in_flight`. Reserved hook: the in-thread seccomp never-block guard for zxr's intake.
 - **Mura recovery environment** ([research/56 §3](../research/56-defaults-from-comparables.md),
   [research/57](../research/57-recovery-environments-and-boot-failure-feedback.md),
   [specs/recovery-menu.md](../../specs/recovery-menu.md); ruled 2026-09-25). The OS owns its

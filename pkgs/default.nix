@@ -21,6 +21,9 @@ final: prev: {
     # The recovery environment's one program: actions + menu, panel/shell frontends
     # (specs/recovery-menu.md; modules/os/recovery.nix).
     recovery = final.callPackage ./mura-recovery { };
+    # The perception→compositor intake protocol library + its §8 conformance harness
+    # (specs/perception-intake.md; tests/vm/perception-intake.nix). The harness bins are test-only.
+    perceptionIntake = final.callPackage ./mura-perception-intake { };
     # The settings daemon + CLI (specs/settings-schema.md, specs/settings-daemon.md;
     # modules/os/settings.nix; D7).
     settingsd = final.callPackage ./mura-settingsd { };

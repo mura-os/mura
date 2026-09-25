@@ -1,0 +1,26 @@
+[package]
+name = "mura-perception-intake"
+version = "0.1.0"
+edition = "2021"
+description = "Mura perception-layer intake (specs/perception-intake.md): the protocol library and its §8 conformance harness (fake producer + test consumer)"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "perception_intake"
+path = "src/lib.rs"
+
+[[bin]]
+name = "intake-fake-producer"
+path = "src/bin/fake_producer.rs"
+
+[[bin]]
+name = "intake-test-consumer"
+path = "src/bin/test_consumer.rs"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 2
+debug = false
+panic = "abort"
