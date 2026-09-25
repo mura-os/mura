@@ -16,6 +16,17 @@
 //!                  process, so the caller's loop never blocks on PAM)
 //!   batched        a test module issues two prompts + one info in one callback → exactly one
 //!                  prompt_batch with three prompts, one respond_batch (§6 item 7)
+//!   oversize       a 64 KiB + 1 record → failure(internal)            (§2.1 framing, §6 item 9)
+//!   truncated      a record larger than the helper's buffer (MSG_TRUNC) → failure(internal)
+//!   empty          a zero-length record → failure(internal)
+//!   badjson        invalid JSON → failure(internal)
+//!   unknown-type   a well-formed record with an unknown "type" → failure(internal)
+//!   nul-response   a response containing U+0000 → failure(internal), never an empty answer
+//!   dup-index      two responses for one prompt index → failure(internal)
+//!   bad-service    --service outside mura-lock[-*] → refused before pam_start (exit 2, no records)
+//!   argv-nonce     the legacy --nonce argv path still works (with a warning) for one release
+//!
+//! The nonce reaches the helper as MURA_AUTHD_NONCE in its environment (never argv).
 
 use serde_json::{json, Value};
 use std::os::raw::{c_int, c_void};
@@ -38,12 +49,21 @@ fn nonce() -> String {
 }
 
 fn spawn(authd: &str, user: &str, service: &str) -> Conv {
+    spawn_with(authd, user, service, false)
+}
+
+fn spawn_with(authd: &str, user: &str, service: &str, nonce_on_argv: bool) -> Conv {
     let mut fds = [0 as c_int; 2];
     assert_eq!(unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_SEQPACKET, 0, fds.as_mut_ptr()) }, 0);
     let (ours, theirs) = (fds[0], fds[1]);
     let n = nonce();
     let mut cmd = Command::new(authd);
-    cmd.args(["--fd", "3", "--nonce", &n, "--user", user, "--service", service]);
+    cmd.args(["--fd", "3", "--user", user, "--service", service]);
+    if nonce_on_argv {
+        cmd.args(["--nonce", &n]);
+    } else {
+        cmd.env("MURA_AUTHD_NONCE", &n);
+    }
     cmd.stdin(Stdio::null());
     unsafe {
         cmd.pre_exec(move || {
@@ -58,10 +78,22 @@ fn spawn(authd: &str, user: &str, service: &str) -> Conv {
     Conv { fd: ours, nonce: n, child, valid: true }
 }
 
-fn send(c: &Conv, v: &Value) {
-    let data = serde_json::to_vec(v).unwrap();
+fn send_raw(c: &Conv, data: &[u8]) {
     let n = unsafe { libc::send(c.fd, data.as_ptr() as *const c_void, data.len(), libc::MSG_NOSIGNAL) };
     assert_eq!(n, data.len() as isize, "send");
+}
+
+fn send(c: &Conv, v: &Value) {
+    send_raw(c, &serde_json::to_vec(v).unwrap());
+}
+
+/// Common tail of the malformed-record scenarios: the helper must answer failure(internal)
+/// and exit non-zero.
+fn expect_internal(mut c: Conv, label: &str) -> bool {
+    let fin = recv(&c, Duration::from_secs(90)).expect("terminal message");
+    let code = wait_exit(&mut c);
+    println!("{label}: {fin} exit={code}");
+    fin["type"] == "failure" && fin["reason"] == "internal" && code != 0
 }
 
 /// One record, or None on EOF. Blocks up to `timeout`.
@@ -184,7 +216,7 @@ fn main() {
             let code = wait_exit(&mut c);
             // …and a success bearing that nonce is ignored — the state stays locked (I3).
             let would_unlock = c.valid && fin["type"] == "success" && fin["nonce"] == c.nonce;
-            println!("terminal: {fin} exit={code} nonce_valid={} would_unlock={would_unlock}", c.valid);
+            println!("terminal: {fin} exit={code} nonce_valid={} would_unlock={would_unlock} (demonstrates the COMPOSITOR's rule; the helper's part is that only a nonce-matching respond_batch advanced it)", c.valid);
             fin["type"] == "success" && code == 0 && !would_unlock
         }
         "slow" => {
@@ -224,6 +256,69 @@ fn main() {
             let code = wait_exit(&mut c);
             println!("terminal: {fin} exit={code}");
             shape_ok && fin["type"] == "success" && code == 0
+        }
+        "oversize" => {
+            let c = spawn(&authd, &user, &service);
+            let _ = recv(&c, t).expect("prompt_batch");
+            send_raw(&c, &vec![b'{'; 64 * 1024 + 1]);
+            expect_internal(c, "oversize")
+        }
+        "truncated" => {
+            let c = spawn(&authd, &user, &service);
+            let _ = recv(&c, t).expect("prompt_batch");
+            // larger than the helper's receive buffer (64 KiB + 1): recvmsg sets MSG_TRUNC
+            send_raw(&c, &vec![b' '; 100 * 1024]);
+            expect_internal(c, "truncated")
+        }
+        "empty" => {
+            let c = spawn(&authd, &user, &service);
+            let _ = recv(&c, t).expect("prompt_batch");
+            send_raw(&c, b""); // a zero-length seqpacket record
+            expect_internal(c, "empty")
+        }
+        "badjson" => {
+            let c = spawn(&authd, &user, &service);
+            let _ = recv(&c, t).expect("prompt_batch");
+            send_raw(&c, b"{\"type\": \"respond_batch\", ");
+            expect_internal(c, "badjson")
+        }
+        "unknown-type" => {
+            let c = spawn(&authd, &user, &service);
+            let _ = recv(&c, t).expect("prompt_batch");
+            send(&c, &json!({"type": "hello", "nonce": c.nonce}));
+            expect_internal(c, "unknown-type")
+        }
+        "nul-response" => {
+            let c = spawn(&authd, &user, &service);
+            let batch = recv(&c, t).expect("prompt_batch");
+            let conversation = batch["conversation"].as_u64().unwrap();
+            send(&c, &json!({"type": "respond_batch", "nonce": c.nonce, "conversation": conversation,
+                             "responses": [{"index": 0, "response": "s3c\u{0000}ret"}]}));
+            expect_internal(c, "nul-response")
+        }
+        "dup-index" => {
+            let c = spawn(&authd, &user, &service);
+            let batch = recv(&c, t).expect("prompt_batch");
+            let conversation = batch["conversation"].as_u64().unwrap();
+            send(&c, &json!({"type": "respond_batch", "nonce": c.nonce, "conversation": conversation,
+                             "responses": [{"index": 0, "response": &password}, {"index": 0, "response": "again"}]}));
+            expect_internal(c, "dup-index")
+        }
+        "bad-service" => {
+            let mut c = spawn(&authd, &user, "system-login");
+            let first = recv(&c, Duration::from_secs(10));
+            let code = wait_exit(&mut c);
+            println!("bad-service: first={first:?} exit={code}");
+            first.is_none() && code == 2
+        }
+        "argv-nonce" => {
+            let mut c = spawn_with(&authd, &user, &service, true);
+            let batch = recv(&c, t).expect("prompt_batch");
+            respond(&c, &batch, &password, None);
+            let fin = recv(&c, t).expect("terminal message");
+            let code = wait_exit(&mut c);
+            println!("argv-nonce (legacy): {fin} exit={code}");
+            fin["type"] == "success" && code == 0
         }
         other => panic!("unknown scenario {other}"),
     };

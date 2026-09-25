@@ -1,7 +1,9 @@
 //! mura-authd — the lock-path PAM helper of specs/session-auth.md §2.
 //!
 //! One process per unlock conversation, spawned by the compositor with an inherited
-//! SOCK_SEQPACKET socketpair (`--fd N`) and a 64-bit conversation nonce (`--nonce HEX`).
+//! SOCK_SEQPACKET socketpair (`--fd N`) and a 64-bit conversation nonce in the environment
+//! (`MURA_AUTHD_NONCE=HEX` — never on argv, which is world-readable in /proc; the legacy
+//! `--nonce HEX` is accepted with a warning for one release).
 //! It runs PAM (`pam_start("mura-lock")` → `pam_authenticate(PAM_DISALLOW_NULL_AUTHTOK)` →
 //! `pam_acct_mgmt` → `pam_end`; never setcred/open_session), turning every PAM conversation
 //! callback into exactly one `prompt_batch` record and waiting for exactly one `respond_batch`
@@ -13,6 +15,13 @@
 //! No privileges, no D-Bus surface. PAM is reached through a hand-written FFI (Linux-PAM ABI)
 //! so the closure carries no PAM binding crate; secrets that pass through this process are
 //! zeroed before the buffers are dropped.
+//!
+//! Process hardening at startup (the kscreenlocker PAM-worker precedent, greeter/worker/prctls.h):
+//! not dumpable (no same-uid ptrace attach under Yama, no core), RLIMIT_CORE=0, best-effort
+//! mlockall, SIGKILL when the compositor dies (PR_SET_PDEATHSIG), and FD_CLOEXEC on the
+//! conversation fd so it never leaks into pam_unix's setuid unix_chkpwd. Deliberately NOT
+//! PR_SET_NO_NEW_PRIVS or seccomp: unix_chkpwd is setuid and would break; sandboxing belongs
+//! with the compositor's spawn side (specs/session-auth.md §7).
 
 use serde::{Deserialize, Serialize};
 use std::ffi::{CStr, CString};
@@ -117,6 +126,7 @@ struct State {
     max_delay_us: u64,
     aborted: bool,
     internal_error: bool,
+    unsupported_prompt: bool,
 }
 
 fn zeroize(buf: &mut [u8]) {
@@ -180,7 +190,11 @@ extern "C" fn conv(
             PAM_ERROR_MSG => "error",
             PAM_TEXT_INFO => "info",
             PAM_RADIO_TYPE => "radio",
-            PAM_BINARY_PROMPT => "binary",
+            PAM_BINARY_PROMPT => {
+                // §2.3: a style this deployment does not render is answered by authd itself
+                st.unsupported_prompt = true;
+                return PAM_CONV_ERR;
+            }
             _ => {
                 st.internal_error = true;
                 return PAM_CONV_ERR;
@@ -204,9 +218,15 @@ extern "C" fn conv(
         let parsed: Result<In, _> = serde_json::from_slice(&rec);
         zeroize(&mut rec);
         match parsed {
-            Ok(In::RespondBatch { nonce, conversation: c, responses }) => {
+            Ok(In::RespondBatch { nonce, conversation: c, mut responses }) => {
                 if nonce != st.nonce || c != conversation {
-                    continue; // stale nonce or conversation: ignored
+                    // stale nonce or conversation: ignored — but its answers were secrets too
+                    for r in responses.iter_mut() {
+                        if let Some(t) = r.response.as_mut() {
+                            zeroize(unsafe { t.as_bytes_mut() });
+                        }
+                    }
+                    continue;
                 }
                 break responses;
             }
@@ -230,17 +250,51 @@ extern "C" fn conv(
         st.internal_error = true;
         return PAM_CONV_ERR;
     }
+    let mut seen = vec![false; n];
+    let mut bad = false;
     for r in responses {
-        if r.index >= n {
-            continue;
+        // out-of-range or duplicate index: a malformed batch, never a silent skip/overwrite
+        if r.index >= n || seen[r.index] {
+            bad = true;
+        } else {
+            seen[r.index] = true;
         }
         if let Some(mut text) = r.response {
-            let c = CString::new(std::mem::take(&mut text)).unwrap_or_default();
-            unsafe { (*arr.add(r.index)).resp = libc::strdup(c.as_ptr()) };
-            // zero our copy; PAM owns (and frees) the strdup'd one
-            let mut bytes = c.into_bytes();
-            zeroize(&mut bytes);
+            // a NUL inside a response cannot be handed to PAM; it is an error, never an
+            // empty answer (which PAM_DISALLOW_NULL_AUTHTOK would then reject for the wrong reason)
+            let owned = std::mem::take(&mut text);
+            match CString::new(owned) {
+                Ok(c) if !bad => {
+                    unsafe { (*arr.add(r.index)).resp = libc::strdup(c.as_ptr()) };
+                    // zero our copy; PAM owns (and frees) the strdup'd one
+                    let mut bytes = c.into_bytes();
+                    zeroize(&mut bytes);
+                }
+                Ok(c) => {
+                    let mut bytes = c.into_bytes();
+                    zeroize(&mut bytes);
+                }
+                Err(e) => {
+                    let mut bytes = e.into_vec();
+                    zeroize(&mut bytes);
+                    bad = true;
+                }
+            }
         }
+    }
+    if bad {
+        // free what we already handed over, as PAM would have
+        for i in 0..n {
+            let p = unsafe { (*arr.add(i)).resp };
+            if !p.is_null() {
+                let len = unsafe { libc::strlen(p) };
+                zeroize(unsafe { std::slice::from_raw_parts_mut(p as *mut u8, len) });
+                unsafe { libc::free(p as *mut c_void) };
+            }
+        }
+        unsafe { libc::free(arr as *mut c_void) };
+        st.internal_error = true;
+        return PAM_CONV_ERR;
     }
     unsafe { *resp = arr };
     PAM_SUCCESS
@@ -249,8 +303,36 @@ extern "C" fn conv(
 // ---------------------------------------------------------------- main
 
 fn usage() -> ! {
-    eprintln!("usage: mura-authd --fd N --nonce HEX [--user NAME] [--service NAME]");
+    eprintln!("usage: MURA_AUTHD_NONCE=HEX mura-authd --fd N [--user NAME] [--service mura-lock[-*]]");
     exit(2)
+}
+
+/// Process hardening before anything secret is touched. Best-effort where the target may
+/// legitimately refuse (mlockall under an unprivileged RLIMIT_MEMLOCK); fatal where a failure
+/// would leave secrets exposed (dumpable).
+fn harden(fd: c_int) {
+    unsafe {
+        if libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) != 0 {
+            eprintln!("mura-authd: PR_SET_DUMPABLE failed");
+            exit(2);
+        }
+        let none = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        libc::setrlimit(libc::RLIMIT_CORE, &none);
+        // the compositor is the parent; if it dies, so does every open conversation (§2.4)
+        libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
+        if libc::getppid() == 1 {
+            eprintln!("mura-authd: spawner already gone");
+            exit(1);
+        }
+        // never inherited by pam_unix's setuid unix_chkpwd (or anything else PAM execs)
+        let flags = libc::fcntl(fd, libc::F_GETFD);
+        if flags < 0 || libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) < 0 {
+            eprintln!("mura-authd: bad conversation fd");
+            exit(2);
+        }
+        // keep the password out of swap where the target allows it
+        let _ = libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE);
+    }
 }
 
 fn current_user() -> Option<String> {
@@ -263,14 +345,19 @@ fn current_user() -> Option<String> {
 
 fn main() {
     let mut fd: Option<c_int> = None;
-    let mut nonce: Option<String> = None;
+    let mut nonce: Option<String> = std::env::var("MURA_AUTHD_NONCE").ok();
     let mut user: Option<String> = None;
     let mut service = String::from("mura-lock");
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--fd" => fd = args.next().and_then(|v| v.parse().ok()),
-            "--nonce" => nonce = args.next(),
+            "--nonce" => {
+                // legacy: argv is world-readable in /proc/<pid>/cmdline; accepted for one
+                // release so an older compositor build still works, then removed
+                eprintln!("mura-authd: --nonce on argv is deprecated; use MURA_AUTHD_NONCE");
+                nonce = args.next();
+            }
             "--user" => user = args.next(),
             "--service" => service = args.next().unwrap_or_else(|| usage()),
             _ => usage(),
@@ -280,9 +367,16 @@ fn main() {
     if nonce.len() != 16 || !nonce.chars().all(|c| c.is_ascii_hexdigit()) {
         usage();
     }
+    // the service is ours: `mura-lock`, or a `mura-lock-*` variant (test stacks). Anything else
+    // is a caller bug, not a boundary (the caller is the same uid) — refuse before pam_start.
+    if service != "mura-lock" && !service.starts_with("mura-lock-") {
+        eprintln!("mura-authd: refusing PAM service {service:?}; only mura-lock[-*] is allowed");
+        exit(2);
+    }
+    harden(fd);
     let user = user.or_else(current_user).unwrap_or_else(|| usage());
 
-    let mut st = State { fd, nonce, conversation: 0, max_delay_us: 0, aborted: false, internal_error: false };
+    let mut st = State { fd, nonce, conversation: 0, max_delay_us: 0, aborted: false, internal_error: false, unsupported_prompt: false };
     let pam_conv = PamConv { conv: Some(conv), appdata_ptr: &mut st as *mut State as *mut c_void };
 
     let c_service = CString::new(service).unwrap();
@@ -313,6 +407,8 @@ fn main() {
     // Coarse reasons (§2.2): nothing here distinguishes an unknown user from a wrong password.
     let reason = if st.aborted {
         "abort"
+    } else if st.unsupported_prompt {
+        "unsupported_prompt"
     } else if st.internal_error {
         "internal"
     } else {

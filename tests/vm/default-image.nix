@@ -174,6 +174,33 @@
         print(machine.succeed(harness.format(args="--scenario slow --service mura-lock-slow --password s3cret")))
         print(machine.succeed(harness.format(args="--scenario batched --service mura-lock-batched --password batched-ok")))
         machine.succeed(harness.format(args="--scenario basic --password wrong --expect-fail"))
+        # legacy argv nonce still works for one release (with a warning); a foreign PAM service is refused before pam_start
+        print(machine.succeed(harness.format(args="--scenario argv-nonce --password s3cret")))
+        print(machine.succeed(harness.format(args="--scenario bad-service --password s3cret")))
+
+    with subtest("D5: mura-authd rejects malformed records as failure(internal) (session-auth §2.1, §6 item 9)"):
+        # each malformed batch aborts the conversation; PAM counts them as failures, so start clean
+        machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")
+        for scenario in ("oversize", "truncated", "empty", "badjson", "unknown-type", "nul-response", "dup-index"):
+            print(machine.succeed(harness.format(args=f"--scenario {scenario} --password s3cret")))
+        machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")
+
+    with subtest("D5: the helper hides its nonce and secrets (not dumpable, nonce off argv, conversation fd CLOEXEC)"):
+        # the slow stack sleeps 5 s before its first prompt, leaving a live helper to inspect
+        machine.execute(harness.format(args="--scenario slow --service mura-lock-slow --password s3cret") + " >/dev/null 2>&1 &")
+        pid = machine.wait_until_succeeds("pgrep -x mura-authd").split()[0]
+        cmdline = machine.succeed(f"tr '\\0' ' ' < /proc/{pid}/cmdline")
+        print(cmdline)
+        assert "--nonce" not in cmdline, cmdline
+        flags = machine.succeed(f"grep flags /proc/{pid}/fdinfo/3").split()[1]
+        assert int(flags, 8) & 0o2000000, f"conversation fd lacks O_CLOEXEC: {flags}"
+        # PR_SET_DUMPABLE=0: another process of the same uid may not read the helper's memory-derived
+        # files (environ carries the nonce), while root still can
+        status, out = machine.execute(f"su - mura -c 'cat /proc/{pid}/environ' 2>&1")
+        print(status, out)
+        assert status != 0 and "Permission denied" in out, out
+        assert "MURA_AUTHD_NONCE=" in machine.succeed(f"tr '\\0' ' ' < /proc/{pid}/environ")
+        machine.wait_until_fails("pgrep -x mura-authd")
 
     with subtest("D5: the lock counts towards the same faillock ladder and is refused while locked"):
         machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")

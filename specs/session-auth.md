@@ -1,8 +1,11 @@
 # specs/session-auth: the lock auth helper, lock events, and greeter mode
 
-**Status:** rev 3 (2026-09-24, **D5 landed**: `mura-authd` exists — `pkgs/mura-authd`, Rust with a
-hand-written Linux-PAM FFI — and §6 items 1, 2, 3, 7 are VM-verified against the sway stand-in by
-`mura-authd-harness`; items 4–6 wait for zxr). Rev 2 was the specification workstream's draft
+**Status:** rev 4 (2026-09-24, **helper hardening**: security review of the D5 helper absorbed —
+nonce moved off argv into `MURA_AUTHD_NONCE`, process hardening on the kscreenlocker-worker
+model (§2.1), strict response handling, a `mura-lock[-*]` service allowlist, a threat model
+(§2.5), and §6 item 9 VM-verified). Rev 3 (D5 landed): `mura-authd` exists — `pkgs/mura-authd`,
+Rust with a hand-written Linux-PAM FFI — and §6 items 1, 2, 3, 7 are VM-verified against the
+sway stand-in by `mura-authd-harness`; items 4–6 wait for zxr. Rev 2 was the specification workstream's draft
 (rev 1 findings from the PAM/greetd-persona review absorbed — greetd is the sole login PAM
 authority, conversation nonces close the grace race, batched conversations added).
 **Design source:** [ADR 0007](../docs/architecture/adr/0007-session-greeter-lock.md); the lock
@@ -27,15 +30,45 @@ Linux-PAM (not only the four POSIX styles); `$XDG_RUNTIME_DIR` (basedir spec) fo
 ### 2.1 Process and framing
 
 Spawned by the compositor per conversation with an inherited `SOCK_SEQPACKET` socketpair
-(`--fd N`) and a compositor-generated 64-bit **conversation nonce** (`--nonce HEX`). Each
-complete seqpacket record is one UTF-8 JSON object; there is no in-band length prefix. Records
-above 64 KiB, truncated reads (`MSG_TRUNC`), zero-length records, invalid UTF-8/JSON, or unknown
-`type` values terminate the conversation as `failure(internal)`. Every message in both directions
-carries `"nonce"`; a message with a stale nonce is ignored (§2.4).
+(`--fd N`) and a compositor-generated 64-bit **conversation nonce**, passed in the helper's
+environment as `MURA_AUTHD_NONCE=HEX` (16 hex digits). The nonce is **never on argv**:
+`/proc/<pid>/cmdline` is world-readable, `/proc/<pid>/environ` is not (it needs ptrace-read
+access, which the hardening below denies to every same-uid process). The legacy `--nonce HEX`
+argument is accepted with a stderr warning for one release so an older compositor build keeps
+working, then removed. Each complete seqpacket record is one UTF-8 JSON object; there is no
+in-band length prefix. Records above 64 KiB, truncated reads (`MSG_TRUNC`), zero-length records,
+invalid UTF-8/JSON, or unknown `type` values terminate the conversation as `failure(internal)`.
+Every message in both directions carries `"nonce"`; a message with a stale nonce is ignored
+(§2.4) — and any response text it carried is zeroed before it is dropped.
 
-**Implementation notes (D5, from the VM):** the helper is spawned with `--fd N --nonce HEX
-[--user NAME] [--service NAME]` (`--service` exists for the test-only stacks; production is
-`mura-lock`). The fail-delay callback is installed with `pam_set_item(PAM_FAIL_DELAY, fn)`; the
+**Response strictness (rev 4).** A `respond_batch` is handed to PAM only if it is well-formed:
+every `index` is in range and unique, and no response contains U+0000 (C strings cannot carry
+it). Any violation ends the conversation as `failure(internal)` after zeroing everything already
+copied — never a silent skip, an overwrite of an earlier slot, or an empty answer standing in for
+the one the wearer typed (an empty answer would otherwise be refused by
+`PAM_DISALLOW_NULL_AUTHTOK` and mis-reported as `auth`).
+
+**Process hardening (rev 4; kscreenlocker's PAM worker is the precedent —
+`references/kscreenlocker/greeter/worker/prctls.h:30-44`, `main.cpp:365-373`).** Before any
+secret is touched the helper: sets `PR_SET_DUMPABLE=0` (no core file; no same-uid ptrace attach or
+`/proc/<pid>/{mem,environ,maps}` read under Yama — fatal if refused), `RLIMIT_CORE=0`,
+`PR_SET_PDEATHSIG=SIGKILL` with a `getppid()==1` check for the race (an orphaned helper exits at
+once — the compositor's death ends every conversation, §2.4), `FD_CLOEXEC` on the conversation fd
+(pam_unix execs the setuid `unix_chkpwd`; the socket must not follow it), and a best-effort
+`mlockall(MCL_CURRENT|MCL_FUTURE)` (refused under a small `RLIMIT_MEMLOCK` — not fatal). It
+**deliberately does not** set `PR_SET_NO_NEW_PRIVS` or install a seccomp filter: `unix_chkpwd`
+is setuid and would break; sandboxing the helper belongs to the compositor's spawn side (§7).
+
+**Service allowlist (rev 4).** `--service` must be `mura-lock` or `mura-lock-*` (the latter
+exists for test stacks such as `mura-lock-slow`/`mura-lock-batched`). Anything else exits 2
+before `pam_start`. The caller is the same uid, so this is caller-bug containment, not a
+security boundary: it stops a misconfigured compositor from driving, say, the `login` stack
+(with `pam_faillock` counting against the wrong service and `pam_unix` prompting for password
+changes) through a helper that only understands the lock conversation.
+
+**Implementation notes (D5, from the VM):** the helper is spawned with `--fd N [--user NAME]
+[--service NAME]` and `MURA_AUTHD_NONCE` in its environment (`--service` exists for the
+test-only stacks; production is `mura-lock`). The fail-delay callback is installed with `pam_set_item(PAM_FAIL_DELAY, fn)`; the
 helper never sleeps itself — `delay_ms` is the compositor's to enforce (Linux-PAM's default
 fail delay of ~2 s was observed as `delay_ms: 1876` on a wrong password). `security.pam.services.mura-lock`
 carries **no `nullok`** — `PAM_DISALLOW_NULL_AUTHTOK` makes it inert, and "no credential ⇒ no lock
@@ -80,6 +113,27 @@ On doff-grace expiry, explicit cancel, or a newer conversation starting, the com
 invalidated nonce is ignored — the session cannot unlock from a revoked conversation. Helper
 death without a terminal message ⇒ `failure(internal)`. All outcomes leave the lock in `locked`
 (fail closed, invariant I3).
+
+### 2.5 Threat model (helper)
+
+What the helper is and is not defending against, so that reviews argue about the right things.
+
+**Runs as:** the session user, unprivileged, no capabilities, one process per conversation,
+lifetime = one unlock attempt. It holds, briefly: the nonce, the wearer's typed responses, and
+the PAM handle. It never holds the password hash (that is `unix_chkpwd`'s, behind setuid).
+
+| Adversary | Position | Held off by | Not addressed here |
+|---|---|---|---|
+| Another process of the **same uid** (a compromised session app) | can read `/proc/<pid>/cmdline`, spawn helpers itself, send it records if it has the fd | nonce in environ not argv + non-dumpable (no environ/mem read, no ptrace); the socketpair is inherited, never a named path, so only the spawner holds the compositor end | such a process can run `mura-authd` itself and *authenticate the same user* with a guessed password — that is `pam_faillock`'s ladder (§6 item 8), not the helper's; same-uid processes are not a boundary Linux offers without a sandbox (§7) |
+| A **revoked or racing conversation** (§2.4) | a stale nonce, a late `success` | the compositor's atomic revocation; the helper ignores stale-nonce `respond_batch` (and zeroes its text) | — |
+| **Malformed or hostile records** from the compositor end | oversize, truncated, empty, bad JSON, unknown type, NUL, duplicate/out-of-range index | every case → `failure(internal)` with zeroing; nothing partial reaches PAM (§2.1, §6 item 9) | — |
+| A **PAM module** in the `mura-lock` stack | runs in the helper's address space by construction | out-of-process from the compositor: a module that hangs, crashes, or leaks affects one helper, not the frame loop (§6 item 2); the fd it might inherit on exec is `CLOEXEC` | a malicious module is root-installed configuration, out of scope (the administrator is the wearer, overview inv. 10) |
+| **Secrets at rest after exit** | core files, swap, freed heap | `RLIMIT_CORE=0` + non-dumpable; best-effort `mlockall`; explicit zeroing of every buffer the helper owns | copies inside PAM modules and `strdup`'d responses PAM frees itself — Linux-PAM's contract, shared by every locker (swaylock, kscreenlocker, GDM) |
+| **The compositor process** itself | spawns the helper, owns the socketpair | not a threat to the helper: it *is* the caller. Its own duties are §2.4 revocation and the heap-dump half of §6 item 1 | — |
+
+Explicitly **not** goals: defending against root; hiding *that* an unlock attempt is under way
+(`pgrep mura-authd` is fine); rate limiting inside the helper (that is `pam_faillock`, and
+`delay_ms` is the compositor's to enforce so the helper never sleeps on the wearer).
 
 ## 3. The lock state machine
 
@@ -174,9 +228,27 @@ Status per item (D5, `tests/vm/default-image.nix` / `multi-user.nix`, `mura-auth
 8. *(added D5)* A passwordless account is refused by the lock (`PAM_DISALLOW_NULL_AUTHTOK` →
    `failure(auth)`); a wrong password → `failure(auth)` with `delay_ms`; the faillock ladder
    counts unlock failures and refuses the right password while locked. **Verified.**
+9. *(added rev 4)* Framing and response strictness (§2.1): a 64 KiB + 1 record, a record larger
+   than the receive buffer (`MSG_TRUNC`), a zero-length record, invalid JSON, an unknown `type`,
+   a response containing U+0000, and a duplicate prompt index each end the conversation as
+   `failure(internal)` with a non-zero exit. The helper is not dumpable (a same-uid `cat
+   /proc/<pid>/environ` is refused while root's succeeds), its `cmdline` carries no nonce, and
+   the conversation fd is `O_CLOEXEC`. A `--service` outside `mura-lock[-*]` exits 2 before
+   `pam_start`; the legacy `--nonce` argv path still authenticates (with a warning).
+   **Verified** (`tests/vm/default-image.nix`, scenarios `oversize` … `dup-index`,
+   `bad-service`, `argv-nonce`).
 
 ## 7. Open items
 
-The biometric helper's verifier-specific fields (with the iris design); `GraceState` timing
-properties (settings-schema keys); whether `radio`/`binary` styles are enabled in the shipped
-PAM stacks or rejected via `unsupported_prompt` (deployment policy).
+- The biometric helper's verifier-specific fields (with the iris design); `GraceState` timing
+  properties (settings-schema keys).
+- `radio` prompts: rendered by the shipped stacks or rejected via `unsupported_prompt`
+  (deployment policy). `binary` prompts are rejected with `unsupported_prompt` today (rev 4:
+  `PAM_CONV_ERR` from the helper); a biometric helper (ADR 0011) that needs them will re-open
+  this with its own message fields.
+- **Sandboxing the helper** (seccomp/Landlock/`PR_SET_NO_NEW_PRIVS`): belongs on the
+  compositor's spawn side, not inside the helper, because `pam_unix` execs the setuid
+  `unix_chkpwd` and no-new-privs would break it. Decider: the zxr lock scene (G3), which knows
+  what the shipped `mura-lock` stack execs. Until then the helper's hardening is §2.1's prctl set.
+- Removing the legacy `--nonce` argv path: one release after a compositor that sets
+  `MURA_AUTHD_NONCE` ships.
