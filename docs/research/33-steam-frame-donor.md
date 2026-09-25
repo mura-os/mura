@@ -209,12 +209,13 @@ edk2 firmware) on the x86_64 dev host via `nix run .#frame-vm-run`:
 
 | Check | Result |
 |---|---|
-| Image | `packages.aarch64-linux.frame-image`: 33 GiB sparse GPT (zstd artifact 1.9 GiB); remote build ~23 min end-to-end |
+| Image | `packages.aarch64-linux.frame-image`: 33.6 GiB sparse GPT (zstd artifact ~2 GiB after the dedicated recovery partition); remote build via `nix run .#frame-build` |
 | Boot | UEFI → systemd-boot → slot A; `multi-user.target` + `graphical.target` active; autologin session; sshd up |
-| Layout | `lsblk` partlabels exactly `esp / rootfs_a / rootfs_b / syspersist / home`; cmdline `root=PARTLABEL=rootfs_a rauc.slot=A` (the donor's slot-cmdline contract, §3) |
+| Layout | `esp / mura_recovery / rootfs_a / rootfs_b / syspersist / home`; `mura_recovery` is a separate 512 MiB XBOOTLDR image (62.7 MiB compressed) carrying recovery entry+kernel+initrd (including the USB/hotspot recovery services) and registered as RAUC `rescue.0` (ordinary A/B bundles leave it untouched); cmdline `root=PARTLABEL=rootfs_a rauc.slot=A` (the donor's slot-cmdline contract, §3) |
 | RAUC | `compatible=Mura-deckard`, booted `rootfs.0 (A)`, custom backend (`mura-bootconf`) reporting primary correctly |
 | XR wiring | `monado.socket` active (user unit); `/etc/mura-device.json` correct |
 | Update round-trip | test-signed 2.1 GiB `.raucb` → `rauc install` into slot B (**4 m 42 s** with the VM disk on fast local SSD; effectively unbounded on slow storage — see lessons), backend flipped primary to B, reboot → **booted `rootfs.1 (B)`** with `root=PARTLABEL=rootfs_b rauc.slot=B`, `rauc status mark-good` → both slots good |
+| Recovery escalation (2026-09-25) | Test-only image forces P2 hard + threshold 2: first failure cycles, second writes LoaderEntryOneShot, third boot selects `recovery.conf` from XBOOTLDR; stage 1 reports `RECOVERY_PROOF_OK`, five recovery units active, and `initrd=\EFI\mura-recovery\initrd rd.systemd.unit=mura-recovery.target`. edk2 proof only; Frame U-Boot runtime-variable persistence remains hardware-only |
 | Donor-kernel boot mode | **not executed — infeasible by evidence** (§4: no `VIRTIO_BLK/NET` in Valve's kernel) |
 
 Precise scope of the "technically flashable" claim: the artifact reproduces the donor's GPT
@@ -242,6 +243,35 @@ kernel (§4), and the not-yet-obtained flash/recovery procedure — the hardware
 **Image family:**
 - nixos-unstable's `image/repart.nix` is **not** in the default module list (docs-only
   `extraModules`) and is gated on `image.repart.enable` — both bit us.
+- **ESP mount-point correction, from the recovery-entry proof.** The first family draft copied
+  the donor's shared ESP mount at `/esp`, but not the donor's reason: SteamOS has *both* the
+  current slot's separate `efi` partition at `/efi` and a shared `esp` at `/esp`
+  (`references/archive-steam-frame/frame-archive-deckard-20260921.6090922-0.5.0/extracted/batch1.txt:32-35`);
+  its updater reads the current slot's partsets through `/efi` and writes shared
+  `steamos-bootconf` records through `/esp` (the same archive's
+  `extracted/batch2.txt:779-806`). Mura has one ESP carrying systemd-boot, entries, kernel and
+  initrd — no per-slot EFI partition — so that split does not transfer. Comparable positions:
+  pinned systemd discovers ESPs only at `/efi`, `/boot`, `/boot/efi`
+  (`references/systemd/src/shared/find-esp.c:479-497`) and auto-mounts a lone ESP at `/boot`,
+  or at `/efi` when `/boot` is XBOOTLDR
+  (`src/gpt-auto-generator/gpt-auto-generator.c:678-699`); NixOS and Jovian retain `/boot`
+  ([external, pinned `nixpkgs` flake input]
+  `nixos/modules/system/boot/loader/efi.nix:11-15`;
+  `references/jovian-nixos/pkgs/jupiter-hw-support/firmware.nix:18-41`). The systemd project's
+  image-builder mkosi is the exact comparable: it deliberately creates `/efi` for the ESP,
+  reserves `/boot` for XBOOTLDR, and passes those paths to bootctl
+  (`references/mkosi/mkosi/__init__.py:283-290`, `bootloader.py:749-760`) — no nested mounts and
+  a clean future XBOOTLDR boundary. That reason transfers, so Mura uses `/efi`; the choice is
+  systemd/mkosi's semantic layout, not a Mura convention. `/esp` also made
+  `systemctl --boot-loader-entry` unable to enumerate `recovery.conf`.
+- **Boot assessment needs `preferred`, not `default`.** systemd-boot deliberately checks
+  `tries_left != 0` for `preferred`, but resolves `default` without assessment
+  (`references/systemd/src/boot/boot.c:1851-1863,1904-1945`). A `default a*.conf` therefore
+  reselected exhausted A instead of falling back. NixOS's pinned builder uses the upstream
+  pattern when boot counting is enabled: assessment-aware `preferred <primary>`, then a broad
+  `default` fallback ([external, pinned nixpkgs]
+  `nixos/modules/system/boot/loader/systemd-boot/systemd-boot-builder.py:297-314`). Mura's
+  two-slot translation writes `preferred a*.conf` + `default b*.conf` (or the reverse).
 - Closure size is the slot-size driver: the VM-proof userspace closed at **12.1 GiB** (16 GiB
   slots as a result). Before any real update channel, closure slimming is mandatory
   (docs/man pages, firmware pruning, sway-vs-zxr) — follow-up, not blocking.
@@ -262,6 +292,11 @@ kernel (§4), and the not-yet-obtained flash/recovery procedure — the hardware
 - nixbuild.net remote-builder mode works as designed for this (outputs needed locally); 100
   parallel SSH connections hit drops — 16 is stable; `builders-use-substitutes` is essential so
   the builder pulls aarch64 closures from cache.nixos.org directly.
+- The repository-default invocation is `nix run .#frame-build`: a host-side wrapper around the
+  standard Nix remote-builder flags above. It uses the invoking user's SSH key and `known_hosts`;
+  it needs no `/etc/nix`, nix-daemon or root SSH configuration. Its default target is
+  `packages.aarch64-linux.frame-image`; another target and ordinary `nix build` flags follow
+  `--`.
 - nixbuild caches *failures* per drv-hash (a rebuilt-unchanged failing drv returns the cached
   failure instantly — good for cost, surprising the first time), and build logs need the
   build-key's permissions (plan key permissions accordingly).

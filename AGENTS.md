@@ -56,7 +56,11 @@ wrong even when it is well-executed.
    which assumptions it rested on (host ecosystem, user model, password posture, hardware),
    whether those reasons transfer to Mura, and what adopting it trades off. Prevalence or a
    matching number/API is not itself a decision. No comparable is a signal, not a license:
-   say so and treat the design as a rethink candidate.
+   say so and treat the design as a rethink candidate. **Runtime proof failures are not exempt:**
+   if fixing one would change a mount path, partition role, unit relationship, protocol,
+   dependency, retry policy or other system mechanism, stop patching and re-enter this evidence
+   loop. First recover why the current shape exists, then read upstream and the comparables.
+   The goal is the strongest standard distro design, not merely a green test.
 8. **Evidence gate.** Act without asking when the evidence is overwhelming and you are
    confident — one exact precedent, or converging ones, with reasons that transfer. Otherwise
    bring the decision to the owner, *after* rule 7 is exhausted, one item per question,
@@ -81,6 +85,8 @@ Each of these happened. The rule it breaks is in brackets.
   when comparables exist — study them instead; good UX is what shipping projects converged
   on, not what an agent derives. [7]
 - Laundering a judgment call as "the research recommends" or "the plan says". [4]
+- Treating each proof failure as a local bug and patching until the test passes, without asking
+  whether the failure exposed a weak or copied-without-reason system design. [7, 8]
 
 ## Working conventions (established, do not relitigate)
 

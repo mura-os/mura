@@ -6,7 +6,10 @@ how do shipping systems (a) tell the person holding it, (b) get it into a recove
 environment ruled in [research/56 §3](56-defaults-from-comparables.md) is derived, not invented.
 **Method:** AGENTS rules 7/8; pinned clones (`references/`, file:line) first, [external] sources
 named and verified where the comparable is not cloned. **Budget impact** (overview invariant 9):
-boot-time only — plymouth in the initrd and one more BLS entry; nothing on the frame path.
+a dedicated recovery boot partition per image family (uefi-rauc: 512 MiB XBOOTLDR carrying one
+kernel+initrd; Android-derived: a separate Mura recovery boot image only where the boot chain can
+select an additional partition without replacing stock recovery). Runtime cost is recovery-only:
+plymouth and the menu are absent from the normal frame path.
 
 ## 1. Two failure classes, two mechanisms
 
@@ -46,11 +49,26 @@ inoperable device is the cost; feedback and the way in must come first, the dras
 | SteamOS — **[external, Valve recovery instructions, verified via mirrors]** | Volume-Down + Power → boot manager → "EFI USB Device" | a bootable USB image with a desktop; no recovery partition (UEFI) |
 | pmOS — `init_functions.sh` `check_keys`, `debug_shell`, `fail_halt_boot` | held Volume keys, or any hard failure | the *same* initramfs frozen in a shell |
 
-**What transfers.** systemd's and Mobile NixOS's shape coincide: the recovery environment is the
-same stage-1, booted to a different unit. On a UEFI family that is a BLS entry and
-`--boot-loader-entry`; on an Android-derived family it is the same initrd packaged as the
-recovery image and `reboot recovery`. A third root filesystem (SteamOS's full desktop on USB) is
-the outlier and needs external media.
+**What transfers.** Mobile NixOS and Lineage provide the artifact boundary Mura needs: a
+dedicated recovery boot image containing stage 1, independently bootable from the normal OS
+image. Their assumption that this image may replace the device's stock `recovery` partition does
+not transfer: Mura adds its own partition and preserves stock/vendor recovery as the independent
+install/reflash path. systemd provides the UEFI mechanism for that additional partition:
+systemd-boot reads Type #1 entries, kernels and initrds from XBOOTLDR as well as the ESP
+(`references/systemd/man/systemd-boot.xml:31-48`); XBOOTLDR mounts at `/boot` while the ESP is
+`/efi` (`systemd-gpt-auto-generator.xml:260-270`). RAUC's exact A/B precedent is its
+**Additional Rescue Slot**: a separate raw slot for common failures affecting both normal roots;
+normal updates only write A/B, and the bootloader enters rescue after repeated failures or user
+request (`references/rauc/docs/scenarios.rst:147-178`). Mura registers `mura_recovery` as
+`rescue.0`, so ordinary rootfs bundles leave it untouched. postmarketOS confirms that the environment
+itself belongs in small stage 1: its initramfs enters `debug_shell` on Volume-Down
+(`pmaports/main/postmarketos-initramfs/init_2nd.sh:35-42`,
+`init_functions.sh:1223-1241`) and on a hard failure (`init_functions.sh:1434-1441`). Mobile
+Thus the recovery partition carries its own kernel+initrd but no third root filesystem.
+`reboot recovery` continues to mean stock recovery and is never Mura's entry command.
+Android-family selection of an additional Mura partition needs proof during each bring-up; it
+cannot be assumed from AOSP's fixed partition names. SteamOS's full desktop on USB is the
+root-filesystem outlier.
 
 ## 4. What the environment offers, and how factory reset works
 
@@ -80,11 +98,15 @@ NixOS's "pick a generation". Reflash from recovery (Lineage's "Apply update", St
    normal initrd; on a hard preflight failure, `plymouth display-message` with the failing
    check, `ssh mura@172.16.42.1`, the hotspot SSID and PSK when up, and the docs URL; the setup
    launcher shows the same. (pmOS, Mobile NixOS; Rescue Party's time-cost reason.)
-2. **The recovery environment is the same initrd booted to `mura-recovery.target`**, packaged per
-   family: a `recovery.conf` BLS entry on uefi-rauc, reached with
-   `systemctl reboot --boot-loader-entry=recovery`; the recovery boot image on the Android-derived
-   targets, reached with `reboot recovery`. (systemd's boot-menu shape; Mobile NixOS's
-   recovery-is-stage-1.)
+2. **The recovery environment is a dedicated Mura recovery boot partition/image**: its own copy
+   of the kernel and systemd initrd booted to `mura-recovery.target`, with no recovery root
+   filesystem and no dependency on the normal Mura boot files. On uefi-rauc the partition is
+   XBOOTLDR (`mura_recovery`) with `recovery.conf`, reached with
+   `systemctl reboot --boot-loader-entry=recovery.conf`; normal Mura boot files remain on the
+   ESP. On Android-derived targets `reboot recovery` is reserved for stock/vendor recovery; an
+   additional bootable Mura partition and selector is a bring-up gate, not assumed here.
+   (Mobile NixOS/Lineage recovery-image boundary; systemd XBOOTLDR packaging; pmOS stage-1
+   contents.)
 3. **Automatic at the count** (ruled by the owner, research/56 §3): `mura-crashloop` at
    `crashLoopThreshold` reboots into it — Android's escalation shape *to a prompt*, without its
    automatic wipe levels.
@@ -107,8 +129,14 @@ with three frontends (panels + HMD buttons over evdev, ssh/console, the web page
 semantics are Android recovery's (`recovery_ui/ui.cpp` `ProcessKey`: register on release,
 auto-repeat ignored, 750 ms long press a distinct event; `recovery.cpp`: a destructive action
 behind a separate confirm menu defaulting to the safe item), not Quest's second-press countdown,
-for which no comparable's source was available; reflash from recovery (RAUC bundle over ssh; Lineage "Apply update") —
-the track's follow-up; the Android-derived families' `reboot recovery` and cmdline-carried
-`systemd.factory_reset=1` — with each device's bring-up; whether the hotspot comes up in the
-recovery initrd (NetworkManager is not in stage 1; the gadget is) — decider: the track, after
-measuring what the recovery initrd costs.
+for which no comparable's source was available; reflash from Mura recovery (RAUC bundle over
+ssh; Lineage "Apply update") — the track's follow-up; the Android-derived families' separate
+Mura-owned recovery partition **and** one-shot selector — each device's bring-up must prove the
+bootloader can select an added partition without replacing stock recovery; otherwise that target
+does not yet have Mura Recovery. Stock recovery remains the reflash-from-scratch path. The
+recovery hotspot is **required** (owner clarification 2026-09-25): it exposes both sshd and
+`mura-setup --recovery`, alongside those same services on the USB cable. Its standard Linux
+shape is hostapd + systemd-networkd's address/DHCP server in stage 1, reusing the ruled per-boot
+PSK; hwsim VM verification associates a simulated phone and reaches both services.
+Radio/firmware, regulatory-domain and AP/ACS-mode qualification remain per-target bring-up
+gates. NetworkManager is not added to recovery stage 1.

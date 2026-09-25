@@ -624,12 +624,14 @@ longer open: dismiss = finish, Wi-Fi user-scoped); whether `set-ntp` joins the r
 manual zone change exists (pmOS ties them; Mura's zone is derived) — decider: F2's session
 instance design;
 recovery-environment design — ruled 2026-09-25 ([research/56 §3](../research/56-defaults-from-comparables.md);
-the implementation-path §4 "Mura recovery environment" track): the same initrd booted to
-`mura-recovery.target`, sshd on the gadget, one menu with three frontends (the HMD's buttons on
-the panels, ssh/console, the web page — [specs/recovery-menu.md](../../specs/recovery-menu.md)),
-factory reset *offered* through systemd-repart's factory reset; a recovery BLS entry where the
-family is uefi-rauc, the recovery boot image where it is Android-derived (with the device's
-bring-up; order in implementation-path §4); account-layering (store accounts, cloud
+the implementation-path §4 "Mura recovery environment" track): a dedicated Mura recovery
+partition with its own kernel+stage-1 initrd booted to `mura-recovery.target`, sshd on the
+gadget, one menu with three frontends (the HMD's buttons on the panels, ssh/console, the web page
+— [specs/recovery-menu.md](../../specs/recovery-menu.md)), factory reset *offered* through
+systemd-repart's factory reset; XBOOTLDR where the family is uefi-rauc, and an additional
+Mura-owned partition+selector where it is Android-derived — stock/vendor recovery remains the
+independent install/reflash path (with the device's bring-up; order in implementation-path §4);
+account-layering (store accounts, cloud
 identity) — a non-goal, explicitly out of OS scope. Resolved by the research/42 review and no
 longer open: welcome contents (§4.2), input requirement (§4.4), web tool and portal (§5.1–5.2),
 passwordless wiring (§5.3), paired-peripheral class (§2, wiped), boundary placement (spatial

@@ -165,7 +165,7 @@ security acceptance checks are [first-run-onboarding.md §8](first-run-onboardin
 | **D3** | F3 — **landed**: `modules/os/oob.nix` — configfs NCM gadget from the initrd (`mura-usb-gadget`, first UDC), `systemd-networkd` DHCP on `usb0` (NM-unmanaged; firewall opens 67/80 there); hotspot as an NM AP profile with a per-boot PSK (`mura-hotspot-psk`), `dnsmasq-shared.d` wildcard + option 114, the `mura-hotspot` supervisor (marker absent AND no other active connection; per-boot idle timeout from `mura.oob.hotspot.idleTimeoutMinutes`; NM `firewall-backend=iptables` so shared mode opens its own DHCP/DNS); the **`mura-setup` identity** with `50-mura-setup.rules` (exact actions), the **stub** launcher/web page on `:80` of the gadget + hotspot addresses only (`IP_FREEBIND`, `ConditionPathExists=!…/setup-complete`, exits when the marker appears; `pkgs/mura-setup`, Rust — ported from the D3 Python under AGENTS rule 6); sticky `state/setup/`; `mura.hardware.input.usbGadget`; Avahi `mura.local` | D1, D2 | `nix build .#vm-test-oob` (both `dummy_hcd` and `mac80211_hwsim` are in the NixOS kernel — no renamed-NIC fallback needed): gadget bound from the initrd, host end leases from `usb0`, SSH by key + launcher over the cable; `mura-setup` under its identity, conditioned, refusing the LAN address; hotspot up with the PSK, wrong PSK refused, right PSK associates + lease + wildcard DNS + probe `302`; yields to a dummy uplink and returns; idle timeout takes the radio down for the boot; `POST /finish` writes the marker → both stop; marker survives a reboot; removing it brings both back |
 | **D4** | B6a: the session wrapper + `mura-session.target` around sway. First **uwsm** (AGENTS rule 1; evaluated against the spec and adopted, rev 2), then **`mura-session`** (rev 3, AGENTS rule 6: uwsm's mechanism as a libc-only Rust binary over four static user units — `mura-compositor.service` with `Restart=on-failure` + `RestartMode=direct`, `StartLimitBurst=3`/60 s, `TimeoutStartSec` from `mura.xr.session.readinessTimeoutSeconds`, `UnsetEnvironment=WAYLAND_DISPLAY DISPLAY`, no unit-private `PATH`; `mura-session.target`; `mura-session-bindpid@`; `mura-session-shutdown.target`), `environment.d/60-mura.conf`, sway's config `exec mura-session finalize` (STAND-IN); [specs/session-bootstrap.md](../../specs/session-bootstrap.md) rev 3 | D0 | **landed**: compositor in `mura-compositor.service` with the seat acquired from inside the unit (`XDG_SESSION_ID` in the unit, not the manager); the wrapper is the leader's child in the session scope and `bindpid`-bound; static vars present, `WAYLAND_DISPLAY` names a bound socket, nothing of greetd's leaked; `kill -9 sway` → restarted in the same logind session; logout → gtkgreet with no DRM race; a never-ready stub torn down at the 30 s bound; `mura-session.target` + `monado.socket` active; no ordering cycle; no `uwsm`/`python` process for the login user; login → graphical session 5.96 s → 1.65 s (VM); `tests/closure.nix` proves the login-path closure carries no interpreter |
 | **D5** | **landed, then hardened** — `pkgs/mura-authd` (Rust; the first Rust in the tree): `mura-authd` per [specs/session-auth.md](../../specs/session-auth.md) §2 (rev 4: nonce in `MURA_AUTHD_NONCE` not argv, not dumpable / `PDEATHSIG` / `FD_CLOEXEC` / `RLIMIT_CORE=0`, strict responses — NUL, duplicate or out-of-range index → `failure(internal)`, `--service` allowlist, §2.5 threat model, §6 item 9 framing scenarios) — seqpacket JSON framing with the 64 KiB / truncation / empty / unknown-type rules, nonce discipline, `pam_start("mura-lock")` → `pam_authenticate(PAM_DISALLOW_NULL_AUTHTOK)` → `pam_acct_mgmt` → `pam_end`, fail-delay callback → `delay_ms`, coarse failure reasons, zeroised buffers; `mura-authd-harness` (test-only compositor stand-in) + `pam_mura_test.so` (test-only module); `security.pam.services.mura-lock` (no `nullok`, faillock) and `state/faillock` `0755` for the unprivileged caller | D4 | `vm-test-default-image`: passwordless account refused (`DISALLOW_NULL_AUTHTOK`); §6 item 1 (kill mid-prompt → EOF, fresh nonce succeeds), 2 (5 s PAM sleep, caller ticks 25×), 3 (success on a revoked nonce ignored — the compositor's rule, demonstrated), 7 (two prompts + info → one `prompt_batch`/`respond_batch`); plus stale-nonce ignored, cancel → `failure(abort)`, wrong password → `failure(auth)`, faillock locks the lock after `deny` failures and refuses the right password until reset; `vm-test-multi-user`: the fixture account unlocks. Items 4 (composition introspection), 5 (into *locked*), 6 (greeter mode) wait for zxr (G1/G2/G3) |
-| **D6** | **landed** — `modules/os/health.nix`: `mura-preflight` (`pkgs/mura-preflight`, Rust — ported from the D6 Python under AGENTS rule 6; P1–P7, exit 0/1/2, `/run/mura/preflight.json`), `greetd` `Requires=` it; `mura-crashloop` (OnFailure counter in `state/health/`) + `mura-recovery.target`; `mura-readiness` → `boot-complete.target` (pulled in on every profile); contract `mura.health.{crashLoopThreshold,deviceWaitSeconds,readinessStabilitySeconds}`, `mura.deployment.bootTries`. `families/uefi-rauc`: `mura-bootconf set-primary` arms `+N`, loader `default` by entry ID, `mura-mark-good.service` after `systemd-bless-boot`, RAUC status file on `/persist` | D1 | VM (`vm-test-default-image`, `vm-test-multi-user`): preflight finished before greetd started, report present, readiness → `boot-complete.target`, counter 0; `vm-test-health`: forced hard failure → no greeter/session, counter 1; threshold → recovery target with sshd up; passing boot blessed, counter reset. **Slot fallback and the bless/RAUC transitions**: deckard uefi-rauc QEMU image, manual proof step (§3a status) |
+| **D6** | **landed** — `modules/os/health.nix`: `mura-preflight` (`pkgs/mura-preflight`, Rust — ported from the D6 Python under AGENTS rule 6; P1–P7, exit 0/1/2, `/run/mura/preflight.json`), `greetd` `Requires=` it; `mura-crashloop` (OnFailure counter in `state/health/`) + `mura-recovery.target`; `mura-readiness` → `boot-complete.target` (pulled in on every profile); contract `mura.health.{crashLoopThreshold,deviceWaitSeconds,readinessStabilitySeconds}`, `mura.deployment.bootTries`. `families/uefi-rauc`: `mura-bootconf set-primary` arms `+N`; systemd ≥260's assessment-aware loader `preferred` names the primary while `default` names the opposite fallback; `mura-mark-good.service` after `systemd-bless-boot`, RAUC status file on `/persist` | D1 | VM (`vm-test-default-image`, `vm-test-multi-user`): preflight finished before greetd started, report present, readiness → `boot-complete.target`, counter 0; `vm-test-health`: forced hard failure → no greeter/session, counter 1; threshold → recovery target with sshd up; passing boot blessed, counter reset. **Slot fallback and the bless/RAUC transitions**: deckard uefi-rauc QEMU image, manual proof step (§3a status) |
 | **D7** | **landed** — the settings store re-derived from the stores' source ([research/58](../research/58-settings-stores-from-comparables.md); [specs/settings-schema.md](../../specs/settings-schema.md) rev 3, [specs/settings-daemon.md](../../specs/settings-daemon.md) rev 1): `lib/settings` compiles `mkSetting`-annotated contract options into `/etc/mura/settings-schema.json` (the only default channel — GSettings' compiled schema on NixOS's `programs.dconf` shape); `pkgs/mura-settingsd` (Rust, zbus on `async-io`) serves `org.mura.Settings1` on the session bus — D-Bus-activated, resident, one writer of sparse per-(schema, instance) JSON under XDG with fsync+rename, `declarative` by default / `runtime` opt-in, Set-always-writes/Reset/provenance incl. `invalid`, relocatable `places.entry` instances, locks as artifact facts, additive numbered code migrations; `mura-settings` CLI with `--direct`; `modules/os/settings.nix` (`mura.settings.{templates,schemaVersions,locks}`, the `Type=dbus` user unit, the `system.userActivationScripts` generation hook). Seed keys: `xr.passthrough.{latencyMode,upperLimbVisibility}` (runtime), `hardware.ipd.meters` (runtime only when `ipd.source = stored`). Ruled shape C: `stratum = device` reserved; the same crate's `--system` mode serves it when a target declares a device key (an assertion refuses one until then) | — | `nix build .#vm-test-settings` (10 subtests): activation on first `Get`; Set-equal-to-default creates the override and `Reset` returns to following; declarative/locked/range/type refused without a write; instances create/list/delete; one `Changed` per accepted change with value + provenance; an invalid stored value → default + `invalid`, file byte-identical; `kill -9` mid-burst → no torn file, same resolution direct and over the bus; the lying-daemon check (`--direct` reads the artifact); a `specialisation` switch → the moved default advances, the pinned instance value survives, `Changed` + `GenerationChanged` reach the session; RSS 3.5 MB, 4 threads. `tests/closure.nix` fences the binary. Migration item 9 at the unit level (the table is empty at rev 1) |
 
 Order is dependency, not calendar: D0 first (everything imports the profiles and the session
@@ -445,17 +445,25 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
 - **Mura recovery environment** ([research/56 §3](../research/56-defaults-from-comparables.md),
   [research/57](../research/57-recovery-environments-and-boot-failure-feedback.md),
   [specs/recovery-menu.md](../../specs/recovery-menu.md); ruled 2026-09-25). The OS owns its
-  recovery, as Lineage Recovery, AOSP recovery and SteamOS's recovery image do; it is the *same
-  initrd* booted to `mura-recovery.target` (systemd's boot-menu-entry shape: no third root
-  filesystem), packaged per family — a `recovery.conf` BLS entry where the family is uefi-rauc,
-  reached with `systemctl reboot --boot-loader-entry=recovery`; the recovery boot image where the
-  family is Android-derived, reached with `reboot recovery` (with each device's bring-up).
+  recovery as a **dedicated Mura recovery boot partition/image**, separate from normal Mura boot
+  artifacts and from the hardware's stock/vendor recovery. It contains its own kernel+systemd
+  initrd booted to `mura-recovery.target`, but no third root filesystem (Mobile NixOS/Lineage's
+  recovery-image boundary; pmOS's stage-1 contents). On uefi-rauc it is the
+  `mura_recovery` XBOOTLDR partition: systemd-boot discovers `recovery.conf` and its kernel/initrd
+  there, selected once with `systemctl reboot --boot-loader-entry=recovery.conf`; the normal
+  entries and boot files stay on the ESP. It is RAUC `rescue.0`: ordinary A/B bundles leave it
+  untouched (RAUC's Additional Rescue Slot shape); updating recovery requires an explicit
+  rescue-image bundle. On Android-derived targets stock/vendor recovery
+  remains the independent install/reflash path (`reboot recovery` still means that); each
+  device's bring-up must prove that its boot chain can select an **additional** Mura recovery
+  partition before setting `mura.recovery.rebootCommand`.
   Trigger: `mura-crashloop` at `crashLoopThreshold`, automatically; where the family provides no
   entry (`mura.recovery.rebootCommand` unset — the VM), the step enters the stage-2
   `mura-recovery.target` instead: sshd, gadget and hotspot up, nothing graphical. Feedback on the
   *first* hard failure is plymouth in the normal initrd (`mura-preflight-feedback`).
-  Contents: sshd on the gadget address (host key from `identity/ssh` when `/persist` mounts,
-  else generated and its fingerprint shown; wheel members' and root's declared keys only), and
+  Contents: sshd and the recovery web app on both the USB-gadget address and a per-boot-PSK
+  recovery hotspot (host key from `identity/ssh` when `/persist` mounts, else generated and its
+  fingerprint shown; wheel members' and root's declared keys only), and
   **one menu program, three ways in** (`pkgs/mura-recovery`, the `mura-setup` shape, ADR 0017
   decision 10; Rust under rule 6 — it parses input and holds state): the actions live once —
   status; factory reset; slot switch where the family has one; reboot; power off — and every
@@ -477,27 +485,44 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   `mura-recovery` over ssh/console — what the banner says to type — `yes, erase` to confirm;
   (c) `mura-setup --recovery` on the gadget/hotspot addresses, `POST /factory-reset` refused
   without `confirm=erase`.
-  **Status (2026-09-25): landed** — `modules/os/recovery.nix`, `pkgs/mura-recovery`,
-  `pkgs/mura-plymouth-theme`, `mura-setup --recovery`, the uefi-rauc entry and `FactoryReset=yes`
-  definitions, `tests/persist.nix` pinning the entry and the reboot command on the Frame
-  configuration. Proof: `vm-test-recovery` (seven subtests: environment up and drawn on plymouth,
+  **Status (2026-09-25): landed** —
+  `modules/os/recovery.nix`, `pkgs/mura-recovery`, `pkgs/mura-plymouth-theme`,
+  `mura-setup --recovery`; uefi-rauc's dedicated XBOOTLDR partition and
+  `FactoryReset=yes` definitions; `tests/persist.nix` pins that the recovery entry+kernel+initrd
+  are absent from the normal ESP and present on `mura_recovery`. Proof:
+  `vm-test-recovery` (eight subtests: environment up and drawn on plymouth,
+  per-boot-PSK hwsim hotspot association with ssh+web reachable,
   keys through QEMU's keyboard incl. a 2 s hold ignored, the Confirm/Back/Cancel flow, the shell
   over ssh from the cable's host end with the administrator's key and the banner's fingerprint,
   the device's own host key once `/persist` is readable, the shell's wrong answer, the web `400`,
   the wipe once through the web form over a left-behind mount and once through the panel —
   exactly the `syspersist` partition re-created); `vm-test-health` (the first hard failure's
   panel message; `plymouth-quit` skipped on the marker).
-  **Pending — hardware, and a host with an aarch64 builder:** the counter → `recovery.conf` reboot
-  on the deckard image (`frame-vm-run` with a forced P2 failure to the threshold, then
-  `recovery.conf` on the ESP and `mura-recovery.target` in the journal) — **with a real risk**:
-  `--boot-loader-entry` writes an EFI variable at runtime, which U-Boot's UEFI only persists with
-  a variable store configured; if the proof fails, the fallback is the file-based one-shot through
-  `mura-bootconf` (`families/uefi-rauc` comment). Per target: the volume/select keys reach evdev
+  **Deckard image proof: green 2026-09-25.** `frame-recovery-proof-image` forces P2 hard and a
+  threshold of two, cycles the first failure, then the production counter writes
+  LoaderEntryOneShot. systemd-boot selects `recovery.conf` from the separate
+  `mura_recovery` XBOOTLDR partition; a test-only service inside stage 1 prints
+  `RECOVERY_PROOF_OK`, all five recovery units `active`, and
+  `initrd=\EFI\mura-recovery\initrd rd.systemd.unit=mura-recovery.target` to ttyAMA0. The proof
+  also corrected copied-without-reason foundations: BLS IDs include `.conf`; slot selection uses
+  systemd ≥260's assessment-aware `preferred` with the other slot as `default` (an exhausted
+  primary therefore falls back instead of being explicitly reselected); the sole ESP is `/efi`
+  (systemd/mkosi's semantic layout, research/33 §10), with XBOOTLDR at `/boot`; and
+  `frame-vm-run` seeds its writable pflash from QEMU's initialized variables template rather
+  than a zero file. **Still hardware-only:** `--boot-loader-entry` writes an EFI variable at
+  runtime, which the Frame's U-Boot UEFI only persists with a variable store configured. If
+  that proof fails, bring-up must implement and prove the file-based bootconf fallback before
+  shipping (write `default recovery.conf`; recovery restores the prior slot glob); it is not
+  wired today. The recovery hotspot mechanism is landed and VM-proven for AP association,
+  the `10.42.0.1` address, and both ssh+web (hostapd 2.4 GHz ACS + systemd-networkd in stage 1,
+  no NetworkManager); networkd's DHCP server is configured, while an independent-client lease
+  remains part of the hardware proof. Per target: the volume/select keys reach evdev
   in stage 1 (the input driver in the initrd beside the DRM driver); legibility of the menu text
-  per eye; the Galaxy XR's shared select/power code (spec §4 rule 4).
-  **Later in the track:** reflash from recovery (a RAUC bundle over ssh); the hotspot in the
-  recovery initrd (after measuring what it costs there); `switch-slot` on the web page (decider:
-  the uefi-rauc manual proof).
+  per eye; the Galaxy XR's shared select/power code (spec §4 rule 4); radio firmware,
+  regulatory-domain and AP-mode qualification for the required recovery hotspot (hostapd +
+  systemd-networkd in stage 1; no NetworkManager there).
+  **Later in the track:** reflash from recovery (a RAUC bundle over ssh); `switch-slot` on the
+  web page (decider: the uefi-rauc manual proof).
 - **USB identity + descriptor correctness** ([research/55](../research/55-usb-identities-and-gadget-policy.md);
   posture ruled 2026-09-25: the comparables' pattern — a distro-wide well-known default overridden
   per device with the device's own identity, values from research/55 §4, confirmed when the

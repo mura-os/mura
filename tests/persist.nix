@@ -74,13 +74,22 @@ let
       fs.device == "/dev/disk/by-partlabel/syspersist" && fs.neededForBoot
         && vmv.boot.initrd.systemd.repart.enable && vmv.boot.initrd.systemd.repart.device == "/dev/vdb"
         && part.Label == "syspersist" && part.FactoryReset == true;
-    # The image's state partitions are the ones a factory reset deletes and re-creates.
+    # The image's state partitions are the ones a factory reset deletes and re-creates; Mura
+    # Recovery is a separate XBOOTLDR boot image, not a file on the normal ESP.
     frame-factory-reset-partitions =
       frame.systemd.repart.partitions."30-syspersist".FactoryReset == true
         && frame.systemd.repart.partitions."40-home".FactoryReset == true
-        && frame.mura.recovery.rebootCommand == "systemctl reboot --boot-loader-entry=recovery"
-        # and the ESP carries the entry that command selects (same kernel/initrd, the recovery target)
-        && frame.image.repart.partitions."10-esp".contents ? "/loader/entries/recovery.conf";
+        && frame.fileSystems."/efi".device == "/dev/disk/by-partlabel/esp"
+        && frame.fileSystems."/boot".device == "/dev/disk/by-partlabel/mura_recovery"
+        && frame.mura.recovery.rebootCommand == "systemctl reboot --boot-loader-entry=recovery.conf"
+        && !(frame.image.repart.partitions."10-esp".contents ? "/loader/entries/recovery.conf")
+        && frame.image.repart.partitions."15-mura-recovery".repartConfig.Type == "xbootldr"
+        && frame.image.repart.partitions."15-mura-recovery".repartConfig.Label == "mura_recovery"
+        && frame.image.repart.partitions."15-mura-recovery".contents ? "/loader/entries/recovery.conf"
+        && frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/mura-recovery/Image"
+        && frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/mura-recovery/initrd"
+        && lib.hasInfix "[slot.rescue.0]" frame.environment.etc."rauc/system.conf".text
+        && lib.hasInfix "device=/dev/disk/by-partlabel/mura_recovery" frame.environment.etc."rauc/system.conf".text;
   };
 
   failures = lib.filterAttrs (_: v: v != true) results;

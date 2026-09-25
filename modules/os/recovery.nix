@@ -24,13 +24,18 @@
 #      (mura.recovery.rebootCommand); otherwise the old mura-recovery.target in stage 2.
 #
 # Per family: uefi-rauc adds the `recovery.conf` BLS entry and sets rebootCommand; the
-# Android-derived families package this initrd as their recovery boot image and use
-# `reboot recovery` (with their bring-up). The device provides its DRM driver in the initrd
-# (plymouth needs it: devices/virtual-headset adds virtio_gpu).
+# Every family packages this stage-1 environment into a dedicated Mura recovery boot partition
+# with its own kernel+initrd copy (no recovery root filesystem), separate from normal Mura boot
+# artifacts. Android-derived families must additionally preserve stock/vendor recovery as the
+# independent path that can reinstall Mura when Mura itself is broken; their bring-up needs an
+# added Mura partition and selector, and `reboot recovery` is not that selector. The device
+# provides its DRM driver in the initrd (plymouth needs it: devices/virtual-headset adds
+# virtio_gpu).
 { lib, config, pkgs, ... }:
 let
   cfg = config.mura;
   gadgetAddr = "172.16.42.1";
+  hotspotAddr = "10.42.0.1";
   hotspotEnv = "/run/mura/hotspot.env";
   docsUrl = "https://mura.dev/recovery"; # placeholder domain — the docs URL is the project's to fix
   plymouth = "${config.boot.plymouth.package}/bin/plymouth";
@@ -83,6 +88,100 @@ let
     echo "  Help:       ${docsUrl}"
   '';
 
+  # Recovery's local-only Wi-Fi path: hostapd owns AP mode; systemd-networkd below owns the
+  # address and DHCP server. This is the standard Linux split and avoids pulling NetworkManager
+  # into stage 1. NixOS hostapd's default is the same 2.4 GHz + ACS (`channel=0`) shape; drivers
+  # without ACS support are a per-target recovery qualification failure, not a guessed channel.
+  recoveryHotspot = pkgs.writeShellScript "mura-recovery-hotspot" ''
+    set -eu
+    radio=
+    for candidate in /sys/class/net/*; do
+      [ -d "$candidate/wireless" ] || continue
+      radio="''${candidate##*/}"
+      break
+    done
+    if [ -z "$radio" ]; then
+      echo "mura-recovery-hotspot: no wireless interface; USB recovery remains available"
+      ${config.boot.initrd.systemd.package}/bin/systemd-notify --ready
+      exit 0
+    fi
+
+    ${pkgs.coreutils}/bin/mkdir -p /run/mura /run/mura-recovery /run/hostapd
+    if [ -r ${hotspotEnv} ]; then
+      # A service restart in the same recovery boot must not invalidate credentials already
+      # shown on the panel.
+      # shellcheck disable=SC1090
+      . ${hotspotEnv}
+      psk=$MURA_HOTSPOT_PSK
+      ssid=$MURA_HOTSPOT_SSID
+    else
+      psk=$(printf '%08d' "$(( $(${pkgs.coreutils}/bin/od -An -N4 -tu4 /dev/urandom) % 100000000 ))")
+      suffix="''${psk#????}"
+      ssid="Mura-Recovery-$suffix"
+    fi
+
+    cat > /run/systemd/network/05-mura-recovery-hotspot.network <<EOF
+    [Match]
+    Name=$radio
+
+    [Network]
+    Address=${hotspotAddr}/24
+    DHCPServer=yes
+    ConfigureWithoutCarrier=yes
+    LinkLocalAddressing=no
+    IPv6AcceptRA=no
+
+    [DHCPServer]
+    PoolOffset=2
+    PoolSize=19
+    EmitDNS=no
+    EmitRouter=no
+    EOF
+    ${config.boot.initrd.systemd.package}/bin/networkctl reload
+    ${config.boot.initrd.systemd.package}/bin/networkctl reconfigure "$radio"
+
+    cat > /run/mura-recovery/hostapd.conf <<EOF
+    interface=$radio
+    driver=nl80211
+    ctrl_interface=/run/hostapd
+    ssid=$ssid
+    hw_mode=g
+    channel=0
+    wmm_enabled=1
+    auth_algs=1
+    wpa=2
+    wpa_key_mgmt=WPA-PSK
+    rsn_pairwise=CCMP
+    wpa_passphrase=$psk
+    EOF
+    echo "mura-recovery-hotspot: SSID=$ssid interface=$radio (2.4 GHz ACS)"
+    ${pkgs.hostapd}/bin/hostapd -B -P /run/mura-recovery/hostapd.pid \
+      /run/mura-recovery/hostapd.conf
+    pid=$(cat /run/mura-recovery/hostapd.pid)
+
+    # The normal OOB hotspot gives activation 20 s (oob.nix); use that established bound.
+    # Do not publish credentials to the panel until hostapd says the AP is actually enabled.
+    i=0
+    while [ "$i" -lt 20 ]; do
+      if ${pkgs.hostapd}/bin/hostapd_cli -i "$radio" status 2>/dev/null \
+          | ${pkgs.gnugrep}/bin/grep -qx 'state=ENABLED'; then
+        if [ ! -r ${hotspotEnv} ]; then
+          ${pkgs.coreutils}/bin/install -m 0600 /dev/null ${hotspotEnv}.tmp
+          printf 'MURA_HOTSPOT_PSK=%s\nMURA_HOTSPOT_SSID=%s\n' "$psk" "$ssid" \
+            > ${hotspotEnv}.tmp
+          ${pkgs.coreutils}/bin/mv ${hotspotEnv}.tmp ${hotspotEnv}
+        fi
+        ${config.boot.initrd.systemd.package}/bin/systemd-notify --ready --pid="$pid"
+        exit 0
+      fi
+      i=$((i + 1))
+      sleep 1
+    done
+    kill "$pid" 2>/dev/null || true
+    echo "mura-recovery-hotspot: AP did not become ready within 20 s" >&2
+    exit 1
+  '';
+
   # /etc/mura/recovery.json (specs/recovery-menu.md §6): the contract's button roles as evdev
   # codes with Android recovery's keyboard fallbacks appended (KEY_UP/DOWN/ENTER/ESC — also what
   # the VM test drives through QEMU's keyboard), the family's slot switch, the persist device.
@@ -120,7 +219,7 @@ in
       default = null;
       description = ''
         How stage 2 reboots into the recovery environment; set by the image family
-        (uefi-rauc: `systemctl reboot --boot-loader-entry=recovery`). When null the crash-loop
+        (uefi-rauc: `systemctl reboot --boot-loader-entry=recovery.conf`). When null the crash-loop
         threshold falls back to `mura-recovery.target` in stage 2.
       '';
     };
@@ -213,6 +312,9 @@ in
         "${pkgs.openssh}/libexec/sshd-session"
         recovery
         "${lib.getExe pkgs.mura.setup}"
+        "${pkgs.hostapd}/bin/hostapd"
+        "${pkgs.hostapd}/bin/hostapd_cli"
+        recoveryHotspot
         waysIn
         plymouthSay
         "${pkgs.gnused}/bin/sed"
@@ -223,13 +325,23 @@ in
         mura-recovery = recovery;
       };
 
+      # NixOS's repart module intentionally orders its service after sysroot.mount when no
+      # explicit whole-disk device is configured: that is how it discovers the root disk
+      # (nixpkgs repart.nix:202-210). Mura Recovery deliberately never mounts sysroot. Skip the
+      # automatic grow/add pass in this mode; a confirmed reset invokes systemd-repart directly
+      # with the whole disk resolved from the persist partition. This is systemd's standard
+      # per-boot-mode condition shape (ConditionKernelCommandLine), not a failed-unit exception.
+      services.systemd-repart.unitConfig.ConditionKernelCommandLine =
+        "!rd.systemd.unit=mura-recovery.target";
+
       # `rd.systemd.unit=mura-recovery.target` makes this the initrd's default target in place of
       # initrd.target, so like initrd.target it must pull basic.target itself (journald, udev,
       # plymouth-start, the test driver's initrd backdoor all hang off sysinit/basic).
       targets.mura-recovery = {
-        description = "Mura recovery environment (stage 1: sshd on the gadget, panel screen, offered reset)";
+        description = "Mura recovery environment (stage 1: panel, USB + hotspot ssh/web, offered reset)";
         requires = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-sshd.service" "mura-recovery-panel.service" "mura-setup-recovery.service" ];
-        after = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-sshd.service" "mura-recovery-panel.service" "mura-setup-recovery.service" ];
+        wants = [ "mura-recovery-hotspot.service" ];
+        after = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-hotspot.service" "mura-recovery-sshd.service" "mura-recovery-panel.service" "mura-setup-recovery.service" ];
         unitConfig.AllowIsolate = true;
       };
 
@@ -267,8 +379,21 @@ in
         '';
       };
 
+      services.mura-recovery-hotspot = {
+        description = "Mura recovery: per-boot-PSK Wi-Fi hotspot (hostapd)";
+        after = [ "systemd-udev-settle.service" ];
+        wants = [ "systemd-udev-settle.service" ];
+        serviceConfig = {
+          ExecStart = recoveryHotspot;
+          Type = "notify";
+          NotifyAccess = "all";
+          Restart = "on-failure";
+          RestartSec = "2s";
+        };
+      };
+
       services.mura-recovery-sshd = {
-        description = "Mura recovery: sshd on the gadget address";
+        description = "Mura recovery: sshd on the USB gadget and recovery hotspot";
         after = [ "mura-recovery-identity.service" "systemd-networkd.service" "mura-usb-gadget.service" ];
         requires = [ "mura-recovery-identity.service" ];
         wants = [ "systemd-networkd.service" "mura-usb-gadget.service" ];
@@ -283,15 +408,21 @@ in
         };
       };
 
+      # Plymouth is an optional surface, never a recovery availability dependency. pmOS waits
+      # 10 s for its framebuffer and then continues (research/56 §5); apply the same bound to
+      # plymouth-start. Units ordered after it proceed whether it starts or times out, avoiding
+      # both a permanent dark-device hang and a one-shot ping race in the panel frontend.
+      services.plymouth-start.serviceConfig.TimeoutStartSec = lib.mkDefault "10s";
+
       # The panel frontend (specs/recovery-menu.md §4–§5): the HMD's buttons over raw evdev
       # (register on release, long press ignored — Android recovery's semantics), the menu drawn
       # through plymouth; the ways-in lines drawn once and left standing. Runs for the life of
       # stage 1; a restart re-scans the input devices.
       services.mura-recovery-panel = {
         description = "Mura recovery: the panel menu (HMD buttons, plymouth)";
-        after = [ "mura-recovery-identity.service" "plymouth-start.service" "systemd-udev-settle.service" ];
+        after = [ "mura-recovery-identity.service" "mura-recovery-hotspot.service" "plymouth-start.service" "systemd-udev-settle.service" ];
         requires = [ "mura-recovery-identity.service" ];
-        wants = [ "systemd-udev-settle.service" ];
+        wants = [ "plymouth-start.service" "systemd-udev-settle.service" ];
         serviceConfig = {
           ExecStart = "${recovery} panel";
           Restart = "on-failure";

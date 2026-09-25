@@ -20,8 +20,21 @@ writeShellApplication {
     chmod +w "$work/disk.raw"
 
     fw=${qemu}/share/qemu/edk2-aarch64-code.fd
+    vars=${qemu}/share/qemu/edk2-arm-vars.fd
     varstore="$work/efivars.fd"
-    [ -f "$varstore" ] || { truncate -s 64M "$varstore"; }
+    varstore_stamp="$work/efivars.from-template"
+    # The variables pflash must start from edk2's initialized template. A zero-filled 64 MiB
+    # file boots, but runtime SetVariable fails — hiding exactly the LoaderEntryOneShot behavior
+    # this VM is meant to prove. Keep the working copy across reboots, never modify the store.
+    if [ -f "$varstore" ] && [ ! -e "$varstore_stamp" ]; then
+      echo "frame-vm-run: refusing an unmarked legacy efivars.fd; remove $varstore and retry" >&2
+      exit 1
+    fi
+    if [ ! -f "$varstore" ]; then
+      cp --reflink=auto "$vars" "$varstore"
+      touch "$varstore_stamp"
+    fi
+    chmod +w "$varstore"
 
     exec qemu-system-aarch64 \
       -machine virt -cpu cortex-a72 -smp 4 -m 4096 \

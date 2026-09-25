@@ -1,8 +1,9 @@
 # Recovery menu: one program, three ways in
 
-**Status:** rev 1 (2026-09-25) — normative for `pkgs/mura-recovery`, `mura-setup --recovery` and
-the stage-1 half of `modules/os/recovery.nix`. Revised when the family recovery images (Android-
-derived targets) land and when the button proof runs on hardware.
+**Status:** rev 2 (2026-09-25) — normative for `pkgs/mura-recovery`, `mura-setup --recovery`,
+the stage-1 half of `modules/os/recovery.nix`, and the dedicated-family recovery-image boundary.
+Revised when Android-derived partition selection lands and when the button proof runs on
+hardware.
 **Design source:** [research/56 §3](../docs/research/56-defaults-from-comparables.md) (the ruling),
 [research/57](../docs/research/57-recovery-environments-and-boot-failure-feedback.md) (the
 comparables and their reasons), [implementation-path.md §4 "Mura recovery environment"](../docs/architecture/implementation-path.md),
@@ -14,6 +15,12 @@ device contract declares them (`mura.hardware.input.hmdButtons`).
 input devices; a plymouth message per redraw; nothing on the frame path, nothing in a normal boot.
 
 ## 1. The problem
+
+This program runs from the **dedicated Mura recovery boot partition**: its own kernel+systemd
+initrd copy, booted to `mura-recovery.target`, with no recovery root filesystem. It is not a mode
+that depends on the normal Mura boot files, and it never replaces or consumes stock/vendor
+recovery. On uefi-rauc the partition is XBOOTLDR (`mura_recovery`); Android-derived targets need
+an additional bootable Mura partition proven during device bring-up.
 
 The recovery environment ([recovery.nix](../modules/os/recovery.nix)) had one way in: an ssh key
 declared by an administrator. A wearer without one — the appliance profile by default — saw a
@@ -128,7 +135,10 @@ Codes are the contract's `hmdButtons` resolved through the evdev table (`KEY_POW
 | `mura-setup --recovery` | `mura-setup-recovery.service` in stage 1, root (no other identity exists there) | the stub's HTTP on the gadget + hotspot addresses (`IP_FREEBIND`): `GET /` status + buttons; `POST /reboot`; `POST /factory-reset` → `400` unless the form field `confirm=erase` is present, else `mura-recovery action factory-reset --confirmed` | one confirmed POST (the Quest app's "Factory reset → Reset" is one confirmed tap); possession of the cable or the per-boot PSK authorises it, as for setup (first-run §5) |
 
 The web frontend never wipes on a `GET`, never on a `POST` without the field, and never serves
-on the LAN (the two listen addresses only).
+on the LAN (the two listen addresses only). Both recovery transports are required: USB gadget
+and a per-boot-PSK recovery hotspot; each exposes sshd and this web frontend. A target has not
+completed recovery bring-up until its radio/firmware, regulatory domain and AP mode pass in
+stage 1.
 
 ## 8. Conformance checklist
 
@@ -157,11 +167,17 @@ QEMU's keyboard):
    **Verified.**
 9. The button devices may appear after the panel started (udev coldplug — the VM's PS/2
    keyboard does): the panel picks them up (inotify on `/dev/input`). **Verified** (the VM).
+10. The recovery hotspot generates an eight-digit per-boot PSK, hostapd brings up a
+    `Mura-Recovery-*` AP on hwsim, a simulated phone associates, and both the web page and
+    administrator-key SSH answer on `10.42.0.1`; restarting hostapd retains the credentials
+    already shown on the panel. **Verified.**
 
 Hardware (recorded in the implementation-path track, pending): the volume/select keys reach
 evdev in stage 1 on each target (the input drivers — gpio-keys, the PMIC power key — in the
 initrd beside the DRM driver); the menu text is legible per eye at the theme's font size; the
 Galaxy XR's shared select/power code behaves per §4 rule 4.
+Each target's radio firmware, regulatory domain and AP/ACS support must also pass the hotspot
+proof on hardware.
 
 Not verifiable in the VM: `KEY_POWER`'s exclusion (§4 rule 4 — QEMU's keyboard has no power
 key reaching stage 1) and the reboot after the reset (`MURA_RECOVERY_NO_REBOOT` in the test).

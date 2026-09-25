@@ -95,23 +95,33 @@ What the ladder lacked was the **step**. `mura-recovery.target` as built at D6 i
 `Wants=sshd.service` + `Conflicts=greetd.service`, which is exactly the state a *single* hard
 failure already produces (greetd `Requires=` the preflight); after three failures the device was
 in the same state as after one. The step the comparables converge on is a **recovery
-environment the OS owns**: Lineage Recovery on the recovery partition (Mura arrives through that
-partition on every Android-derived target), AOSP recovery reached by `reboot recovery`, SteamOS's
-recovery image; Rescue Party's last level reboots into recovery and *offers* the wipe. So:
+environment the OS owns**. Lineage/Mobile NixOS provide the recovery-image boundary; pmOS
+provides the small stage-1/debug-shell contents while leaving the lower-level flashing route
+alone
+(`pmaports/main/postmarketos-initramfs/init_2nd.sh:35-42`,
+`init_functions.sh:1223-1241,1434-1441`). Mura combines them without adopting Lineage's
+assumption that the OS may replace stock recovery: a dedicated Mura recovery partition carries
+its own kernel+stage-1 initrd, while stock/vendor recovery, fastboot, EDL or Download remains able
+to reinstall Mura when Mura's own image is broken. Rescue Party's last level reboots into
+recovery and *offers* the wipe. So:
 
 - **Feedback on the first hard failure** (pmOS: the plymouth splash says what failed and how to
   reach the device) — not on the third. The count decides only when to leave the slot.
 - **At the count, reboot into Mura's own recovery environment, automatically** (ruled: Android's
-  escalation shape, without its automatic wipe levels) — the same initrd booted to a recovery
-  target: sshd on the gadget so the developer never loses the door, a panel screen that lists
+  escalation shape, without its automatic wipe levels) — a dedicated recovery boot image (its
+  own copy of the kernel+initrd, no root filesystem) booted to a recovery target: sshd on the
+  gadget so the developer never loses the door, a panel screen that lists
   what is available (ssh address, hotspot SSID and PSK, host-key fingerprint, flash
   instructions), and *offered* actions: factory reset through systemd-repart's factory reset
-  (`FactoryReset=yes`; rule 3: never automatic), slot switch, reboot. Per family it is a recovery BLS entry (uefi-rauc,
-  `systemctl reboot --boot-loader-entry=recovery`) or the recovery boot image (Android-derived,
-  `reboot recovery`). The counter, the threshold and `mura-crashloop` stay; where a family
-  provides no recovery entry, the stage-2 `mura-recovery.target` is the failure-feedback state,
-  described as such.
-- The vendors' modes (fastboot, EDL, Download) stay the reflash-from-scratch path.
+  (`FactoryReset=yes`; rule 3: never automatic), slot switch, reboot. Per family it is a
+  **Mura-owned partition and selector**: the XBOOTLDR `mura_recovery` partition + recovery BLS
+  entry on uefi-rauc (`systemctl reboot --boot-loader-entry=recovery.conf`); an additional
+  Android-family partition and selector proven during bring-up, never the stock `reboot
+  recovery` path. The counter, the threshold and `mura-crashloop` stay; where a family provides
+  no Mura-owned selector, the stage-2
+  `mura-recovery.target` is the failure-feedback state, described as such.
+- The vendors' stock recovery modes (Android recovery, fastboot, EDL, Download) stay the
+  independent reflash-from-scratch path.
 
 The work is the implementation-path §4 track "Mura recovery environment"; the remaining UX
 question — the per-eye panel splash as a shipping surface, and what shipping headsets show on a

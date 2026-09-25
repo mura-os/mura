@@ -1,12 +1,12 @@
 # uefi-rauc image family — first implemented for the Steam Frame (deckard).
 #
 # Mirrors the donor's slot/update architecture (docs/research/33-steam-frame-donor.md):
-#   - GPT with partlabels esp / rootfs_a / rootfs_b / syspersist / home
+#   - GPT with partlabels esp / mura_recovery / rootfs_a / rootfs_b / syspersist / home
 #     (the donor additionally has per-slot `efi_a/efi_b` for its U-Boot payload;
 #      our VM path boots UEFI/systemd-boot from the shared ESP, so those are
 #      device-side artifacts added at hardware bring-up, not here)
 #   - A/B raw rootfs slots, RAUC `bootloader=custom` with a steamos-bootconf-shaped
-#     backend script (ours flips the systemd-boot `default` entry on the ESP)
+#     backend script (ours flips the systemd-boot `default` filename glob on the ESP)
 #   - the `rauc.slot=A|B` kernel-cmdline contract
 #   - an in-store TEST-key-signed RAUC bundle (overview.md invariant 5: real signing
 #     happens outside the store; test keys are cacheable)
@@ -29,32 +29,39 @@ let
     initrd /EFI/mura/initrd
     options root=PARTLABEL=rootfs_${slot} rauc.slot=${lib.toUpper slot} ${kernelParamsCommon}
   '';
-  # The recovery environment (modules/os/recovery.nix; research/57 §3): the SAME kernel and
-  # initrd booted to mura-recovery.target — systemd's boot-menu-entry shape. Never counted,
-  # never the default; reached with `systemctl reboot --boot-loader-entry=recovery` (the
+  # The recovery environment (modules/os/recovery.nix; research/57 §3): its own kernel+initrd
+  # copy on the dedicated XBOOTLDR partition, booted to mura-recovery.target. Never counted,
+  # never the default; reached with `systemctl reboot --boot-loader-entry=recovery.conf` (the
   # LoaderEntryOneShot EFI variable), which is what the crash-loop counter does at its threshold.
   #
   # HARDWARE PROOF PENDING (implementation-path §4 track): that command — and
   # `systemd-factory-reset request` — needs runtime EFI SetVariable. On the Frame the UEFI
   # implementation is U-Boot's, whose runtime variable services only persist with a variable
   # store configured; without it the write is refused and the reboot lands in the default entry.
-  # Boot counting is immune (systemd-boot renames entry FILES on the ESP). If the proof fails,
-  # the fallback is file-based through this same script: `mura-bootconf set-oneshot recovery`
-  # writing `default recovery` into loader.conf, and the recovery entry restoring the slot
-  # default on its first boot — the steamos-bootconf shape, which never touches EFI variables.
+  # Boot counting is immune (systemd-boot renames entry FILES on the ESP). If the hardware proof
+  # fails, bring-up must add the file-based fallback before shipping: a bootconf operation writes
+  # `default recovery.conf`, and recovery restores the prior slot glob on first boot — the
+  # steamos-bootconf shape, which never touches EFI variables. That fallback is not wired yet.
   recoveryEntry = pkgs.writeText "entry-recovery.conf" ''
     title Mura recovery
-    linux /EFI/mura/Image
-    initrd /EFI/mura/initrd
+    linux /EFI/mura-recovery/Image
+    initrd /EFI/mura-recovery/initrd
     options rd.systemd.unit=mura-recovery.target ${kernelParamsCommon}
   '';
 
   # RAUC custom bootloader backend (interface: rauc calls with
   # get-primary | set-primary <bootname> | get-state <bootname> | set-state <bootname> good|bad).
-  # Primary selection = systemd-boot `default` line in /esp/loader/loader.conf (entry ID `a`/`b`
-  # — the ID is the file name minus `.conf` and minus any boot-counting suffix, so it stays
-  # stable across `a+3.conf` → `a+2-1.conf` → `a.conf`); slot state lives in
-  # /esp/loader/mura-slot-state. steamos-bootconf shape, minimal.
+  # Primary selection = systemd-boot's `preferred` line in /efi/loader/loader.conf.
+  # `preferred` (systemd ≥260) honours boot assessment; `default` does not
+  # (systemd boot.c:1904-1945; nixpkgs' systemd-boot-builder.py:303-313). Thus primary A is
+  # `preferred a*.conf` with `default b*.conf`: after A exhausts its tries, selection falls
+  # through to B. The entry ID includes `.conf`, and the glob follows
+  # `a+3.conf` → `a+2-1.conf` → `a.conf`. Slot state lives in
+  # /efi/loader/mura-slot-state. Why `/efi`, not the donor's `/esp`: SteamOS has separate
+  # per-slot EFI and shared ESP partitions; Mura has one. systemd/mkosi's semantic layout puts
+  # that ESP at `/efi` and leaves `/boot` for a future XBOOTLDR (research/33 §10, with the
+  # NixOS/Jovian `/boot` tradeoff). `/esp` also prevents systemd from discovering entries.
+  # steamos-bootconf shape, minimal.
   #
   # Boot counting (D6, implementation-path §3a; references/systemd/docs/AUTOMATIC_BOOT_ASSESSMENT.md):
   # `set-primary S` arms the target slot's entry with `+N` tries (`a.conf` → `a+3.conf`);
@@ -66,20 +73,41 @@ let
   bootconf = pkgs.writeShellApplication {
     name = "mura-bootconf";
     text = ''
-      LOADER=/esp/loader/loader.conf
-      STATE=/esp/loader/mura-slot-state
-      ENTRIES=/esp/loader/entries
+      LOADER=/efi/loader/loader.conf
+      STATE=/efi/loader/mura-slot-state
+      ENTRIES=/efi/loader/entries
       cmd="''${1:-}"; slot="''${2:-}"; val="''${3:-}"
       to_id() { case "$1" in A) echo a ;; B) echo b ;; *) echo "unknown slot $1" >&2; exit 1 ;; esac; }
       case "$cmd" in
         get-primary)
-          d=$(sed -n 's/^default[[:space:]]*//p' "$LOADER" | sed 's/\.conf$//')
-          case "$d" in a) echo A ;; b) echo B ;; *) echo "unknown default $d" >&2; exit 1 ;; esac ;;
+          d=$(sed -n 's/^preferred[[:space:]]*//p' "$LOADER")
+          [ -n "$d" ] || d=$(sed -n 's/^default[[:space:]]*//p' "$LOADER")
+          case "$d" in a*) echo A ;; b*) echo B ;; *) echo "unknown preferred/default selector $d" >&2; exit 1 ;; esac ;;
         set-primary)
           id=$(to_id "$slot")
-          # arm the entry with +N tries if it carries no counter yet (a.conf or none → a+N.conf)
-          if [ -e "$ENTRIES/$id.conf" ]; then mv "$ENTRIES/$id.conf" "$ENTRIES/$id+${bootTries}.conf"; fi
-          tmp=$(mktemp); sed "s/^default[[:space:]].*/default $id/" "$LOADER" > "$tmp"; cat "$tmp" > "$LOADER"; rm -f "$tmp" ;;
+          case "$id" in a) other=b ;; b) other=a ;; esac
+          # Arm (or re-arm) the installed slot. A failed earlier image leaves `b+0-N.conf`;
+          # selecting a newly installed B must rename that exhausted entry back to `b+N.conf`,
+          # not let `preferred` reject it forever.
+          source=
+          for candidate in "$ENTRIES/$id.conf" "$ENTRIES/$id"+*.conf; do
+            [ -e "$candidate" ] || continue
+            if [ -n "$source" ]; then
+              echo "multiple entries for slot $slot: $source and $candidate" >&2
+              exit 1
+            fi
+            source=$candidate
+          done
+          [ -n "$source" ] || { echo "no entry for slot $slot" >&2; exit 1; }
+          target="$ENTRIES/$id+${bootTries}.conf"
+          [ "$source" = "$target" ] || mv "$source" "$target"
+          tmp=$(mktemp)
+          {
+            printf 'preferred %s*.conf\ndefault %s*.conf\n' "$id" "$other"
+            sed '/^preferred[[:space:]]/d; /^default[[:space:]]/d' "$LOADER"
+          } > "$tmp"
+          cat "$tmp" > "$LOADER"
+          rm -f "$tmp" ;;
         get-state)
           touch "$STATE"
           s=$(sed -n "s/^$slot=//p" "$STATE"); echo "''${s:-good}" ;;
@@ -91,7 +119,12 @@ let
         get-tries)
           # observability: the counted entry for a slot, if any (a+2-1.conf → "2 tries left, 1 done")
           id=$(to_id "$slot")
-          f=$(ls "$ENTRIES"/"$id"+*.conf 2>/dev/null | head -n1)
+          f=
+          for candidate in "$ENTRIES/$id"+*.conf; do
+            [ -e "$candidate" ] || continue
+            f=$candidate
+            break
+          done
           [ -n "$f" ] && basename "$f" || echo "$id.conf (not counted)" ;;
         *) echo "usage: mura-bootconf get-primary|set-primary S|get-state S|set-state S good|bad|get-current|get-tries S" >&2; exit 1 ;;
       esac
@@ -137,12 +170,34 @@ in
           "/EFI/mura/initrd".source =
             "${config.system.build.initialRamdisk}/${config.system.boot.loader.initrdFile}";
           "/loader/loader.conf".source = pkgs.writeText "loader.conf" ''
-            default a
+            preferred a*.conf
+            default b*.conf
             timeout 3
             editor yes
           '';
           "/loader/entries/a.conf".source = bootEntry "a";
           "/loader/entries/b.conf".source = bootEntry "b";
+        };
+      };
+      # A dedicated Mura recovery boot image, physically separate from both normal Mura boot
+      # artifacts and any hardware/vendor recovery. XBOOTLDR is systemd-boot's standard second
+      # boot partition: it discovers Type #1 entries and their kernel/initrd here
+      # (systemd-boot(7); research/57 §3). 512 MiB follows NixOS's installer ESP size and is
+      # ample for the measured single kernel+initrd while keeping the embedded storage bound.
+      "15-mura-recovery" = {
+        repartConfig = {
+          Type = "xbootldr";
+          Label = "mura_recovery";
+          Format = "vfat";
+          SizeMinBytes = "512M";
+          SizeMaxBytes = "512M";
+          SplitName = "mura_recovery";
+        };
+        contents = {
+          "/EFI/mura-recovery/Image".source =
+            "${config.system.build.kernel}/${config.system.boot.loader.kernelFile}";
+          "/EFI/mura-recovery/initrd".source =
+            "${config.system.build.initialRamdisk}/${config.system.boot.loader.initrdFile}";
           "/loader/entries/recovery.conf".source = recoveryEntry;
         };
       };
@@ -189,15 +244,20 @@ in
     };
   };
 
-  ###### Mounts (donor-mirroring: doc 33 §2) ######
+  ###### Mounts (donor state layout + systemd boot-partition layout: docs 33/57) ######
   fileSystems."/" = {
     # systemd's fstab-generator lets the kernel cmdline `root=` (per boot entry)
     # take precedence in the initrd; this is the slot-A default.
     device = "/dev/disk/by-partlabel/rootfs_a";
     fsType = "btrfs";
   };
-  fileSystems."/esp" = {
+  fileSystems."/efi" = {
     device = "/dev/disk/by-partlabel/esp";
+    fsType = "vfat";
+    options = [ "umask=0077" "nofail" "x-systemd.automount" ];
+  };
+  fileSystems."/boot" = {
+    device = "/dev/disk/by-partlabel/mura_recovery";
     fsType = "vfat";
     options = [ "umask=0077" "nofail" "x-systemd.automount" ];
   };
@@ -237,7 +297,7 @@ in
     "40-home" = { Type = "home"; Label = "home"; Format = "ext4"; FactoryReset = true; };
   };
   boot.initrd.systemd.repart.enable = true;
-  mura.recovery.rebootCommand = "systemctl reboot --boot-loader-entry=recovery";
+  mura.recovery.rebootCommand = "systemctl reboot --boot-loader-entry=recovery.conf";
   # QEMU aarch64 virt machine devices for the VM proof.
   boot.initrd.availableKernelModules = [ "virtio_pci" "virtio_blk" "virtio_scsi" "virtio_net" ];
   # No bootloader installer runs inside the image build; entries are baked above.
@@ -259,6 +319,13 @@ in
 
     [keyring]
     path=/etc/rauc/keyring.pem
+
+    # RAUC's documented "Additional Rescue Slot": normal A/B updates do not touch it; an
+    # explicit rescue-image bundle may. The bootloader enters it after repeated failures or
+    # user request (references/rauc/docs/scenarios.rst:147-178).
+    [slot.rescue.0]
+    device=/dev/disk/by-partlabel/mura_recovery
+    type=raw
 
     [slot.rootfs.0]
     bootname=A

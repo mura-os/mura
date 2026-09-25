@@ -67,8 +67,39 @@ boot a VM and take minutes, so they are not part of `nix flake check`.
 
 **Rung 3 — `nix run .#frame-vm-run -- <image.raw[.zst]>`** (image/update machinery only): the
 Steam Frame aarch64 image under full-system emulation, including the RAUC A/B update round-trip
-([docs/research/33 §9](docs/research/33-steam-frame-donor.md)). Build the image on an aarch64
-builder: `nix build .#packages.aarch64-linux.frame-image`.
+([docs/research/33 §9](docs/research/33-steam-frame-donor.md)). The default build command is:
+
+```bash
+nix run .#frame-build
+```
+
+`frame-build` submits `packages.aarch64-linux.frame-image` to nixbuild.net as a native
+`aarch64-linux` remote build, with the proven 16-job limit and builder-side substitution
+([ADR 0004](docs/architecture/adr/0004-cross-vs-native-builds.md),
+[research/33 §10](docs/research/33-steam-frame-donor.md)). It uses the invoking user's ordinary
+SSH key and `known_hosts`; it neither reads a root-owned key nor changes `/etc/nix`. Pass another
+flake target and normal `nix build` flags after `--`, for example:
+
+```bash
+nix run .#frame-build -- .#packages.aarch64-linux.frame-bundle -o result-frame-bundle
+```
+
+The recovery-entry proof has a reproducible test-only image. It forces preflight P2 hard, cycles
+the first failed boot, then exercises the production threshold → one-shot `recovery.conf` →
+`mura-recovery.target` path:
+
+```bash
+nix run .#frame-build -- \
+  .#packages.aarch64-linux.frame-recovery-proof-image \
+  -o result-frame-recovery-proof
+FRAME_VM_DIR=/path/on/fast-storage \
+  nix run .#frame-vm-run -- \
+  result-frame-recovery-proof/spatial-deckard.raw.zst
+```
+
+Stop QEMU after the serial log reaches `Mura recovery`; the evidence expected before it is the
+first failure/cycle, the second failure reaching the threshold, and systemd-boot selecting the
+recovery entry. Keep `FRAME_VM_DIR` on fast local storage: QEMU TCG writes are storage-bound.
 
 ## Design rule
 

@@ -68,13 +68,23 @@
         ];
       };
 
-      # Valve Steam Frame (deckard): the first real device target. aarch64 artifacts
-      # build on remote aarch64 builders (ADR 0004; nixbuild.net) and are excluded
-      # from `nix flake check`.
+      # Valve Steam Frame (deckard): the first real device target. aarch64 artifacts build on
+      # nixbuild.net without host/root configuration: `nix run .#frame-build` (ADR 0004;
+      # research/33 §10). They are excluded from the local `nix flake check`.
       nixosConfigurations.valve-steam-frame = muraSystem {
         device = ./devices/valve-steam-frame;
         system = "aarch64-linux";
         extraModules = [{ nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }];
+      };
+      # TEST-ONLY deckard image: forces P2 hard, cycles failure 1, then exercises the production
+      # threshold → LoaderEntryOneShot → recovery.conf → mura-recovery.target path.
+      nixosConfigurations.valve-steam-frame-recovery-proof = muraSystem {
+        device = ./devices/valve-steam-frame;
+        system = "aarch64-linux";
+        extraModules = [
+          { nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }
+          ./tests/frame/recovery-proof.nix
+        ];
       };
 
       # Named, discoverable outputs (no untyped grab-bag).
@@ -101,6 +111,8 @@
             # QEMU runner + smoke checks for the Frame image (runs the aarch64 disk
             # image via qemu-system-aarch64 full-system emulation on the dev host).
             frame-vm-run = (pkgsFor system).callPackage ./pkgs/frame-vm-run { };
+            # Repo-local nixbuild.net invocation: user SSH key, no /etc/nix or root changes.
+            frame-build = (pkgsFor system).callPackage ./pkgs/frame-build { };
 
             # Rung-1 dev loop: nested session window + simulated-HMD Monado.
             dev-session = (pkgsFor system).callPackage ./pkgs/dev-session { };
@@ -112,13 +124,15 @@
             vm-test-oob = import ./tests/vm/oob.nix { pkgs = pkgsFor system; };
             vm-test-health = import ./tests/vm/health.nix { pkgs = pkgsFor system; };
             vm-test-recovery = import ./tests/vm/recovery.nix { pkgs = pkgsFor system; };
-            vm-test-perception-intake = import ./tests/vm/perception-intake.nix { pkgs = pkgsFor system; };
             vm-test-settings = import ./tests/vm/settings.nix { pkgs = pkgsFor system; };
+            vm-test-perception-intake = import ./tests/vm/perception-intake.nix { pkgs = pkgsFor system; };
           }
         // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
-          # Steam Frame uefi-rauc artifacts (build via remote aarch64 builder).
+          # Steam Frame uefi-rauc artifacts (build with `nix run .#frame-build`).
           frame-image = self.nixosConfigurations.valve-steam-frame.config.system.build.image;
           frame-bundle = self.nixosConfigurations.valve-steam-frame.config.system.build.raucBundle;
+          frame-recovery-proof-image =
+            self.nixosConfigurations.valve-steam-frame-recovery-proof.config.system.build.image;
         });
 
       apps = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (system: {
@@ -126,6 +140,11 @@
           type = "app";
           program = "${self.packages.${system}.dev-session}/bin/dev-session";
           meta.description = "Rung-1 dev loop: nested spatial session + simulated-HMD Monado";
+        };
+        frame-build = {
+          type = "app";
+          program = "${self.packages.${system}.frame-build}/bin/frame-build";
+          meta.description = "Build Mura aarch64 artifacts on nixbuild.net without host configuration";
         };
       });
 

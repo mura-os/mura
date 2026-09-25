@@ -26,7 +26,9 @@
       };
       testing.initrdBackdoor = true;
       boot.kernelParams = [ "rd.systemd.unit=mura-recovery.target" ];
-      boot.initrd.kernelModules = [ "cdc_ncm" ]; # the HOST end's class driver, in stage 1 for the test
+      # cdc_ncm = the HOST end of the cable; hwsim gives recovery wlan0 (headset AP) and wlan1
+      # (phone) so the required hotspot is exercised in stage 1.
+      boot.initrd.kernelModules = [ "cdc_ncm" "mac80211_hwsim" "ccm" ];
       boot.initrd.systemd = {
         # TEST-ONLY: an ssh client and the fixture key inside stage 1, and an address on the
         # gadget's host end (usb1 — the same kernel is both sides through dummy_hcd), so the
@@ -35,6 +37,9 @@
           ssh = "${pkgs.openssh}/bin/ssh";
           ip = "${pkgs.iproute2}/bin/ip";
           curl = "${pkgs.curl}/bin/curl";
+          iw = "${pkgs.iw}/bin/iw";
+          wpa_supplicant = "${pkgs.wpa_supplicant}/bin/wpa_supplicant";
+          grep = "${pkgs.gnugrep}/bin/grep";
         };
         # TEST-ONLY: the reset must not reboot the VM under the script (the action honours this)
         services.mura-recovery-panel.environment.MURA_RECOVERY_NO_REBOOT = "1";
@@ -113,6 +118,54 @@
             return "172.16.42.1" in machine.succeed("networkctl status usb0 2>/dev/null || true")
         retry(gadget_configured, timeout=timedelta(seconds=60))
         print(machine.succeed("networkctl list"))
+
+    with subtest("recovery: the per-boot-PSK hotspot exposes ssh and the web app"):
+        machine.wait_for_unit("mura-recovery-hotspot.service", timeout=timedelta(seconds=120))
+        env = dict(
+            line.split("=", 1)
+            for line in machine.succeed("cat /run/mura/hotspot.env").splitlines()
+        )
+        psk = env["MURA_HOTSPOT_PSK"]
+        ssid = env["MURA_HOTSPOT_SSID"]
+        assert len(psk) == 8 and psk.isdigit(), env
+        assert ssid.startswith("Mura-Recovery-"), env
+        machine.wait_until_succeeds(
+            "ip -4 addr show wlan0 | grep -q 10.42.0.1/24",
+            timeout=timedelta(seconds=60),
+        )
+        machine.succeed(
+            f"printf 'network={{\\n ssid=\"{ssid}\"\\n psk=\"{psk}\"\\n}}\\n' > /tmp/recovery-hotspot.conf"
+        )
+        machine.succeed(
+            "wpa_supplicant -B -i wlan1 -c /tmp/recovery-hotspot.conf -P /tmp/recovery-wpa.pid"
+        )
+        machine.wait_until_succeeds(
+            "iw dev wlan1 link | grep -q Connected",
+            timeout=timedelta(seconds=60),
+        )
+        # One networkd instance cannot realistically be both the DHCP server and an independent
+        # phone client in one kernel; the real DHCP server is configured above, and the phone end
+        # uses the same static test shape as the emulated USB host end.
+        machine.succeed("ip addr add 10.42.0.5/24 dev wlan1")
+        page = machine.succeed("curl -sf http://10.42.0.1/")
+        assert "Mura recovery" in page and fp in page, page
+        machine.succeed("cp /etc/mura-test/fixture-ssh-key /tmp/hotspot-key && chmod 600 /tmp/hotspot-key")
+        out = machine.succeed(
+            "ssh -i /tmp/hotspot-key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+            "-o ConnectTimeout=5 root@10.42.0.1 mura-recovery action status 2>&1"
+        )
+        assert "USB cable:" in out and "Wi-Fi:" in out, out
+        before = machine.succeed("cat /run/mura/hotspot.env")
+        machine.succeed("systemctl restart mura-recovery-hotspot.service")
+        machine.wait_for_unit(
+            "mura-recovery-hotspot.service",
+            timeout=timedelta(seconds=30),
+        )
+        assert machine.succeed("cat /run/mura/hotspot.env") == before
+        machine.wait_until_succeeds(
+            "iw dev wlan1 link | grep -q Connected",
+            timeout=timedelta(seconds=60),
+        )
 
     with subtest("recovery: panel — a key registers on release, moves wrap, Confirm defaults to Cancel, a held key is ignored"):
         key("down")
