@@ -477,6 +477,19 @@ front those device knobs as keys** (snapd's single tree: `snap get system` shows
 leave them to their own interfaces** (steamos: a client asks `TdpLimit1`, not a settings key).
 Both ship; the difference is whether the settings UI has one bus to talk to.
 
+**Ruled 2026-09-25 — shape C** (after discussion; the owner: "the shape C makes sense"): **one
+artifact, one crate, two modes on two buses.** `mura-settingsd` on the session bus is the
+per-user store (this rung, D7). The same crate's system mode, on the system bus as root, serves
+keys with `stratum = device` through the same generic `Get`/`Set`/`Changed` keyed by artifact id
+— snapd's shape — with per-key handlers inside that validate against `mura.hardware.*` and apply
+to sysfs/units or call the owning freedesktop daemon (`timedate1`, `hostname1`, …; snapd's
+`system.timezone` → `timedatectl`), and polkit per action with wheel granted where a comparable
+grants. steamos-manager is the precedent for the two-mode single binary (`steamos-manager -r`).
+A client dispatches on `stratum`; nothing is proxied, no relay exists, polkit sees the real
+caller. The artifact reserves `stratum = device` now; the system mode is built when a target
+brings its first device knob (the Frame rung), and that rung decides the polkit action
+granularity (snapd's one action vs systemd's per domain).
+
 ### 13.2 Migrations — code, numbered, recorded once
 
 Every current comparable — kconf_update KF6, snapd `patchN.go`, Android `onUpgradeLocked`,
@@ -488,6 +501,17 @@ is the KF5 DSL KDE retired plus gsettings-data-convert's key map. That is conver
 only declares `schemaVersion`.** Applied (rule 8). What has no precedent and is dropped with it:
 the build-time graph assertion (there is no graph when steps are linear code) and golden
 downgrade fixtures (nobody tests downgrade; snapd refuses it).
+
+**Amended after reading NixOS's own position** (`nixos/lib/utils.nix:684-714`,
+`mkStateRevisionOption`): NixOS does not auto-migrate state; its module state revisions carry
+*manual* migration text and warn that "If you perform these migrations, rolling back to an older
+generation will require also reversing the migrations to the state expected by that generation".
+Mura keeps automatic migrations (the appliances') but under NixOS's constraint: **migrations are
+additive and non-destructive** — a rename writes the new key beside the old, a transform writes
+beside, nothing is deleted or overwritten by a migration — so the previous generation reads the
+untouched old keys after a rollback and the store header records the highest schema version that
+wrote it. That is what makes "downgrade" a non-event here where snapd refuses it and Android
+rebuilds.
 
 ### 13.3 Invalid values under a new schema — three positions, none quarantine
 
@@ -526,9 +550,18 @@ never committed — to be opened by the first component that needs it.**
 
 ### 13.6 What this leaves for the owner
 
-One question, with two shipping positions (§13.1): whether the per-user settings bus also
-*fronts* device-wide knobs as read-through keys with `Set` proxied to their owning service
-(snapd's single tree), or whether device knobs are reached only on their own interfaces
-(steamos). Everything else in §13 converged once the appliance comparables were read, and is
-applied in spec rev 3. The polkit-agent gap (registry #10) is not D7's under either position: it
+Nothing: the one fork (§13.1) was ruled as shape C on 2026-09-25; everything else converged
+once the appliance comparables were read. All of it is applied in spec rev 3 and the daemon
+spec ([specs/settings-daemon.md](../../specs/settings-daemon.md)).
+
+**NixOS alignment check** (asked by the owner): the runtime-writable store is NixOS's own
+pattern — `time.timeZone` "If null … can be set imperatively using timedatectl"
+(`nixos/modules/config/locale.nix:32-33`), `users.mutableUsers = true` merging declared with
+imperative accounts (`users-groups.nix:681-694`), `programs.dconf` compiling the system layer
+and leaving the user db to the runtime — provided `ownership = declarative` is the default and
+`runtime` the explicit opt-in, as `null` is. `system.stateVersion` freezes data *formats*, not
+preference defaults, so "untouched keys follow the new default" is what a NixOS desktop already
+does. The one place Mura departs from NixOS at the filesystem level is D1's mutable `/etc`
+overlay (recorded, multi-user.md rev 3.3); the settings stores live under `/var/lib` and `$HOME`,
+never in it. The polkit-agent gap (registry #10) is not D7's under either position: it
 is the prompt surface for every `auth_admin_keep` action on the device.
