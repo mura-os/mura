@@ -113,7 +113,7 @@ class (iv) is the compositor axis.
 
 | # | Stage | Exists today | To build |
 |---|---|---|---|
-| B1b | XR preflight + recovery ladder | **implemented at D6** (`modules/os/health.nix`: `mura-preflight` P1–P7 before greetd, `mura-crashloop` counter, `mura-recovery.target`; VM-verified incl. the forced ladder); **ruled 2026-09-25** ([research/56 §3](../research/56-defaults-from-comparables.md)): the counter stays for the cross-slot gap systemd's boot counting cannot see (a persistent state fault in an already-good slot), feedback moves to the *first* hard failure (the plymouth message, §4 track), and the counter's step at the threshold becomes an automatic reboot into the Mura recovery environment (§4 track) — until that lands `mura-recovery.target` is the failure-feedback state, not a recovery mode. Flat-output fallback on a docked connector is the docked-mode rung's; the greeter's a11y exposure of a soft result is G1's | gate before greeter/session start: runtime-created Vulkan device, GPU match, factory-calibration validity, backend-defined DRM/IMU transport enumeration, advancing sensor/pose proof, and a dedicated Monado probe compositor/client reaching stable per-eye presentation. Profile-dependent accessory checks remain qualification-only until attachment policy exists. Crash-loop threshold → flat/SSH/diagnostic fallback; failure must never leave a permanently dark headset |
+| B1b | XR preflight + recovery ladder | **implemented at D6** (`modules/os/health.nix`: `mura-preflight` P1–P7 before greetd, `mura-crashloop` counter, `mura-recovery.target`; VM-verified incl. the forced ladder); **ruled 2026-09-25** ([research/56 §3](../research/56-defaults-from-comparables.md)): the counter stays for the cross-slot gap systemd's boot counting cannot see (a persistent state fault in an already-good slot), feedback moves to the *first* hard failure (the plymouth message, §4 track), and the counter's step at the threshold is an automatic reboot into the Mura recovery environment (§4 track, landed); where the family provides no entry, the stage-2 `mura-recovery.target` — the failure-feedback state — instead. Flat-output fallback on a docked connector is the docked-mode rung's; the greeter's a11y exposure of a soft result is G1's | gate before greeter/session start: runtime-created Vulkan device, GPU match, factory-calibration validity, backend-defined DRM/IMU transport enumeration, advancing sensor/pose proof, and a dedicated Monado probe compositor/client reaching stable per-eye presentation. Profile-dependent accessory checks remain qualification-only until attachment policy exists. Crash-loop threshold → flat/SSH/diagnostic fallback; failure must never leave a permanently dark headset |
 | B9 | Session-ready gate + update mark-good | **implemented at D6**: `mura-readiness` (blessing tier) `RequiredBy=boot-complete.target` on every profile; uefi-rauc arms `+N` in `set-primary`, `systemd-bless-boot` strips it, `mura-mark-good` tells RAUC — three transitions; `mura.qualification.readinessCheck` stays the device's named check the tier consumes | see §3a: readiness tiers, the mark-good service, and systemd-boot boot-counting wired explicitly in the uefi-rauc family |
 
 ## 3. The rung ladder
@@ -363,9 +363,9 @@ hard check failed — the unit fails, and `greetd.service` `Requires=` it, so th
 greeter or session. **The probe never modifies persistent state**; the crash-loop counter is a
 separate unit's: `OnFailure=mura-crashloop.service` increments `state/health/crashloop` on
 `/persist`, and at `mura.health.crashLoopThreshold` consecutive hard failures reboots into the
-Mura recovery environment (§4 track; automatic, ruled 2026-09-25 — until the environment exists
-it starts `mura-recovery.target`, which is the failure-feedback state: sshd, gadget and hotspot
-up, nothing graphical). The first hard failure already shows what failed and how to reach the
+Mura recovery environment (§4 track; automatic, ruled 2026-09-25; where the family provides no
+recovery entry — the VM — it starts the stage-2 `mura-recovery.target`, the failure-feedback
+state: sshd, gadget and hotspot up, nothing graphical). The first hard failure already shows what failed and how to reach the
 device on the panels (plymouth) and on the setup launcher. A blessed boot
 (`mura-readiness`) resets the counter. Results are written as `/run/mura/preflight.json` for the
 readiness check and for `mura-device.json`-style tooling. **Landed at D6** (`mura-preflight`;
@@ -416,57 +416,61 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   and the structural never-block check — validates the protocol before either real end exists.
   Feeds the M4-adjacent perception work without gating it.
 - **Mura recovery environment** ([research/56 §3](../research/56-defaults-from-comparables.md),
-  [research/57](../research/57-recovery-environments-and-boot-failure-feedback.md); ruled
-  2026-09-25). The OS owns its recovery, as Lineage Recovery, AOSP recovery and SteamOS's recovery
-  image do; it is the *same initrd* booted to `mura-recovery.target` (systemd's shape: no third
-  root filesystem), packaged per family — a `recovery.conf` BLS entry on uefi-rauc reached with
-  `systemctl reboot --boot-loader-entry=recovery`, the recovery boot image reached with `reboot
-  recovery` on the Android-derived targets (with their bring-up). Contents: sshd on the gadget
-  address (host key from `identity/ssh` when `/persist` mounts, else generated and its
-  fingerprint shown), a panel screen listing what is available (failing checks, ssh address,
-  hotspot SSID + PSK, fingerprint, flash instructions), and *offered* actions — factory reset
-  through `systemd-factory-reset` + repart `FactoryReset=yes` on `syspersist`/`home` (never
-  automatic, rule 3), slot switch (`mura-bootconf`), reboot. Trigger: `mura-crashloop` at
-  `crashLoopThreshold` (automatic). Feedback on the *first* hard failure is plymouth in the normal
-  initrd (`display-message` from a unit after the preflight). Exit (uefi-rauc): `tests/vm/recovery.nix`
-  green (initrd ssh over the gadget, the menu, factory reset wiping a GPT `syspersist` stand-in);
-  `vm-test-health` shows the plymouth message on a hard failure; counter → `recovery.conf` →
-  recovery target proven on the deckard image via `frame-vm-run`. **Status (2026-09-25):** landed
-  — `modules/os/recovery.nix`, `pkgs/mura-plymouth-theme`, `assets/branding`, the uefi-rauc
-  entry and `FactoryReset=yes` definitions, `tests/vm/recovery.nix` (green: environment up,
-  plymouth drew the screen, ssh from the cable's host end with the administrator's key shows the
-  menu and the fingerprint, the device's own host key once `/persist` is readable, factory reset
-  asks then wipes and re-creates exactly the `syspersist` partition), `vm-test-health` (the first
-  hard failure's panel message; `plymouth-quit` skipped on the marker), `tests/persist.nix` pins
-  the entry and the reboot command on the Frame configuration. **Pending:** the counter →
-  `recovery.conf` reboot on the deckard image itself — this host has no aarch64 builder; the
-  proof is `frame-vm-run` with a forced P2 failure until the threshold, then `recovery.conf` on
-  the ESP and `mura-recovery.target` in the journal — **and it carries a real risk**:
-  `--boot-loader-entry` and `systemd-factory-reset request` write EFI variables at runtime, which
-  U-Boot's UEFI only persists with a variable store configured; if the proof fails, the fallback
-  is the file-based one-shot through `mura-bootconf` (`families/uefi-rauc` comment). Recovery
-  login is wheel members' and root's declared keys only (ruled 2026-09-25).
-  **`pkgs/mura-recovery` — one program, three ways in: landed** ([specs/recovery-menu.md](../../specs/recovery-menu.md);
-  the `mura-setup` shape, ADR 0017 decision 10). The actions (status, factory reset, slot
-  switch, reboot, power off) live once, in Rust (rule 6: it parses input and holds state); the
-  shell menu is gone. Frontends: (a) **`mura-recovery panel`** — the HMD's buttons over raw
-  evdev in stage 1 (`/etc/mura/recovery.json` from the contract's `hmdButtons`/`selectRole`/
-  `backRole`, Android recovery's keyboard fallbacks appended), Android recovery's key semantics
-  (register on release, auto-repeat ignored, ≥750 ms long press ignored — a held key cannot
-  confirm; the countdown was dropped for lack of a comparable), a separate Confirm screen
-  defaulting to `Cancel`, drawn as plymouth messages ≤200 bytes; devices that appear after the
-  panel started are picked up (inotify — udev's coldplug lands the VM's PS/2 keyboard late, and
-  gpio-keys targets will be no different); (b) bare **`mura-recovery`** over ssh/console (what the banner says to type),
-  `yes, erase` to confirm; (c) **`mura-setup --recovery`** on the gadget/hotspot addresses,
-  `POST /factory-reset` refused without `confirm=erase`. The reset unmounts the partition first
-  (Android's `EraseVolume` shape), settles udev and retries the `BLKPG`/`BLKRRPART` EBUSY
-  window. Proof: `vm-test-recovery` (seven subtests — keys through QEMU's keyboard incl. a 2 s
-  hold, the Confirm/Cancel/Back flow, the shell's wrong answer, the web 400, and the wipe once
-  through the web form and once through the panel). **Pending on hardware:** the volume/select
-  keys reach evdev in stage 1 on each target (the input driver in the initrd beside the DRM
-  driver); legibility of the menu text per eye; the Galaxy XR's shared select/power code (spec
-  §4 rule 4). Later in the track: reflash from recovery (a RAUC bundle over ssh); the hotspot in
-  the recovery initrd; `switch-slot` on the web page (decider: the uefi-rauc manual proof).
+  [research/57](../research/57-recovery-environments-and-boot-failure-feedback.md),
+  [specs/recovery-menu.md](../../specs/recovery-menu.md); ruled 2026-09-25). The OS owns its
+  recovery, as Lineage Recovery, AOSP recovery and SteamOS's recovery image do; it is the *same
+  initrd* booted to `mura-recovery.target` (systemd's boot-menu-entry shape: no third root
+  filesystem), packaged per family — a `recovery.conf` BLS entry where the family is uefi-rauc,
+  reached with `systemctl reboot --boot-loader-entry=recovery`; the recovery boot image where the
+  family is Android-derived, reached with `reboot recovery` (with each device's bring-up).
+  Trigger: `mura-crashloop` at `crashLoopThreshold`, automatically; where the family provides no
+  entry (`mura.recovery.rebootCommand` unset — the VM), the step enters the stage-2
+  `mura-recovery.target` instead: sshd, gadget and hotspot up, nothing graphical. Feedback on the
+  *first* hard failure is plymouth in the normal initrd (`mura-preflight-feedback`).
+  Contents: sshd on the gadget address (host key from `identity/ssh` when `/persist` mounts,
+  else generated and its fingerprint shown; wheel members' and root's declared keys only), and
+  **one menu program, three ways in** (`pkgs/mura-recovery`, the `mura-setup` shape, ADR 0017
+  decision 10; Rust under rule 6 — it parses input and holds state): the actions live once —
+  status; factory reset; slot switch where the family has one; reboot; power off — and every
+  destructive one is *offered* behind a confirm, never automatic (rule 3). The factory reset is
+  systemd-repart's (`FactoryReset=yes` on `syspersist`/`home` in the family's `repart.d`,
+  `systemd-repart --factory-reset=yes` deleting and re-creating exactly those partitions),
+  invoked directly from the recovery environment: stage 1 *is* the "well-defined clean state"
+  that `factory-reset.target` exists to reach, so `systemd-factory-reset request` + reboot would
+  add only the EFI-variable write (the U-Boot risk below). It unmounts the partition first
+  (Android recovery's `EraseVolume` shape) and rides out udev's `BLKPG`/`BLKRRPART` EBUSY
+  window. Frontends: (a) `mura-recovery panel` — the HMD's buttons over raw evdev in stage 1
+  (`/etc/mura/recovery.json` from the contract's `hmdButtons`/`selectRole`/`backRole`, Android
+  recovery's keyboard fallbacks appended; on the three-button default volume-up selects,
+  volume-down moves, the list wraps), Android recovery's key semantics (register on release,
+  auto-repeat ignored, ≥750 ms long press ignored — a held key cannot confirm), a separate
+  Confirm screen defaulting to `Cancel`, drawn as plymouth messages ≤200 bytes under the
+  per-device theme (`pkgs/mura-plymouth-theme`, `assets/branding`); devices that appear after the
+  panel started are picked up (inotify — udev's coldplug lands them late); (b) bare
+  `mura-recovery` over ssh/console — what the banner says to type — `yes, erase` to confirm;
+  (c) `mura-setup --recovery` on the gadget/hotspot addresses, `POST /factory-reset` refused
+  without `confirm=erase`.
+  **Status (2026-09-25): landed** — `modules/os/recovery.nix`, `pkgs/mura-recovery`,
+  `pkgs/mura-plymouth-theme`, `mura-setup --recovery`, the uefi-rauc entry and `FactoryReset=yes`
+  definitions, `tests/persist.nix` pinning the entry and the reboot command on the Frame
+  configuration. Proof: `vm-test-recovery` (seven subtests: environment up and drawn on plymouth,
+  keys through QEMU's keyboard incl. a 2 s hold ignored, the Confirm/Back/Cancel flow, the shell
+  over ssh from the cable's host end with the administrator's key and the banner's fingerprint,
+  the device's own host key once `/persist` is readable, the shell's wrong answer, the web `400`,
+  the wipe once through the web form over a left-behind mount and once through the panel —
+  exactly the `syspersist` partition re-created); `vm-test-health` (the first hard failure's
+  panel message; `plymouth-quit` skipped on the marker).
+  **Pending — hardware, and a host with an aarch64 builder:** the counter → `recovery.conf` reboot
+  on the deckard image (`frame-vm-run` with a forced P2 failure to the threshold, then
+  `recovery.conf` on the ESP and `mura-recovery.target` in the journal) — **with a real risk**:
+  `--boot-loader-entry` writes an EFI variable at runtime, which U-Boot's UEFI only persists with
+  a variable store configured; if the proof fails, the fallback is the file-based one-shot through
+  `mura-bootconf` (`families/uefi-rauc` comment). Per target: the volume/select keys reach evdev
+  in stage 1 (the input driver in the initrd beside the DRM driver); legibility of the menu text
+  per eye; the Galaxy XR's shared select/power code (spec §4 rule 4).
+  **Later in the track:** reflash from recovery (a RAUC bundle over ssh); the hotspot in the
+  recovery initrd (after measuring what it costs there); `switch-slot` on the web page (decider:
+  the uefi-rauc manual proof).
 - **USB identity + descriptor correctness** ([research/55](../research/55-usb-identities-and-gadget-policy.md);
   posture ruled 2026-09-25: the comparables' pattern — a distro-wide well-known default overridden
   per device with the device's own identity, values from research/55 §4, confirmed when the
@@ -519,7 +523,9 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   `mura-setup` service half lands at D3 with no compositor dependency; the in-headset PSK
   display is a compositor scene (G1+), so the dev profile prints the PSK to serial/journal until
   then; the setup **web UI** itself (the phone-facing pages behind the D3 stub) is its own rung
-  after D3 (JS build tooling). Whether F2's time-zone card needs the **polkit agent** (registry
+  after D3 — its toolchain is not decided: rule 6 puts any interpreter build step on the budget,
+  rule 7 asks how the comparable portals (wifi-connect, comitup, the gnome-initial-setup pages)
+  build theirs and why, before the rung starts. Whether F2's time-zone card needs the **polkit agent** (registry
   gap #10) or a Mura rule is research/54's pending ruling. **F4**: the logind half is D2; the constraint-7 stabiliser
   and button handling are G1's exit criteria; the **per-target Monado 3DoF HMD driver** precedes
   any *in-headset* greeter on that target and belongs to each device's bring-up ladder — the

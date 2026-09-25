@@ -105,11 +105,12 @@ recovery image; Rescue Party's last level reboots into recovery and *offers* the
   escalation shape, without its automatic wipe levels) — the same initrd booted to a recovery
   target: sshd on the gadget so the developer never loses the door, a panel screen that lists
   what is available (ssh address, hotspot SSID and PSK, host-key fingerprint, flash
-  instructions), and *offered* actions: factory reset through `systemd-factory-reset` (rule 3:
-  never automatic), slot switch, reboot. Per family it is a recovery BLS entry (uefi-rauc,
+  instructions), and *offered* actions: factory reset through systemd-repart's factory reset
+  (`FactoryReset=yes`; rule 3: never automatic), slot switch, reboot. Per family it is a recovery BLS entry (uefi-rauc,
   `systemctl reboot --boot-loader-entry=recovery`) or the recovery boot image (Android-derived,
-  `reboot recovery`). The counter, the threshold and `mura-crashloop` stay; the target's
-  description changes from "recovery mode" to what it is until the environment exists.
+  `reboot recovery`). The counter, the threshold and `mura-crashloop` stay; where a family
+  provides no recovery entry, the stage-2 `mura-recovery.target` is the failure-feedback state,
+  described as such.
 - The vendors' modes (fastboot, EDL, Download) stay the reflash-from-scratch path.
 
 The work is the implementation-path §4 track "Mura recovery environment"; the remaining UX

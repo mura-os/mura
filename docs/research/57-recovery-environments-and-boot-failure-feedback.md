@@ -64,8 +64,10 @@ the outlier and needs external media.
 | Android Rescue Party — **[external]** | levels reset settings, then `rebootPromptAndWipeUserData` | recovery's `--prompt_and_wipe_data`, confirmed by the person | adb | see §2 |
 
 **What transfers.** Factory reset is systemd's: mark `syspersist` and `home` `FactoryReset=yes`
-in the family's `repart.d`, and the recovery menu's reset is `systemctl start factory-reset.target`
-— confirmed by the person, never automatic (Lineage, Rescue Party, Quest all confirm). Remote
+in the family's `repart.d`, and the recovery menu's reset is `systemd-repart --factory-reset=yes`
+run from the recovery environment (stage 1 is the clean state `factory-reset.target` exists to
+reach; `systemd-factory-reset request` would add only an EFI-variable write) — confirmed by the
+person, never automatic (Lineage, Rescue Party, Quest all confirm). Remote
 access in recovery is standard on every comparable (telnet, adb, a terminal); Mura's is sshd on
 the gadget, which NixOS already provides in the systemd initrd for LUKS unlock
 (`boot.initrd.network.ssh`) — rule 1. A slot switch (`mura-bootconf set-primary`) is Mobile
@@ -88,17 +90,18 @@ NixOS's "pick a generation". Reflash from recovery (Lineage's "Apply update", St
    automatic wipe levels.
 4. **Contents:** sshd on the gadget (host key from `identity/ssh` when `/persist` mounts, else
    generated, fingerprint shown), the panel screen listing what is available, and offered actions
-   — factory reset via `factory-reset.target` (repart `FactoryReset=yes` on `syspersist` and
-   `home`), slot switch, reboot. Reflash follows.
+   — factory reset via systemd-repart's factory reset (repart `FactoryReset=yes` on `syspersist`
+   and `home`, invoked directly from the recovery environment), slot switch, reboot, power off.
+   Reflash is §6's.
 5. **The panel screen's form:** flat text per eye, drawn by plymouth under the recovery
    illustration; the one shipping headset comparable (Quest) uses exactly a flat per-eye text
-   menu driven by the hardware buttons. Button navigation of the menu (volume/power → plymouth
-   keystrokes) is the natural next step for the track; this rung's actions are taken over ssh and
-   the console.
+   menu driven by the hardware buttons. The menu is one program with three frontends — the HMD's
+   buttons over evdev with Android recovery's key semantics, ssh/console, the web page on the
+   cable/hotspot — specified in [specs/recovery-menu.md](../../specs/recovery-menu.md).
 
 ## 6. Open items
 
-Button-driven menu on the panels — **ruled 2026-09-25 and landed** as one Rust menu program
+Button-driven menu on the panels — **ruled 2026-09-25** (status: implementation-path §4) as one Rust menu program
 with three frontends (panels + HMD buttons over evdev, ssh/console, the web page in stage 1;
 [specs/recovery-menu.md](../../specs/recovery-menu.md), implementation-path §4). Its key
 semantics are Android recovery's (`recovery_ui/ui.cpp` `ProcessKey`: register on release,
