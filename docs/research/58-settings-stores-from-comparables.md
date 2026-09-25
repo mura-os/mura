@@ -13,9 +13,14 @@ that is recorded as a signal (rule 7) and the item goes to the owner (rule 8).
 `cosmic-settings-daemon`, `gsettings-desktop-schemas`; MANIFEST.json), read beside the already
 pinned system-scoped daemons (`systemd` hostnamed/timedated/localed, `accountsservice`,
 `networkmanager`), the embedded layered-prefs precedent (`platform2/power_manager`) and the
-locked nixpkgs (`nixos/modules/programs/dconf.nix`, `switch-to-configuration-ng`). Android's
-SettingsProvider is [external] and cited as engineering evidence only (rule 2). Two budget
-measurements were made on this host (§11). **Budget impact** (overview invariant 9): this
+locked nixpkgs (`nixos/modules/programs/dconf.nix`, `switch-to-configuration-ng`); then — after
+the owner's challenge that "no comparable among desktop stores" is not "no comparable" — the
+appliance and device OSes that *do* ship a privileged device-wide configuration service: snapd's
+`snap set system` (`references/snapd`), OpenWrt UCI + procd + LuCI (`uci`, `procd`, `luci`),
+SteamOS's `steamos-manager` (Rust; `references/steamos-manager`, v26.4.1), ChromeOS device
+settings (`platform2/login_manager`), systemd-homed's user records, and Android's
+SettingsProvider ([external], engineering evidence only, rule 2). Two budget measurements were
+made on this host (§11). **Budget impact** (overview invariant 9): this
 document schedules nothing; the daemon it informs is judged in §11 and in the spec it produces.
 
 ## 0. The comparables and what each *is*
@@ -292,71 +297,238 @@ is the comparables' answer to a daemon that mostly sleeps — but a *signal sour
 while it has subscribers, which is why dconf pushes the watch list into the bus daemon's match
 rules (README:15-16) and cosmic's daemon stays up. That trade-off belongs to the process design.
 
-## 12. Validation matrix and the questions that fall out
+## 12. Appliance and device OSes: the privileged device-wide store *does* ship
 
-| Spec | Mechanism | Comparables' position | Status |
+§2–§10 read the desktop stores. Devices with an administrator and no desktop have solved the
+same problem differently, and four of them are now pinned. What each is, and why:
+
+### 12.1 snapd — `snap set system key=value` (Ubuntu Core)
+
+One JSON state file (`/var/lib/snapd/state.json`), one `config` tree per snap, `system` an alias
+for `core` (`snapd/overlord/configstate/configstate.go:151-157`). Writes go through a
+`Transaction` — "a copy of the configuration … which can be queried and mutated in isolation
+from concurrent logic. All changes performed into it are persisted back into the state at once
+when Commit is called" (`overlord/configstate/config/transaction.go:38-41`) — checkpointed with
+`osutil.AtomicWriteFile` (temp, fsync, rename, fsync dir; `osutil/io.go:44-47`).
+**There is no generic schema.** Every `system.*` key is an allow-listed Go handler with its own
+`validate` and `handle` (`configcore/handlers.go`, `runwithstate.go`): `system.timezone` is a
+regex then `timedatectl set-timezone`; `system.hostname` goes to `hostnamectl`;
+`service.ssh.disable` masks a unit; `system.power-key-action` writes a logind drop-in; an
+unknown key is refused. The order is **validate all → apply all → commit**: "All configuration
+changes are persisted at once, and only after the snap's configuration hook returns
+successfully" (`cmd/snapd/cli/cmd_set.go:41-42`); a failed apply leaves the state *un*changed
+while side effects may be partial (no generic undo for core config). The work is a `Change` of
+`Task`s with statuses `Do/Doing/Done/Abort/Undo/Undoing/Undone/Error/Wait`
+(`overlord/state/change.go:36-76`), queryable by id — the reason for tasks with undo: "keeping
+data around for a potential undo until there's no more chance of the task being undone"
+(`taskrunner.go:154-158`). Authorization: the root socket, or polkit
+`io.snapcraft.snapd.manage-configuration` at `auth_admin` (`data/polkit/io.snapcraft.snapd.policy:40-47`);
+no agent → 401. Image defaults: `gadget.yaml` `defaults:` applied to the filesystem early in
+boot, "before all the configuration is applied as part of normal execution of configure hook"
+(`sysconfig/sysconfig.go:103-107`). Upgrades: numbered code patches on `state.json`
+(`overlord/patch/`, level 6 sublevel 3); a downgrade across a level is **refused** — "cannot
+downgrade: snapd is too old for the current system state" (`patch.go:112-113`). No transient
+layer; no D-Bus change signal — the owning snap's `configure` hook *is* the apply channel.
+Assumptions: root daemon, appliance, snaps own their config. GPL-3.0.
+
+### 12.2 OpenWrt — UCI + procd + LuCI
+
+UCI is an **untyped** text store: sections, options, lists of strings (`uci/uci.h:374-376`),
+`/etc/config/<package>`; staged deltas in `/tmp/.uci` until `uci commit`, which write-locks,
+**re-reads the file to merge other processes' deltas** ("other processes might have modified the
+config as well. dump and reload", `uci/file.c:771-774`), then temp + fsync + rename. Its
+**runtime layer** is a delta path that is "'overlays' for the active config, that will never be
+committed" (`uci/uci.h:277-282`) — `uci -P /var/state` sets the savedir *and* makes commit a
+no-op (`uci/cli.c:331-334`); init scripts record assigned interface names there; tmpfs, gone at
+reboot. Types and validation live **outside** the store: LuCI's datatypes in the UI, procd's
+per-service `validate` registry (`procd/service/validate.c`), base-files' `uci_validate_section`.
+Apply is the init system's: services declare `procd_add_reload_trigger <config>`; a commit is
+followed by `ubus call service event config.change` and procd reloads what registered
+(`procd/service/service.c:788-820`, `trigger.c:297-306`). LuCI adds **apply with rollback**:
+`uci apply {rollback:true, timeout:90}` then `confirm` — "the configuration changes must be
+confirmed within a specific time interval, otherwise the device will begin to roll back the
+changes in order to restore the previous settings" (`luci/…/ui.js:5470-5476`), because a router
+misconfiguration locks you out. Authorization: an administrator session (rpcd ACL grants
+`uci.set/commit/apply` to the LuCI role); no polkit, no per-key authorization. Defaults: the
+image's `/rom/etc/config` and once-run `/etc/uci-defaults/*` scripts, deleted after running.
+Migrations: scripts. Assumptions: single administrator, router, ubus not D-Bus. LGPL-2.1
+(UCI, procd), Apache-2.0 (LuCI).
+
+### 12.3 SteamOS — `steamos-manager` (Rust)
+
+Two daemons: "one runs as the logged in user and exposes a public DBus API on the session bus,
+and the second daemon runs as the `root` user. The root daemon exposes a limited DBus API on the
+system bus for tasks that require elevated permissions to execute. The DBus API exposed on the
+system bus is considered a private implementation detail" (`steamos-manager/README.md:88-96`).
+The public surface is **typed per-feature interfaces**, not a key-value store:
+`TdpLimit1`, `BatteryChargeLimit1`, `FanControl1`, `GpuPerformanceLevel1`, `PerformanceProfile1`,
+`WifiPowerManagement1`, `LowPowerMode1`, `ScreenReader1`, `SessionManagement1`, … (`data/interfaces/*.xml`,
+`src/manager/user.rs`). Ranges come from a **device contract file**: `data/devices/steam-deck.toml`
+declares `[tdp_limit.range] min = 3 max = 15`, `[fan_speed] hwmon = "steamdeck_hwmon"`; a set
+outside the range is refused (`src/power.rs:454-490`), a set inside is written to sysfs or
+toggles a systemd unit (`hardware.rs:372-383`). Almost nothing is *stored*: `state.toml` holds
+`default_login_mode`/`desktop_session` (user) and a debug inhibit (root); the hardware is the
+store and is re-read. Authorization is Valve's single-seat posture — the system-bus policy lets
+"Anyone … send messages to the service" (`data/system/com.steampowered.SteamOSManager1.conf:7-15`);
+no polkit in the tree. Notification: zbus `PropertiesChanged` plus a relay of root signals onto
+the session interface. Stack: zbus 5 on tokio **multi-thread**, `Type=notify-reload` units
+(`Cargo.toml:8-39`, `data/system/steamos-manager.service:9-10`). Assumptions: Steam is the UI,
+one wearer-class user, Deck-class hardware. MIT.
+
+### 12.4 ChromeOS — device settings in `session_manager`
+
+Device settings are a **signed policy blob** (`ChromeDeviceSettingsProto` inside a
+`PolicyFetchResponse`) stored by `session_manager` in `/var/lib/devicesettings/`
+(`platform2/login_manager/device_policy_service.cc:99`), written by `StorePolicyEx` on
+`org.chromium.SessionManager`, which "Verifies the signature in @policy_blob and persists the
+blob to disk. Device policy is stored in a root-owned location outside of any user's cryptohome.
+It is verified with the device-wide policy key" (`dbus_bindings/org.chromium.SessionManagerInterface.xml:250-284`).
+The key is the **owner's** (the first user) for consumer devices or the enterprise server's;
+`PolicyKey` "holds the device owner's public key" and, once on disk, "blocks programmatic
+replacement" (`policy_key.h:26-32`). Consumers `RetrievePolicyEx` and get
+`PropertyChangeComplete` on persist (`session_manager_impl.cc:1495-1499`). Why signed rather than
+root-writable: verified boot makes the RO image trustworthy and the RW stateful partition not;
+signing lets the settings survive on RW without trusting root there (the platform's lockbox docs
+state the same tamper-evidence goal; no login_manager document states it for this file — inferred
+from `PolicyKey` and the D-Bus text). Assumptions: verified boot, a designated owner, a policy
+model. BSD.
+
+### 12.5 systemd-homed — user records
+
+Per-user *preferences* — `timeZone`, `preferredLanguage`, `additionalLanguages`, `emailAddress`,
+`iconName`, `location`, `shell`, `environment`, `umask`, `niceLevel`, `preferredSessionType` —
+live in the JSON user record's `regular` section, "fields that shall apply unconditionally to the
+user in all contexts, are portable and not security sensitive" (`systemd/docs/USER_RECORD.md:105-110`),
+stored by the privileged daemon at `/var/lib/systemd/home/<user>.identity` and inside the home
+(`~/.identity`, the LUKS header). Changed with `homectl update` → `UpdateHome`, polkit
+`org.freedesktop.home1.update-home` (`auth_admin_keep`) or `update-home-by-owner` (`allow_active: yes`
+— `src/home/org.freedesktop.home1.policy:42-59`). Read by everyone through varlink
+`io.systemd.UserDatabase`; change notification only as `PropertiesChanged` on the Home object.
+Assumptions: multi-user, portable homes. LGPL-2.1+. Relevant here as the freedesktop way to give
+*per-user* preferences a privileged owner with an "owner may change own" polkit rule — not as a
+device-wide store.
+
+### 12.6 Android — SettingsProvider [external]
+
+The generic privileged device store of the consumer platforms (`Global`/`Secure`/`System` tables,
+per-user XML files `settings_{global,secure,system}.xml` via `AtomicFile`, writes coalesced 200 ms
+and at most 2 s, a 40 KB quota per app — `SettingsState.java:123-127`; `WRITE_SECURE_SETTINGS`
+per table and `isSettingRestrictedForUser` — `SettingsProvider.java:1521-1552`). Every setting
+carries a runtime default (`Setting.defaultValue`, `isDefaultFromSystem`) and `reset()` returns
+to it (`SettingsState.java:1951-1956`) — provenance and Reset again. Upgrades are numbered code
+steps (`SETTINGS_VERSION = 226`, `onUpgradeLocked`); when the walk cannot reach the target the
+database is **rebuilt and the loss recorded** in `Settings.Global.DATABASE_DOWNGRADE_REASON`
+("Settings rebuilt! Current version …", `SettingsProvider.java:4000-4048`). A transient
+(never-persisted) set exists — `Global.TRANSIENT_SETTINGS` — holding exactly one key, Wear OS's
+`CLOCKWORK_HOME_READY` (`Settings.java:18289-18296`): a readiness flag, not a preference.
+(lineage-22.2; verified from the raw files.)
+
+## 13. Validation matrix, re-derived, and what falls out
+
+| Spec | Mechanism | Comparables' positions | Status |
 |---|---|---|---|
-| §1 | artifact = compiled schema; no consumer defaults | GSettings; KConfigXT's own DESIGN goal; cosmic's failure mode | **converging** |
-| §1.1 | templates + instances, create-by-write, explicit delete, no GC | GSettings relocatable schemas | **converging** |
-| §2 | preference vs state roots | cosmic `new_state`, XDG | **converging** |
-| §2 | per-user stores under XDG, sparse | all | **converging** |
-| §2, §6 | **per-unit preferences written at runtime by the daemon's polkit-gated system half** | dconf: never writable; KConfig/cosmic: delegate to `*dated`/logind/KAuth; systemd: one mini-service per domain; NixOS: build-time | **none — Q1** |
-| §2 | session (memory) stratum | GSettings memory backend is a debug/test backend | **none — Q5** |
-| §3 | Set always writes; Reset removes; provenance | GSettings (`get_user_value`, `reset`); KConfig the documented opposite | **converging** |
-| §4 | untouched keys follow the new default; explicit values survive | dconf + NixOS `dconf update` | **converging** |
-| §4.1 | **quarantine, generation-tagged, remount on downgrade** | all: fall back to default, leave the file; KConfig clamps | **none — Q3** |
-| §5 | declared, idempotent, recorded, login-time migrations | kconf_update, gsettings-data-convert | **converging** |
-| §5 | fixed typed-op vocabulary; graph assertion; golden tests | KF5 DSL (retired for scripts); nothing for the rest | **partial — Q2** |
-| §6 | **apply transactions; daemon reloads/restarts units** | live apply everywhere; reloads owned by the domain service or activation | **none — Q4** |
-| §7 | locks as system-layer facts; writability to the UI | dconf locks, NixOS `programs.dconf.*.locks`, KConfig `[$i]` | **converging** |
-| §8 | single session writer, per-key signals, coalesced | dconf; cosmic-settings-daemon (signals) | **converging** |
-| §8 | bus interface shape (`Get/Set/Reset/List`, `Changed`) | dconf Writer + GSettings API; `kwriteconfig`/`gsettings` CLIs | **converging** |
-| — | Rust + zbus, single-threaded executor | cosmic-*; measured | **determined** (§11) |
+| §1 | artifact = compiled schema; no consumer defaults | GSettings; KConfigXT's goal; snapd gadget `defaults:`; steamos device TOML for ranges | **converging** |
+| §1.1 | templates + instances, create-by-write, explicit delete, no GC | GSettings relocatable | **converging** |
+| §2 | preference vs state roots | cosmic `new_state`; UCI `/var/state` for daemon-written state | **converging** |
+| §2 | per-user preferences: sparse XDG stores, one session writer | dconf; homed for the identity subset | **converging** |
+| §2, §6 | device-wide settings changeable at runtime | *desktops*: none, per-domain freedesktop services. *appliances*: snapd (one API, **per-key handlers**, admin/polkit `auth_admin`), steamos-manager (root half, **typed per-feature interfaces**, ranges from the device contract, hardware is the store), UCI (untyped, admin session), ChromeOS (owner-signed blob), Android (permissioned tables) | **exists — but never as a generic typed key-value writer; §13.1** |
+| §2 | session (memory) stratum for *preferences* | UCI `-P` overlays and Android's transient set hold daemon **state/status**; GSettings memory backend is for debugging | **none for preferences; a state-only runtime layer has precedent — §13.5** |
+| §3 | Set always writes; Reset; provenance | GSettings; Android `defaultValue`/`reset()`; snapd Transaction commit-at-once | **converging** |
+| §4 | untouched keys follow the new default; explicit values survive | dconf, NixOS, snapd | **converging** |
+| §4.1 | quarantine + generation tag + remount | desktops/UCI: default and leave the file; snapd: refuse a level downgrade; Android: rebuild and record the reason | **none — §13.3** |
+| §5 | declared, idempotent, recorded migrations | kconf_update, gsettings-data-convert, uci-defaults, snapd patches, Android upgrade steps | **converging** |
+| §5 | typed-op vocabulary in the artifact | KF5 DSL (retired); everyone current ships **numbered code** in the owning program | **converging against — §13.2** |
+| §6 | apply transactions | desktops: signal only; snapd: validate-all → apply-all → commit, failure = not committed, status by Change; LuCI: commit then rollback unless confirmed; procd: reload triggers owned by init | **exists in three shapes, none the spec's — §13.4** |
+| §7 | locks as system-layer facts; writability to the UI | dconf, NixOS, KConfig `[$i]`; ChromeOS policy | **converging** |
+| §8 | bus shape; per-key coalesced signals | dconf; Android 200 ms coalescing; steamos `PropertiesChanged` | **converging** |
+| — | Rust + zbus | cosmic-*, steamos-manager; measured §11 | **determined**; steamos's `rt-multi-thread` is the shape to avoid |
 
-**Questions to the owner** (rule 8; each states the comparables' actual positions as the options):
+### 13.1 Device-wide settings — what the appliances actually built
 
-- **Q1 — system-scoped preferences.** The spec has the daemon write per-unit preferences under
-  `/var/lib/mura/settings/config/` behind polkit, and a privileged "system half". No comparable
-  does this. Positions: (a) **dconf/NixOS** — the system layer is declared in Nix and compiled
-  into the artifact; the daemon writes only user roots; anything system-wide a session may
-  change goes through the *standard per-domain service* (`timedate1`, `hostname1`, `locale1`,
-  accountsservice, NetworkManager) with that service's polkit action — Mura's `50-mura-timedate.rules`
-  already follows this; (b) **systemd mini-service** — where Mura has a genuinely device-wide,
-  runtime-changeable setting with no freedesktop home (none is identified today), a small
-  dedicated `org.mura.<Domain>1` service with its own action, not a generic writer. Consequence
-  of (a)+(b): the `per-unit preference` row and the system half leave the spec; the polkit-agent
-  question (registry gap #10) is then *not* the settings daemon's — it is the general one every
-  `auth_admin_keep` action on the device has, decided by the greeter/shell work that presents
-  prompts (systemd refuses with `INTERACTIVE_AUTHORIZATION_REQUIRED` when no agent can prompt,
-  `src/shared/bus-polkit.c:363-367`).
-- **Q2 — migration vocabulary.** Positions: (a) **kconf_update KF6** — declared migration
-  *programs* (id, recorded once, idempotent), any transformation; (b) **KF5 DSL / gsettings-data-convert**
-  — a fixed set of declarative operations (rename, delete, key map), no value transforms;
-  (c) the spec's typed vocabulary (rename/delete/enum-map/scale/split/merge) + build-time graph
-  assertion + golden fixtures — (b) widened, with two Mura additions nobody ships. The
-  comparables' history runs (b) → (a) because real migrations needed code; Mura's schema is
-  *generated*, so most changes are renames and enum moves. Consequence: (c) keeps §5 as written
-  and costs an interpreter for six ops in the daemon; (a) makes migrations Rust programs in the
-  closure; (b) is (c) without the two unprecedented parts.
-- **Q3 — invalid values under a new schema.** Positions: (a) **GSettings/cosmic/systemd** —
-  resolve to the default, leave the stored value in place untouched, log; (b) **KConfig** — clamp
-  numbers into range, default the rest; (c) the spec's quarantine record with generation tag and
-  automatic remount on downgrade. (a) already preserves the only copy of the user's value (the
-  file is not rewritten) and a downgrade reads it again — which is most of what §4.1 wants,
-  minus the explicit `ListQuarantine`/`Restore` surface and the "one Changed" notification.
-  Consequence: (a) deletes §4.1's machinery and three bus methods; (c) keeps them with no
-  precedent.
-- **Q4 — apply after write.** Positions: (a) **all desktop stores** — the store signals; the
-  *owner* of the effect (compositor, domain service, activation) applies; nothing restarts
-  units from the settings daemon; (b) the spec's apply transaction (`pending/applied/failed`,
-  a privileged apply agent). Consequence of (a): `apply` stays in the artifact as *documentation*
-  of what a key needs (so a UI can say "takes effect after restart", the KCM pattern), §6's
-  agent and status methods leave; keys that need a unit restart are declarative or belong to the
-  unit's owner.
-- **Q5 — session stratum.** Positions: (a) drop it (no comparable ships one; the spec's own
-  §10 doubt); (b) keep as memory-only overrides for grant holders. No consumer names the need
-  today.
+The desktop stores refuse a runtime-writable system layer (§2); the appliances build one — and
+every one of them builds it the same way: **one privileged API whose keys are each owned by
+code that knows the domain**. snapd's `system.timezone` is a handler calling `timedatectl`;
+steamos-manager's `TdpLimit1` is an interface whose range is a device-contract fact and whose
+store is the hwmon attribute; UCI has no types at all and pushes validation into the service
+that consumes the key. Nobody ships a privileged *generic typed* writer where the store validates
+a range and the effect is someone else's problem — snapd tried the closest thing and made every
+key a handler. Authorization is the administrator: root or polkit `auth_admin` (snapd), the admin
+session (UCI), the owner's key (ChromeOS); steamos-manager's "anyone on the bus" is Valve's
+single-seat posture and does not transfer (rule 3 is about the *user's* choices, rule 1 about
+wheel + polkit per action).
 
-Everything marked converging above is applied without a question (rule 8). The daemon's
-process design ([specs/settings-daemon.md](../../specs/settings-daemon.md), the D7 deliverable)
-is written after Q1–Q5 are answered; implementation-path §3c D7 carries the status.
+Does Mura have such keys? Not in the contract today — every runtime preference there is
+per-user. It **will** on the Frame: TDP/performance profile, fan, battery charge limit, Wi-Fi power
+management are exactly steamos-manager's list on the same hardware class, and they are device
+facts, not one wearer's preference. So the determination is two-part and both parts have
+comparables:
+
+- The **settings daemon (D7)** is the per-user store in the dconf shape — no system half, no
+  `per-unit preference` row. Locked/declarative system values reach it through the artifact.
+- Device-wide runtime knobs, when a target brings them, are a **separate privileged service in
+  the steamos-manager/snapd shape**: typed per-domain handlers, ranges from `mura.hardware.*`,
+  the hardware or the domain daemon as the store, polkit `auth_admin_keep` per action with wheel
+  members granted where a comparable grants (`50-mura-timedate.rules` is the existing instance).
+  Whether that service is one `org.mura.Manager1`-style program (steamos) or per-domain
+  mini-services (systemd) is that rung's question, not D7's.
+
+The open question that remains for the owner is only **whether `org.mura.Settings1` should
+front those device knobs as keys** (snapd's single tree: `snap get system` shows everything) **or
+leave them to their own interfaces** (steamos: a client asks `TdpLimit1`, not a settings key).
+Both ship; the difference is whether the settings UI has one bus to talk to.
+
+### 13.2 Migrations — code, numbered, recorded once
+
+Every current comparable — kconf_update KF6, snapd `patchN.go`, Android `onUpgradeLocked`,
+uci-defaults — migrates with **versioned code in the owning program**, recorded once (done-ids,
+patch level, `SETTINGS_VERSION`, script deletion). The declarative vocabulary the spec proposes
+is the KF5 DSL KDE retired plus gsettings-data-convert's key map. That is converging evidence
+*against* the artifact carrying a migration language: **migrations are numbered Rust functions in
+`mura-settingsd`, keyed by `(schema, fromVersion)`, recorded in the store header; the Nix side
+only declares `schemaVersion`.** Applied (rule 8). What has no precedent and is dropped with it:
+the build-time graph assertion (there is no graph when steps are linear code) and golden
+downgrade fixtures (nobody tests downgrade; snapd refuses it).
+
+### 13.3 Invalid values under a new schema — three positions, none quarantine
+
+(a) desktops and UCI: resolve to the default, leave the file untouched, log — the user's copy
+survives and an older schema reads it again; (b) snapd: refuse to *run* with state from a newer
+level (`cannot downgrade`); (c) Android: rebuild the store and record why. The spec's §4.1 is
+(a) plus an explicit surface (`ListQuarantine/Restore/Drop`) and remount-on-downgrade — which (a)
+already gets for free by never rewriting. **Determination (converging on (a)):** invalid stored
+values resolve to the default and are reported in `Get`'s provenance as `invalid` (so a UI can
+say what was ignored); the file is not rewritten; the three quarantine methods leave. Where Mura
+differs from all three: a *generation rollback* is a first-class NixOS operation, so the
+downgrade case matters more here than on snapd — (a) handles it because the old value is still
+on disk. Recorded, not asked: the comparables agree.
+
+### 13.4 Apply — three shipping shapes
+
+(a) desktop stores: signal; the effect's owner applies (KCM, gsd, cosmic-comp, localed
+reloading PID 1). (b) snapd: **validate all, apply all, then commit** — a failed apply is
+reported through the Change and the value is *not* persisted; side effects can be partial.
+(c) LuCI: commit, then **roll back unless confirmed** within 90 s — for changes that can lock
+you out. (d) the spec: durable `pending`, apply by a privileged agent, `failed` keeps the value.
+(d) has no comparable and inverts (b)'s guarantee. For a *per-user preference* store the
+consumers are session programs — (a) is the whole set of comparables and applies; `apply` stays
+in the artifact as the KCM's "takes effect after restart" label. (b) and (c) belong to the
+device-knob service of §13.1 (snapd/LuCI-class effects: a TDP that bricks, a network change that
+disconnects) and are that rung's design input. **Determination for D7: (a).**
+
+### 13.5 Session stratum — state has a runtime layer, preferences do not
+
+UCI's `-P /var/state` and Android's `TRANSIENT_SETTINGS` are real non-persistent layers, and
+both hold **status written by daemons** (assigned interface names; "home ready"), never a user's
+preference override. GSettings' memory backend is for debugging. **Determination: the
+`session` preference stratum is dropped; the artifact reserves `class = state, stratum = session`
+(`$XDG_RUNTIME_DIR/mura/settings/`) as a hook with UCI's semantics — written by components,
+never committed — to be opened by the first component that needs it.**
+
+### 13.6 What this leaves for the owner
+
+One question, with two shipping positions (§13.1): whether the per-user settings bus also
+*fronts* device-wide knobs as read-through keys with `Set` proxied to their owning service
+(snapd's single tree), or whether device knobs are reached only on their own interfaces
+(steamos). Everything else in §13 converged once the appliance comparables were read, and is
+applied in spec rev 3. The polkit-agent gap (registry #10) is not D7's under either position: it
+is the prompt surface for every `auth_admin_keep` action on the device.

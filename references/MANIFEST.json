@@ -168,5 +168,9 @@
   "kconfig": {"url": "https://invent.kde.org/frameworks/kconfig.git", "commit": "975405122decec19e7952a304cd7c19d60f59e62", "ref": "master", "cloned": "2026-09-25T16:12:49Z"},
   "libcosmic": {"url": "https://github.com/pop-os/libcosmic.git", "commit": "03d7dcb832bc6d15bc1bb07327a1aa426b2d5bc0", "ref": "master", "cloned": "2026-09-25T16:12:49Z"},
   "cosmic-settings-daemon": {"url": "https://github.com/pop-os/cosmic-settings-daemon.git", "commit": "6ac574e4ff5a4a86af82610e644dca2ae3df3516", "ref": "master", "cloned": "2026-09-25T16:12:49Z"},
-  "gsettings-desktop-schemas": {"url": "https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas.git", "commit": "d6dd3cf6f94c1e96801f26c419f9a6f8a7e158c4", "ref": "main", "cloned": "2026-09-25T16:12:49Z"}
+  "gsettings-desktop-schemas": {"url": "https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas.git", "commit": "d6dd3cf6f94c1e96801f26c419f9a6f8a7e158c4", "ref": "main", "cloned": "2026-09-25T16:12:49Z"},
+  "snapd": {"url": "https://github.com/canonical/snapd.git", "commit": "88bf726206374c8133ef65c1191a54a0a8948b78", "ref": "master", "cloned": "2026-09-25T16:42:22Z"},
+  "uci": {"url": "https://github.com/openwrt/uci.git", "commit": "74f6277aabffc943d026f406df57c22595134c42", "ref": "master", "cloned": "2026-09-25T16:42:22Z"},
+  "procd": {"url": "https://github.com/openwrt/procd.git", "commit": "6af440ae47245eb1674ee2b777c758439b01b6bb", "ref": "main", "cloned": "2026-09-25T16:42:22Z"},
+  "steamos-manager": {"url": "https://gitlab.steamos.cloud/holo/steamos-manager.git", "commit": "a0d399defebd60db30ba38325d9cf47dbda49bee", "ref": "v26.4.1", "cloned": "2026-09-25T16:42:22Z"}
 }

@@ -244,6 +244,15 @@ repos=(
   'libcosmic|https://github.com/pop-os/libcosmic.git|'
   'cosmic-settings-daemon|https://github.com/pop-os/cosmic-settings-daemon.git|'
   'gsettings-desktop-schemas|https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas.git|'
+  # Appliance-OS system configuration stores (research/58 §12): snapd's `snap set system`
+  # (configcore validators + apply handlers, Change/Task status), OpenWrt UCI (+ /var/state
+  # runtime layer) and procd (reload triggers), SteamOS's steamos-manager (Rust system D-Bus
+  # daemon with polkit). LuCI (apply/rollback) and platform2 login_manager (owner-signed device
+  # settings) are already pinned above.
+  'snapd|https://github.com/canonical/snapd.git|'
+  'uci|https://github.com/openwrt/uci.git|'
+  'procd|https://github.com/openwrt/procd.git|'
+  'steamos-manager|https://gitlab.steamos.cloud/holo/steamos-manager.git|v26.4.1'
 )
 
 mkdir -p .logs
