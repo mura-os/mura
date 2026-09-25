@@ -113,7 +113,7 @@ class (iv) is the compositor axis.
 
 | # | Stage | Exists today | To build |
 |---|---|---|---|
-| B1b | XR preflight + recovery ladder | **implemented at D6** (`modules/os/health.nix`: `mura-preflight` P1–P7 before greetd, `mura-crashloop` counter, `mura-recovery.target`; VM-verified incl. the forced ladder). Flat-output fallback on a docked connector is the docked-mode rung's; the greeter's a11y exposure of a soft result is G1's | gate before greeter/session start: runtime-created Vulkan device, GPU match, factory-calibration validity, backend-defined DRM/IMU transport enumeration, advancing sensor/pose proof, and a dedicated Monado probe compositor/client reaching stable per-eye presentation. Profile-dependent accessory checks remain qualification-only until attachment policy exists. Crash-loop threshold → flat/SSH/diagnostic fallback; failure must never leave a permanently dark headset |
+| B1b | XR preflight + recovery ladder | **implemented at D6** (`modules/os/health.nix`: `mura-preflight` P1–P7 before greetd, `mura-crashloop` counter, `mura-recovery.target`; VM-verified incl. the forced ladder); **ruled 2026-09-25** ([research/56 §3](../research/56-defaults-from-comparables.md)): the counter stays for the cross-slot gap systemd's boot counting cannot see (a persistent state fault in an already-good slot), feedback moves to the *first* hard failure (the plymouth message, §4 track), and the counter's step at the threshold becomes an automatic reboot into the Mura recovery environment (§4 track) — until that lands `mura-recovery.target` is the failure-feedback state, not a recovery mode. Flat-output fallback on a docked connector is the docked-mode rung's; the greeter's a11y exposure of a soft result is G1's | gate before greeter/session start: runtime-created Vulkan device, GPU match, factory-calibration validity, backend-defined DRM/IMU transport enumeration, advancing sensor/pose proof, and a dedicated Monado probe compositor/client reaching stable per-eye presentation. Profile-dependent accessory checks remain qualification-only until attachment policy exists. Crash-loop threshold → flat/SSH/diagnostic fallback; failure must never leave a permanently dark headset |
 | B9 | Session-ready gate + update mark-good | **implemented at D6**: `mura-readiness` (blessing tier) `RequiredBy=boot-complete.target` on every profile; uefi-rauc arms `+N` in `set-primary`, `systemd-bless-boot` strips it, `mura-mark-good` tells RAUC — three transitions; `mura.qualification.readinessCheck` stays the device's named check the tier consumes | see §3a: readiness tiers, the mark-good service, and systemd-boot boot-counting wired explicitly in the uefi-rauc family |
 
 ## 3. The rung ladder
@@ -226,8 +226,9 @@ local wheel members = Ubuntu's `policykit-desktop-privileges` shape, `50-mura-ti
 VM-verified from inside the user manager); three further rulings the same day — the blessing tier
 is target-reached (the 20 s window removed; every system blesses on a target), the device wait is
 10 s with P5/P6 soft (GDM's and pmOS's shape), `environment.defaultPackages` emptied — and **one
-item under discussion with the owner**: the crash-loop ladder, whose only shipping comparable is
-Android's Rescue Party. D7 not started; the D-track's compositor-free rungs are complete.
+item ruled after discussion**: the crash-loop counter stays for the cross-slot gap, its step is an
+automatic reboot into a Mura-owned recovery environment (the §4 track), feedback moves to the
+first failure. D7 not started; the D-track's compositor-free rungs are complete.
 
 ### R0 — the bring-up spike (risk retirement, not a decision gate)
 
@@ -361,9 +362,11 @@ Exit codes: `0` all pass; `1` a soft check failed (start, log, expose in the a11
 hard check failed — the unit fails, and `greetd.service` `Requires=` it, so this boot has no
 greeter or session. **The probe never modifies persistent state**; the crash-loop counter is a
 separate unit's: `OnFailure=mura-crashloop.service` increments `state/health/crashloop` on
-`/persist`, and at `mura.health.crashLoopThreshold` consecutive hard failures starts
-`mura-recovery.target` (the diagnostic target: sshd stays reachable, nothing graphical; the
-flat-output fallback on a docked/dev connector is the docked-mode rung's). A blessed boot
+`/persist`, and at `mura.health.crashLoopThreshold` consecutive hard failures reboots into the
+Mura recovery environment (§4 track; automatic, ruled 2026-09-25 — until the environment exists
+it starts `mura-recovery.target`, which is the failure-feedback state: sshd, gadget and hotspot
+up, nothing graphical). The first hard failure already shows what failed and how to reach the
+device on the panels (plymouth) and on the setup launcher. A blessed boot
 (`mura-readiness`) resets the counter. Results are written as `/run/mura/preflight.json` for the
 readiness check and for `mura-device.json`-style tooling. **Landed at D6** (`mura-preflight`;
 Python at D6, Rust since the AGENTS rule 6 port — `pkgs/mura-preflight`; `modules/os/health.nix`): P1 real; P2 = every declared `calibration.paths` file exists
@@ -412,6 +415,24 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   fake producer + test consumer exercising registration, generations, overrun, epoch teardown,
   and the structural never-block check — validates the protocol before either real end exists.
   Feeds the M4-adjacent perception work without gating it.
+- **Mura recovery environment** ([research/56 §3](../research/56-defaults-from-comparables.md),
+  [research/57](../research/57-recovery-environments-and-boot-failure-feedback.md); ruled
+  2026-09-25). The OS owns its recovery, as Lineage Recovery, AOSP recovery and SteamOS's recovery
+  image do; it is the *same initrd* booted to `mura-recovery.target` (systemd's shape: no third
+  root filesystem), packaged per family — a `recovery.conf` BLS entry on uefi-rauc reached with
+  `systemctl reboot --boot-loader-entry=recovery`, the recovery boot image reached with `reboot
+  recovery` on the Android-derived targets (with their bring-up). Contents: sshd on the gadget
+  address (host key from `identity/ssh` when `/persist` mounts, else generated and its
+  fingerprint shown), a panel screen listing what is available (failing checks, ssh address,
+  hotspot SSID + PSK, fingerprint, flash instructions), and *offered* actions — factory reset
+  through `systemd-factory-reset` + repart `FactoryReset=yes` on `syspersist`/`home` (never
+  automatic, rule 3), slot switch (`mura-bootconf`), reboot. Trigger: `mura-crashloop` at
+  `crashLoopThreshold` (automatic). Feedback on the *first* hard failure is plymouth in the normal
+  initrd (`display-message` from a unit after the preflight). Exit (uefi-rauc): `tests/vm/recovery.nix`
+  green (initrd ssh over the gadget, the menu, factory reset wiping a GPT `syspersist` stand-in);
+  `vm-test-health` shows the plymouth message on a hard failure; counter → `recovery.conf` →
+  recovery target proven on the deckard image via `frame-vm-run`. Follow-up in the track:
+  reflash from recovery (a RAUC bundle over ssh).
 - **USB identity + descriptor correctness** ([research/55](../research/55-usb-identities-and-gadget-policy.md);
   posture ruled 2026-09-25: the comparables' pattern — a distro-wide well-known default overridden
   per device with the device's own identity, values from research/55 §4, confirmed when the

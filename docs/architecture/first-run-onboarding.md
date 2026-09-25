@@ -623,8 +623,11 @@ hostname confirm is authorised** — ruled 2026-09-25 ([research/56 §9](../rese
 longer open: dismiss = finish, Wi-Fi user-scoped); whether `set-ntp` joins the rule when a
 manual zone change exists (pmOS ties them; Mura's zone is derived) — decider: F2's session
 instance design;
-recovery-environment design (where factory reset executes — owner: each family's recovery
-story; the Frame workstream shapes the first one); account-layering (store accounts, cloud
+recovery-environment design — ruled 2026-09-25 ([research/56 §3](../research/56-defaults-from-comparables.md);
+the implementation-path §4 "Mura recovery environment" track): the same initrd booted to
+`mura-recovery.target`, sshd on the gadget, a panel screen listing the ways in, factory reset
+*offered* through `systemd-factory-reset`; a recovery BLS entry on uefi-rauc first, the recovery
+boot image on the Android-derived targets with their bring-up; account-layering (store accounts, cloud
 identity) — a non-goal, explicitly out of OS scope. Resolved by the research/42 review and no
 longer open: welcome contents (§4.2), input requirement (§4.4), web tool and portal (§5.1–5.2),
 passwordless wiring (§5.3), paired-peripheral class (§2, wiped), boundary placement (spatial

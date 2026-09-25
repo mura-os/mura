@@ -213,10 +213,14 @@ in
         description = ''
           Consecutive boots on which the XR preflight (`mura-preflight`, implementation-path
           §3a-bis) failed a hard check before the boot enters `mura-recovery.target` (the
-          diagnostic target: sshd + serial, no greeter). Reset by a blessed boot. Schema value
-          (constraint 9). The count is the A/B ecosystem's convention (systemd boot counting,
-          RAUC, U-Boot, Barebox all default to 3); the ladder itself has no in-tree comparable
-          and is before the owner (research/56 §3, Q1).
+          diagnostic target: sshd + serial, no greeter — the failure-feedback state until the
+          recovery environment lands, then an automatic reboot into it). Reset by a blessed boot.
+          Schema value (constraint 9). Why a userspace counter beside systemd's boot counting:
+          systemd's counter exists only on a not-yet-good entry, so a persistent state fault in a
+          slot that was already blessed boots dark forever — this counter is the trigger for the
+          step the bootloader cannot take. Why 3: systemd-boot decrements before booting, so one
+          try rolls back on any transient; three tolerates two while bounding dark time to three
+          boots (research/56 §3, ruled 2026-09-25).
         '';
       };
       deviceWaitSeconds = mkOption {

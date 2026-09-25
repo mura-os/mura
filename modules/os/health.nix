@@ -7,11 +7,17 @@
 #                            leaves this boot without a greeter or session.
 #   mura-crashloop.service : OnFailure= of the preflight — increments the durable counter in
 #                            state/health/crashloop (the probe itself never writes persistent
-#                            state); at mura.health.crashLoopThreshold it starts
-#                            mura-recovery.target.
-#   mura-recovery.target   : the diagnostic target — sshd + the serial getty stay, nothing
-#                            graphical. A runtime or driver failure never leaves a dark headset
-#                            without a way in.
+#                            state); at mura.health.crashLoopThreshold it takes the step
+#                            systemd's boot counting cannot (a persistent state fault in an
+#                            already-good slot boots dark forever — research/56 §3): reboot into
+#                            the Mura recovery environment (recovery.nix; the family's recovery
+#                            entry), or, where no entry exists yet, mura-recovery.target.
+#   mura-recovery.target   : the failure-feedback state — sshd, gadget and hotspot up, nothing
+#                            graphical; identical to what a single hard failure produces, kept
+#                            as the fallback step. A runtime or driver failure never leaves a
+#                            dark headset without a way in; the first hard failure already puts
+#                            what failed and how to reach the device on the panels (recovery.nix,
+#                            plymouth).
 #   mura-readiness.service : the G3-minimum blessing tier — the compositor unit (appliance) or
 #                            greetd + its greeter (multi-user) active and /persist/mura writable:
 #                            a target reached, the shape every shipping system blesses on

@@ -64,18 +64,57 @@ hang, not a policy, and it is not `[mine]`-tagged.
 | SDDM `Display.cpp:56,163-171` | tty failures before exit | >5 | avoid infinite retry when the VT is stolen |
 | Android Rescue Party | escalating reboots/resets | **[external, unverified]** — not asserted | — |
 
-**Determination.** *`bootTries=3`* — converging convention across the whole A/B ecosystem
-(systemd, RAUC, U-Boot, Barebox, mkosi), none explaining it; applied as the ecosystem's value, tag
-becomes *convention*. *`crashLoopThreshold=3`* — the count mirrors that convention, but the
-**mechanism** it counts (a userspace ladder that, after N hard preflight failures, boots into a
-recovery target instead of relying on the bootloader's slot fallback) has **no in-tree comparable**:
-systemd and RAUC let a failed boot simply not be blessed and let the bootloader fall to the other
-slot; GDM/SDDM count *display* failures, not boots. The only shipping system with a userspace
-"N bad boots → recovery" ladder is Android's Rescue Party, which is not in the pinned corpus. The
-ladder's stated purpose at D6 (a fault common to both slots — missing calibration — must not
-ping-pong between slots forever) is Mura's own reasoning. **→ Owner (§11 Q1):** keep the ladder
-(rule 2: Android as engineering evidence, to be pulled into `references/` and cited) or drop to the
-systemd/RAUC shape (no blessing → slot fallback only; recovery is the user's explicit choice).
+**Determination — ruled 2026-09-25 after discussion (§11 Q1).**
+
+*`bootTries=3`.* None of the sources writes down why three, but the code says it. systemd-boot
+decrements the counter **before** it boots the entry (`boot.c:1248-1254`: `+3 → +2-1 → … →
++0-3 → STOP`), and a boot that never reaches `boot-complete.target` for *any* reason counts —
+a power cut mid-boot, a slow fsck, a device that took too long. One try would roll back a good
+update on the first transient. Two tolerates one. Three tolerates two consecutive transients
+while bounding the worst case to three boots of a dark device. RAUC's only stated reason —
+*"should match the bootloader's reset value"* — is the other half: every layer must agree on the
+number or the reset races the count. Applied, sourced on that reasoning.
+
+*`crashLoopThreshold` and the ladder.* Two failure classes exist: bad **code** (a broken update)
+and bad **state** (persist data, calibration, settings). Slot fallback — systemd-boot, RAUC,
+U-Boot, Android's own A/B — handles code and only code: the other slot has the same state.
+Android's Rescue Party [external] exists for the state half; it automates escalating resets
+because a phone user cannot reflash and has no shell. pmOS is the opposite user model: its user
+is the administrator with a cable, and its answer to a failed boot is to expose the diagnostics
+immediately (the initramfs debug shell with USB networking on the *first* failure) and leave
+state to the human. systemd and RAUC sit with pmOS. Mura is in pmOS's camp by invariant 10 —
+but pmOS's shape has a gap the discussion exposed: **systemd's counter exists only on a
+not-yet-good entry.** A persistent state fault (P2, calibration missing) in a slot that was
+already blessed boots dark forever; the bootloader sees a good entry and never falls anywhere.
+(The D6 wording "ping-pong between slots" was wrong — only counted entries move; the outcome is
+*stuck*, not oscillating.) A userspace counter over consecutive hard failures, regardless of
+slot, is the trigger for the step the bootloader cannot take — systemd's own transient-versus-
+persistent reasoning applied across slots — and 3 inherits systemd's number for the same reason.
+
+What the ladder lacked was the **step**. `mura-recovery.target` as built at D6 is
+`Wants=sshd.service` + `Conflicts=greetd.service`, which is exactly the state a *single* hard
+failure already produces (greetd `Requires=` the preflight); after three failures the device was
+in the same state as after one. The step the comparables converge on is a **recovery
+environment the OS owns**: Lineage Recovery on the recovery partition (Mura arrives through that
+partition on every Android-derived target), AOSP recovery reached by `reboot recovery`, SteamOS's
+recovery image; Rescue Party's last level reboots into recovery and *offers* the wipe. So:
+
+- **Feedback on the first hard failure** (pmOS: the plymouth splash says what failed and how to
+  reach the device) — not on the third. The count decides only when to leave the slot.
+- **At the count, reboot into Mura's own recovery environment, automatically** (ruled: Android's
+  escalation shape, without its automatic wipe levels) — the same initrd booted to a recovery
+  target: sshd on the gadget so the developer never loses the door, a panel screen that lists
+  what is available (ssh address, hotspot SSID and PSK, host-key fingerprint, flash
+  instructions), and *offered* actions: factory reset through `systemd-factory-reset` (rule 3:
+  never automatic), slot switch, reboot. Per family it is a recovery BLS entry (uefi-rauc,
+  `systemctl reboot --boot-loader-entry=recovery`) or the recovery boot image (Android-derived,
+  `reboot recovery`). The counter, the threshold and `mura-crashloop` stay; the target's
+  description changes from "recovery mode" to what it is until the environment exists.
+- The vendors' modes (fastboot, EDL, Download) stay the reflash-from-scratch path.
+
+The work is the implementation-path §4 track "Mura recovery environment"; the remaining UX
+question — the per-eye panel splash as a shipping surface, and what shipping headsets show on a
+boot failure — is [research/57](57-recovery-environments-and-boot-failure-feedback.md).
 
 ## 4. The blessing tier — `readinessStabilitySeconds = 20`
 
@@ -242,6 +281,9 @@ rule working under GNOME's systemd-managed session is the prior that it does.
   its only shipping comparable is Android's Rescue Party (to be cloned into `references/` and cited
   as engineering evidence, rule 2). (b) systemd/RAUC shape: no userspace ladder — an unblessed boot
   is the bootloader's to fall back from; recovery is the user's explicit choice (`bootTries` stays).
+  **Ruled 2026-09-25 after discussion: neither as posed — the counter stays because of the
+  cross-slot gap (§3), its step becomes an automatic reboot into a Mura-owned recovery
+  environment that offers the reset, and feedback moves to the first failure.**
 - **Q2 — the blessing tier (§4).** (a) systemd/RAUC/mobile-nixos shape: bless when the compositor
   unit (or greeter) is active and `/persist` is writable; drop `readinessStabilitySeconds`. (b) Keep
   the 20 s window — no comparable; Mura's invention. **Ruled (a), 2026-09-25.**
