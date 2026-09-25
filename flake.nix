@@ -87,6 +87,7 @@
           mura-session = (pkgsFor system).mura.session; # the session wrapper greetd execs (D4 rev 3)
           mura-preflight = (pkgsFor system).mura.preflight; # the XR preflight probe (D6)
           mura-setup = (pkgsFor system).mura.setup; # the setup program's system instance, D3 stub
+          mura-recovery = (pkgsFor system).mura.recovery; # the recovery menu + actions (specs/recovery-menu.md)
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux")
           {
@@ -164,6 +165,7 @@
           mura-session = self.packages.${system}.mura-session;
           mura-preflight = self.packages.${system}.mura-preflight;
           mura-setup = self.packages.${system}.mura-setup;
+          mura-recovery = self.packages.${system}.mura-recovery;
           # The interpreter proof and the Python fence (tests/closure.nix): the closure of every
           # Mura program plus greetd carries no interpreter; the toplevels' residual nixpkgs
           # Python is a pinned, shrinking allowlist.

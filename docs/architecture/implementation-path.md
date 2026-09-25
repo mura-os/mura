@@ -446,20 +446,27 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   U-Boot's UEFI only persists with a variable store configured; if the proof fails, the fallback
   is the file-based one-shot through `mura-bootconf` (`families/uefi-rauc` comment). Recovery
   login is wheel members' and root's declared keys only (ruled 2026-09-25).
-  **Next rung of the track — `pkgs/mura-recovery`, one program, three ways in** (the
-  `mura-setup` shape, ADR 0017 decision 10; ruled 2026-09-25): the menu logic (status; factory
-  reset with a confirm; slot switch; reboot; power off) becomes a small Rust program (rule 6:
-  it parses input and holds state) and the shell menu leaves; its frontends are (a) **the
-  panels and the HMD's own buttons** — volume −/+ move, select confirms, a destructive action
-  asks for a second select with a short countdown (Quest's shape, research/57 §2); raw evdev on
-  `/dev/input/event*` in stage 1, the keys from the contract's `hmdButtons.<selectRole>` that P7
-  already verifies; rendered as plymouth messages — the keyless path a wearer needs; (b)
-  **ssh/console**, today's path; (c) **the web page on the cable/hotspot** — `mura-setup`'s
-  libc-only HTTP in stage 1, possession-authorised as in first-run §5, offering the same actions
-  behind a confirm. Proof items: the volume/select keys reach evdev in stage 1 on each target
-  (input driver in the initrd, like the DRM driver); the confirm cannot be triggered by a
-  single held key. Later in the track: reflash from recovery (a RAUC bundle over ssh); the
-  hotspot in the recovery initrd.
+  **`pkgs/mura-recovery` — one program, three ways in: landed** ([specs/recovery-menu.md](../../specs/recovery-menu.md);
+  the `mura-setup` shape, ADR 0017 decision 10). The actions (status, factory reset, slot
+  switch, reboot, power off) live once, in Rust (rule 6: it parses input and holds state); the
+  shell menu is gone. Frontends: (a) **`mura-recovery panel`** — the HMD's buttons over raw
+  evdev in stage 1 (`/etc/mura/recovery.json` from the contract's `hmdButtons`/`selectRole`/
+  `backRole`, Android recovery's keyboard fallbacks appended), Android recovery's key semantics
+  (register on release, auto-repeat ignored, ≥750 ms long press ignored — a held key cannot
+  confirm; the countdown was dropped for lack of a comparable), a separate Confirm screen
+  defaulting to `Cancel`, drawn as plymouth messages ≤200 bytes; devices that appear after the
+  panel started are picked up (inotify — udev's coldplug lands the VM's PS/2 keyboard late, and
+  gpio-keys targets will be no different); (b) **`mura-recovery shell`** over ssh/console,
+  `yes, erase` to confirm; (c) **`mura-setup --recovery`** on the gadget/hotspot addresses,
+  `POST /factory-reset` refused without `confirm=erase`. The reset unmounts the partition first
+  (Android's `EraseVolume` shape), settles udev and retries the `BLKPG`/`BLKRRPART` EBUSY
+  window. Proof: `vm-test-recovery` (seven subtests — keys through QEMU's keyboard incl. a 2 s
+  hold, the Confirm/Cancel/Back flow, the shell's wrong answer, the web 400, and the wipe once
+  through the web form and once through the panel). **Pending on hardware:** the volume/select
+  keys reach evdev in stage 1 on each target (the input driver in the initrd beside the DRM
+  driver); legibility of the menu text per eye; the Galaxy XR's shared select/power code (spec
+  §4 rule 4). Later in the track: reflash from recovery (a RAUC bundle over ssh); the hotspot in
+  the recovery initrd; `switch-slot` on the web page (decider: the uefi-rauc manual proof).
 - **USB identity + descriptor correctness** ([research/55](../research/55-usb-identities-and-gadget-policy.md);
   posture ruled 2026-09-25: the comparables' pattern — a distro-wide well-known default overridden
   per device with the device's own identity, values from research/55 §4, confirmed when the

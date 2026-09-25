@@ -1,0 +1,16 @@
+[package]
+name = "mura-recovery"
+version = "0.1.0"
+edition = "2021"
+description = "Mura recovery: the actions and the menu, reached from the panels, a shell, or the setup web page (specs/recovery-menu.md)"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 2
+debug = false
+panic = "abort"

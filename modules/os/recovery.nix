@@ -10,11 +10,15 @@
 #      escalation short is that time with an inoperable device is what sends people to support.
 #   2. The recovery environment: the SAME initrd booted to `mura-recovery.target`
 #      (rd.systemd.unit=…; systemd's boot-menu-entry shape, Mobile NixOS's recovery-is-stage-1) —
-#      sshd on the gadget address with the device's own host key when /persist mounts, the panel
-#      screen listing the ways in, and OFFERED actions: factory reset (systemd-repart
-#      --factory-reset over the FactoryReset=yes partitions — systemd's mechanism, executed from
-#      early boot's "well-defined clean state"), slot switch where the family has one, reboot.
-#      Never an automatic wipe (rule 3; Lineage, Rescue Party and Quest all confirm first).
+#      sshd on the gadget address with the device's own host key when /persist mounts, and the
+#      menu — pkgs/mura-recovery, specs/recovery-menu.md: the actions once (factory reset via
+#      systemd-repart --factory-reset over the FactoryReset=yes partitions — systemd's mechanism,
+#      executed from early boot's "well-defined clean state"; slot switch where the family has
+#      one; reboot; power off), three ways in: the HMD's buttons on the panels (`panel`: evdev +
+#      plymouth, the roles from the contract via /etc/mura/recovery.json), ssh/console
+#      (`shell`), and the web page on the cable/hotspot (`mura-setup --recovery`). Every
+#      destructive action is OFFERED behind a confirm, never automatic (rule 3; Lineage, Rescue
+#      Party and Quest all confirm first).
 #   3. The step at the crash-loop threshold (health.nix): reboot into that environment,
 #      automatically (ruled 2026-09-25) — where the family provides an entry
 #      (mura.recovery.rebootCommand); otherwise the old mura-recovery.target in stage 2.
@@ -79,51 +83,35 @@ let
     echo "  Help:       ${docsUrl}"
   '';
 
-  # The recovery shell's menu (POSIX shell; thin glue over systemd-repart/bootconf/reboot).
-  recoveryMenu = pkgs.writeShellScript "mura-recovery" ''
-    set -u
-    persist_dev="${persistFs.device}"
-    [ -n "$persist_dev" ] || persist_dev=/dev/disk/by-partlabel/syspersist
-    show() {
-      echo "Mura recovery"
-      echo "  This headset did not boot into a session."
-      [ -s /run/mura/preflight.summary ] && { echo "  Last preflight:"; sed 's/^/    /' /run/mura/preflight.summary; }
-      echo
-      echo "  factory-reset   wipe the persistent state and reboot — asks first"
-      ${lib.optionalString (cfg.recovery.switchSlotCommand != null) ''echo "  switch-slot     boot the other system slot next time"''}
-      echo "  reboot          try again"
-      echo "  poweroff"
-      echo
-    }
-    case "''${1:-}" in
-      factory-reset)
-        echo "This erases everything this headset has stored: accounts, settings, Wi-Fi, pairings."
-        echo "The headset also gets a new SSH identity: the host key fingerprint shown here will change."
-        echo "The system itself is kept. Type: yes, erase"
-        read -r answer
-        [ "$answer" = "yes, erase" ] || { echo "Not erased."; exit 1; }
-        ${plymouth} display-message --text="Resetting this headset. Do not power off." 2>/dev/null || true
-        # systemd's factory reset, executed from early boot: every FactoryReset=yes partition in
-        # /etc/repart.d is deleted and re-created empty (repart.d(5)); nothing else is touched.
-        # the whole disk that carries the persist partition (sysfs: a partition's parent)
-        part=$(readlink -f "$persist_dev"); name=$(basename "$part")
-        if [ -e "/sys/class/block/$name/partition" ]; then
-          disk=/dev/$(basename "$(readlink -f "/sys/class/block/$name/..")")
-        else
-          disk=$part
-        fi
-        systemd-repart --dry-run=no --factory-reset=yes --definitions=/etc/repart.d "$disk" || exit 1
-        sync
-        # (tests/vm/recovery.nix inspects the result in place; a person always reboots)
-        [ -n "''${MURA_RECOVERY_NO_REBOOT:-}" ] || systemctl reboot ;;
-      ${lib.optionalString (cfg.recovery.switchSlotCommand != null) ''
-        switch-slot) ${cfg.recovery.switchSlotCommand} && systemctl reboot ;;
-      ''}
-      reboot) systemctl reboot ;;
-      poweroff) systemctl poweroff ;;
-      *) show ;;
-    esac
-  '';
+  # /etc/mura/recovery.json (specs/recovery-menu.md §6): the contract's button roles as evdev
+  # codes with Android recovery's keyboard fallbacks appended (KEY_UP/DOWN/ENTER/ESC — also what
+  # the VM test drives through QEMU's keyboard), the family's slot switch, the persist device.
+  evdevCode = name: {
+    KEY_POWER = 116;
+    KEY_VOLUMEUP = 115;
+    KEY_VOLUMEDOWN = 114;
+    KEY_SELECT = 353;
+    KEY_ENTER = 28;
+    KEY_UP = 103;
+    KEY_DOWN = 108;
+    KEY_ESC = 1;
+  }.${name} or (throw "recovery.nix: no evdev code for ${name}; extend the table");
+  buttons = cfg.hardware.input.hmdButtons;
+  roleCode = role: lib.optional (role != null && buttons ? ${role}) (evdevCode buttons.${role});
+  recoveryConfig = pkgs.writeText "recovery.json" (builtins.toJSON {
+    keys = {
+      next = roleCode "volumeDown" ++ [ 108 ];
+      prev = roleCode "volumeUp" ++ [ 103 ];
+      select = roleCode cfg.hardware.input.selectRole ++ [ 28 ];
+      back = roleCode cfg.hardware.input.backRole ++ [ 1 ];
+    };
+    switchSlotCommand = cfg.recovery.switchSlotCommand;
+    persistDevice = if persistFs.device != "" then persistFs.device else "/dev/disk/by-partlabel/syspersist";
+    gadgetAddr = gadgetAddr;
+    docsUrl = docsUrl;
+    longPressMs = 750;
+  });
+  recovery = lib.getExe pkgs.mura.recovery;
 in
 {
   options.mura.recovery = {
@@ -183,6 +171,10 @@ in
     };
 
     ## 2. the recovery environment (stage 1) --------------------------------------------------
+    # The panel frontend reads the HMD's buttons as raw evdev (/dev/input/event*): the event
+    # interface must exist in stage 1 (a module on the NixOS kernel). The button drivers
+    # themselves are the device's declaration (gpio-keys/pmic on the targets; PS/2 in the VM).
+    boot.initrd.kernelModules = [ "evdev" ];
     boot.initrd.systemd = {
       # networkd only in recovery (the gadget interface + a DHCP server for the cable's host);
       # a normal boot leaves it to stage 2.
@@ -212,13 +204,15 @@ in
         '';
         "/etc/ssh/authorized_keys.d/root".text = lib.concatStringsSep "\n" authorizedKeys + "\n";
         "/etc/repart.d".source = lib.mkDefault (pkgs.runCommand "empty-repart.d" { } "mkdir $out");
+        "/etc/mura/recovery.json".source = recoveryConfig;
       };
       storePaths = [
         "${pkgs.openssh}/bin/sshd"
         "${pkgs.openssh}/bin/ssh-keygen"
         "${pkgs.openssh}/libexec/sshd-auth"
         "${pkgs.openssh}/libexec/sshd-session"
-        recoveryMenu
+        recovery
+        "${lib.getExe pkgs.mura.setup}"
         waysIn
         plymouthSay
         "${pkgs.gnused}/bin/sed"
@@ -226,7 +220,7 @@ in
       extraBin = {
         sed = "${pkgs.gnused}/bin/sed";
         ssh-keygen = "${pkgs.openssh}/bin/ssh-keygen";
-        mura-recovery = "${recoveryMenu}";
+        mura-recovery = recovery;
       };
 
       # `rd.systemd.unit=mura-recovery.target` makes this the initrd's default target in place of
@@ -234,8 +228,8 @@ in
       # plymouth-start, the test driver's initrd backdoor all hang off sysinit/basic).
       targets.mura-recovery = {
         description = "Mura recovery environment (stage 1: sshd on the gadget, panel screen, offered reset)";
-        requires = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-sshd.service" "mura-recovery-screen.service" ];
-        after = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-sshd.service" "mura-recovery-screen.service" ];
+        requires = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-sshd.service" "mura-recovery-panel.service" "mura-setup-recovery.service" ];
+        after = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-sshd.service" "mura-recovery-panel.service" "mura-setup-recovery.service" ];
         unitConfig.AllowIsolate = true;
       };
 
@@ -267,7 +261,7 @@ in
           fp=$(ssh-keygen -lf "$key.pub" | cut -d' ' -f2)
           {
             echo "Mura recovery on this headset. Host key $fp"
-            echo "Run: mura-recovery"
+            echo "Run: mura-recovery shell"
           } > /run/mura-recovery/banner
           echo "$fp" > /run/mura-recovery/fingerprint
         '';
@@ -289,26 +283,35 @@ in
         };
       };
 
-      services.mura-recovery-screen = {
-        description = "Mura recovery: the panel screen";
-        after = [ "mura-recovery-identity.service" "plymouth-start.service" ];
+      # The panel frontend (specs/recovery-menu.md §4–§5): the HMD's buttons over raw evdev
+      # (register on release, long press ignored — Android recovery's semantics), the menu drawn
+      # through plymouth; the ways-in lines drawn once and left standing. Runs for the life of
+      # stage 1; a restart re-scans the input devices.
+      services.mura-recovery-panel = {
+        description = "Mura recovery: the panel menu (HMD buttons, plymouth)";
+        after = [ "mura-recovery-identity.service" "plymouth-start.service" "systemd-udev-settle.service" ];
         requires = [ "mura-recovery-identity.service" ];
-        serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
-        script = ''
-          {
-            echo "This headset is in recovery."
-            echo
-            echo "  USB cable:  ssh root@${gadgetAddr}   (host key $(cat /run/mura-recovery/fingerprint))"
-            echo "  then run:   mura-recovery   — factory reset, ${lib.optionalString (cfg.recovery.switchSlotCommand != null) "switch slot, "}reboot"
-            echo "  A factory reset also gives this headset a new SSH identity (new fingerprint)."
-            echo "  Help:       ${docsUrl}"
-          } > /run/mura-recovery/screen.txt
-          if ${plymouthSay} /run/mura-recovery/screen.txt; then
-            echo shown > /run/mura-recovery/screen.status
-          else
-            echo "plymouth is not running"; echo no-plymouth > /run/mura-recovery/screen.status
-          fi
-        '';
+        wants = [ "systemd-udev-settle.service" ];
+        serviceConfig = {
+          ExecStart = "${recovery} panel";
+          Restart = "on-failure";
+          RestartSec = "2s";
+        };
+      };
+
+      # The web frontend (§7): the setup program's recovery instance on the gadget and hotspot
+      # addresses — the keyless way in for a phone or a laptop on the cable. Root: no other
+      # identity exists in stage 1.
+      services.mura-setup-recovery = {
+        description = "Mura recovery: the web page on the cable/hotspot addresses";
+        after = [ "systemd-networkd.service" "mura-usb-gadget.service" "mura-recovery-identity.service" ];
+        wants = [ "systemd-networkd.service" "mura-usb-gadget.service" ];
+        requires = [ "mura-recovery-identity.service" ];
+        serviceConfig = {
+          ExecStart = "${lib.getExe pkgs.mura.setup} --recovery";
+          Restart = "on-failure";
+          RestartSec = "2s";
+        };
       };
     };
   };

@@ -7,8 +7,43 @@
 //! exits the process shortly after the marker appears from any source (welcome surface,
 //! administrator), so the unit retires within seconds and `ConditionPathExists=!marker` refuses
 //! a restart. Hand-rolled HTTP/1.1 for six paths; the real setup program chooses its own stack.
+//!
+//! `mura-setup --recovery` (specs/recovery-menu.md §7): the same listeners in the recovery
+//! environment (stage 1), serving the recovery page instead — status, `POST /reboot`, and
+//! `POST /factory-reset`, which is refused (400) unless the form carries `confirm=erase` and then
+//! execs `mura-recovery action factory-reset --confirmed`. One program, two instances, and the
+//! keyless way into recovery for a phone on the hotspot or a laptop on the cable.
 
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static RECOVERY: AtomicBool = AtomicBool::new(false);
+const RECOVERY_BIN: &str = match option_env!("MURA_RECOVERY_BIN") {
+    Some(p) => p,
+    None => "mura-recovery",
+};
+
+fn recovery_action(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
+    std::process::Command::new(RECOVERY_BIN).arg("action").args(args).status()
+}
+
+fn recovery_page() -> String {
+    let status = std::process::Command::new(RECOVERY_BIN)
+        .args(["action", "status"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_else(|e| format!("(status unavailable: {e})"));
+    let esc = status.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    format!(
+        "<!doctype html><meta charset=utf-8><title>Mura recovery</title>\n<h1>Mura recovery</h1>\
+<p>This headset did not boot into a session.</p><pre>{esc}</pre>\n\
+<form method=post action=/reboot><button>Try again (reboot)</button></form>\n\
+<h2>Factory reset</h2><p>Erases everything this headset has stored: accounts, settings, Wi-Fi, pairings. \
+The headset gets a new SSH identity. This cannot be undone. The system itself is kept.</p>\n\
+<form method=post action=/factory-reset><label><input type=checkbox name=confirm value=erase> I understand, erase everything</label> \
+<button>Erase and reboot</button></form>\n"
+    )
+}
 use std::net::{TcpListener, TcpStream};
 use std::os::fd::FromRawFd;
 use std::path::Path;
@@ -116,10 +151,37 @@ fn handle(mut s: TcpStream) {
     while have < content_length.min(65536) {
         match s.read(&mut chunk) {
             Ok(0) | Err(_) => break,
-            Ok(n) => have += n,
+            Ok(n) => {
+                buf.extend_from_slice(&chunk[..n]); // kept: the recovery form's `confirm` field is read from it
+                have += n;
+            }
         }
     }
     let path = path.split('?').next().unwrap_or(path);
+    let body = String::from_utf8_lossy(&buf[head_end..buf.len().min(head_end + content_length)]).into_owned();
+
+    if RECOVERY.load(Ordering::Relaxed) {
+        match (method, path) {
+            ("GET", p) if PROBES.contains(&p) => respond(&mut s, "302 Found", &[("Location", "http://mura.local/")], b""),
+            ("GET", _) | ("HEAD", _) => respond(&mut s, "200 OK", &[("Content-Type", "text/html; charset=utf-8")], recovery_page().as_bytes()),
+            ("POST", "/reboot") => {
+                respond(&mut s, "200 OK", &[("Content-Type", "text/plain")], b"rebooting\n");
+                let _ = recovery_action(&["reboot"]);
+            }
+            ("POST", "/factory-reset") => {
+                // the confirmation is the frontend's job (§2/§7): one confirmed POST, never a GET,
+                // never a POST without the field
+                if body.split('&').any(|kv| kv == "confirm=erase") {
+                    respond(&mut s, "200 OK", &[("Content-Type", "text/plain")], b"erasing everything and rebooting\n");
+                    let _ = recovery_action(&["factory-reset", "--confirmed"]);
+                } else {
+                    respond(&mut s, "400 Bad Request", &[("Content-Type", "text/plain")], b"not confirmed: nothing erased\n");
+                }
+            }
+            _ => respond(&mut s, "404 Not Found", &[], b""),
+        }
+        return;
+    }
 
     match (method, path) {
         ("GET", p) if PROBES.contains(&p) => respond(&mut s, "302 Found", &[("Location", "http://mura.local/")], b""),
@@ -137,14 +199,19 @@ fn handle(mut s: TcpStream) {
 }
 
 fn main() {
-    // setup finished (here, in the headset, or by an administrator): retire within seconds
-    std::thread::spawn(|| {
-        while !Path::new(MARKER).exists() {
-            std::thread::sleep(Duration::from_secs(2));
-        }
-        std::thread::sleep(Duration::from_secs(1)); // let an in-flight /finish response go out
-        std::process::exit(0);
-    });
+    if std::env::args().any(|a| a == "--recovery") {
+        RECOVERY.store(true, Ordering::Relaxed);
+        eprintln!("mura-setup: recovery mode (specs/recovery-menu.md §7)");
+    } else {
+        // setup finished (here, in the headset, or by an administrator): retire within seconds
+        std::thread::spawn(|| {
+            while !Path::new(MARKER).exists() {
+                std::thread::sleep(Duration::from_secs(2));
+            }
+            std::thread::sleep(Duration::from_secs(1)); // let an in-flight /finish response go out
+            std::process::exit(0);
+        });
+    }
 
     let mut handles = Vec::new();
     for addr in ADDRS {

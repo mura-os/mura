@@ -3,7 +3,7 @@
 # Two assertions over built closures (pkgs.closureInfo; no daemon access needed at check time):
 #
 # 1. THE PROOF — the closure of every Mura program (mura-session, mura-preflight, mura-setup,
-#    mura-authd) plus what execs them on the login path (greetd, systemd, util-linux's waitpid)
+#    mura-authd, mura-recovery) plus what execs them on the login path (greetd, systemd, util-linux's waitpid)
 #    contains no interpreter runtime: no python*, no perl, no uwsm. This is the statement the
 #    three code rungs (D3/D4/D5/D6 ports) could not each make alone: the boot, login and
 #    session-start path is interpreter-free end to end.
@@ -31,6 +31,7 @@ let
     pkgs.mura.preflight
     pkgs.mura.setup
     pkgs.mura.authd
+    pkgs.mura.recovery
     pkgs.greetd
     pkgs.systemd
     pkgs.util-linux
