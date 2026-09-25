@@ -124,7 +124,7 @@ Codes are the contract's `hmdButtons` resolved through the evdev table (`KEY_POW
 | Frontend | Runs as | How | Confirms by |
 |---|---|---|---|
 | `mura-recovery panel` | `mura-recovery-panel.service` in stage 1 (`Restart=on-failure`) | opens every `/dev/input/event*`, `poll(2)`, §4 → §3 → §2; draws per §5 | the Confirm screen (§3) |
-| `mura-recovery shell` | root over ssh (administrators' keys, recovery.nix) or the console | the same items as a numbered prompt; `Show details` inline | typing `yes, erase` |
+| `mura-recovery` (bare; `shell` is an alias) | root over ssh (administrators' keys, recovery.nix) or the console — what the banner says to type | the same items as a numbered prompt; `Show details` inline | typing `yes, erase` |
 | `mura-setup --recovery` | `mura-setup-recovery.service` in stage 1, root (no other identity exists there) | the stub's HTTP on the gadget + hotspot addresses (`IP_FREEBIND`): `GET /` status + buttons; `POST /reboot`; `POST /factory-reset` → `400` unless the form field `confirm=erase` is present, else `mura-recovery action factory-reset --confirmed` | one confirmed POST (the Quest app's "Factory reset → Reset" is one confirmed tap); possession of the cable or the per-boot PSK authorises it, as for setup (first-run §5) |
 
 The web frontend never wipes on a `GET`, never on a `POST` without the field, and never serves
@@ -147,7 +147,7 @@ QEMU's keyboard):
 5. `down` then `ret` on Confirm erases: repart ran, the `syspersist` partition is re-created
    empty with a new partition UUID, the disk still has exactly that one partition, and the panel
    is back on Main. **Verified.**
-6. `mura-recovery shell` over ssh from the cable's host end, with a wheel member's key, lists the
+6. Bare `mura-recovery` over ssh from the cable's host end, with a wheel member's key, lists the
    same items under the banner carrying the panel's fingerprint; `2` then anything but
    `yes, erase` prints `Not erased.` and touches nothing. **Verified.**
 7. `GET /` on the gadget address serves the recovery page with the fingerprint; `POST

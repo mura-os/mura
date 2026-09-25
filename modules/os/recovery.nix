@@ -261,7 +261,7 @@ in
           fp=$(ssh-keygen -lf "$key.pub" | cut -d' ' -f2)
           {
             echo "Mura recovery on this headset. Host key $fp"
-            echo "Run: mura-recovery shell"
+            echo "Run: mura-recovery"
           } > /run/mura-recovery/banner
           echo "$fp" > /run/mura-recovery/fingerprint
         '';

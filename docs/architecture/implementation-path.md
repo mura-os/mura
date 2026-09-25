@@ -456,7 +456,7 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   confirm; the countdown was dropped for lack of a comparable), a separate Confirm screen
   defaulting to `Cancel`, drawn as plymouth messages ≤200 bytes; devices that appear after the
   panel started are picked up (inotify — udev's coldplug lands the VM's PS/2 keyboard late, and
-  gpio-keys targets will be no different); (b) **`mura-recovery shell`** over ssh/console,
+  gpio-keys targets will be no different); (b) bare **`mura-recovery`** over ssh/console (what the banner says to type),
   `yes, erase` to confirm; (c) **`mura-setup --recovery`** on the gadget/hotspot addresses,
   `POST /factory-reset` refused without `confirm=erase`. The reset unmounts the partition first
   (Android's `EraseVolume` shape), settles udev and retries the `BLKPG`/`BLKRRPART` EBUSY

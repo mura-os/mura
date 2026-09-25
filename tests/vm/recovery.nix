@@ -152,9 +152,10 @@
             return "172.16.42.5" in machine.succeed("networkctl status usb1 2>/dev/null || true")
         retry(host_configured, timeout=timedelta(seconds=60))
         ssh = "ssh -i /tmp/key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 root@172.16.42.1"
-        out = machine.succeed(ssh + " mura-recovery shell < /dev/null 2>&1")
+        out = machine.succeed(ssh + " mura-recovery < /dev/null 2>&1")   # bare: what the banner says to type
         assert "Try again" in out and "Factory reset" in out and "Power off" in out, out
         assert "Host key " + fp in out, out   # the banner carries the fingerprint the panel shows
+        assert "Run: mura-recovery\n" in out, out   # and tells the person to type exactly what was just run
         # only administrators' keys open recovery: the fixture key belongs to mura (wheel); guest's does not
         keys = machine.succeed("cat /etc/ssh/authorized_keys.d/root")
         assert "guest-not-an-admin" not in keys, keys
@@ -175,7 +176,7 @@
         panel_shows("> Try again")
 
     with subtest("recovery: shell — a wrong confirmation erases nothing"):
-        out = machine.succeed("printf \"2\\nno\\n\" | " + ssh + " mura-recovery shell 2>&1")
+        out = machine.succeed("printf \"2\\nno\\n\" | " + ssh + " mura-recovery 2>&1")
         assert "Not erased" in out, out
         machine.succeed("mount /dev/disk/by-partlabel/syspersist /mnt && test -f /mnt/mura/marker && umount /mnt")
         # and the action alone refuses without the frontend's confirmation

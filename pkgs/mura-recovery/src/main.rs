@@ -5,8 +5,9 @@
 //!   mura-recovery panel [--config PATH]
 //!       The panels + the HMD's buttons: raw evdev (register on release, long press ignored),
 //!       the menu state machine, plymouth as the display (§3–§5). Runs for the life of stage 1.
-//!   mura-recovery shell [--config PATH]
-//!       The same menu as a numbered prompt over ssh or the console; `yes, erase` confirms.
+//!   mura-recovery [--config PATH]
+//!       What a person types: the same menu as a numbered prompt over ssh or the console;
+//!       `yes, erase` confirms. (`shell` is accepted as an alias.)
 //!
 //! One Rust program, three ways in — `mura-setup --recovery` is the third: it execs
 //! `mura-recovery action …` from its web page (§7).
@@ -24,7 +25,7 @@ use std::io::{BufRead, Write};
 use std::process::exit;
 
 fn usage() -> ! {
-    eprintln!("usage: mura-recovery action <status|factory-reset [--confirmed]|switch-slot|reboot|poweroff>\n       mura-recovery panel [--config PATH]\n       mura-recovery shell [--config PATH]");
+    eprintln!("usage: mura-recovery [--config PATH]            the menu (ssh or console)\n       mura-recovery action <status|factory-reset [--confirmed]|switch-slot|reboot|poweroff>\n       mura-recovery panel [--config PATH]      the HMD buttons + plymouth (stage-1 unit)");
     exit(2)
 }
 
@@ -50,7 +51,7 @@ fn main() {
             exit(actions::run(action, confirmed, &cfg));
         }
         Some("panel") => panel(load_config(&args)),
-        Some("shell") => shell(load_config(&args)),
+        None | Some("shell") | Some("--config") => shell(load_config(&args)),
         _ => usage(),
     }
 }
