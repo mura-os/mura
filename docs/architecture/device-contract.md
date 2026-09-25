@@ -241,7 +241,10 @@ buttons, dwell where a button is unusable. Declared facts:
 - `concurrentApSta` (nullable) — hotspot + station at once; drives the provisioning hotspot's
   handoff behaviour (first-run-onboarding §5.2).
 - `usbGadget` (default true) — the USB port has a device-capable controller, so the USB Ethernet
-  gadget of first-run §5.4 is presented from the initramfs (D3; the virtual headset via `dummy_hcd`)
+  gadget of first-run §5.4 is presented from the initramfs (D3; the virtual headset via
+  `dummy_hcd`). This is a controller/device-role fact, not a VID/PID or descriptor-policy fact;
+  target stock identities and Mura's open shipping strategies are in
+  [research/55](../research/55-usb-identities-and-gadget-policy.md)
 - `proximitySource` ∈ `none | iio | hid | ssc` — where the wear sensor is read
   (bootstrap policy: research/42 §4.4; native enablement:
   [research/53](../research/53-proximity-presence-native-linux-audit.md)). The value is a qualified

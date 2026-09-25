@@ -540,6 +540,11 @@ review decides on.
 
 ### 6.1 Transports before any credential exists
 
+This section owns transport-mechanism comparison. Mode/build-specific target USB descriptors,
+comparable-project ID rationale, cross-host class binding, collision risks and Mura's open shipping
+identity strategies are canonical in
+[55-usb-identities-and-gadget-policy.md](55-usb-identities-and-gadget-policy.md).
+
 - **USB Ethernet gadget + DHCP + sshd (postmarketOS).** configfs gadget from the initramfs —
   `pmaports/main/postmarketos-initramfs/init_functions.sh:12-15, 836-881`; `unudhcpd` hands the
   host `172.16.42.2`, device `172.16.42.1` — `init_functions.sh:911-963`, `pmbootstrap/pmb/config/__init__.py:322`;

@@ -92,9 +92,11 @@ in
           Type = "oneshot";
           RemainAfterExit = true;
         };
-        # pmOS init_functions.sh setup_usb_network_configfs, one function (ncm.usb0 → usb0).
-        # idVendor/idProduct: the Linux Foundation multifunction composite gadget IDs used by
-        # pmOS and every configfs example — a placeholder until Mura has an allocation [mine].
+        # pmOS init_functions.sh is the configfs/NCM mechanism precedent, not the identity
+        # precedent (pmOS actually defaults to Google's 18d1:d001; research/55).
+        # idVendor/idProduct: Linux Foundation's legacy multifunction-gadget example identity.
+        # Kept as Mura's development placeholder while the shipping identity strategy is open;
+        # it does not match this NCM-only composition and is not a Mura allocation.
         # Serial: fixed per device model in stage 1; a per-unit value (hash of machine-id)
         # would need /persist's etc-rw in the initrd — recorded as a later item.
         script = ''
