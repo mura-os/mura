@@ -21,6 +21,9 @@ final: prev: {
     # The recovery environment's one program: actions + menu, panel/shell frontends
     # (specs/recovery-menu.md; modules/os/recovery.nix).
     recovery = final.callPackage ./mura-recovery { };
+    # The settings daemon + CLI (specs/settings-schema.md, specs/settings-daemon.md;
+    # modules/os/settings.nix; D7).
+    settingsd = final.callPackage ./mura-settingsd { };
     # The plymouth theme (boot / failure feedback / recovery screen) is device-specific — it is
     # composited from assets/branding with the panel geometry — so modules/os/recovery.nix calls
     # pkgs/mura-plymouth-theme directly with the contract's values; no fixed overlay attribute.

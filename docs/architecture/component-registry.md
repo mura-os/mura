@@ -173,7 +173,7 @@ everything and submits one stereo projection layer). Rows are the subsystems of 
 
 | Component | M/P/P | Placement | Protocol seam | Status | Evidence |
 |---|---|---|---|---|---|
-| Settings daemon + user-facing configuration model | mech+policy | separate daemon (session half + privileged apply agent) | `org.mura.Settings1` (session bus) + schema artifact + sparse versioned stores ([specs/settings-schema.md](../../specs/settings-schema.md)) | **partial** | the *contract* is specified: [specs/settings-schema.md](../../specs/settings-schema.md) rev 2 (schema artifact from NixOS options, preference/state XDG split, relocatable instance schemas, quarantine, typed migrations, apply transactions), on the [research/35](../research/35-settings-config-models.md) evidence base; the daemon's process design itself is still missing (the spec's §10) |
+| Settings daemon + user-facing configuration model | mech+policy | `mura-settingsd` (session bus, per-user; the same crate's `--system` mode for the reserved `device` stratum — shape C) | `org.mura.Settings1` + `/etc/mura/settings-schema.json` (the compiled schema, in the closure) + sparse per-(schema, instance) JSON under XDG ([specs/settings-schema.md](../../specs/settings-schema.md) rev 3, [specs/settings-daemon.md](../../specs/settings-daemon.md)) | **implemented** (D7: `lib/settings`, `pkgs/mura-settingsd`, `modules/os/settings.nix`; `nix build .#vm-test-settings`) | the contract was re-derived from the stores' source ([research/58](../research/58-settings-stores-from-comparables.md): dconf/GSettings, KConfig + kconf_update, cosmic-config, then snapd, UCI/procd/LuCI, steamos-manager, ChromeOS device settings, homed, Android SettingsProvider): kept what converged (compiled-schema artifact, sparse stores, single session writer + per-key signals, locks as system-layer facts, declared additive migrations), removed what had no comparable (the polkit-gated per-unit writer, quarantine, apply transactions, the migration DSL, the preference session stratum); `stratum = device` is reserved and refused by an assertion until a target declares one |
 | xdg-desktop-portal backend — capture tier | mech | separate daemon (day-one: `xdg-desktop-portal-wlr` unmodified; then native `xdg-desktop-portal-spatial`) | D-Bus `org.freedesktop.impl.portal.*`; PipeWire | **specified** | spatial-sharing §2; research/17 §1/§8 (xdpw needs only our protocols + `UseIn` name; native backend = 3 D-Bus methods + chooser + PW producer). Yes — the portal backend is already implied by docs 17–19; SpatialCast source types now normative in [specs/spatialcast-portal.md](../../specs/spatialcast-portal.md) rev 2 (`XR_VIEW`/`APP_VOLUME` via a frontend patch; workspace join moved to the sharing service's session API) |
 | xdg-desktop-portal backend — non-capture interfaces (FileChooser, OpenURI, Settings/appearance, Account, Notification portal…) | mech | separate daemon | D-Bus | **missing** | no doc found; docs 17–19 cover only ScreenCast/RemoteDesktop/Clipboard portals |
 | Notification spec service (`org.freedesktop.Notifications`) | mech | separate daemon | D-Bus notification spec | **missing** | no doc found (presentation half also missing, §5) |
@@ -269,13 +269,18 @@ starts from evidence rather than zero.
 7. **OSD framework** (shell) — no doc found.
 8. **Notifications, both halves** (service + shell) — no spec service, no spatial presentation;
    today notifications exist only as a hypothetical leak in spectate streams (spatial-sharing §6).
-9. **Settings daemon + configuration model** (service) — *contract closed
-   ([specs/settings-schema.md](../../specs/settings-schema.md) rev 2)*: schema artifact, storage
-   strata, bus interface, migrations. Remaining gap: the daemon's own process design (spec §10).
+9. **Settings daemon + configuration model** (service) — **closed** at D7
+   ([specs/settings-schema.md](../../specs/settings-schema.md) rev 3,
+   [specs/settings-daemon.md](../../specs/settings-daemon.md); `pkgs/mura-settingsd`). Open on
+   its track: the `--system` mode's handlers (the first device key), the first real migration.
 10. **Polkit agent** (service) — polkit is *enabled* (modules/os) with no agent to present
-    prompts; privilege escalation in-session is currently a dead end. **Named as a possible dependency of the
-    welcome surface's time-zone/hostname card** (first-run §4.3): they are `auth_admin_keep`;
-    research/54 recommends a Mura rule instead, pending the owner's ruling.
+    prompts, so an `auth_admin_keep` action a session cannot satisfy fails with systemd's
+    `INTERACTIVE_AUTHORIZATION_REQUIRED` (research/58 §12). The time-zone/hostname card no longer
+    depends on it: research/54 §5 was **ruled 2026-09-25** as `50-mura-timedate.rules` (wheel
+    members in active local sessions, research/56 §9). The settings daemon does not need it
+    either (research/58 §13.6: the per-user store has no privileged writes; the device stratum's
+    actions are the Frame rung's). What remains is the general prompt surface for every other
+    admin action in-session — the greeter/shell rung's (G1+).
 
 Added by the terminology-trap review (see [desktop-environment.md §2](desktop-environment.md) and
 doc 30's addenda for the evidence):

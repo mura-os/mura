@@ -8,6 +8,10 @@
 { lib, config, ... }:
 let
   inherit (lib) mkOption types mkEnableOption literalExpression;
+  # Options a wearer may change at runtime are declared with `mkSetting` and become keys of the
+  # generated settings schema (specs/settings-schema.md §1; lib/settings). Everything else in
+  # the contract is a build fact.
+  inherit (import ../settings { inherit lib; }) mkSetting;
 
   # A per-subsystem adaptation backend selector. Each hardware subsystem picks one
   # of native | android-backed | device-specific (ADR 0003).
@@ -115,10 +119,19 @@ in
               mura.adaptation.eyes.
           '';
         };
-        defaultMeters = mkOption {
+        defaultMeters = mkSetting {
           type = types.float;
           default = 0.063;
           description = "Safe default IPD used pre-auth (greeter/lock, ADR 0007) and when no measured/stored value exists.";
+          # `hardware.ipd.meters`: the wearer's software IPD, per user, when the optics are fixed
+          # and the value is stored (`source = stored`, ADR 0011); a device fact otherwise.
+          settings = {
+            schema = "hardware.ipd";
+            key = "meters";
+            ownership = cfg: if cfg.hardware.ipd.source == "stored" then "runtime" else "declarative";
+            # No range: no comparable bounds a stored software IPD (Monado has none); the optics'
+            # mechanical range is the device's fact to declare when a target has one.
+          };
         };
       };
 
@@ -434,10 +447,13 @@ in
           default = false;
           description = "Enable video see-through passthrough (the compositor environment layer). See docs/architecture/perception-passthrough-hands.md.";
         };
-        latencyMode = mkOption {
+        latencyMode = mkSetting {
           type = types.enum [ "low-latency" "high-quality" ];
           default = "low-latency";
           description = "Passthrough quality/latency tradeoff. Default favours latency (latency beats cleanliness); the quality knob lives on the geometry pipeline, never the display path.";
+          # A per-user preference (settings-schema.md §2): the image sets the default, the wearer
+          # may pin either mode; the compositor reads it through the bus.
+          settings = { schema = "xr.passthrough"; key = "latencyMode"; ownership = "runtime"; };
         };
         depthBackend = mkOption {
           type = types.enum [ "classical" "vk-qcom" "adreno-dfs" "hexagon" "none" ];
@@ -454,10 +470,11 @@ in
             default = false;
             description = "Enable egocentric hand/upper-limb cutout as a compositor top layer.";
           };
-          upperLimbVisibility = mkOption {
+          upperLimbVisibility = mkSetting {
             type = types.enum [ "visible" "hidden" "automatic" ];
             default = "automatic";
             description = "Shell default upper-limb composition policy (per-client overridable), mirroring the visionOS contract.";
+            settings = { schema = "xr.passthrough"; key = "upperLimbVisibility"; ownership = "runtime"; };
           };
         };
       };

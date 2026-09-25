@@ -88,6 +88,7 @@
           mura-preflight = (pkgsFor system).mura.preflight; # the XR preflight probe (D6)
           mura-setup = (pkgsFor system).mura.setup; # the setup program's system instance, D3 stub
           mura-recovery = (pkgsFor system).mura.recovery; # the recovery menu + actions (specs/recovery-menu.md)
+          mura-settingsd = (pkgsFor system).mura.settingsd; # the settings daemon + CLI (specs/settings-daemon.md; D7)
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux")
           {
@@ -110,6 +111,7 @@
             vm-test-oob = import ./tests/vm/oob.nix { pkgs = pkgsFor system; };
             vm-test-health = import ./tests/vm/health.nix { pkgs = pkgsFor system; };
             vm-test-recovery = import ./tests/vm/recovery.nix { pkgs = pkgsFor system; };
+            vm-test-settings = import ./tests/vm/settings.nix { pkgs = pkgsFor system; };
           }
         // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
           # Steam Frame uefi-rauc artifacts (build via remote aarch64 builder).
@@ -166,6 +168,7 @@
           mura-preflight = self.packages.${system}.mura-preflight;
           mura-setup = self.packages.${system}.mura-setup;
           mura-recovery = self.packages.${system}.mura-recovery;
+          mura-settingsd = self.packages.${system}.mura-settingsd;
           # The interpreter proof and the Python fence (tests/closure.nix): the closure of every
           # Mura program plus greetd carries no interpreter; the toplevels' residual nixpkgs
           # Python is a pinned, shrinking allowlist.

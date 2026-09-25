@@ -58,8 +58,10 @@ Mura's daemon is the *notifier* — a consumer that received `Changed` subscript
 **Generation switch.** `system.userActivationScripts.muraSettings` runs
 `mura-settings generation-changed` in every logged-in user's manager when
 `switch-to-configuration` restarts `nixos-activation.service` (NixOS's hook for exactly this —
-its own example rebuilds the KDE service cache). The call activates the daemon if needed; the
-daemon re-reads the artifact, re-resolves every loaded key, emits `Changed` for each whose
+its own example rebuilds the KDE service cache). The hook pokes a *running* daemon only: one not
+running has no subscribers to tell and reads the new artifact when the bus next activates it
+(the hook also runs at every login, and must not defeat activation on first use). The daemon
+re-reads the artifact, re-resolves every loaded key, emits `Changed` for each whose
 effective value or provenance moved (§4 of the contract), then `GenerationChanged(s generation)`
 where `generation` is the artifact's store hash (its identity in the closure). No inotify on
 `/etc`: the switch is the only writer of the artifact and NixOS already tells the session.

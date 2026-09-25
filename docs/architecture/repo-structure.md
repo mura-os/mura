@@ -27,6 +27,7 @@ lib/
   images/                      # image-variant deferred modules (image.modules), repart + android packer
   donor/                       # acquire/identify/parse/extract/qualify derivation builders
   contract/                    # device-contract option types + assertions
+  settings/                    # the settings-schema compiler: mkSetting annotation → /etc/mura/settings-schema.json
 modules/
   os/                          # common distribution policy (device-independent); one file per concern — see the ownership table below
   xr/                          # Monado runtime, session, StardustXR shell wiring
@@ -52,6 +53,8 @@ pkgs/                          # overlay: XR components, kernels, tools (nixpkgs
                                # recovery page in stage 1 — pkgs.mura.setup
   mura-recovery/               # the recovery menu: actions once, three frontends (panel/evdev+plymouth, shell, web via
                                # mura-setup) — specs/recovery-menu.md (Rust) — pkgs.mura.recovery
+  mura-settingsd/              # the settings daemon (org.mura.Settings1) + mura-settings CLI over the generated schema
+                               # artifact — specs/settings-daemon.md (Rust, zbus) — pkgs.mura.settingsd
   mura-plymouth-theme/         # the boot / failure-feedback / recovery screen: the master illustration composited per
                                # device from the contract's panel geometry (called by modules/os/recovery.nix, not an overlay attr)
 assets/
@@ -107,6 +110,7 @@ files set the same NixOS option. Design authority in the right-hand column.
 | `os/health.nix` | `mura.health.{crashLoopThreshold,deviceWaitSeconds}`, `mura.xr.calibration.paths`, `mura.qualification.readinessCheck` | `mura-preflight` (P1–P7 → `/run/mura/preflight.json` + `.summary`; greetd `Requires=` it), `mura-crashloop` (at the threshold: `mura.recovery.rebootCommand`, else `mura-recovery.target`) (B1b), `mura-readiness` → `boot-complete.target` (B9, target-reached). The slot half (`+N` arming in `mura-bootconf`, `mura-mark-good`, `mura.deployment.bootTries`) is the uefi-rauc family's | [implementation-path.md §3a, §3a-bis](implementation-path.md) |
 | `os/recovery.nix` | `mura.hardware.{panel,displays}` (theme geometry); sets `mura.recovery.{rebootCommand,switchSlotCommand}` (family-provided) | plymouth in the initrd with the per-device Mura theme; `mura-preflight-feedback` (the failing checks + the ways in on the panels on the first hard failure; `plymouth-quit` skipped on the `/run/mura/preflight.failed` marker); the stage-1 `mura-recovery.target` (networkd on `usb0`, `mura-recovery-identity` — the device's host key from `/persist` or a generated one — `mura-recovery-sshd`, `mura-recovery-panel` (`mura-recovery panel`: the HMD buttons per `/etc/mura/recovery.json` from the contract, plymouth), `mura-setup-recovery` (`mura-setup --recovery` on the gadget/hotspot addresses); the actions — factory reset via `systemd-repart --factory-reset`, slot switch, reboot, power off — in `pkgs/mura-recovery`, specs/recovery-menu.md). The family adds the boot entry (`uefi-rauc`: `recovery.conf`, `FactoryReset=yes` on `syspersist`/`home`) | [implementation-path.md §4 Mura recovery environment](implementation-path.md), [research/57](../research/57-recovery-environments-and-boot-failure-feedback.md) |
 | `xr/default.nix` | `mura.xr.{runtime,environment,monado.*}` | `services.monado`, the active runtime manifest | [device-contract.md §xr](device-contract.md) |
+| `os/settings.nix` | `mura.settings.{templates,schemaVersions,locks}`; reads every `mkSetting`-annotated contract option | `system.build.muraSettingsSchema` → `/etc/mura/settings-schema.json` (lib/settings; the `places.entry` template); the `Type=dbus` user unit `mura-settingsd` + D-Bus activation on the user bus; `mura-settings` on PATH; the `system.userActivationScripts` generation hook; an assertion refusing `stratum = device` keys until the system mode exists (D7) | [specs/settings-schema.md](../../specs/settings-schema.md), [specs/settings-daemon.md](../../specs/settings-daemon.md), [research/58](../research/58-settings-stores-from-comparables.md) |
 | `adaptation/*` | `mura.adaptation.*` | per-subsystem backend wiring | ADR 0003 |
 
 Rule: a new NixOS option set in `modules/os` lands in the file whose *design* column governs it,
