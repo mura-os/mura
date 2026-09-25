@@ -16,7 +16,10 @@ a bespoke setup web app that is the phone-facing instance of one `mura-setup` pr
 "set up" = an explicit `setup-complete` marker, the welcome surface's authority split verified
 per card against the pinned clones (§4.3)**; **rev 2.6, same day — two rulings recorded (dismiss =
 finish; Wi-Fi joined by a passwordless session user is user-scoped) and the time-zone step
-rewritten as derived-after-Connect with its authority an open item surveyed in research/54**).
+rewritten as derived-after-Connect with its authority an open item surveyed in research/54**;
+**rev 2.7, 2026-09-25 — the time-zone authority ruled from research/56 §9 (`50-mura-timedate.rules`,
+wheel members in active local sessions); the hotspot idle default sourced to AOSP; the USB
+identity posture ruled and its work scheduled (research/55)**).
 Decision record: [ADR 0017](adr/0017-first-run-provisioning.md) (amended in place).
 **What this covers:** everything between "the image was flashed" and "a person is using their
 session": what an installer would collect and where it lives here (§1), the persistent-state
@@ -218,13 +221,17 @@ per-item gated (§4.1) and skippable; the list is closed — anything else is a 
    default. It therefore sits **after Connect** and has **no relation to the password step**,
    which may not exist. *How the in-headset confirm/override is authorised* — `timedate1.set-timezone`
    is `auth_admin_keep` even for an active session
-   (`references/systemd/src/timedate/org.freedesktop.timedate1.policy:32-38`) — is the one open
-   authority question of this flow; it is surveyed from shipping first-run flows in
-   [research/54](../research/54-first-run-authority.md) (GNOME never shows a logged-in user a
-   system step; SteamOS grants the seat user `set-timezone`/`set-hostname` permanently through
-   `holo-polkit-helpers`), with the recommendation "derive + a Mura rule for exactly these two
-   actions in active local sessions" — **decider: the project owner** (rev 2.6; the rev 2.5
-   "after the password card" text is withdrawn as nothing shipping does that).
+   (`references/systemd/src/timedate/org.freedesktop.timedate1.policy:32-38`) — **ruled
+   2026-09-25 (rev 2.7)** from the comparables and their reasons ([research/56 §9](../research/56-defaults-from-comparables.md),
+   superseding research/54's SteamOS-only reading): the system instance sets the derived zone
+   under its own identity's rule (the g-i-s/elementary setup-identity shape, already in
+   `50-mura-setup.rules`); in-headset, `50-mura-timedate.rules` grants **active local sessions of
+   `wheel` members** exactly `set-timezone`, `set-static-hostname`, `set-hostname` — Ubuntu's
+   `policykit-desktop-privileges` grant and reason ("the user has full control over the hardware
+   anyway; non-administrators unchanged"), phosh's condition set, narrower than SteamOS/pmOS's
+   grant-everyone. The passwordless seat user is in wheel, so the confirm never prompts; anyone
+   outside wheel keeps systemd's default. The rev 2.5 "after the password card" text stays
+   withdrawn.
 7. **Finish** — the closing card: "how to reach this device" (`ssh mura@<address>`, the
    USB-cable path, §5) and *finish setup*, which writes `state/setup/setup-complete` (§3) and
    ends the provisioning hotspot and web app. **Dismissing the surface counts as finishing**
@@ -249,7 +256,7 @@ verified against the pinned clones):
 | Language | AccountsService `SetLanguage` on the own account | `org.freedesktop.accounts.change-own-user-data` = `yes` (`references/accountsservice/data/org.freedesktop.accounts.policy.in:10-16`) |
 | Wi-Fi | NetworkManager `AddConnection` | `settings.modify.own` = `yes` (`references/networkmanager/data/org.freedesktop.NetworkManager.policy.in:105-113`) → the user's own connection; `settings.modify.system` is `auth_admin_keep` even when active (`:115-123`; the `modify_system` build flag is refused upstream, `references/networkmanager/meson.build:557-560`) → a system connection only once a password exists. The card asks `CheckAuthorization` and picks the widest scope allowed — GNOME's "available to all users" behaviour, not a Mura rule. **Ruled 2026-09-24: user-scoped** (over a greeter-style rule or moving the card) |
 | Password | **`passwd` itself, driven in a pty** (the pattern Cockpit's `passwd_self` uses) | NixOS's PAM `password` stack carries `nullok`, so no old password is asked ([research/42 §3.5](../research/42-input-bootstrap.md)) |
-| Time zone, hostname | `timedated` / `hostnamed` | `auth_admin_keep` (`org.freedesktop.timedate1.policy:32-38`) — **open; decider: the project owner**, from [research/54 §4](../research/54-first-run-authority.md): derive automatically + a Mura rule granting active local sessions exactly `set-timezone` / `set-static-hostname` (SteamOS's `holo-set-timezone` shape, narrowed) is the recommendation |
+| Time zone, hostname | `timedated` / `hostnamed` | derived by the system instance (its identity's rule); in-headset `50-mura-timedate.rules`: `wheel` members in an active local session, exactly `set-timezone` / `set-static-hostname` / `set-hostname` (Ubuntu's desktop-privileges shape; [research/56 §9](../research/56-defaults-from-comparables.md), ruled 2026-09-25; VM-verified from inside the user manager) — everyone else `auth_admin_keep` (`org.freedesktop.timedate1.policy:32-38`) |
 | Finish | the `setup-complete` file | sticky `state/setup/` (§3) |
 
 No polkit rule relaxes `change-own-password` (`auth_admin` by default,
@@ -477,7 +484,7 @@ reachable over the network until changed.
 
 | Item | Decision | Note |
 |---|---|---|
-| Gadget function | **NCM** (`usb_f_ncm`) as `ncm.usb0`; D3 ships NCM only. Correct IAD device marking (`ef/02/01`), Windows-10 `WINNCM`, and a separately selectable RNDIS composition are open outcomes of the host matrix, not adopted follow-ups | [mine] — NCM is standards-track and class-bound on Linux; macOS, Android-host and Windows-version behavior still needs the physical matrix in [research/55](../research/55-usb-identities-and-gadget-policy.md). pmOS's NCM→RNDIS fallback tests local function creation, not the host OS |
+| Gadget function | **NCM** (`usb_f_ncm`) as `ncm.usb0`; D3 ships NCM only. Correct IAD device marking (`ef/02/01`), Windows-10 `WINNCM`, and a separately selectable RNDIS composition are the **USB identity + descriptor correctness** track's ([implementation-path.md §4](implementation-path.md)), decided by the host matrix on the first real-UDC target | NCM is standards-track and class-bound on Linux, macOS and Windows 11 (research/55 §5); Windows 10 is conditional; pmOS's NCM→RNDIS fallback tests local function creation, not the host OS. Posture ruled 2026-09-25: the comparables' pattern (research/55 §3, §10) |
 | Interface name | `usb0` (udev-stable) | matches pmOS; `mura-setup`'s listening address keys off the subnet, not the name |
 | Subnet | `172.16.42.1/24` device side, DHCP pool `172.16.42.2–.20` | pmOS mechanism precedent (`references/pmbootstrap/pmb/config/__init__.py:322`); one-device operation is VM-proven, while simultaneous-headset route collision is an open decider in research/55 |
 | DHCP server | **`systemd-networkd` `[DHCPServer]`** on `usb0` (`EmitDNS=no`, `EmitRouter=no` — the link is not a route to anywhere); the link is **unmanaged by NetworkManager** | the NixOS-native answer; pmOS's `unudhcpd` is the reference, not the tool. NM-unmanaged is load-bearing: the hotspot condition counts NM's active connections (§5) |
@@ -495,7 +502,7 @@ reachable over the network until changed.
 | Subnet | `10.42.0.1/24` (NM shared-mode default) | keep NM's default; distinct from the gadget subnet so the two listening addresses never coincide |
 | DNS | `/etc/NetworkManager/dnsmasq-shared.d/mura-portal.conf`: `address=/#/10.42.0.1` (wildcard — every name resolves to the headset, so `mura.local` works without phone mDNS) and `dhcp-option=114,http://10.42.0.1/` (RFC 8910) | balena wifi-connect / comitup mechanism (research/42 §6.2) |
 | Launcher + web app | one HTTP service — the `mura-setup` system instance — on `:80` of the hotspot and gadget addresses (`FreeBind=yes`); answers `/generate_204`, `/hotspot-detect.html`, `/connecttest.txt`, `/success.txt` with a `302` to `/`; `/` is the launcher ("open `http://mura.local`", plus the raw IP) and the web app lives behind it in a normal tab | the portal sheet is a launcher; nothing else survives Apple's CNA / Android's portal WebView |
-| Idle timeout | `mura.oob.hotspot.idleTimeoutMinutes`, **default 10, with no station associated**; never counts down while a client is connected; per-boot (the hotspot returns next boot while setup is unfinished) | [mine] — generous by design; the user is indifferent above "not annoying" |
+| Idle timeout | `mura.oob.hotspot.idleTimeoutMinutes`, **default 10, with no station associated**; never counts down while a client is connected; per-boot (the hotspot returns next boot while setup is unfinished) | Android's soft-AP shutdown timeout, 600000 ms (`config_wifiFrameworkSoftApShutDownTimeoutMilliseconds`, AOSP `packages/modules/Wifi`, [external] verified) — the only battery comparable that tears an empty AP down; mains-powered portals (comitup, raspap, wifi-connect) never do; the teardown follows from the radio budget (AGENTS rule 6), the value from the one shipping battery device ([research/56 §6](../research/56-defaults-from-comparables.md)) |
 | Wi-Fi join / finish | concurrent AP+STA (`mura.hardware.input.concurrentApSta = true`): activate and verify immediately, phone stays on the hotspot. Otherwise part of *finish*: AP down → STA up → marker on success; STA failure within the handoff window → AP returns, marker absent, error shown on reconnect | §5.2; wifi-connect's 20 s handoff wait is the reference |
 | LAN | **never** — `mura-setup` binds the two addresses above and nothing else | §5, §5.3 |
 
@@ -611,10 +618,11 @@ target** (decider: the welcome-surface UX design at G1 implementation); **a Mona
 driver per target** — none exists upstream for IIO or the Qualcomm SSC; the input floor is
 universal in principle and new driver code per target in practice (owner: each device's
 bring-up workstream; ordering in implementation-path §5.1); **how the in-headset time-zone /
-hostname confirm is authorised** — [research/54 §4](../research/54-first-run-authority.md)
-recommends derive + a Mura rule for exactly `timedate1.set-timezone` and
-`hostname1.set-static-hostname` in active local sessions (decider: the project owner; ruled
-2026-09-24 and no longer open: dismiss = finish, Wi-Fi user-scoped);
+hostname confirm is authorised** — ruled 2026-09-25 ([research/56 §9](../research/56-defaults-from-comparables.md);
+`50-mura-timedate.rules`, wheel members in active local sessions; ruled 2026-09-24 and no
+longer open: dismiss = finish, Wi-Fi user-scoped); whether `set-ntp` joins the rule when a
+manual zone change exists (pmOS ties them; Mura's zone is derived) — decider: F2's session
+instance design;
 recovery-environment design (where factory reset executes — owner: each family's recovery
 story; the Frame workstream shapes the first one); account-layering (store accounts, cloud
 identity) — a non-goal, explicitly out of OS scope. Resolved by the research/42 review and no

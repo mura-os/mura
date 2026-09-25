@@ -42,15 +42,20 @@ families/                      # shared definitions for near-identical models (p
 devices/
   virtual-headset/             # x86_64 VM smoke target (no hardware)
   <vendor>-<model>/            # device contract, donor manifest, kernel cfg, patches, tests, contract file
-pkgs/                          # overlay: XR components, kernels, tools (nixpkgs-xr pulled as input)
+pkgs/                          # overlay: XR components, kernels, tools (nixpkgs-xr pulled as input).
+                               # Mura's own programs are Rust (AGENTS.md rule 6); tests/closure.nix
+                               # proves the login-path closure carries no interpreter
   mura-authd/                  # the lock-path PAM helper + conformance harness (Rust; D5) — pkgs.mura.authd
+  mura-session/                # the session wrapper greetd execs, `start`/`finalize` (Rust, libc only; D4 rev 3) — pkgs.mura.session
+  mura-preflight/              # the XR preflight probe P1–P7 → /run/mura/preflight.json (Rust; D6) — pkgs.mura.preflight
+  mura-setup/                  # the setup program's system instance — D3 STUB (Rust, libc only) — pkgs.mura.setup
 patches/                       # patch sets, organized per upstream + per donor build (see below)
 protocols/                     # Mura Wayland protocol XMLs (zxr-shell-v2, the zspatial
                                # shell-integration family incl. zspatial-toplevel-export) + governance
                                # notes + CONVENTIONS.md; CI: wayland-scanner + xmllint (tests/protocols.nix)
 specs/                         # normative non-Wayland contracts (IPC framings, storage formats,
                                # D-Bus/PipeWire interfaces) — the peer of protocols/
-tests/                         # eval assertions, VM tests, reproducibility + hardware tests
+tests/                         # eval assertions (contract, persist, protocols, closure), VM tests, reproducibility + hardware tests
 contracts/                     # reviewed, hash-bound donor contracts (the qualify-stage gate)
 docs/
   research/                    # the seven research docs + synthesis
@@ -87,7 +92,7 @@ files set the same NixOS option. Design authority in the right-hand column.
 | File | Consumes | Owns (NixOS surface) | Design |
 |---|---|---|---|
 | `os/default.nix` | `mura.device.*`, `mura.hardware.soc`, `mura.deployment.bootScheme` | distro identity, D-Bus/polkit enable, `/etc/mura-device.json`, hostname/locale defaults | [overview.md](overview.md) |
-| `os/session.nix` | `mura.xr.session.{autoLogin,greeter,allowNoDeclaredAccount,readinessTimeoutSeconds}`, `mura.xr.shell` | `services.greetd` (appliance `initial_session` / multi-user `default_session`), the greeter user, the session wrapper (`programs.uwsm` + the `mura-session` script, D4), the two drop-ins on uwsm's `wayland-wm@.service` / `wayland-session@.target`, `mura-session.target` (B6/B6a), `environment.d/60-mura.conf`, the `# STAND-IN` lines (sway config `exec uwsm finalize`) | [implementation-path.md §2 (ii)](implementation-path.md), [specs/session-bootstrap.md](../../specs/session-bootstrap.md), ADR 0007 |
+| `os/session.nix` | `mura.xr.session.{autoLogin,greeter,allowNoDeclaredAccount,readinessTimeoutSeconds}`, `mura.xr.shell` | `services.greetd` (appliance `initial_session` / multi-user `default_session`), the greeter user, the session wrapper (`pkgs.mura.session`, `mura-session start`, D4 rev 3), the four static user units (`mura-compositor.service`, `mura-session.target` (B6/B6a), `mura-session-bindpid@`, `mura-session-shutdown.target`), `environment.d/60-mura.conf`, the `# STAND-IN` lines (sway as `ExecStart`, sway config `exec mura-session finalize`) | [implementation-path.md §2 (ii)](implementation-path.md), [specs/session-bootstrap.md](../../specs/session-bootstrap.md), ADR 0007 |
 | `os/persist.nix` | `mura.hardware.input.bluetooth`, family mount facts | `/persist/mura` class skeleton, the `/etc` overlay (`system.etc.overlay`, upper on `/persist/etc-rw`) and userborn, `/var/lib/bluetooth` → `pairing/` bind, F1 reference units (SSH host key, `mura-f1-seed-state`) | [first-run-onboarding.md §2–§3](first-run-onboarding.md), [multi-user.md §1.1](multi-user.md) |
 | `os/policy.nix` | `mura.xr.session.faillock.*`, `mura.xr.session.greeter` | PAM services per the posture table (`login` `allowNullPassword`; `mura-lock` without it; faillock rules with `conf=` on `login`, `sshd` and `mura-lock`; **standard sudo/polkit**); the greeter NetworkManager polkit rule; `services.logind.settings.Login.HandlePowerKey = "ignore"`. **Never touches `services.openssh`** — sshd is enabled with upstream defaults in `os/default.nix` (`mkDefault`), D2 posture correction | [first-run-onboarding.md §5.3](first-run-onboarding.md), [multi-user.md §3.1](multi-user.md) |
 | `os/oob.nix` | `mura.hardware.input.{usbGadget,concurrentApSta}`, `mura.oob.hotspot.idleTimeoutMinutes` | USB gadget (initrd configfs, `mura-usb-gadget`), `systemd-networkd` DHCP server on `usb0` (NM-unmanaged; firewall 67/80), NetworkManager hotspot profile + per-boot PSK + `dnsmasq-shared.d` + the `mura-hotspot` supervisor (marker + no other active connection + idle timeout), NM `firewall-backend=iptables`, the `mura-setup` identity + `50-mura-setup.rules` + the system-instance unit (stub page on the gadget + hotspot addresses), Avahi `mura.local`. No Cockpit, no sshd `Match` block | [first-run-onboarding.md §5](first-run-onboarding.md) |

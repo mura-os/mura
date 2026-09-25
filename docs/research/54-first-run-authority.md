@@ -183,6 +183,15 @@ it to `locale1`/`accounts`/NM system (those steps already have standard per-user
 
 ## 5. Decider
 
+**Ruled 2026-09-25 — (i)+(ii) in direction, with (ii)'s shape re-derived.** Under AGENTS rule 7
+this survey's reading of (ii) was incomplete: it took SteamOS's helper as *the* precedent without
+its reason and without the desktop comparables. [research/56 §9](56-defaults-from-comparables.md)
+adds them (Ubuntu's `policykit-desktop-privileges`: admin group + active session, with a stated
+reason; pmOS Plasma's grant-everyone rule; phosh's `active && local && group` shape; GNOME/KDE's
+auto-zone features no-oping or prompting on stock defaults) and lands the rule as
+`50-mura-timedate.rules` for `wheel` members in active local sessions — not "active local
+sessions" alone, which no shipping system does. The original text of this section follows.
+
 The project owner rules on §4. Consequences of (i)+(ii) for the corpus: first-run §4.2 item 6
 reworded (derived; after Connect; no password dependency) and §4.3 row updated; multi-user §3.1
 polkit table gains `50-mura-session-timedate.rules`; ADR 0017 decision 3 amended and the

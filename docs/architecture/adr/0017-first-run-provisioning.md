@@ -19,9 +19,10 @@ time zone after the password — **withdrawn in rev 2.5**), decision 10 added (`
 program in two instances), seven alternatives recorded; **rev 2.5 same day** — decision 3: the
 time-zone step is derived after Connect and independent of the password step, its in-headset
 authority an open item surveyed in research/54; dismiss = finish; Wi-Fi user-scoped for a
-passwordless session user (rulings 2026-09-24). Rev 1 (2026-09-23)
+passwordless session user (rulings 2026-09-24); **rev 2.6 (2026-09-25)** — decision 3: the
+in-headset time-zone/hostname authority ruled (`50-mura-timedate.rules`, research/56 §9). Rev 1 (2026-09-23)
 designed a pre-login onboarding wizard; rev 2 records why it does not exist.
-**Date:** 2026-09-23 / 2026-09-24
+**Date:** 2026-09-23 / 2026-09-24 / 2026-09-25
 **Context sources:** [first-run-onboarding.md](../first-run-onboarding.md) (the design this
 decides), [research/41 §1.2](../../research/41-multi-user-login-landscape.md) (GDM's
 zero-users rule — the mechanism evidence), [research/12](../../research/12-lock-screens-and-appliance-login.md)
@@ -97,9 +98,13 @@ has no such gap. Rev 2 follows that observation to its conclusions.
    `change-own-password`, which would let any session process set the wearer's password).
    Time zone and hostname are `auth_admin_keep`; **rev 2.5**: the step is *derived* (phone zone
    on the web app, network/geoclue in-headset) after Connect and does not depend on the password
-   step, which is optional; how the in-headset confirm is authorised is an open item with the
-   survey in [research/54](../../research/54-first-run-authority.md) recommending a Mura rule
-   for exactly those two actions (SteamOS precedent) — decider: the project owner. Rev 2.4's
+   step, which is optional; **rev 2.6 (2026-09-25)**: the in-headset confirm is authorised by
+   `50-mura-timedate.rules` — `wheel` members in an active local session, exactly
+   `set-timezone`/`set-static-hostname`/`set-hostname` — derived in
+   [research/56 §9](../../research/56-defaults-from-comparables.md) from Ubuntu's
+   `policykit-desktop-privileges` (its reason: administrators have full control over the hardware
+   anyway; non-administrators unchanged) and phosh's condition set, narrower than the appliance
+   comparables (SteamOS, pmOS Plasma: everyone), which research/54 had read as the precedent. Rev 2.4's
    "after the password card" is withdrawn: no shipping first-run flow orders a step behind an
    optional credential. Rev 2.1's "via `localed`/`timedated`" as an unprivileged session write
    could not have worked for a passwordless wheel user. Ruled 2026-09-24: **dismiss = finish**
