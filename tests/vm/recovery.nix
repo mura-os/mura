@@ -14,6 +14,12 @@
   profileModules = [ ../../profiles/default.nix ];
   extraModules = [
     ({ pkgs, ... }: {
+      # TEST-ONLY: an ordinary (non-wheel) account with a declared key — its key must NOT open
+      # the recovery environment's root shell.
+      users.users.guest = {
+        isNormalUser = true;
+        openssh.authorizedKeys.keys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA guest-not-an-admin" ];
+      };
       testing.initrdBackdoor = true;
       boot.kernelParams = [ "rd.systemd.unit=mura-recovery.target" ];
       boot.initrd.kernelModules = [ "cdc_ncm" ]; # the HOST end's class driver, in stage 1 for the test
@@ -69,6 +75,10 @@
         out = machine.succeed("ssh -i /tmp/key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 root@172.16.42.1 mura-recovery 2>&1")
         assert "Mura recovery" in out and "factory-reset" in out and "reboot" in out, out
         assert "Host key " + fp in out, out   # the banner carries the fingerprint the panel shows
+        # only administrators' keys open recovery: the fixture key belongs to mura (wheel); guest's does not
+        keys = machine.succeed("cat /etc/ssh/authorized_keys.d/root")
+        assert "guest-not-an-admin" not in keys, keys
+        assert "ssh-ed25519" in keys, keys
 
     with subtest("recovery: the device's own host key is used once /persist is readable"):
         # create syspersist as a normal first boot would (systemd-repart, the FactoryReset=yes

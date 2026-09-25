@@ -33,6 +33,15 @@ let
   # initrd booted to mura-recovery.target — systemd's boot-menu-entry shape. Never counted,
   # never the default; reached with `systemctl reboot --boot-loader-entry=recovery` (the
   # LoaderEntryOneShot EFI variable), which is what the crash-loop counter does at its threshold.
+  #
+  # HARDWARE PROOF PENDING (implementation-path §4 track): that command — and
+  # `systemd-factory-reset request` — needs runtime EFI SetVariable. On the Frame the UEFI
+  # implementation is U-Boot's, whose runtime variable services only persist with a variable
+  # store configured; without it the write is refused and the reboot lands in the default entry.
+  # Boot counting is immune (systemd-boot renames entry FILES on the ESP). If the proof fails,
+  # the fallback is file-based through this same script: `mura-bootconf set-oneshot recovery`
+  # writing `default recovery` into loader.conf, and the recovery entry restoring the slot
+  # default on its first boot — the steamos-bootconf shape, which never touches EFI variables.
   recoveryEntry = pkgs.writeText "entry-recovery.conf" ''
     title Mura recovery
     linux /EFI/mura/Image
@@ -219,7 +228,10 @@ in
   # The runtime repart definitions the recovery environment's factory reset operates on: the
   # two state partitions, marked FactoryReset=yes (systemd-repart --factory-reset deletes and
   # re-creates exactly these; the slots and the ESP are untouched). Present in the initrd via
-  # boot.initrd.systemd.repart; a normal boot's repart run is a no-op on a populated disk.
+  # boot.initrd.systemd.repart, which also runs on every normal boot: with no SizeMaxBytes on
+  # `home` (the last partition) the FIRST boot grows it into the free space at the end of the
+  # storage — intended (the image is built small and expands to the device; ruled 2026-09-25) —
+  # and a factory reset re-creates it the same way; every later boot is a no-op.
   systemd.repart.partitions = {
     "30-syspersist" = { Type = "linux-generic"; Label = "syspersist"; Format = "ext4"; FactoryReset = true; };
     "40-home" = { Type = "home"; Label = "home"; Format = "ext4"; FactoryReset = true; };

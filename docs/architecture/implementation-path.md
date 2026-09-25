@@ -441,9 +441,25 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   the entry and the reboot command on the Frame configuration. **Pending:** the counter →
   `recovery.conf` reboot on the deckard image itself — this host has no aarch64 builder; the
   proof is `frame-vm-run` with a forced P2 failure until the threshold, then `recovery.conf` on
-  the ESP and `mura-recovery.target` in the journal. Follow-up in the track: reflash from
-  recovery (a RAUC bundle over ssh); the hotspot in the recovery initrd; a button-driven menu on
-  the panels (research/57 §6).
+  the ESP and `mura-recovery.target` in the journal — **and it carries a real risk**:
+  `--boot-loader-entry` and `systemd-factory-reset request` write EFI variables at runtime, which
+  U-Boot's UEFI only persists with a variable store configured; if the proof fails, the fallback
+  is the file-based one-shot through `mura-bootconf` (`families/uefi-rauc` comment). Recovery
+  login is wheel members' and root's declared keys only (ruled 2026-09-25).
+  **Next rung of the track — `pkgs/mura-recovery`, one program, three ways in** (the
+  `mura-setup` shape, ADR 0017 decision 10; ruled 2026-09-25): the menu logic (status; factory
+  reset with a confirm; slot switch; reboot; power off) becomes a small Rust program (rule 6:
+  it parses input and holds state) and the shell menu leaves; its frontends are (a) **the
+  panels and the HMD's own buttons** — volume −/+ move, select confirms, a destructive action
+  asks for a second select with a short countdown (Quest's shape, research/57 §2); raw evdev on
+  `/dev/input/event*` in stage 1, the keys from the contract's `hmdButtons.<selectRole>` that P7
+  already verifies; rendered as plymouth messages — the keyless path a wearer needs; (b)
+  **ssh/console**, today's path; (c) **the web page on the cable/hotspot** — `mura-setup`'s
+  libc-only HTTP in stage 1, possession-authorised as in first-run §5, offering the same actions
+  behind a confirm. Proof items: the volume/select keys reach evdev in stage 1 on each target
+  (input driver in the initrd, like the DRM driver); the confirm cannot be triggered by a
+  single held key. Later in the track: reflash from recovery (a RAUC bundle over ssh); the
+  hotspot in the recovery initrd.
 - **USB identity + descriptor correctness** ([research/55](../research/55-usb-identities-and-gadget-policy.md);
   posture ruled 2026-09-25: the comparables' pattern — a distro-wide well-known default overridden
   per device with the device's own identity, values from research/55 §4, confirmed when the

@@ -37,9 +37,13 @@ let
     displays = cfg.hardware.displays;
   };
 
-  # The declared self-builder keys of every account: the recovery environment has only root,
-  # and the administrator's keys are the ones that open it (first-run §5.3).
-  authorizedKeys = lib.unique (lib.concatMap (u: u.openssh.authorizedKeys.keys) (lib.attrValues config.users.users));
+  # The keys that open the recovery environment (root, the only account in stage 1): the declared
+  # keys of ADMINISTRATORS only — wheel members and root itself (ruled 2026-09-25). A non-wheel
+  # account's key must not become a root shell that can wipe the device.
+  isAdmin = name: u: name == "root" || lib.elem "wheel" u.extraGroups || lib.elem name (config.users.groups.wheel.members or [ ]);
+  authorizedKeys = lib.unique (lib.concatLists (lib.mapAttrsToList
+    (name: u: lib.optionals (isAdmin name u) u.openssh.authorizedKeys.keys)
+    config.users.users));
 
   # The persist partition, when this configuration has one (the bare virtual-headset toplevel
   # gets it only from vm-persist.nix / the family); recovery works without it, minus the key.
@@ -94,6 +98,7 @@ let
     case "''${1:-}" in
       factory-reset)
         echo "This erases everything this headset has stored: accounts, settings, Wi-Fi, pairings."
+        echo "The headset also gets a new SSH identity: the host key fingerprint shown here will change."
         echo "The system itself is kept. Type: yes, erase"
         read -r answer
         [ "$answer" = "yes, erase" ] || { echo "Not erased."; exit 1; }
@@ -295,6 +300,7 @@ in
             echo
             echo "  USB cable:  ssh root@${gadgetAddr}   (host key $(cat /run/mura-recovery/fingerprint))"
             echo "  then run:   mura-recovery   — factory reset, ${lib.optionalString (cfg.recovery.switchSlotCommand != null) "switch slot, "}reboot"
+            echo "  A factory reset also gives this headset a new SSH identity (new fingerprint)."
             echo "  Help:       ${docsUrl}"
           } > /run/mura-recovery/screen.txt
           if ${plymouthSay} /run/mura-recovery/screen.txt; then

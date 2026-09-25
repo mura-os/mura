@@ -98,8 +98,9 @@ NixOS's "pick a generation". Reflash from recovery (Lineage's "Apply update", St
 
 ## 6. Open items
 
-Button-driven menu on the panels (Quest's shape) — decider: the recovery track after the
-input-floor rung (F4); reflash from recovery (RAUC bundle over ssh; Lineage "Apply update") —
+Button-driven menu on the panels (Quest's shape) — **ruled 2026-09-25: the next rung of the
+track**, as one Rust menu program with three frontends (panels + HMD buttons over evdev,
+ssh/console, the web page in stage 1; implementation-path §4); reflash from recovery (RAUC bundle over ssh; Lineage "Apply update") —
 the track's follow-up; the Android-derived families' `reboot recovery` and cmdline-carried
 `systemd.factory_reset=1` — with each device's bring-up; whether the hotspot comes up in the
 recovery initrd (NetworkManager is not in stage 1; the gadget is) — decider: the track, after
