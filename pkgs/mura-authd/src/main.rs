@@ -307,19 +307,24 @@ fn usage() -> ! {
     exit(2)
 }
 
-/// Process hardening before anything secret is touched. Best-effort where the target may
-/// legitimately refuse (mlockall under an unprivileged RLIMIT_MEMLOCK); fatal where a failure
-/// would leave secrets exposed (dumpable).
+/// Process hardening before anything secret is touched. The split follows the comparables
+/// (research/56 §8: kscreenlocker's worker, systemd's fork helper): a *lifecycle* prctl that fails
+/// is fatal — a helper that could outlive its compositor holds a half-answered conversation —
+/// while *secrecy* hardening (dumpable, RLIMIT_CORE, mlockall) is best-effort: it narrows what a
+/// same-uid attacker can do, but refusing every unlock over it would trade availability for a
+/// boundary the same uid already crosses (specs/session-auth.md §2.5).
 fn harden(fd: c_int) {
     unsafe {
         if libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) != 0 {
-            eprintln!("mura-authd: PR_SET_DUMPABLE failed");
-            exit(2);
+            eprintln!("mura-authd: PR_SET_DUMPABLE failed; continuing (unexpected)");
         }
         let none = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
         libc::setrlimit(libc::RLIMIT_CORE, &none);
         // the compositor is the parent; if it dies, so does every open conversation (§2.4)
-        libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
+        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
+            eprintln!("mura-authd: PR_SET_PDEATHSIG failed");
+            exit(2);
+        }
         if libc::getppid() == 1 {
             eprintln!("mura-authd: spawner already gone");
             exit(1);

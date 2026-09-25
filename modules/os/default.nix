@@ -42,7 +42,11 @@ in
 
     # Minimal sane defaults for a bring-up image; devices/images override.
     networking.hostName = lib.mkDefault "mura-${cfg.device.codename}";
-    time.timeZone = lib.mkDefault "UTC";
+    # The zone is the wearer's, set at runtime through timedated (the setup instance derives it,
+    # the in-headset confirm and settings change it — first-run §4.2, multi-user §3.1's wheel
+    # rule). NixOS's null means "UTC until set imperatively with timedatectl"; a fixed value
+    # would make /etc/localtime a store symlink that timedated cannot change.
+    time.timeZone = lib.mkDefault null;
     i18n.defaultLocale = lib.mkDefault "C.UTF-8";
   };
 }

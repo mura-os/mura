@@ -49,15 +49,22 @@ the one the wearer typed (an empty answer would otherwise be refused by
 `PAM_DISALLOW_NULL_AUTHTOK` and mis-reported as `auth`).
 
 **Process hardening (rev 4; kscreenlocker's PAM worker is the precedent —
-`references/kscreenlocker/greeter/worker/prctls.h:30-44`, `main.cpp:365-373`).** Before any
+`references/kscreenlocker/greeter/worker/prctls.h:30-44`, `main.cpp:365-376`).** Before any
 secret is touched the helper: sets `PR_SET_DUMPABLE=0` (no core file; no same-uid ptrace attach or
-`/proc/<pid>/{mem,environ,maps}` read under Yama — fatal if refused), `RLIMIT_CORE=0`,
-`PR_SET_PDEATHSIG=SIGKILL` with a `getppid()==1` check for the race (an orphaned helper exits at
-once — the compositor's death ends every conversation, §2.4), `FD_CLOEXEC` on the conversation fd
-(pam_unix execs the setuid `unix_chkpwd`; the socket must not follow it), and a best-effort
-`mlockall(MCL_CURRENT|MCL_FUTURE)` (refused under a small `RLIMIT_MEMLOCK` — not fatal). It
-**deliberately does not** set `PR_SET_NO_NEW_PRIVS` or install a seccomp filter: `unix_chkpwd`
-is setuid and would break; sandboxing the helper belongs to the compositor's spawn side (§7).
+`/proc/<pid>/{mem,environ,maps}` read under Yama), `RLIMIT_CORE=0`, `PR_SET_PDEATHSIG=SIGKILL`
+with a `getppid()==1` check for the race (an orphaned helper exits at once — the compositor's
+death ends every conversation, §2.4), `FD_CLOEXEC` on the conversation fd (pam_unix execs the
+setuid `unix_chkpwd`; the socket must not follow it), and `mlockall(MCL_CURRENT|MCL_FUTURE)`.
+**Which failures are fatal (rev 4.1, [research/56 §8](../docs/research/56-defaults-from-comparables.md)):**
+the *lifecycle* prctl — `PDEATHSIG` — is fatal, as in kscreenlocker's worker (`main.cpp:365-368`,
+"Failed to set death signal on parent, exiting") and systemd's fork helper; the *secrecy*
+hardening — dumpable, core limit, `mlockall` — is best-effort (logged, continue), as in
+kscreenlocker (`main.cpp:373-376`, "We'll continue but it is a bit unexpected") and systemd's
+`(void) set_dumpable(...)`. The reasoning transfers: a helper that could outlive its compositor
+holds a half-answered conversation, while a same-uid attacker already has the session and the
+secrecy prctls only narrow what it can do. It **deliberately does not** set `PR_SET_NO_NEW_PRIVS`
+or install a seccomp filter: `unix_chkpwd` is setuid and would break; sandboxing the helper
+belongs to the compositor's spawn side (§7).
 
 **Service allowlist (rev 4).** `--service` must be `mura-lock` or `mura-lock-*` (the latter
 exists for test stacks such as `mura-lock-slow`/`mura-lock-batched`). Anything else exits 2
@@ -74,8 +81,13 @@ fail delay of ~2 s was observed as `delay_ms: 1876` on a wrong password). `secur
 carries **no `nullok`** — `PAM_DISALLOW_NULL_AUTHTOK` makes it inert, and "no credential ⇒ no lock
 engages" is T2's rule, not PAM's — and the faillock ladder; because authd runs *as the user*,
 `pam_faillock` reaches the tally only through a traversable directory (`state/faillock` is
-`0755`; the user's tally is `0660 user:root`, Linux-PAM's screen-locker design), updates it, and
-cannot create it (root callers do). Responses handed to PAM are `calloc`/`strdup`'d as the
+`0755`; the user's tally is `0660 user:root`), updates it, and cannot create it (root callers
+do). This is Linux-PAM's own design for exactly this caller, not a Mura trade: *"Individual files
+with the failure records are created as owned by the user. This allows pam_faillock.so module to
+work correctly when it is called from a screensaver"* (`pam_faillock.8`, [external, linux-pam];
+`pam_faillock.c` returns `PAM_SUCCESS` on `EACCES`/`ENOENT`), and it is what kscreenlocker,
+swaylock and hyprlock — all running PAM as the user — inherit
+([research/56 §7](../docs/research/56-defaults-from-comparables.md)). Responses handed to PAM are `calloc`/`strdup`'d as the
 Linux-PAM contract requires (PAM frees them); the helper's own copies are zeroed.
 
 ### 2.2 The PAM call sequence (helper side)

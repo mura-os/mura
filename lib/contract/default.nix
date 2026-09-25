@@ -214,13 +214,20 @@ in
           Consecutive boots on which the XR preflight (`mura-preflight`, implementation-path
           §3a-bis) failed a hard check before the boot enters `mura-recovery.target` (the
           diagnostic target: sshd + serial, no greeter). Reset by a blessed boot. Schema value
-          (constraint 9); the default is [mine].
+          (constraint 9). The count is the A/B ecosystem's convention (systemd boot counting,
+          RAUC, U-Boot, Barebox all default to 3); the ladder itself has no in-tree comparable
+          and is before the owner (research/56 §3, Q1).
         '';
       };
       deviceWaitSeconds = mkOption {
         type = types.ints.positive;
         default = 20;
-        description = "How long the preflight waits for the tracking device nodes (P5) and the Monado probe (P6) before failing them.";
+        description = ''
+          How long the preflight waits for the tracking device nodes (P5) and the Monado probe
+          (P6) before failing them. The comparables that wait for a hardware class at boot
+          (GDM's primary GPU, postmarketOS's framebuffer) wait 10 s and then proceed degraded;
+          both the value and the hard-fail semantics are before the owner (research/56 §5, Q3).
+        '';
       };
       readinessStabilitySeconds = mkOption {
         type = types.ints.positive;
@@ -228,8 +235,9 @@ in
         description = ''
           Seconds the compositor (appliance) or the greeter (multi-user) must stay up without a
           restart before the boot is blessed (`mura-readiness` → `boot-complete.target`,
-          implementation-path §3a G3-minimum tier). A first frame alone can precede a crash
-          loop; the interval is what makes blessing mean something. Schema value; [mine].
+          implementation-path §3a G3-minimum tier). Schema value. No shipping system blesses
+          on a stability window — systemd, RAUC and mobile-nixos bless on a target reached —
+          so this option is a rethink candidate before the owner (research/56 §4, Q2).
         '';
       };
     };
@@ -243,7 +251,10 @@ in
           Minutes with no station associated after which the provisioning hotspot's radio is
           taken down for this boot (it returns at the next boot while setup is unfinished;
           first-run-onboarding.md §5). Never counts down while a phone is connected. A schema
-          value, never compiled in (constraint 9); the default is [mine] per §5.4.
+          value, never compiled in (constraint 9). The default is Android's soft-AP shutdown
+          timeout (600000 ms, `config_wifiFrameworkSoftApShutDownTimeoutMilliseconds`) — the
+          only battery-powered comparable that tears an empty AP down; the mains-powered
+          provisioning portals never do (research/56 §6).
         '';
       };
     };
@@ -594,7 +605,7 @@ in
             Seconds the session wrapper waits for the compositor to signal readiness
             (`WAYLAND_DISPLAY` published, `READY=1`) before the login is torn down and the
             greeter returns (specs/session-bootstrap.md §4 step 4; uwsm's
-            `wayland-wm@.service` `TimeoutStartSec`). A schema value, never compiled in
+            `mura-compositor.service` `TimeoutStartSec`). A schema value, never compiled in
             (constraint 9).
           '';
         };
@@ -694,7 +705,8 @@ in
           previous one (the `+N` BLS counter armed by `mura-bootconf set-primary`;
           implementation-path §3a, images-and-updates.md health-gated success). A blessed boot
           (mura-readiness → boot-complete.target → systemd-bless-boot) clears it. Schema value;
-          the default is systemd's own.
+          the default is the A/B ecosystem's convention (systemd's walkthrough, RAUC, U-Boot and
+          Barebox all use 3; none explain it — research/56 §3).
         '';
       };
       flashMethod = mkOption {

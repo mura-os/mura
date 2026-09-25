@@ -237,6 +237,24 @@
         machine.fail("grep -Rq 'subject.user == \"greeter\"' /etc/polkit-1/rules.d/")
         machine.succeed("grep -Rq 'subject.user == \"mura-setup\"' /etc/polkit-1/rules.d/")
 
+    with subtest("D-sweep: a wheel member in the active local session sets the time zone without a password (research/56 §9)"):
+        # The probe runs INSIDE the user manager (systemd-run --user), where the compositor and
+        # everything it launches live — not in the logind session scope. polkit must still see
+        # an active local session for it (Ubuntu's same rule works under GNOME's systemd-managed
+        # session); this is the attribution question research/56 §9 says to verify, not assume.
+        assert machine.succeed("timedatectl show -p Timezone --value").strip() == "UTC"
+        machine.succeed("systemd-run --user -M mura@ --wait --pipe --quiet timedatectl set-timezone Europe/Berlin")
+        assert machine.succeed("timedatectl show -p Timezone --value").strip() == "Europe/Berlin"
+        machine.succeed("systemd-run --user -M mura@ --wait --pipe --quiet hostnamectl set-hostname headset-test")
+        assert machine.succeed("hostnamectl --static").strip() == "headset-test"
+        # not from a non-local session: `su -` opens a logind session with no seat, and polkit
+        # falls back to systemd's auth_admin_keep, which nothing can answer here
+        machine.fail("su - mura -c 'timedatectl set-timezone Europe/Paris'")
+        assert machine.succeed("timedatectl show -p Timezone --value").strip() == "Europe/Berlin"
+        # and never set-ntp or set-time: systemd's defaults stay for those
+        machine.fail("systemd-run --user -M mura@ --wait --pipe --quiet timedatectl set-ntp false")
+        machine.succeed("timedatectl set-timezone UTC && hostnamectl set-hostname machine")
+
     with subtest("D2: the credential-hint directory has the /tmp shape and a user can write their own file"):
         machine.succeed("su - mura -c 'echo numeric > /var/lib/mura/state/credential-hint/mura'")
         assert machine.succeed("stat -c %U /var/lib/mura/state/credential-hint/mura").strip() == "mura"

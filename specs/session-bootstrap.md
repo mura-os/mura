@@ -167,8 +167,8 @@ graphical-session.target: portals, pipewire/wireplumber, settings daemon, shell 
   `unit.c` `unit_notify`) — so `Restart=` alone still ended the session (measured at D4).
   `RestartMode=direct` is the standard answer: auto-restarts skip the failed state, dependents
   are not notified, and `OnFailure=` fires only when the start-rate limit is hit — at which
-  point the session ends and the B1b crash-loop ladder takes over.
-  [engineering judgment, D4; decider for the burst/interval values: the project owner]
+  point the session ends and the B1b crash-loop ladder takes over. The burst/interval values
+  are plasmashell's, with its stated reason ([research/56 §1](../docs/research/56-defaults-from-comparables.md)).
 - **What was dropped from uwsm's tree, and why it is safe:** the per-compositor templating
   (`@<id>` instances — Mura has one compositor), the envelope and pre targets (they existed to
   sequence uwsm's env-preloader unit, which the wrapper's step 2 replaces), `wayland-wm-env@`
@@ -275,9 +275,12 @@ interpreter on the session-start path, and Mura does not either; Rust is the lan
 programs (the compositor's language). This spec's wrapper is the first consequence; uwsm is
 retained in the corpus as engineering evidence only.
 
-**Open items**, each naming its decider: the compositor unit's start-rate limit
-(`StartLimitBurst=3` in 60 s, [mine]) and its interplay with the B1b crash-loop counter —
-decider: D6; the readiness-timeout default (30 s, schema value; the VM's sway is ready in ~1 s
+**Open items**, each naming its decider: the compositor unit's start-rate limit's interplay
+with the B1b crash-loop counter — decider: the owner's ruling on research/56 Q1 (the values
+themselves are sourced: `StartLimitBurst=3` in 60 s is plasmashell's, chosen because systemd's
+5-in-10 s default cannot catch a component whose start-and-crash cycle exceeds 2 s —
+`plasma-workspace/shell/plasma-plasmashell.service.in:5-6`, commit 9149b81e; research/56 §1);
+the readiness-timeout default (30 s, schema value; the VM's sway is ready in ~1 s
 — decider: real-hardware measurements at G1); how the docked-mode flat presenter (ADR 0015)
 joins the target — decider: the docked-mode rung after G3; **uwsm's app-launch side**
 (`uwsm app`: launching applications as transient user scopes/services under `app-graphical.slice`

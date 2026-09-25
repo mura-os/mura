@@ -1,7 +1,8 @@
 //! mura-authd-harness — a test-only compositor stand-in for specs/session-auth.md §6.
 //!
 //! It plays the compositor's half of the §2 protocol against a real mura-authd: creates the
-//! SOCK_SEQPACKET socketpair, spawns the helper with `--fd 3 --nonce HEX`, and drives one
+//! SOCK_SEQPACKET socketpair, spawns the helper with `--fd 3` and `MURA_AUTHD_NONCE` set
+//! (the legacy `--nonce HEX` argv path only in the `argv-nonce` scenario), and drives one
 //! scenario. Exit 0 when the scenario's expectations hold. Scenarios:
 //!
 //!   basic          prompt_batch → respond with PASSWORD → expect success (or failure if --expect-fail)

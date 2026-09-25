@@ -10,7 +10,9 @@
 #                                 password auth on every interface, PermitEmptyPasswords no —
 #                                 so a passwordless account gets SSH after `passwd` or with a
 #                                 declared key (profiles/dev.nix). Only faillock is added here.
-#   polkit                      : exactly one Mura rule (greeter may add system Wi-Fi profiles)
+#   polkit                      : two Mura rules — the greeter may add system Wi-Fi profiles;
+#                                 wheel members in an active local session set the time zone
+#                                 and hostname without a password (research/56 §9)
 #   logind                      : the compositor owns the power key (HandlePowerKey=ignore)
 #   faillock                    : real lockout (preauth/authfail/account), counters on /persist
 #
@@ -100,18 +102,40 @@ in
     environment.shellAliases.faillock = "faillock --dir ${faillockDir}";
 
     ## polkit -----------------------------------------------------------------------------
-    # The one Mura polkit rule (multi-user.md §3.1): GDM parity — a Wi-Fi network joined at
-    # the greeter becomes a *system* connection the person who then logs in can use. Without
-    # it NetworkManager scopes the profile to the greeter user and it is useless.
-    security.polkit.extraConfig = lib.mkIf (cfg.greeter != "none") ''
-      /* Mura: the greeter may add system-wide network connections (GDM's polkit-gdm.rules). */
-      polkit.addRule(function(action, subject) {
-        if (action.id == "org.freedesktop.NetworkManager.settings.modify.system" &&
-            subject.user == "greeter" && subject.local && subject.active) {
-          return polkit.Result.YES;
-        }
-      });
-    '';
+    # Two Mura polkit rules (multi-user.md §3.1; a third, the setup identity's, is oob.nix's).
+    security.polkit.extraConfig = lib.mkMerge [
+      # GDM parity — a Wi-Fi network joined at the greeter becomes a *system* connection the
+      # person who then logs in can use. Without it NetworkManager scopes the profile to the
+      # greeter user and it is useless.
+      (lib.mkIf (cfg.greeter != "none") ''
+        /* Mura: the greeter may add system-wide network connections (GDM's polkit-gdm.rules). */
+        polkit.addRule(function(action, subject) {
+          if (action.id == "org.freedesktop.NetworkManager.settings.modify.system" &&
+              subject.user == "greeter" && subject.local && subject.active) {
+            return polkit.Result.YES;
+          }
+        });
+      '')
+      # The clock and the machine's name, for the administrator group in an active local
+      # session, without a password — Ubuntu's policykit-desktop-privileges grant and reason
+      # ("the user has full control over the hardware anyway"; non-administrators unchanged),
+      # phosh-mobile-settings' condition set; narrower than the appliance comparables (SteamOS,
+      # pmOS Plasma grant everyone). Exactly three actions; set-ntp deliberately not (Mura's zone
+      # is derived). research/56 §9. systemd's own default for these stays auth_admin_keep for
+      # everyone else.
+      ''
+        /* Mura: wheel members in an active local session set the time zone and hostname
+           (Ubuntu com.ubuntu.desktop.pkla shape; research/56 §9). */
+        polkit.addRule(function(action, subject) {
+          if ((action.id == "org.freedesktop.timedate1.set-timezone" ||
+               action.id == "org.freedesktop.hostname1.set-static-hostname" ||
+               action.id == "org.freedesktop.hostname1.set-hostname") &&
+              subject.local && subject.active && subject.isInGroup("wheel")) {
+            return polkit.Result.YES;
+          }
+        });
+      ''
+    ];
 
     ## logind -----------------------------------------------------------------------------
     # The compositor owns the power key through libinput (first-run §4.4; the Steam Deck's

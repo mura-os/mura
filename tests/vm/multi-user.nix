@@ -93,6 +93,11 @@
         machine.succeed("grep -q '^XDG_SESSION_ID=' /run/user/1000/mura/session.env")
         machine.fail("pgrep -u mura -f 'uwsm|python'")
 
+    with subtest("D-sweep: the wheel time-zone rule holds on the greeter profile too, from inside the user manager (research/56 §9)"):
+        machine.succeed("systemd-run --user -M mura@ --wait --pipe --quiet timedatectl set-timezone Europe/Berlin")
+        assert machine.succeed("timedatectl show -p Timezone --value").strip() == "Europe/Berlin"
+        machine.succeed("timedatectl set-timezone UTC")
+
     with subtest("D4: logout tears the session down through the wrapper and returns to the greeter, without racing device release"):
         sid = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
         machine.succeed("journalctl --rotate && journalctl --vacuum-time=1s >/dev/null 2>&1 || true")
