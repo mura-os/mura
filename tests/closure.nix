@@ -9,7 +9,7 @@
 #    session-start path is interpreter-free end to end.
 #
 # 2. THE FENCE — the two x86_64 toplevels (virtual-headset, virtual-headset-multiuser):
-#    (a) no uwsm path anywhere; (b) no python* on the system PATH (sw/bin);
+#    (a) no uwsm path anywhere; (b) no python*/perl on the system PATH (sw/bin);
 #    (c) the python3*-named store paths in the closure equal a pinned allowlist, every entry
 #        carrying its reason and the action that removes it. The check fails on additions AND
 #        on stale entries, so the list can only shrink. This is a regression fence around
@@ -58,10 +58,9 @@ let
     names=$(sed 's|^/nix/store/[a-z0-9]*-||' ${info}/store-paths | sort -u)
     # (a) no uwsm anywhere in the closure
     if echo "$names" | grep -E '^uwsm-' ; then echo "FAIL ${name}: uwsm in the closure"; exit 1; fi
-    # (b) no python on the system PATH. (perl IS there: NixOS's environment.defaultPackages =
-    #     perl rsync strace, "not strictly necessary for a running system" per the option's own
-    #     text — an image-composition choice recorded as an open item in research/56, not fenced.)
-    if ls ${toplevel}/sw/bin | grep -E '^python' ; then echo "FAIL ${name}: python on PATH"; exit 1; fi
+    # (b) no interpreter on the system PATH (NixOS's environment.defaultPackages — perl rsync
+    #     strace — is emptied in modules/os/default.nix; research/56 §10, ruled)
+    if ls ${toplevel}/sw/bin | grep -E '^(python|perl)' ; then echo "FAIL ${name}: interpreter on PATH"; exit 1; fi
     # (c) python3*-named paths == allowlist (normalised: minor version -> X, trailing version dropped)
     echo "$names" \
       | grep -E '^python3(\.[0-9]+)?(-|$)' \

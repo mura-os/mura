@@ -207,9 +207,13 @@ fn main() {
         r.check("P4 vulkan", ok && !devs.is_empty(), true, detail);
     }
 
-    // P5 tracking nodes: an IIO accel+gyro within the device wait, unless the runtime simulates
+    // P5 tracking nodes: an IIO accel+gyro within the device wait, unless the runtime simulates.
+    // SOFT (with P6): everything that waits for a hardware class at boot waits ~10 s and then
+    // proceeds degraded — GDM for a primary GPU, postmarketOS for a framebuffer; systemd's
+    // guidance is "warn or report failure after a timeout, tailored to the hardware type"
+    // (research/56 §5, ruled 2026-09-25). The greeter starts; the report carries the result.
     if cfg.tracking_simulated {
-        r.check("P5 tracking nodes", true, true, "simulated tracking (SIMULATED_ENABLE)");
+        r.check("P5 tracking nodes", true, false, "simulated tracking (SIMULATED_ENABLE)");
     } else {
         let deadline = Instant::now() + wait;
         let mut found: Vec<String> = Vec::new();
@@ -227,7 +231,7 @@ fn main() {
             }
             std::thread::sleep(Duration::from_secs(1));
         }
-        r.check("P5 tracking nodes", !found.is_empty(), true, format!("iio: {found:?}"));
+        r.check("P5 tracking nodes", !found.is_empty(), false, format!("iio: {found:?}"));
     }
 
     // P6 Monado probe: drivers initialise within the wait (first frame is the blessing tier's).
@@ -248,9 +252,9 @@ fn main() {
         ];
         let (ok, out) = run(&cfg.monado_cli, &["probe"], &env, wait);
         let last = out.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
-        r.check("P6 monado probe", ok, true, if last.is_empty() { "no output".to_string() } else { last });
+        r.check("P6 monado probe", ok, false, if last.is_empty() { "no output".to_string() } else { last });
     } else {
-        r.check("P6 monado probe", true, true, "runtime is not monado");
+        r.check("P6 monado probe", true, false, "runtime is not monado");
     }
 
     // P7 input floor: an evdev device exposing the select key, or a keyboard (soft)

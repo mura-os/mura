@@ -223,10 +223,11 @@ that transfers (compositor `StartLimit` 3/60 s = plasmashell's; hotspot idle 10 
 user-run unlock + faillock = Linux-PAM's screensaver design; `PDEATHSIG` fatal / dumpable
 best-effort = kscreenlocker's and systemd's; the in-session time-zone/hostname grant to active
 local wheel members = Ubuntu's `policykit-desktop-privileges` shape, `50-mura-timedate.rules`,
-VM-verified from inside the user manager), and **four items before the owner** (the crash-loop
-ladder — Android's Rescue Party is its only comparable; the 20 s blessing window — every system
-blesses on target-reached; the 20 s device wait + hard fail — GDM/pmOS wait 10 s and proceed;
-`perl rsync strace` on PATH). D7 not started; the D-track's compositor-free rungs are complete.
+VM-verified from inside the user manager); three further rulings the same day — the blessing tier
+is target-reached (the 20 s window removed; every system blesses on a target), the device wait is
+10 s with P5/P6 soft (GDM's and pmOS's shape), `environment.defaultPackages` emptied — and **one
+item under discussion with the owner**: the crash-loop ladder, whose only shipping comparable is
+Android's Rescue Party. D7 not started; the D-track's compositor-free rungs are complete.
 
 ### R0 — the bring-up spike (risk retirement, not a decision gate)
 
@@ -296,9 +297,12 @@ returns to the greeter without racing device release; the spec is revised from w
 
 "Session ready" has **two tiers**, and only the first ever gates an update:
 
-- **G3-minimum (the blessing tier):** Monado composited frames for a *stability interval*
-  (N seconds / M consecutive frames with no compositor or Monado restart — a first frame alone
-  can immediately precede a crash loop); systemd watchdog health (`WatchdogSec` on both
+- **G3-minimum (the blessing tier):** the session target reached — `mura-compositor.service`
+  active (appliance) or greetd + its greeter (multi-user) — the shape every shipping system
+  blesses on (systemd `boot-complete.target`, RAUC mark-good after `multi-user.target`,
+  mobile-nixos boot-control; research/56 §4, ruled 2026-09-25 — the earlier "stability interval"
+  had no comparable; a crash after blessing is the compositor unit's `StartLimit` matter, not a
+  boot failure); systemd watchdog health (`WatchdogSec` on both
   processes); writable `/persist/mura` verified; per-unit settings-store migration completed;
   input path confirmed (a synthetic event round-trips); crash-loop counter (B1b) at zero.
   **Blessing is profile-specific**: default image = a stable `mura` session (locked only if a
@@ -325,8 +329,8 @@ Three distinct transitions — readiness, boot blessing, RAUC state — each obs
 
 **Implementation status (explicit, D6 landed 2026-09-24):** `modules/os/health.nix` carries the
 readiness gate — `mura-readiness.service` (blessing tier: the autologin user's compositor unit,
-or the greeter on the multi-user profile, stable for `mura.health.readinessStabilitySeconds`,
-`/persist/mura` writable; it resets the crash-loop counter) is `RequiredBy=boot-complete.target`,
+or the greeter on the multi-user profile, active — a target reached, since the 2026-09-25 ruling
+— and `/persist/mura` writable; it resets the crash-loop counter) is `RequiredBy=boot-complete.target`,
 which every profile now reaches (transition 1, VM-verified on both fixtures). The uefi-rauc
 family wires the slot side: `mura-bootconf set-primary S` arms the slot's ESP entry with
 `+<mura.deployment.bootTries>` (`a.conf` → `a+3.conf`; `loader.conf` selects by entry ID `a`/`b`,
@@ -349,8 +353,8 @@ autologin session) and `After=` the persist mount and udev settle; it is also wh
 | P2 | factory calibration | files at `mura.xr.calibration.paths` exist, parse, and carry a version the runtime accepts | hard (no Monado start; diagnostic target) |
 | P3 | display path | the DRM connector the contract names is present; `vk-display`/window backend as configured | hard |
 | P4 | Vulkan | a runtime-created Vulkan device on the expected GPU (vendor/device ID match) | hard |
-| P5 | tracking nodes | IMU (and camera, where the profile needs it) device nodes present within the device-wait timeout | hard for IMU; soft for camera pre-login |
-| P6 | Monado first frame | Monado starts and reports a first composited frame within T seconds | hard |
+| P5 | tracking nodes | IMU (and camera, where the profile needs it) device nodes present within the device-wait timeout | **soft** (ruled 2026-09-25, research/56 §5: wait ~10 s, then proceed degraded, as GDM and postmarketOS do for their hardware class; the greeter starts and shows the result) |
+| P6 | Monado probe | Monado's drivers initialise within the device wait (the first composited frame is the session's) | **soft** (same ruling) |
 | P7 | input floor | at least one evdev device exposes `hmdButtons.<selectRole>` (or a keyboard is present) | soft (warn; the greeter still starts — dwell remains) |
 
 Exit codes: `0` all pass; `1` a soft check failed (start, log, expose in the a11y menu); `2` a

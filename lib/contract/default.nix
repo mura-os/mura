@@ -221,23 +221,15 @@ in
       };
       deviceWaitSeconds = mkOption {
         type = types.ints.positive;
-        default = 20;
+        default = 10;
         description = ''
           How long the preflight waits for the tracking device nodes (P5) and the Monado probe
-          (P6) before failing them. The comparables that wait for a hardware class at boot
-          (GDM's primary GPU, postmarketOS's framebuffer) wait 10 s and then proceed degraded;
-          both the value and the hard-fail semantics are before the owner (research/56 §5, Q3).
-        '';
-      };
-      readinessStabilitySeconds = mkOption {
-        type = types.ints.positive;
-        default = 20;
-        description = ''
-          Seconds the compositor (appliance) or the greeter (multi-user) must stay up without a
-          restart before the boot is blessed (`mura-readiness` → `boot-complete.target`,
-          implementation-path §3a G3-minimum tier). Schema value. No shipping system blesses
-          on a stability window — systemd, RAUC and mobile-nixos bless on a target reached —
-          so this option is a rethink candidate before the owner (research/56 §4, Q2).
+          (P6) before reporting them failed. Both are *soft* checks: the greeter starts either
+          way and the result is in `/run/mura/preflight.json` — the shape of everything that
+          waits for a hardware class at boot (GDM waits 10 s for a primary GPU, then "Proceeding
+          with any GPU"; postmarketOS waits 10 s for a framebuffer, then continues; systemd's
+          guidance is "warn or report failure after a timeout … tailored to the hardware type").
+          Ruled 2026-09-25 from research/56 §5; per-device contracts tailor the value.
         '';
       };
     };

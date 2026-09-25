@@ -12,9 +12,14 @@
 #   mura-recovery.target   : the diagnostic target — sshd + the serial getty stay, nothing
 #                            graphical. A runtime or driver failure never leaves a dark headset
 #                            without a way in.
-#   mura-readiness.service : the G3-minimum blessing tier — compositor (appliance) or greeter
-#                            (multi-user) stable for readinessStabilitySeconds, /persist/mura
-#                            writable, then the counter is reset; RequiredBy= boot-complete.target,
+#   mura-readiness.service : the G3-minimum blessing tier — the compositor unit (appliance) or
+#                            greetd + its greeter (multi-user) active and /persist/mura writable:
+#                            a target reached, the shape every shipping system blesses on
+#                            (systemd boot-complete.target, RAUC mark-good after multi-user,
+#                            mobile-nixos boot-control; research/56 §4, ruled 2026-09-25 — the
+#                            D6 stability window had no comparable). A crash after blessing is a
+#                            session matter (the compositor unit's StartLimit), not a boot
+#                            failure. Then the counter is reset; RequiredBy= boot-complete.target,
 #                            so systemd-bless-boot (and the family's mark-good) wait for it.
 { lib, config, pkgs, ... }:
 let
@@ -40,18 +45,16 @@ let
   # the JSON above and nothing else; the two helpers it executes come in as paths.
   preflight = pkgs.mura.preflight;
 
-  # Blessing tier (§3a): profile-specific stability — the autologin user's compositor unit on
+  # Blessing tier (§3a): profile-specific target — the autologin user's compositor unit on
   # the appliance profile, the greeter on the multi-user profile. Never waits for a login.
   readiness = pkgs.writeShellApplication {
     name = "mura-readiness";
     runtimeInputs = [ pkgs.systemd pkgs.coreutils pkgs.procps ];
     text = ''
-      stability=${toString cfg.health.readinessStabilitySeconds}
       deadline=$(( $(date +%s) + 300 ))
-      stable_since=""
       while :; do
         now=$(date +%s)
-        [ "$now" -lt "$deadline" ] || { echo "readiness: not stable within 300 s"; exit 1; }
+        [ "$now" -lt "$deadline" ] || { echo "readiness: target not reached within 300 s"; exit 1; }
         ok=1
         # /persist writable
         touch /var/lib/mura/state/health/.readiness-probe 2>/dev/null && rm -f /var/lib/mura/state/health/.readiness-probe || ok=0
@@ -64,14 +67,9 @@ let
           pgrep -u greeter -f . >/dev/null 2>&1 || ok=0
         ''}
         if [ "$ok" = 1 ]; then
-          [ -n "$stable_since" ] || stable_since=$now
-          if [ $(( now - stable_since )) -ge "$stability" ]; then
-            echo "readiness: stable for $stability s; blessing tier reached"
-            echo 0 > ${counter}.tmp && mv ${counter}.tmp ${counter}
-            exit 0
-          fi
-        else
-          stable_since=""
+          echo "readiness: blessing tier reached (session target active, /persist writable)"
+          echo 0 > ${counter}.tmp && mv ${counter}.tmp ${counter}
+          exit 0
         fi
         sleep 2
       done

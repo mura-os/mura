@@ -47,6 +47,11 @@ in
     # rule). NixOS's null means "UTC until set imperatively with timedatectl"; a fixed value
     # would make /etc/localtime a store symlink that timedated cannot change.
     time.timeZone = lib.mkDefault null;
+    # NixOS's convenience defaults (perl, rsync, strace) are "not strictly necessary for a running
+    # system … can be removed for a more minimal installation" (nixpkgs' own option text). An
+    # embedded budget removes them (AGENTS rule 6; ruled 2026-09-25, research/56 §10); the wearer
+    # installs whatever they want (rule 3). tests/closure.nix fences the PATH.
+    environment.defaultPackages = lib.mkDefault [ ];
     i18n.defaultLocale = lib.mkDefault "C.UTF-8";
   };
 }

@@ -142,7 +142,7 @@
         machine.succeed(h.format(pw="mura", extra=""))
         machine.succeed(h.format(pw="wrong", extra=" --expect-fail"))
 
-    with subtest("D6: on the greeter profile the blessing tier is a stable greeter, never a login"):
+    with subtest("D6: on the greeter profile the blessing tier is the greeter up, never a login"):
         machine.succeed("systemctl show -p Result --value mura-preflight.service | grep -qx success")
         machine.wait_for_unit("mura-readiness.service", timeout=360)
         machine.wait_for_unit("boot-complete.target", timeout=60)

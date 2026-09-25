@@ -332,7 +332,7 @@ let
     usbGadgetDefaultOn = eval.config.mura.hardware.input.usbGadget == true;
     # implementation-path §3a/§3a-bis / D6: health values are schema values.
     crashLoopDefault = eval.config.mura.health.crashLoopThreshold == 3;
-    readinessStabilityDefault = eval.config.mura.health.readinessStabilitySeconds == 20;
+    deviceWaitDefault = eval.config.mura.health.deviceWaitSeconds == 10;
     bootTriesDefault = eval.config.mura.deployment.bootTries == 3;
     crashLoopOverridable = (evalContract faillockStrict).config.mura.health.crashLoopThreshold == 5;
     hotspotIdleDefault = eval.config.mura.oob.hotspot.idleTimeoutMinutes == 10;

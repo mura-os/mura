@@ -89,7 +89,9 @@ only after the compositor (appliance) or greeter (multi-user) has been continuou
 | mobile-nixos — `modules/boot-control.nix:17-31` | Android `boot-control --mark-successful` oneshot at `multi-user.target` | **No** | delegates to the vendor slot logic |
 | SteamOS A/B | not in the pinned clone (`jovian-nixos/support/manifest/mappings.toml` excludes the steamos-efi packages) | unknown | — |
 
-**Determination — no comparable; rethink candidate → Owner (§11 Q2).** Every shipping system
+**Determination — no comparable; rethink candidate → Owner (§11 Q2). Ruled 2026-09-25: (a), the
+comparables' shape — `mura-readiness` succeeds when the compositor unit (or greetd + greeter) is
+active and `/persist` is writable; `readinessStabilitySeconds` removed.** Every shipping system
 blesses on *a target reached*, never on *N seconds of stability*. The comparables' shape for Mura
 is: `mura-readiness` succeeds the moment the compositor unit (or greetd + its greeter) is active and
 `/persist` is writable — i.e. `graphical-session.target`/greeter reached — and a crash *after*
@@ -111,7 +113,9 @@ fictional "one minute" as the only echo).
 | Monado drivers — `survive_driver.c:51-52` (3.5 s, *"just start without those devices"*), `steamvr_lh.cpp:404` (3 s), `rift_driver.c:1448-1450` (5 s, *"wait for display/controller init"*) | already-opened devices to settle | 3–5 s | degrade or continue | driver-specific settle, not boot gating |
 | mobile-nixos — `modules/initrd-boot-gui.nix:42-47`; `devices/uefi-x86_64/default.nix:22-23` | input devices for the passphrase UI | opt-in, default 0 | — | *"only necessary on 'slow' busses"*, USB |
 
-**Determination — contested on two axes → Owner (§11 Q3).** Everything that waits for a *class of
+**Determination — contested on two axes → Owner (§11 Q3). Ruled 2026-09-25: (a), the GDM/pmOS
+shape — `deviceWaitSeconds` default 10, P5 and P6 become soft checks; the greeter starts and the
+report carries the result.** Everything that waits for a *class of
 hardware at boot* uses **~10 s**, then **proceeds degraded** (GDM, pmOS); systemd's own guidance is
 that the timeout is per hardware type and that a service "may warn or report failure", not block
 boot for everyone. Mura's P5/P6 wait 20 s and then fail **hard** (no greeter, counter++). The value
@@ -225,7 +229,8 @@ rule working under GNOME's systemd-managed session is the prior that it does.
   running system, entries can be removed for a more minimal NixOS installation"*
   (`nixos/modules/config/system-path.nix:111-123` at the pinned nixpkgs). No comparable NixOS
   appliance in `references/` (mobile-nixos, jovian) removes them. Rule 6 says remove; rule 3 says
-  the wearer may install anything. `tests/closure.nix` fences `python` only. **→ Owner (§11 Q4).**
+  the wearer may install anything. **Ruled 2026-09-25: removed (`environment.defaultPackages = []`);
+  `tests/closure.nix` fences perl on PATH too.**
 - **The residual `python3` in the toplevel closures** is nixpkgs-side (systemd-boot's installer,
   `nixos-rebuild-ng`, mesa, gstreamer, flatpak via the portal, speech-dispatcher/pyxdg via the
   stand-in desktop stack); `tests/closure.nix` pins it as a shrinking allowlist. The login-path
@@ -239,13 +244,13 @@ rule working under GNOME's systemd-managed session is the prior that it does.
   is the bootloader's to fall back from; recovery is the user's explicit choice (`bootTries` stays).
 - **Q2 — the blessing tier (§4).** (a) systemd/RAUC/mobile-nixos shape: bless when the compositor
   unit (or greeter) is active and `/persist` is writable; drop `readinessStabilitySeconds`. (b) Keep
-  the 20 s window — no comparable; Mura's invention.
+  the 20 s window — no comparable; Mura's invention. **Ruled (a), 2026-09-25.**
 - **Q3 — device wait (§5).** (a) GDM/pmOS shape: 10 s, then proceed degraded (greeter starts, P5/P6
   become `soft`). (b) Keep 20 s + hard fail, stating the XR-physical reason in writing (rule 1).
-  (c) 10 s + hard fail (the comparables' value, Mura's semantics).
+  (c) 10 s + hard fail (the comparables' value, Mura's semantics). **Ruled (a), 2026-09-25.**
 - **Q4 — `perl rsync strace` on PATH (§10).** (a) Drop `environment.defaultPackages` (rule 6; nixpkgs
   names this the minimal-installation path; the wearer installs what they want). (b) Keep NixOS's
-  default.
+  default. **Ruled (a), 2026-09-25.**
 
 Applied without asking (converging evidence with transferring reasons): §1, §6, §7, §8, §9, and
 `bootTries` in §3. §2 keeps its existing decider.
