@@ -1,0 +1,16 @@
+[package]
+name = "mura-preflight"
+version = "0.1.0"
+edition = "2021"
+description = "Mura XR preflight probe (implementation-path §3a-bis): P1–P7 before the greeter"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 2
+debug = false
+panic = "abort"

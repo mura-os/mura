@@ -12,5 +12,9 @@ final: prev: {
     authd = final.callPackage ./mura-authd { };
     # TEST-ONLY PAM module for the harness (session-auth §6 items 2 and 7); never shipped.
     pamTestModule = final.callPackage ./mura-authd/test { };
+    # The XR preflight probe (implementation-path §3a-bis; modules/os/health.nix; D6).
+    preflight = final.callPackage ./mura-preflight { };
+    # The setup program's system instance — D3 stub (first-run §5.1; modules/os/oob.nix).
+    setup = final.callPackage ./mura-setup { };
   };
 }

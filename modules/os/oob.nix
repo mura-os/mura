@@ -24,80 +24,12 @@ let
   hotspotAddr = "10.42.0.1";
   psks = "/run/mura/hotspot.env";
 
-  # The setup web app, system instance — D3 STUB: the captive-portal launcher and the probe
-  # redirects, bound to the two trusted addresses with IP_FREEBIND (the hotspot address exists
-  # only while the AP is up). Python is already in the closure (uwsm). Replaced by the real
-  # mura-setup at its own rung; the identity, unit shape and addresses are the contract.
-  setupStub = pkgs.writers.writePython3Bin "mura-setup-stub" { flakeIgnore = [ "E501" ]; } ''
-    import http.server
-    import os
-    import socket
-    import threading
-
-    MARKER = "${marker}"
-    PROBES = ("/generate_204", "/hotspot-detect.html", "/connecttest.txt", "/success.txt",
-              "/ncsi.txt", "/canonical.html")
-    PAGE = b"""<!doctype html><meta charset=utf-8><title>Mura setup</title>
-    <h1>Mura</h1><p>Open <a href="http://mura.local/">http://mura.local/</a> in your browser
-    to set up this headset.</p><p>(D3 stub: the setup pages arrive with their own rung.)</p>
-    <form method=post action=/finish><button>Finish setup</button></form>"""
-
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        server_version = "mura-setup/stub"
-
-        def log_message(self, fmt, *args):  # journal, not stderr noise per request
-            pass
-
-        def do_GET(self):
-            if self.path in PROBES:
-                self.send_response(302)
-                self.send_header("Location", "http://mura.local/")
-                self.end_headers()
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(PAGE)))
-            self.end_headers()
-            self.wfile.write(PAGE)
-
-        def do_POST(self):
-            if self.path == "/finish":
-                # the marker is the LAST write (first-run §5.2); the stub has no Wi-Fi step
-                with open(MARKER + ".tmp", "w") as f:
-                    f.write("finished via web app\n")
-                os.replace(MARKER + ".tmp", MARKER)
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b"setup complete\n")
-                return
-            self.send_response(404)
-            self.end_headers()
-
-
-    class Server(http.server.ThreadingHTTPServer):
-        allow_reuse_address = True
-
-        def server_bind(self):
-            self.socket.setsockopt(socket.IPPROTO_IP, 15, 1)  # IP_FREEBIND
-            super().server_bind()
-
-
-    def watch_marker():
-        # setup finished (here, in the headset, or by an administrator): retire within seconds
-        import time
-        while not os.path.exists(MARKER):
-            time.sleep(2)
-        time.sleep(1)  # let an in-flight /finish response go out
-        os._exit(0)
-
-
-    threading.Thread(target=watch_marker, daemon=True).start()
-    servers = [Server((a, 80), Handler) for a in ("${gadgetAddr}", "${hotspotAddr}")]
-    for s in servers[1:]:
-        threading.Thread(target=s.serve_forever, daemon=True).start()
-    servers[0].serve_forever()
-  '';
+  # The setup web app, system instance — D3 STUB (pkgs/mura-setup, Rust): the captive-portal
+  # launcher and the probe redirects, bound to the two trusted addresses with IP_FREEBIND (the
+  # hotspot address exists only while the AP is up), POST /finish writes the marker, and the
+  # process exits when the marker appears. Replaced by the real mura-setup at its own rung; the
+  # identity, unit shape and addresses are the contract.
+  setupStub = pkgs.mura.setup;
 
   # Hotspot lifecycle (first-run §5): a small supervisor rather than NM autoconnect, because
   # the rule has two inputs NM cannot express — the marker and "no other active connection".
