@@ -9,6 +9,7 @@ use ash::vk::Handle as _;
 use openxr as xr;
 use std::ffi::{c_void, CStr, CString};
 use smithay::reexports::calloop::channel as cchannel;
+use crate::journal::timed;
 use std::sync::{Arc, Condvar, Mutex};
 
 
@@ -23,6 +24,8 @@ pub struct FrameTick {
     pub should_render: bool,
     /// When `xrWaitFrame` returned (monotonic ns), for the frame journal.
     pub woke_at_ns: u64,
+    /// how long `xrWaitFrame` blocked (ns) — the runtime-side throttle, not our cost
+    pub wait_ns: u64,
 }
 
 /// The Vulkan objects the runtime created for us; the renderer borrows them.
@@ -49,6 +52,8 @@ pub struct XrCore {
     pub environment_blend: xr::EnvironmentBlendMode,
     pub session_running: bool,
     pub exit_requested: bool,
+    /// per-call latencies (research/63 Phase 0); the loop merges them into the journal
+    pub calls: crate::journal::Calls,
     events: xr::EventDataBuffer,
     /// The wait thread's handshake: it may call `xrWaitFrame` again only once the previous frame
     /// has been begun (rendering.adoc:792-794) and only while the session is running.
@@ -68,6 +73,14 @@ pub struct Swapchain {
     pub handle: xr::Swapchain<xr::Vulkan>,
     pub images: Vec<vk::Image>,
     pub extent: vk::Extent2D,
+}
+
+/// One panel handed to the runtime as an `XrCompositionLayerQuad` (Phase 1b prototype).
+pub struct QuadLayer<'a> {
+    pub swapchain: &'a Swapchain,
+    pub pose: xr::Posef,
+    /// metres
+    pub size: [f32; 2],
 }
 
 fn monotonic_ns() -> u64 {
@@ -195,6 +208,7 @@ impl XrCore {
                                 g = cv.wait(g).unwrap();
                             }
                         }
+                        let wait_t0 = monotonic_ns();
                         let st = match waiter.wait() {
                             Ok(s) => s,
                             Err(xr::sys::Result::ERROR_SESSION_NOT_RUNNING) => continue,
@@ -204,7 +218,7 @@ impl XrCore {
                             }
                         };
                         frame_id += 1;
-                        let tick = FrameTick { frame_id, predicted_display_time: st.predicted_display_time, predicted_display_period: st.predicted_display_period, should_render: st.should_render, woke_at_ns: monotonic_ns() };
+                        let tick = FrameTick { frame_id, predicted_display_time: st.predicted_display_time, predicted_display_period: st.predicted_display_period, should_render: st.should_render, woke_at_ns: monotonic_ns(), wait_ns: monotonic_ns().saturating_sub(wait_t0) };
                         if tx.send(tick).is_err() {
                             return;
                         }
@@ -214,7 +228,7 @@ impl XrCore {
         }
 
         Ok((
-            XrCore { instance, system, session, stream, space, views, swapchains, color_format, environment_blend: blend, session_running: false, exit_requested: false, events: xr::EventDataBuffer::new(), handshake, ticks: Some(ticks) },
+            XrCore { instance, system, session, stream, space, views, swapchains, color_format, environment_blend: blend, session_running: false, exit_requested: false, calls: Default::default(), events: xr::EventDataBuffer::new(), handshake, ticks: Some(ticks) },
             VkCore { entry: vk_entry, instance: vk_instance, physical, device, queue_family, queue },
         ))
     }
@@ -233,7 +247,9 @@ impl XrCore {
 
     /// Drain runtime events; begin/end the session on state changes.
     pub fn poll_events(&mut self) -> Result<(), String> {
-        while let Some(ev) = self.instance.poll_event(&mut self.events).map_err(|e| e.to_string())? {
+        loop {
+            let ev = timed(&mut self.calls.poll_event, || self.instance.poll_event(&mut self.events)).map_err(|e| e.to_string())?;
+            let Some(ev) = ev else { break };
             if let xr::Event::SessionStateChanged(e) = ev {
                 tracing::info!(state = ?e.state(), "session state");
                 match e.state() {
@@ -281,34 +297,96 @@ impl XrCore {
 
     /// `xrBeginFrame`, then release the wait thread for the next `xrWaitFrame`.
     pub fn begin_frame(&mut self, tick: &FrameTick) -> Result<(), String> {
-        self.stream.begin().map_err(|e| format!("xrBeginFrame: {e}"))?;
+        timed(&mut self.calls.begin_frame, || self.stream.begin()).map_err(|e| format!("xrBeginFrame: {e}"))?;
         let (m, cv) = &*self.handshake;
         m.lock().unwrap().begun = tick.frame_id;
         cv.notify_one();
         Ok(())
     }
 
-    pub fn locate_views(&self, time: xr::Time) -> Result<Vec<xr::View>, String> {
-        let (_flags, views) = self.session.locate_views(VIEW_TYPE, time, &self.space).map_err(|e| format!("xrLocateViews: {e}"))?;
+    pub fn locate_views(&mut self, time: xr::Time) -> Result<Vec<xr::View>, String> {
+        let (_flags, views) = timed(&mut self.calls.locate_views, || self.session.locate_views(VIEW_TYPE, time, &self.space)).map_err(|e| format!("xrLocateViews: {e}"))?;
         Ok(views)
     }
 
     /// Acquire + wait one image per view; returns the image indices.
     pub fn acquire_images(&mut self) -> Result<Vec<u32>, String> {
         let mut out = Vec::with_capacity(self.swapchains.len());
+        let calls = &mut self.calls;
         for sc in &mut self.swapchains {
-            let idx = sc.handle.acquire_image().map_err(|e| e.to_string())?;
-            sc.handle.wait_image(xr::Duration::from_nanos(100_000_000)).map_err(|e| e.to_string())?;
+            let idx = timed(&mut calls.acquire_image, || sc.handle.acquire_image()).map_err(|e| e.to_string())?;
+            timed(&mut calls.wait_image, || sc.handle.wait_image(xr::Duration::from_nanos(100_000_000))).map_err(|e| e.to_string())?;
             out.push(idx);
         }
         Ok(out)
     }
 
     pub fn release_images(&mut self) -> Result<(), String> {
+        let calls = &mut self.calls;
         for sc in &mut self.swapchains {
-            sc.handle.release_image().map_err(|e| e.to_string())?;
+            timed(&mut calls.release_image, || sc.handle.release_image()).map_err(|e| e.to_string())?;
         }
         Ok(())
+    }
+
+    /// A runtime-owned swapchain for one panel (research/63 Phase 1b, `--panels=quad`): the
+    /// client's buffer is blitted into it and the runtime composites it as a quad layer.
+    pub fn create_panel_swapchain(&self, width: u32, height: u32) -> Result<Swapchain, String> {
+        let handle = self
+            .session
+            .create_swapchain(&xr::SwapchainCreateInfo {
+                create_flags: xr::SwapchainCreateFlags::EMPTY,
+                usage_flags: xr::SwapchainUsageFlags::COLOR_ATTACHMENT | xr::SwapchainUsageFlags::SAMPLED | xr::SwapchainUsageFlags::TRANSFER_DST,
+                format: self.color_format.as_raw() as u32,
+                sample_count: 1,
+                width,
+                height,
+                face_count: 1,
+                array_size: 1,
+                mip_count: 1,
+            })
+            .map_err(|e| format!("xrCreateSwapchain(panel): {e}"))?;
+        let images = handle.enumerate_images().map_err(|e| e.to_string())?.into_iter().map(vk::Image::from_raw).collect();
+        Ok(Swapchain { handle, images, extent: vk::Extent2D { width, height } })
+    }
+
+    /// `xrEndFrame` with an optional projection layer plus quad layers (`--panels=quad|hybrid`).
+    /// Quad layers are submitted in the given order (painter's order, `rendering.adoc:1143-1147`).
+    pub fn end_frame_with_quads(&mut self, time: xr::Time, views: Option<&[xr::View]>, quads: &[QuadLayer<'_>]) -> Result<(), String> {
+        let mut pv: Vec<xr::CompositionLayerProjectionView<xr::Vulkan>> = Vec::new();
+        if let Some(views) = views {
+            for (i, v) in views.iter().enumerate() {
+                let sc = &self.swapchains[i];
+                pv.push(
+                    xr::CompositionLayerProjectionView::new()
+                        .pose(v.pose)
+                        .fov(v.fov)
+                        .sub_image(xr::SwapchainSubImage::new().swapchain(&sc.handle).image_array_index(0).image_rect(xr::Rect2Di { offset: xr::Offset2Di { x: 0, y: 0 }, extent: xr::Extent2Di { width: sc.extent.width as i32, height: sc.extent.height as i32 } })),
+                );
+            }
+        }
+        let projection = views.map(|_| xr::CompositionLayerProjection::new().space(&self.space).views(&pv));
+        let quad_layers: Vec<xr::CompositionLayerQuad<xr::Vulkan>> = quads
+            .iter()
+            .map(|q| {
+                xr::CompositionLayerQuad::new()
+                    .layer_flags(xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA)
+                    .space(&self.space)
+                    .eye_visibility(xr::EyeVisibility::BOTH)
+                    .sub_image(xr::SwapchainSubImage::new().swapchain(&q.swapchain.handle).image_array_index(0).image_rect(xr::Rect2Di { offset: xr::Offset2Di { x: 0, y: 0 }, extent: xr::Extent2Di { width: q.swapchain.extent.width as i32, height: q.swapchain.extent.height as i32 } }))
+                    .pose(q.pose)
+                    .size(xr::Extent2Df { width: q.size[0], height: q.size[1] })
+            })
+            .collect();
+        let mut layers: Vec<&xr::CompositionLayerBase<xr::Vulkan>> = Vec::with_capacity(1 + quad_layers.len());
+        if let Some(p) = &projection {
+            layers.push(p);
+        }
+        for q in &quad_layers {
+            layers.push(q);
+        }
+        let blend = self.environment_blend;
+        timed(&mut self.calls.end_frame, || self.stream.end(time, blend, &layers)).map_err(|e| format!("xrEndFrame: {e}"))
     }
 
     /// `xrEndFrame` with one projection layer (the model), or an empty frame.
@@ -327,9 +405,13 @@ impl XrCore {
                     })
                     .collect();
                 let layer = xr::CompositionLayerProjection::new().space(&self.space).views(&pv);
-                self.stream.end(time, self.environment_blend, &[&layer]).map_err(|e| format!("xrEndFrame: {e}"))
+                let blend = self.environment_blend;
+                timed(&mut self.calls.end_frame, || self.stream.end(time, blend, &[&layer])).map_err(|e| format!("xrEndFrame: {e}"))
             }
-            None => self.stream.end(time, self.environment_blend, &[]).map_err(|e| format!("xrEndFrame: {e}")),
+            None => {
+                let blend = self.environment_blend;
+                timed(&mut self.calls.end_frame, || self.stream.end(time, blend, &[])).map_err(|e| format!("xrEndFrame: {e}"))
+            }
         }
     }
 }

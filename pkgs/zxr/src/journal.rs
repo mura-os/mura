@@ -3,8 +3,67 @@
 
 use std::fmt::Write as _;
 
+/// A latency histogram for one runtime call (research/63 Phase 0): count, sum, max and
+/// log2 buckets from < 16 µs to ≥ 2 ms, so the per-call IPC cost is visible per tick.
+#[derive(Default, Debug, Clone)]
+pub struct Lat {
+    pub n: u64,
+    pub sum_ns: u64,
+    pub max_ns: u64,
+    /// bucket i counts samples in [16µs·2^(i−1), 16µs·2^i); bucket 0 is < 16 µs, bucket 7 is ≥ 1 ms
+    pub buckets: [u64; 8],
+}
+
+impl Lat {
+    pub fn add(&mut self, ns: u64) {
+        self.n += 1;
+        self.sum_ns += ns;
+        self.max_ns = self.max_ns.max(ns);
+        let us = ns / 1000;
+        let b = if us < 16 { 0 } else { ((us / 16).ilog2() as usize + 1).min(7) };
+        self.buckets[b] += 1;
+    }
+    fn render(&self, s: &mut String, name: &str) {
+        let mean = if self.n > 0 { self.sum_ns / self.n / 1000 } else { 0 };
+        let _ = writeln!(s, "call_{name}_n={} call_{name}_us_mean={} call_{name}_us_max={} call_{name}_hist={}", self.n, mean, self.max_ns / 1000, self.buckets.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("/"));
+    }
+}
+
+/// The OpenXR calls a tick makes, each a round trip to the runtime over Monado's IPC.
+#[derive(Default, Debug, Clone)]
+pub struct Calls {
+    pub wait_frame: Lat,
+    pub begin_frame: Lat,
+    pub locate_views: Lat,
+    pub locate_spaces: Lat,
+    pub acquire_image: Lat,
+    pub wait_image: Lat,
+    pub release_image: Lat,
+    pub end_frame: Lat,
+    pub poll_event: Lat,
+}
+
+/// Time a closure and record it in a `Lat`.
+pub fn timed<T>(lat: &mut Lat, f: impl FnOnce() -> T) -> T {
+    let t0 = crate::state::now_ns();
+    let r = f();
+    lat.add(crate::state::now_ns().saturating_sub(t0));
+    r
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct Journal {
+    pub calls: Calls,
+    /// runtime round trips this process has made (all `Calls` counts summed at render time)
+    /// analytic attachment traffic per rendered frame (bytes): Σ over passes of
+    /// colour/depth loads + stores at the pass extent — what a tile-based GPU would move
+    pub attachment_bytes_est: u64,
+    pub passes_per_frame: u64,
+    pub frame_callbacks_visible: u64,
+    pub frame_callbacks_occluded: u64,
+    pub panel_blits: u64,
+    pub panel_blit_bytes: u64,
+    pub panel_swapchains: u64,
     pub frames: u64,
     pub frames_rendered: u64,
     pub missed_deadlines: u64,
@@ -84,6 +143,30 @@ impl Journal {
         let _ = writeln!(s, "fences_outstanding={}", self.fences_outstanding);
         let _ = writeln!(s, "stale_texture_draws={}", self.stale_texture_draws);
         let _ = writeln!(s, "uptime_ms={}", now_ns.saturating_sub(self.started_at_ns) / 1_000_000);
+        // runtime calls (research/63 §1): per-call latency and the per-frame census
+        let c = &self.calls;
+        let total = c.wait_frame.n + c.begin_frame.n + c.locate_views.n + c.locate_spaces.n + c.acquire_image.n + c.wait_image.n + c.release_image.n + c.end_frame.n + c.poll_event.n;
+        let _ = writeln!(s, "runtime_calls_total={}", total);
+        let _ = writeln!(s, "runtime_calls_per_frame_x100={}", if self.frames > 0 { total * 100 / self.frames } else { 0 });
+        let blocking_ns = c.begin_frame.sum_ns + c.locate_views.sum_ns + c.locate_spaces.sum_ns + c.acquire_image.sum_ns + c.wait_image.sum_ns + c.release_image.sum_ns + c.end_frame.sum_ns;
+        let _ = writeln!(s, "runtime_calls_loop_us_per_frame={}", if self.frames > 0 { blocking_ns / self.frames / 1000 } else { 0 });
+        c.wait_frame.render(&mut s, "wait_frame");
+        c.begin_frame.render(&mut s, "begin_frame");
+        c.locate_views.render(&mut s, "locate_views");
+        c.locate_spaces.render(&mut s, "locate_spaces");
+        c.acquire_image.render(&mut s, "acquire_image");
+        c.wait_image.render(&mut s, "wait_image");
+        c.release_image.render(&mut s, "release_image");
+        c.end_frame.render(&mut s, "end_frame");
+        c.poll_event.render(&mut s, "poll_event");
+        // GPU structure (research/63 §2): analytic, not measured
+        let _ = writeln!(s, "passes_per_frame={}", self.passes_per_frame);
+        let _ = writeln!(s, "attachment_bytes_est_per_frame={}", self.attachment_bytes_est);
+        let _ = writeln!(s, "frame_callbacks_visible={}", self.frame_callbacks_visible);
+        let _ = writeln!(s, "frame_callbacks_occluded={}", self.frame_callbacks_occluded);
+        let _ = writeln!(s, "panel_swapchains={}", self.panel_swapchains);
+        let _ = writeln!(s, "panel_blits={}", self.panel_blits);
+        let _ = writeln!(s, "panel_blit_bytes={}", self.panel_blit_bytes);
         s
     }
 }

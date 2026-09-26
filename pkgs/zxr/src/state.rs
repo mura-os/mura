@@ -119,6 +119,28 @@ pub struct Zxr {
     pub satellite_pid: Option<u32>,
     pub pointer_focus: Option<WlSurface>,
     pub last_head_pose: Option<openxr::Posef>,
+    /// research/63 Phase 1b: how panels reach the runtime (projection pass / quad layers / both)
+    pub panels: Panels,
+    /// `--panels=quad|hybrid`: one runtime swapchain per mapped toplevel, keyed by its surface
+    pub panel_swapchains: HashMap<ObjectId, PanelSwapchain>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Panels {
+    /// planes rendered into our projection layer (today; motorcar, kwin-vr, Simula, StardustXR)
+    #[default]
+    Projection,
+    /// every toplevel a runtime quad layer, no projection pass (wayvr/wlx-overlay-s)
+    Quad,
+    /// quad layers for toplevels plus an (empty at R0) projection layer for depth content
+    Hybrid,
+}
+
+pub struct PanelSwapchain {
+    pub sc: crate::xr::Swapchain,
+    /// the commit the swapchain's current image holds; a blit happens only when it changes
+    pub blitted_commit: Option<CommitCounter>,
+    pub blits: u64,
 }
 
 impl Zxr {
@@ -253,6 +275,8 @@ impl Zxr {
             satellite_pid: None,
             pointer_focus: None,
             last_head_pose: None,
+            panels: Panels::default(),
+            panel_swapchains: HashMap::new(),
         })
     }
 

@@ -76,6 +76,9 @@ pub struct Renderer {
     query_pool: vk::QueryPool,
     timestamp_period_ns: f64,
     pub gpu_ns_last: u64,
+    /// `--panels=quad`: blits into panel swapchains and their analytic bytes (read + write)
+    pub panel_blits: u64,
+    pub panel_blit_bytes: u64,
     ext_mem_fd: ash::khr::external_memory_fd::Device,
     ext_fence_fd: ash::khr::external_fence_fd::Device,
 }
@@ -194,6 +197,8 @@ impl Renderer {
                 query_pool,
                 timestamp_period_ns: props.limits.timestamp_period as f64,
                 gpu_ns_last: 0,
+                panel_blits: 0,
+                panel_blit_bytes: 0,
                 ext_mem_fd: ash::khr::external_memory_fd::Device::new(&core.instance, d),
                 ext_fence_fd: ash::khr::external_fence_fd::Device::new(&core.instance, d),
             };
@@ -493,6 +498,63 @@ impl Renderer {
             self.frames[slot].in_use = true;
             Ok(())
         }
+    }
+
+    /// Copy a client texture into a runtime-owned panel swapchain image (`--panels=quad`,
+    /// research/63 Phase 1b). This is the copy the quad-layer path cannot avoid: OpenXR swapchain
+    /// images are allocated by the runtime, so a Wayland client's buffer can never *be* one.
+    /// One blit per commit, waited on the CPU (prototype; a per-panel fence is the production
+    /// shape). `foreign` marks a dmabuf texture (needs the foreign-queue acquire/release).
+    pub fn blit_to_panel(&mut self, src: &Texture, foreign: bool, dst: vk::Image, dst_extent: vk::Extent2D) -> Result<(), String> {
+        unsafe {
+            let d = &self.device;
+            let cmd = d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(self.cmd_pool).level(vk::CommandBufferLevel::PRIMARY).command_buffer_count(1)).map_err(|e| e.to_string())?[0];
+            d.begin_command_buffer(cmd, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)).map_err(|e| e.to_string())?;
+            let range = vk::ImageSubresourceRange { aspect_mask: vk::ImageAspectFlags::COLOR, base_mip_level: 0, level_count: 1, base_array_layer: 0, layer_count: 1 };
+            let (src_old, src_qf) = if foreign { (vk::ImageLayout::GENERAL, vk::QUEUE_FAMILY_FOREIGN_EXT) } else { (vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::QUEUE_FAMILY_IGNORED) };
+            let dst_qf = if foreign { self.queue_family } else { vk::QUEUE_FAMILY_IGNORED };
+            let pre = [
+                vk::ImageMemoryBarrier::default().old_layout(src_old).new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL).src_queue_family_index(src_qf).dst_queue_family_index(dst_qf).src_access_mask(vk::AccessFlags::SHADER_READ).dst_access_mask(vk::AccessFlags::TRANSFER_READ).image(src.image).subresource_range(range),
+                vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::UNDEFINED).new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL).dst_access_mask(vk::AccessFlags::TRANSFER_WRITE).image(dst).subresource_range(range),
+            ];
+            d.cmd_pipeline_barrier(cmd, vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(), &[], &[], &pre);
+            let layers = vk::ImageSubresourceLayers { aspect_mask: vk::ImageAspectFlags::COLOR, mip_level: 0, base_array_layer: 0, layer_count: 1 };
+            let region = vk::ImageBlit::default()
+                .src_subresource(layers)
+                .src_offsets([vk::Offset3D { x: 0, y: 0, z: 0 }, vk::Offset3D { x: src.width as i32, y: src.height as i32, z: 1 }])
+                .dst_subresource(layers)
+                .dst_offsets([vk::Offset3D { x: 0, y: 0, z: 0 }, vk::Offset3D { x: dst_extent.width as i32, y: dst_extent.height as i32, z: 1 }]);
+            d.cmd_blit_image(cmd, src.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, dst, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region], vk::Filter::LINEAR);
+            let post = [
+                vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL).new_layout(src_old).src_queue_family_index(dst_qf).dst_queue_family_index(src_qf).src_access_mask(vk::AccessFlags::TRANSFER_READ).dst_access_mask(vk::AccessFlags::SHADER_READ).image(src.image).subresource_range(range),
+                vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL).new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL).src_access_mask(vk::AccessFlags::TRANSFER_WRITE).dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_READ).image(dst).subresource_range(range),
+            ];
+            d.cmd_pipeline_barrier(cmd, vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, vk::DependencyFlags::empty(), &[], &[], &post);
+            d.end_command_buffer(cmd).map_err(|e| e.to_string())?;
+            let cmds = [cmd];
+            let submit = [vk::SubmitInfo::default().command_buffers(&cmds)];
+            let fence = d.create_fence(&vk::FenceCreateInfo::default(), None).map_err(|e| e.to_string())?;
+            d.queue_submit(self.queue, &submit, fence).map_err(|e| e.to_string())?;
+            d.wait_for_fences(&[fence], true, u64::MAX).map_err(|e| e.to_string())?;
+            d.destroy_fence(fence, None);
+            d.free_command_buffers(self.cmd_pool, &cmds);
+            self.panel_blits += 1;
+            self.panel_blit_bytes += src.width as u64 * src.height as u64 * 4 + dst_extent.width as u64 * dst_extent.height as u64 * 4;
+            Ok(())
+        }
+    }
+
+    /// Analytic attachment traffic of our pass per frame (research/63 Phase 0): what a
+    /// tile-based GPU must move between tile memory and DRAM — colour stores per view (the
+    /// swapchain image is written whole); depth is cleared and `DONT_CARE`d, so it stays in tile
+    /// memory once the image is transient (Phase 4). Client texture *reads* are not counted:
+    /// they depend on coverage and are the same on every architecture.
+    pub fn attachment_bytes_per_frame(&self) -> u64 {
+        self.targets.iter().map(|t| t.extent.width as u64 * t.extent.height as u64 * 4).sum()
+    }
+
+    pub fn passes_per_frame(&self) -> u64 {
+        self.targets.len() as u64
     }
 
     /// GPU time of the last completed pass (call after `wait_slot`).
