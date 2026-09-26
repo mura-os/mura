@@ -189,5 +189,7 @@
   "hyprland": {"url": "https://github.com/hyprwm/Hyprland.git", "commit": "c6f11721168908e3608b2517e84df62c9c35064f", "ref": "main", "cloned": "2026-09-26T11:41:32Z"},
   "paperwm": {"url": "https://github.com/paperwm/PaperWM.git", "commit": "8bf6dd264f60d6c0c402b63df7b424b888959a48", "ref": "release", "cloned": "2026-09-26T11:41:32Z"},
   "xrizer": {"url": "https://github.com/Supreeeme/xrizer.git", "commit": "0989a7fac2d1efb7ea82f5fe1a8ed30c3eeb9596", "ref": "main", "cloned": "2026-09-26T13:28:39Z"},
-  "opencomposite": {"url": "https://gitlab.com/znixian/OpenOVR.git", "commit": "cff07db75c4823afe93ed7027b03d5f7bc86f164", "ref": "openxr", "cloned": "2026-09-26T13:28:39Z"}
+  "opencomposite": {"url": "https://gitlab.com/znixian/OpenOVR.git", "commit": "cff07db75c4823afe93ed7027b03d5f7bc86f164", "ref": "openxr", "cloned": "2026-09-26T13:28:39Z"},
+  "aosp-frameworks-native": {"url": "https://android.googlesource.com/platform/frameworks/native", "commit": "4f463a6b1de9198963dc6aff74154a504ba3f8f6", "ref": "main", "cloned": "2026-09-26T17:02:00Z"},
+  "openvr": {"url": "https://github.com/ValveSoftware/openvr.git", "commit": "0924064316de3effbcd1acf1e309182a2deb1c05", "ref": "master", "cloned": "2026-09-26T17:02:00Z"}
 }

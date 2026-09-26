@@ -602,7 +602,7 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   the head-ray stand-in; M1 implements the seat with pointer + keyboard + touch, the tier rule for
   the sources the dev host and first hardware have (head ray, libinput mouse/keyboard, controller
   aim ray, hand aim ray via the zxr-side bridge), focus-on-commit and `xdg-activation`, the
-  cursors, the text-input chain, and measures the stand-in thresholds at its gate; gaze targeting
+  cursors, the text-input chain, and measures at its gate the stand-in thresholds, the libinput-event→`xrEndFrame` latency under the research/62 §8 client storm (the input-thread trigger of research/68 §9.1: a dedicated thread for the libinput source only if it exceeds one display period) and `runtime_calls_per_frame` with the action set attached; gaze targeting
   lands with the first eye-tracking target's Monado driver (research/29: Galaxy XR, Play For
   Dream, Steam Frame); the `XR_EXT_hand_interaction` device in Monado is an upstream item raised
   before M1's hand work so the bridge can delete; 3D-client input (spatial-input §11) is M2's

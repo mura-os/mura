@@ -117,6 +117,35 @@ Every `FrameTick` from the wait thread runs this once, in order, on the state lo
 
 A tick with `shouldRender = false` does 1, then `xrEndFrame` with no layers, then 7.
 
+### 3a. The input stages (spatial-input §1a; research/68)
+
+Input has two intakes and one pipeline, all on the state loop. libinput and EI arrive as
+calloop sources whenever a device speaks; the XR sources arrive once per tick with
+`xrSyncActions`, after `xrLocateViews` and before the flatten (step 1 above). Both feed the same
+ordered stages — KWin's `InputFilterOrder` with the XR stages inserted where their inputs exist:
+
+```mermaid
+flowchart TD
+    libinput["libinput fd source (mouse, keyboard, HMD buttons)"] --> intake
+    ei["EI clients (zxr = EIS server)"] --> intake
+    xr["xrSyncActions once per tick (one action set)"] --> synth["synthesis: aim / pinch / poke / ready / system-gesture flags from the runtime; joint bridge while Monado lacks them"]
+    synth --> intake["intake → a closed enum of source kinds"]
+    intake --> reserved["reserved system input: consumed, never forwarded"]
+    reserved --> mode["mode: --greeter / lock"]
+    mode --> a11y["a11y transforms: dwell, sticky / slow keys, gain"]
+    a11y --> stabilize["stabilize: filter, target lock, relaxation, event-time compensation"]
+    stabilize --> tier["tier arbiter: which kind targets; class = touch or pointer"]
+    tier --> hit["hit test: Scene::hit → plane-local point → surface tree"]
+    hit --> grabs["WM grabs: move / resize / grab-all, popup, affordances, DnD (policy)"]
+    grabs --> im["IM: text-input / input-method routing"]
+    im --> seat["seat: wl_touch / wl_pointer / wl_keyboard, xdg-activation, cursors"]
+```
+
+No input thread: the comparables that have one (mutter, KWin, Mir) added it for a UI thread
+that stalls for frames and a KMS cursor plane, neither of which zxr has; the M1 input gate
+measures libinput-event → `xrEndFrame` under a client storm and adopts a thread for the libinput
+source only if that exceeds one display period (owner item, research/68 §9.1).
+
 ## 4. Acquire and release (spec §6)
 
 **Acquire is not on the frame path.** `CompositorHandler::new_surface` installs a pre-commit hook
@@ -145,7 +174,7 @@ them, so splitting later is a file move, not a redesign.
 | `render` | `src/render.rs` | render pass + pipeline (push constants, alpha blend, depth), shm staging path, dmabuf import with DRM modifiers, per-view depth + framebuffers, 2 frame slots (cmd + fence), timestamp queries, `sampled_modifiers` for the feedback table | 3D clients' colour+depth composition (M2, zxr-shell-v2); damage-aware upload |
 | `frontend` | `src/state.rs` (handler half) | every smithay delegate state + handler impl (compositor, buffer, shm, dmabuf, syncobj, xdg-shell, seat, data-device, DnD, output, pointer-constraints); `ClientState`; the acquire hook; dmabuf validation; the one `wl_output` | layer-shell and the M1 protocol set (spec §10); `--greeter` mode |
 | `scene` | `src/scene.rs` (arenas, verbs, flatten, hit) + `src/state.rs` (the member payload: window, panel, dirty) | `Arena<T>` with generational handles; `frames` / `places` / `members` (spec §5a normative); `add / remove / reparent / set_local / set_flags / focus`; `flatten` → band-ordered quad list + overflow, budget by band priority; full-pose ray→plane→surface hit; fan placement as the stand-in policy | 3D nodes (M2); the WM `free` engine (M1) |
-| `input` | `state.rs::update_gaze_pointer` | head ray → seat pointer; keyboard focus follows scene focus | hands, `hmdButtons.<selectRole>`, dwell, 6DoF events (M1/M2) |
+| `input` | `state.rs::update_gaze_pointer` (R0: head ray → `Scene::hit` → seat pointer; keyboard focus follows scene focus) | the R0 floor | the module of spatial-input §1a: intake (libinput calloop source · EI · `xrSyncActions` per tick) → synthesis (runtime aim/pinch/poke/system-gesture flags; joint bridge while Monado lacks them) → reserved input → mode → a11y transforms → stabilize → tier arbiter over a closed enum of source kinds → hit test → WM grabs → IM → seat; one action set as the XR source seam; no input thread unless the M1 gate's latency trigger fires (research/68 §9.1) |
 | `policy` | `Scene::add` (the fan) | — (a stand-in, §6) | placement rules and comfort caps from research/36; preferences from `org.mura.Settings1`; the bounded `zxr_window_management` face (ADR 0012 amendment) |
 | `modes`, `unit` | — | — | `--greeter` restricted scene, `sd_notify`, variable publication (M1; session-bootstrap rev 3) |
 | `trace` | `src/journal.rs`, `src/control.rs` | counters; SIGUSR1 / exit dump; the line-protocol control socket | tracing spans |
@@ -185,6 +214,8 @@ mechanism the bring-up showed was missing, no comparable needed, recorded for th
 | **teardown: `xrRequestExitSession` → STOPPING → EXITING, idle device, release buffers, destroy textures, renderer before `xr`** | **R0 discovery** — the session's swapchain images dropped before the renderer's views of them (`exit=139`) | spec rev 2 §9; research/61 §6.3 |
 | per-commit acquire cost ≈ 21 µs (14.7 k commits/s → 31 % of a desktop core) | measured; mechanism confirmed (0 missed), source granularity an M1 budget item | spec rev 2 §6.3; research/61 §3 |
 | gaze ray from the head pose as the R0 pointer | stand-in for the input floor (spec §8: head-aim + select) | spec §8 |
+| `input` lives in the compositor on the state loop: seat, hit test, focus, routing in-process; sensing, binding, aim/pinch/poke and the system-gesture recogniser in the runtime (bridged while Monado lacks them); IMs and emulated input as clients over `input-method-v2` / libei with zxr as EIS server; a11y transforms as in-compositor stages ahead of the lock | **determined** (every Wayland compositor; the standard's placement; every XR shell; the one separate-process design's assumptions absent) — the libinput thread question and the closed-enum source seam are **owner items** (research/68 §9.1, §9.2) with a labelled read and a measured trigger | spatial-input §1a; research/68 |
+| inside `input`: one OpenXR action set as the XR source seam, smithay `InputBackend` as the non-XR one, a closed enum of source kinds for the tier rule, an ordered static stage list in KWin's order (reserved → mode → a11y → stabilize → tier → hit → grabs → IM → seat) | **determined** (KWin's `InputFilterOrder`, Mir's filter chain, Android's stage chain converge on the order; StereoKit's reason for a fixed set transfers, KWin's/MRTK3's for plugins do not) | spatial-input §1a; research/68 §5, §7 |
 | fan placement: centre, then alternating right/left at 0.9 m, yaw 0.35 rad toward the viewer | stand-in for `policy` | research/36 §prose: "head-relative spawn … second window adjacent" — the shape, not the numbers |
 | plane distance 1.5 m; 0.0012 m/px (≈ 8.3 px/cm) | **stand-in, discretionary — flagged**: comparables range WiVRn 0.5 m, KWin VR 1.0 m at 20 px/cm, Android XR 1.75 m (research/36 §placement; research/31 §2.12); the M1 `policy` module takes these from the device contract / settings, not from code | owner / M1 |
 | one virtual `wl_output` "XR-1", 1920×1080 @ 60 Hz, scale 1 | **stand-in, discretionary — flagged**: KWin VR's virtual output is also scale 1 / 60 Hz (research/31 §2.12); clients need *some* output to size against; what the output(s) should advertise in XR is an M1 question (research/60 §17 notes) | owner / M1 |

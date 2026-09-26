@@ -1,6 +1,7 @@
 # Spatial input: targeting, hover, commit, focus, cursors, peripherals and text entry
 
-**Status: DRAFT rev 0 (2026-09-26).** The design of the compositor's `input` module
+**Status: DRAFT rev 0.1 (2026-09-26; rev 0 + §1a "Where input lives, and how it is built" from
+[research/68](../research/68-input-architecture-from-comparables.md), §10 and §13 amended).** The design of the compositor's `input` module
 ([specs/zxr-core.md §3, §8](../../specs/zxr-core.md)) and of the input authority the registry
 names, derived from [research/63](../research/63-xr-input-focus-selection-from-comparables.md)
 and ruled in [ADR 0013](adr/0013-kwin-vr-disposition.md)'s 2026-09-26 amendment. It consumes the
@@ -62,6 +63,97 @@ flowchart LR
     touch --> focus
     ptr --> focus
 ```
+
+## 1a. Where input lives, and how it is built (rev 0.1; research/68)
+
+**Placement, per seam** — each a determination from converging comparables with reasons that
+transfer, except where marked as the owner's:
+
+| seam | lives in | evidence and reason |
+|---|---|---|
+| the seat, hit test, focus, routing | **the compositor** (`input` module on the state loop) | `wl_seat` is a compositor global; every Wayland compositor read owns it in-process; the one separate-process dispatcher (Android InputFlinger) exists for a Java policy layer, per-app ANR accounting and a compositor that is not the window manager — none present (research/68 §1.1, §4) |
+| device sensing, interaction-profile binding, aim/pinch/poke synthesis, the reserved `system` click, per-session focus | **the OpenXR runtime** | the standard's placement (`input.adoc:499-505`, `ext_hand_interaction.adoc:48-61`, `extx_overlay.adoc:194-199`); every XR shell polls actions and hit-tests in its own process (research/68 §3) |
+| the **system-gesture recogniser** (the posture-gated palm gesture of native-openxr-apps §6) | **the runtime**, reported as a flag on the hand data; **zxr bridges** until Monado has it | every platform recognises it system-side and tells the app to stand down through a flag (Meta `SystemGestureProcessing`, Android XR `AimFlags.SystemGesture`, HoloLens's shell); it is already OpenXR-shaped — `XR_FB_hand_tracking_aim`'s `SYSTEM_GESTURE_BIT_FB` / `MENU_PRESSED_BIT_FB` (`xr.xml:8374-8376`); Monado implements neither the extension nor a gesture → the same bridge pattern as §10, an upstream item on ADR 0013's list (research/68 §3.1, §3.5) |
+| libinput intake (mouse, keyboard, HMD-body buttons) | **the state loop**, as a calloop source at a priority above client sources — **owner item research/68 §9.1** (the comparables split 6 : 3; mutter's stated reasons rest on a stalling UI thread and a KMS cursor plane zxr lacks); the M1 input gate measures libinput-event→`xrEndFrame` latency under the research/62 §8 client storm, and a dedicated input thread for the libinput source is adopted only if that exceeds one display period | research/68 §1.2–1.3, §7 |
+| XR intake (head, gaze, hands, controllers) | **once per tick**, `xrSyncActions` after `xrLocateViews`, before the flatten | the standard freezes action state between syncs (`input.adoc:826-830`); on Monado a sync is **one IPC round trip per device** (`oxr_input.c:2045-2050`, `ipc_client_xdev.c:37-70`) — a census line at the input gate and an upstream item (batch across devices, as `xrLocateSpaces` does) |
+| input methods / virtual keyboard | **separate clients** over `input-method-v2` + `virtual-keyboard-v1`; the compositor's seat re-emits | every desktop; KWin spawns and restarts its IM process (`kwin/src/inputmethod.cpp:864-925`) — third-party code must not take the compositor down |
+| emulated / remote input | **libei clients**; **zxr is the EIS server**; the portal brokers consent | libei's stated purpose — separation, distinction and control of emulated input (`libei/README.md:32-71`); mutter, KWin and cosmic-comp terminate EIS in the compositor |
+| accessibility *transforms* (dwell, sticky/slow/bounce keys, mouse keys) | **in-compositor pipeline stages, ahead of the lock/greeter mode** | KWin's filter order puts them first (`kwin/src/input.h:366-393`) as plugins; mutter runs them on its input thread; switch *scanning UI* stays a client (§13) |
+
+**Inside the module.** The comparables share two seams — a source/device abstraction the intake
+backends produce into, and an ordered policy chain between raw events and the client (research/68
+§5). zxr's:
+
+- **The XR source seam is the OpenXR action set.** One action per semantic input — aim pose,
+  select, grip, menu, `system`, gaze pose, pinch/poke/`ready` values per hand — with suggested
+  bindings per interaction profile (`khr/simple_controller`, `ext/hand_interaction_ext`,
+  `ext/eye_gaze_interaction`, each controller profile the contract names, `MNDX_system_buttons`
+  for HMD-body buttons where the runtime exposes them). A new controller is a bindings entry,
+  not code — the shape wayvr, xrdesktop and WiVRn already rely on. The runtime may rebind
+  (`input.adoc:499-505`), which is what lets the wearer's accessibility settings act below zxr.
+- **The non-XR source seam is smithay's `InputBackend`** (`backend/input/mod.rs:57-89`): the
+  libinput backend and the EI backend both produce `InputEvent`s; zxr adds no abstraction of
+  its own beneath it.
+- **zxr's own seam is a closed `enum` of source *kinds*** — `Head`, `Gaze`, `Hand(Left|Right)`,
+  `Controller(Left|Right)`, `Pointer` (mouse/trackpad/controller-as-pointer), `Keyboard` — over
+  which the tier rule (§3) is a `match`. Not trait objects, not loadable plugins: StereoKit's
+  reason for a fixed set (the consumer must know which kind it has — articulated, simulated,
+  override) is the tier rule's own; KWin's and MRTK3's reasons for plugins (third-party,
+  post-hoc addition) are absent in a single binary whose device set the hardware contract fixes.
+  **Judgment flagged, owner item research/68 §9.2.** Adding a kind the contract does not name
+  (an external tracker that is not an OpenXR device) is an enum variant and a bindings entry.
+- **The stage order**, one function per stage on a by-value event, short-circuiting, static:
+
+```
+intake      libinput fd source · EI · xrSyncActions (per tick)
+   ↓
+synthesis   aim/pinch/poke/ready + system-gesture flags from the runtime; the joint-derived
+            bridge behind the same interface while Monado lacks them (§10)
+   ↓
+reserved    the system input (native-openxr-apps §6): consumed here, never forwarded
+   ↓
+mode        --greeter / lock: only the auth scene may receive anything below this line
+   ↓
+a11y        dwell-as-commit, sticky/slow keys, pointer gain — transforms on raw events
+   ↓
+stabilize   per-source filter, target lock, relaxation, event-time compensation (§4)
+   ↓
+tier        the arbiter: which kind targets now (§3); class = touch or pointer (§5)
+   ↓
+hit test    scene member pass → plane-local point → smithay surface-tree hit (spec §5a)
+   ↓
+grabs       WM policy: move/resize/grab-all, popup grab, decoration/affordances, DnD
+            (window-workspace-management.md — policy owns these stages' decisions)
+   ↓
+IM          text-input / input-method routing — sees only what nothing above consumed
+   ↓
+seat        wl_touch / wl_pointer / wl_keyboard emission; xdg-activation; cursors (§7)
+```
+
+  This is KWin's `InputFilterOrder` (`kwin/src/input.h:366-393`) with the XR stages inserted
+  where their inputs exist, and without the plugin loader: rebinding and a11y before the lock,
+  the compositor's non-maskable input first of all, WM grabs after targeting, the IM last before
+  the seat. Mir's `EventFilterChainDispatcher` and Android's reader→filter→classifier→dispatcher
+  chain express the same order.
+
+**Budget** (invariant 9): no thread; per tick one `xrSyncActions` (N_devices RPCs on Monado
+today — Monado updates every device regardless of which action sets are passed,
+`oxr_input.c:2045-2050`; the largest per-tick input cost, and the runtime's to fix) + the
+batched locate zxr already makes; per libinput event one loop dispatch through a ≤ 10-stage
+chain of by-value calls; the enum dispatch is free. The numbers to measure at the M1 gate:
+libinput-event→`xrEndFrame` under the research/62 §8 client storm against one display period
+(the research/68 §9.1 trigger — **after** the quiet-mode buffer-hold policy is resolved, since a
+withheld `wl_buffer.release` is the only throttle that storm feels and input placement cannot
+fix it); `runtime_calls_per_frame` with the action set attached; and, while a native app is
+primary, the joint-bridge gesture recogniser's cost — two hand-locate RPCs per sample in the
+state where zxr is meant to cost nothing — at 90 Hz vs a lower sampling rate for a hold
+gesture (30 Hz is the candidate). A tick-bound libinput read (poll the fd only at the tick, as
+`xrSyncActions` is) is recorded as a rethink candidate with no comparable: 90 wake-ups/s for a
+1 kHz device instead of 1 000, at up to one frame of client responsiveness; not the default.
+
+**Non-goals (recorded):** a Mura input daemon; the runtime as the hit-tester (SteamVR's overlay
+model assumes the runtime owns the overlays' geometry — false for zxr's scene); input source
+plugins loaded at runtime.
 
 ## 2. Sources
 
@@ -284,6 +376,22 @@ length with **1.0/0.9** debounce, or StereoKit's **1.0 cm / 1.5 cm**), so the br
 cleanly. Never the perception service: it produces layers (matte, depth) for composition and
 is not an input authority (ADR 0008, ADR 0012).
 
+**The system-gesture recogniser is the runtime's too (rev 0.1; research/68 §3.1, §3.5).** The
+reserved palm gesture of native-openxr-apps §6 is, on every platform that has one, detected
+system-side and reported to applications as a flag on the hand data so they stand down — and
+OpenXR already carries that shape: `XR_FB_hand_tracking_aim`'s `XR_HAND_TRACKING_AIM_SYSTEM_GESTURE_BIT_FB`
+"System gesture is active", `DOMINANT_HAND_BIT_FB` and `MENU_PRESSED_BIT_FB` "System menu
+gesture is active" (`openxr-docs/specification/registry/xr.xml:8374-8376`), chained onto
+`xrLocateHandJointsEXT`. Monado implements neither the extension nor any gesture. The design
+therefore names **the recogniser as a runtime device output** (an `FB_hand_tracking_aim`-shaped
+flag set on Monado's hand device, the same derivation the platforms describe: palm toward the
+face + pinch-and-hold, dominant hand) as the mechanism — an upstream item beside the
+`EXT_hand_interaction` device — and **zxr derives the same flags from `XR_EXT_hand_tracking`
+joints behind the same internal interface until it exists**, exactly as for aim/pinch above.
+The recogniser is never a Mura service and never an application's: what it produces is consumed
+by the *reserved* stage of §1a before any client, and the "suspend your gesture processing" rule
+native-openxr-apps §6 gives applications is the flag's meaning.
+
 ## 11. 3D clients (M2)
 
 `zxr-shell-v2`'s input objects take the standard's shape rather than motorcar's mouse-shaped
@@ -314,6 +422,18 @@ allows. Dwell is a commit method on any tier (onset **150–250 ms** then **650�
 research/42 §5's literature range), with a movement tolerance. Switch access is a shell client
 over the seat (item/point scanning), needing nothing from the compositor beyond the seat. The
 head ray with `hmdButtons` is always available (the floor).
+
+**Where the hooks live (rev 0.1; research/68 §2, §5.5).** Accessibility *transforms* — dwell as
+a commit method, sticky/slow/bounce keys, mouse keys, pointer gain — are **in-compositor stages
+of §1a's chain, ahead of the lock/greeter mode**: KWin installs them as the first filters of its
+order (`kwin/src/input.h:366-393`) and mutter runs them on its input thread, because they must
+shape raw events before any policy sees them and must keep working on a locked screen. The
+scanning UI of switch access is a *client*. Sources that are not OpenXR devices — an external
+eye tracker, a switch interface, a remote controller — enter as libinput devices where they are
+HID, otherwise as **libei clients with zxr as the EIS server** through the portal's consent gate
+(libei's stated purpose: separation, distinction and control of emulated input,
+`libei/README.md:32-71`; mutter, KWin and cosmic-comp all terminate EIS in the compositor). No
+desktop gives an a11y source a seat or a process of its own, and neither does this design.
 
 ## 14. Settings (through `org.mura.Settings1`, settings-schema.md)
 

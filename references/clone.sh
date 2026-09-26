@@ -289,6 +289,12 @@ repos=(
   # opencomposite = the older C++ implementation xrizer's README defers to as the mature one.
   'xrizer|https://github.com/Supreeeme/xrizer.git|'
   'opencomposite|https://gitlab.com/znixian/OpenOVR.git|'
+  # --- input architecture (docs/research/68) ---
+  # aosp-frameworks-native = InputFlinger/InputDispatcher: the one shipping design with the input
+  # dispatcher as a service separate from the compositor (SurfaceFlinger); Horizon OS / Android XR
+  # inherit it. openvr = IVROverlay's runtime-side mouse-event synthesis (xrizer/opencomposite implement it).
+  'aosp-frameworks-native|https://android.googlesource.com/platform/frameworks/native|'
+  'openvr|https://github.com/ValveSoftware/openvr.git|'
 )
 
 mkdir -p .logs

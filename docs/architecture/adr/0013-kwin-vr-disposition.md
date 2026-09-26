@@ -151,6 +151,21 @@ thresholds as stand-ins ([spatial-input.md §10](../spatial-input.md)); the brid
 the device exists. Order and gate: [implementation-path.md §5.1](../implementation-path.md)
 ("The input model").
 
+**Two more Monado input items (added 2026-09-26 from
+[research/68](../../research/68-input-architecture-from-comparables.md); work, not watches):**
+(a) **the system-gesture flags** — every platform detects the reserved palm gesture runtime-side
+and reports it on the hand data; OpenXR carries the shape as `XR_FB_hand_tracking_aim`'s
+`SYSTEM_GESTURE_BIT_FB` / `DOMINANT_HAND_BIT_FB` / `MENU_PRESSED_BIT_FB`
+(`openxr-docs/specification/registry/xr.xml:8374-8376`); Monado implements neither the extension
+nor a gesture. Mura's item: the flags on Monado's hand device (palm toward the face +
+pinch-and-hold, dominant hand — native-openxr-apps §6), beside the `EXT_hand_interaction`
+device; zxr derives them from joints behind the same interface until then (spatial-input §10).
+(b) **batched `update_inputs`** — `xrSyncActions` costs one IPC round trip per static device
+(`state_trackers/oxr/actions/oxr_input.c:2045-2050`; `ipc/client/ipc_client_xdev.c:37-70`); the
+shared-memory inputs the IPC header still documents (`ipc/shared/ipc_protocol.h:251-259`) no
+longer exist. Mura's item: one exchange for all devices (the `xrLocateSpaces` shape) or the
+shared-memory path restored; until then a census line at the M1 input gate.
+
 ## Rationale
 
 - The two decisions that matter — *don't build from it*, *do mine it* — both follow from the same
@@ -235,7 +250,12 @@ the evidence split on; the converging items were acted on under rule 8. The desi
    plane-local coordinates; between planes it is an angular ray from the head until it lands.
 7. **Hand aim/pinch/poke synthesis is the runtime's** (`XR_EXT_hand_interaction` over Monado's
    Mercury joints, `ht_ctrl_emu`'s shape); zxr synthesizes from joints only as a bridge behind
-   the same interface. The perception service produces layers, never input.
+   the same interface. The perception service produces layers, never input. *Extended by
+   research/68 (determination D2, 2026-09-26): the reserved system-gesture recogniser is the
+   runtime's on the same terms — `FB_hand_tracking_aim`-shaped flags, bridged until Monado has
+   them; the placement of the whole module (in-compositor, state loop, one action set as the XR
+   source seam, KWin-ordered stages) is spatial-input §1a's, with two owner items open
+   (research/68 §9.1, §9.2).*
 
 Numbers in the design (pinch hysteresis, hover ramp, near/far band, dwell, eyes→head timeout) are
 stand-ins from the comparables until measured on Mura's trackers; the design marks each.
