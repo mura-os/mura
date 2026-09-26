@@ -572,6 +572,14 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
 - **Shell-plane presentation** — launcher, panels, pager/overview, OSD, notifications UI: all
   downstream of M1's window model and the places implementation; registry status honest
   (missing), by design.
+- **The window manager** — [window-workspace-management.md](window-workspace-management.md)
+  (draft) specifies the in-process default policy and the bounded seam
+  (`protocols/zxr-window-management-v1.xml`, draft rev 0). Order: M1 implements the default
+  manager's placement, `free`/`arc` engines, lifecycle and rigid/lazy-follow over spec §5a's
+  mutation API; the external seam is served once M1 has windows worth managing (ADR 0012
+  amendment) and its six open items (minimize model, default engine, cap, exclusivity, focus
+  hint, disconnect) are ruled; `dock`/`band` engines and emphasis follow the shell clients that
+  need them; adaptive engines only over the seam.
 - **Places implementation** beyond what M1's window model needs; the model is specified
   (ADR 0016) and its protocol drafted (`zxr-workspace-v1`), but residency/currency machinery
   waits for a session that has windows worth organizing.

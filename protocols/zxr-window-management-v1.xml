@@ -1,0 +1,622 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="zxr_window_management_v1">
+  <copyright>
+    Copyright © 2024 Isaac Freund
+    Copyright © 2026 Jarrad Hope
+
+    SPDX-License-Identifier: MIT
+  </copyright>
+
+  <description summary="frame-perfect window management in a spatial compositor">
+    This protocol allows a single window manager client to determine the
+    window management policy of a spatial compositor: which place a window
+    belongs to, its pose within the place, its proposed dimensions, its
+    visibility, and how the members of a place are arranged. State is
+    globally double-buffered so that changes involving several windows land
+    in one frame.
+
+    The compositor keeps the invariants a window manager may not override:
+    the existence and poses of reference frames, the comfort limits every
+    pose is clamped to, the focus rules, the boundary, the perception
+    layers, hit-testing and composition. Requests that would violate a
+    limit are clamped, not rejected, and the applied state is reported.
+
+    Places and frames are those of ext_workspace_v1 and zxr_workspace_v1: a
+    workspace is a place, a workspace group is a frame. This protocol adds
+    no place lifecycle of its own.
+
+    The key words "must", "must not", "required", "shall", "shall not",
+    "should", "should not", "recommended", "may", and "optional" in this
+    document are to be interpreted as described in IETF RFC 2119.
+
+    Warning! The protocol described in this file is currently in the
+    experimental phase. Backward incompatible changes may be added without
+    bumping the major version of the extension. As such, gating usage on the
+    protocol's presence is discouraged outside Mura itself.
+  </description>
+
+  <interface name="zxr_window_manager_v1" version="1">
+    <description summary="window manager global interface">
+      This global interface should only be advertised to the window manager
+      process. Only one window management client may be active at a time;
+      the compositor uses the unavailable event to enforce this.
+
+      Two disjoint categories of state are managed by this protocol.
+
+      Management state influences the communication between the compositor
+      and individual windows: place assignment, proposed dimensions,
+      maximized and fullscreen state, and focus hints. Management state may
+      only be modified as part of a manage sequence, started by the
+      manage_start event and ended by the manage_finish request.
+
+      Rendering state affects only what the compositor presents: poses,
+      visibility, flags, a place's engine and arrangement. Rendering state
+      may be modified during a manage sequence or a render sequence and is
+      applied by the next render_finish request.
+
+      A manage sequence is always followed by at least one render sequence.
+      The compositor starts a manage sequence by sending the changed state
+      followed by manage_start whenever state must be communicated to the
+      window manager, and a render sequence by sending new dimensions
+      followed by render_start whenever a window's dimensions change.
+
+      It is a protocol error to modify management state outside a manage
+      sequence, to modify rendering state outside a manage or render
+      sequence, or to send manage_finish or render_finish out of order;
+      such requests raise the sequence_order error.
+
+      The behaviour of the compositor when the window manager client
+      disconnects is compositor policy.
+    </description>
+
+    <enum name="error">
+      <entry name="sequence_order" value="0"
+             summary="request violates the manage/render sequence ordering"/>
+      <entry name="unresponsive" value="1"
+             summary="window manager did not finish a sequence in time"/>
+      <entry name="invalid_pose" value="2"
+             summary="pose matrix is not a rigid transform or has the wrong length"/>
+      <entry name="invalid_dimensions" value="3"
+             summary="proposed dimensions are negative"/>
+    </enum>
+
+    <enum name="capability" bitfield="true">
+      <description summary="optional manager capabilities">
+        Optional capabilities of the compositor. Requests that require an
+        absent capability are ignored; clients should hide or disable the UI
+        elements that depend on them.
+      </description>
+      <entry name="focus_hint" value="1"
+             summary="zxr_managed_window_v1.focus_hint is honored"/>
+      <entry name="hide" value="2"
+             summary="zxr_managed_window_v1.hide and show are honored"/>
+      <entry name="engine" value="4"
+             summary="zxr_managed_place_v1.set_engine and arrange are honored"/>
+      <entry name="emphasis" value="8"
+             summary="zxr_managed_place_v1.set_emphasis is honored"/>
+      <entry name="exclusive" value="16"
+             summary="zxr_managed_window_v1.grant_exclusive is honored"/>
+    </enum>
+
+    <event name="unavailable">
+      <description summary="window management unavailable">
+        This event indicates that window management is not available to the
+        client, for example because another window management client is
+        already active. If sent, this event is the first and only event sent
+        on this object. The client should destroy this object.
+      </description>
+    </event>
+
+    <event name="capabilities">
+      <description summary="compositor capabilities">
+        This event advertises the compositor's optional capabilities. It is
+        sent once, before the first manage_start event.
+      </description>
+      <arg name="capabilities" type="uint" enum="capability"/>
+    </event>
+
+    <event name="limits">
+      <description summary="the compositor's pose limits">
+        This event states the limits every window pose is clamped to. A
+        set_pose request whose result would place a window closer than
+        min_distance or farther than max_distance from the wearer, or make
+        its apparent width exceed max_angular_size, is clamped to the limit
+        and the clamped pose is reported in zxr_managed_window_v1.state.
+
+        Distances are in metres, angles in degrees. This event is sent once
+        before the first manage_start event and again whenever the limits
+        change.
+      </description>
+      <arg name="min_distance" type="fixed" summary="minimum distance, metres"/>
+      <arg name="max_distance" type="fixed" summary="maximum distance, metres"/>
+      <arg name="max_angular_size" type="fixed"
+           summary="maximum apparent width, degrees"/>
+    </event>
+
+    <request name="stop">
+      <description summary="stop sending events">
+        This request indicates that the client no longer wishes to receive
+        events on this object. The compositor will send a finished event
+        after which no further events are sent.
+      </description>
+    </request>
+
+    <event name="finished">
+      <description summary="the compositor is done with the window manager">
+        This event is sent after the stop request; no further events will be
+        sent on this object or on objects created through it. The client
+        should destroy the object.
+      </description>
+    </event>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the window manager object">
+        Destroy the zxr_window_manager_v1 object. Objects created through
+        this interface become inert.
+      </description>
+    </request>
+
+    <event name="manage_start">
+      <description summary="start a manage sequence">
+        This event starts a manage sequence. All events describing changed
+        management state since the previous sequence have been sent before
+        it. The client may now modify management and rendering state and
+        must end the sequence with manage_finish carrying the same serial.
+      </description>
+      <arg name="serial" type="uint" summary="serial of the sequence"/>
+    </event>
+
+    <request name="manage_finish">
+      <description summary="finish a manage sequence">
+        Finish the manage sequence identified by serial. The compositor
+        applies the management state and sends the new state to the affected
+        windows. Sending this request outside a manage sequence or with a
+        serial other than the current one raises the sequence_order error.
+      </description>
+      <arg name="serial" type="uint" summary="serial from manage_start"/>
+    </request>
+
+    <request name="manage_dirty">
+      <description summary="ensure a manage sequence is started">
+        Ask the compositor to start a manage sequence as soon as possible
+        because the window manager's own state changed. The compositor must
+        send manage_start after this request, possibly after finishing an
+        in-flight render sequence.
+      </description>
+    </request>
+
+    <event name="render_start">
+      <description summary="start a render sequence">
+        This event starts a render sequence. All dimensions events since the
+        previous sequence have been sent before it. The client may now
+        modify rendering state and must end the sequence with render_finish
+        carrying the same serial.
+      </description>
+      <arg name="serial" type="uint" summary="serial of the sequence"/>
+    </event>
+
+    <request name="render_finish">
+      <description summary="finish a render sequence">
+        Finish the render sequence identified by serial. All rendering state
+        modified since the start of the enclosing manage sequence is applied
+        atomically. Sending this request outside a render sequence or with a
+        serial other than the current one raises the sequence_order error.
+      </description>
+      <arg name="serial" type="uint" summary="serial from render_start"/>
+    </request>
+
+    <event name="window">
+      <description summary="new managed window">
+        This event announces a toplevel window that has requested to be
+        mapped. The window is not presented until the window manager has
+        assigned it to a place, the compositor has sent its first dimensions
+        event, and a render sequence has finished.
+      </description>
+      <arg name="id" type="new_id" interface="zxr_managed_window_v1"/>
+    </event>
+
+    <request name="get_place">
+      <description summary="obtain the management extension of a place">
+        Create a zxr_managed_place_v1 object for an ext_workspace_handle_v1.
+        A place has at most one such object; creating a second raises the
+        already_managed error on the new object's interface.
+      </description>
+      <arg name="id" type="new_id" interface="zxr_managed_place_v1"/>
+      <arg name="place" type="object" interface="ext_workspace_handle_v1"
+           summary="the place to manage"/>
+    </request>
+  </interface>
+
+  <interface name="zxr_managed_window_v1" version="1">
+    <description summary="a managed toplevel window">
+      A toplevel window under the window manager's policy. Events describe
+      the window's identity, hints and the requests its client makes;
+      requests set the window's place, pose, dimensions and visibility.
+
+      Dimensions are in the compositor's logical coordinate space and refer
+      to the window content. Poses are 4x4 column-major matrices of binary32
+      values in native endianness, rigid transforms from the window's local
+      space to its place's local space; the window's local origin is the
+      centre of its content plane and its local +z points toward the
+      viewer.
+    </description>
+
+    <enum name="kind">
+      <entry name="plane" value="0" summary="a 2D toplevel presented as a plane"/>
+      <entry name="volume" value="1" summary="a 3D client presented as a volume"/>
+    </enum>
+
+    <enum name="scale_mode">
+      <entry name="angular" value="0"
+             summary="apparent size is held constant across distance"/>
+      <entry name="physical" value="1"
+             summary="metric size is held constant across distance"/>
+    </enum>
+
+    <enum name="flags" bitfield="true">
+      <description summary="policy flags of a window">
+        Flags that tell the compositor how the wearer and the place's engine
+        may treat the window. A window is not draggable unless the draggable
+        flag is set; it is not moved by arrangement unless the managed flag
+        is set; it is excluded from arrangement and recenter if pinned.
+      </description>
+      <entry name="draggable" value="1" summary="the wearer may move it"/>
+      <entry name="managed" value="2" summary="the place's engine may move it"/>
+      <entry name="hoverable" value="4" summary="it receives hover"/>
+      <entry name="pinned" value="8" summary="excluded from arrangement and recenter"/>
+    </enum>
+
+    <enum name="resize_edge" bitfield="true">
+      <entry name="none" value="0"/>
+      <entry name="top" value="1"/>
+      <entry name="bottom" value="2"/>
+      <entry name="left" value="4"/>
+      <entry name="right" value="8"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the managed window object">
+        Destroy the zxr_managed_window_v1 object. The window itself is not
+        affected.
+      </description>
+    </request>
+
+    <event name="kind">
+      <description summary="the window's kind">
+        Sent once before the first manage_start that includes this window.
+      </description>
+      <arg name="kind" type="uint" enum="kind"/>
+    </event>
+
+    <event name="app_id">
+      <description summary="the window's application identifier"/>
+      <arg name="app_id" type="string" summary="application identifier"/>
+    </event>
+
+    <event name="title">
+      <description summary="the window's title"/>
+      <arg name="title" type="string" summary="title"/>
+    </event>
+
+    <event name="parent">
+      <description summary="the window's parent">
+        The window is a transient of parent. A transient window is placed by
+        the compositor relative to its parent and follows it; assign and
+        set_pose requests on a transient window are ignored. A null parent
+        means the window is a toplevel in its own right.
+      </description>
+      <arg name="parent" type="object" interface="zxr_managed_window_v1"
+           allow-null="true" summary="parent window or null"/>
+    </event>
+
+    <event name="dimensions_hint">
+      <description summary="the window's size hints">
+        The minimum and maximum content dimensions the client accepts. A
+        value of zero means no constraint in that dimension.
+      </description>
+      <arg name="min_width" type="int" summary="minimum width"/>
+      <arg name="min_height" type="int" summary="minimum height"/>
+      <arg name="max_width" type="int" summary="maximum width"/>
+      <arg name="max_height" type="int" summary="maximum height"/>
+    </event>
+
+    <event name="dimensions">
+      <description summary="the window's dimensions">
+        The dimensions of the window content. The width and height are
+        strictly greater than zero. This event is sent as part of a render
+        sequence before the render_start event, because of a
+        propose_dimensions request in a previous manage sequence or because
+        the window independently changed its dimensions.
+      </description>
+      <arg name="width" type="int" summary="content width"/>
+      <arg name="height" type="int" summary="content height"/>
+    </event>
+
+    <event name="state">
+      <description summary="the window's applied state">
+        The place and pose the compositor applied after clamping to its
+        limits, and the applied scale mode. A null place means the window is
+        not yet assigned and is not presented. This event is sent as part of
+        a manage sequence before manage_start whenever the applied state
+        differs from the last reported one.
+      </description>
+      <arg name="place" type="object" interface="ext_workspace_handle_v1"
+           allow-null="true" summary="the window's place or null"/>
+      <arg name="pose" type="array"
+           summary="16 binary32 values, column-major, native endianness"/>
+      <arg name="scale_mode" type="uint" enum="scale_mode"/>
+    </event>
+
+    <event name="move_requested">
+      <description summary="the client requested an interactive move">
+        The window's client requested an interactive move with the given
+        serial. The window manager may start a move through the seat or
+        ignore the request.
+      </description>
+      <arg name="serial" type="uint" summary="serial of the client's request"/>
+    </event>
+
+    <event name="resize_requested">
+      <description summary="the client requested an interactive resize"/>
+      <arg name="serial" type="uint" summary="serial of the client's request"/>
+      <arg name="edges" type="uint" enum="resize_edge"/>
+    </event>
+
+    <event name="maximize_requested">
+      <description summary="the client requested to be maximized"/>
+    </event>
+
+    <event name="unmaximize_requested">
+      <description summary="the client requested to be unmaximized"/>
+    </event>
+
+    <event name="fullscreen_requested">
+      <description summary="the client requested fullscreen"/>
+    </event>
+
+    <event name="exit_fullscreen_requested">
+      <description summary="the client requested to leave fullscreen"/>
+    </event>
+
+    <event name="minimize_requested">
+      <description summary="the client requested to be minimized">
+        The compositor defines no minimized state; what the request means is
+        window management policy.
+      </description>
+    </event>
+
+    <event name="exclusive_requested">
+      <description summary="the client requested exclusive presentation">
+        The window's client requested that its scene take the environment
+        layer. Sent only if the compositor advertised the exclusive
+        capability.
+      </description>
+    </event>
+
+    <event name="closed">
+      <description summary="the window has been closed">
+        The compositor will immediately consider the object inert. Any
+        requests will be ignored except the destroy request. There won't be
+        any more events referencing this object.
+      </description>
+    </event>
+
+    <request name="close">
+      <description summary="ask the client to close the window">
+        Ask the window's client to close the window. There is no guarantee
+        that the window will actually be closed.
+      </description>
+    </request>
+
+    <request name="assign">
+      <description summary="assign the window to a place">
+        Make the window a member of place. A window is a member of at most
+        one place; assigning it to another removes it from the previous one.
+        A null place unassigns the window, which is then not presented.
+
+        This request modifies management state and may only be made as part
+        of a manage sequence.
+      </description>
+      <arg name="place" type="object" interface="ext_workspace_handle_v1"
+           allow-null="true" summary="the place or null"/>
+    </request>
+
+    <request name="set_pose">
+      <description summary="set the window's pose within its place">
+        Set the transform from the window's local space to its place's local
+        space. The array must hold exactly 16 binary32 values, column-major,
+        native endianness, forming a rigid transform (rotation and
+        translation only); otherwise the invalid_pose error is raised. The
+        compositor clamps the pose to the limits stated by
+        zxr_window_manager_v1.limits and reports the applied pose in state.
+
+        This request modifies rendering state and may be made as part of a
+        manage or render sequence.
+      </description>
+      <arg name="pose" type="array"
+           summary="16 binary32 values, column-major, native endianness"/>
+    </request>
+
+    <request name="propose_dimensions">
+      <description summary="propose window dimensions">
+        Propose content dimensions for the window. Width and height must be
+        greater than or equal to zero; a zero value lets the window decide
+        that dimension. Negative values raise the invalid_dimensions error.
+        The window may not take the exact dimensions proposed; the actual
+        dimensions are sent in a subsequent dimensions event.
+
+        This request modifies management state and may only be made as part
+        of a manage sequence.
+      </description>
+      <arg name="width" type="int" summary="proposed content width"/>
+      <arg name="height" type="int" summary="proposed content height"/>
+    </request>
+
+    <request name="set_scale_mode">
+      <description summary="set how the window scales with distance">
+        This request modifies rendering state.
+      </description>
+      <arg name="mode" type="uint" enum="scale_mode"/>
+    </request>
+
+    <request name="set_flags">
+      <description summary="set the window's policy flags">
+        This request modifies rendering state.
+      </description>
+      <arg name="flags" type="uint" enum="flags"/>
+    </request>
+
+    <request name="hide">
+      <description summary="stop presenting the window">
+        Stop presenting the window while keeping its place and pose. A hidden
+        window receives no frame callbacks. Ignored unless the hide
+        capability is advertised. This request modifies rendering state.
+      </description>
+    </request>
+
+    <request name="show">
+      <description summary="present the window again">
+        Present a window previously hidden with hide. This request modifies
+        rendering state.
+      </description>
+    </request>
+
+    <request name="set_maximized">
+      <description summary="set the window's maximized state">
+        Set or clear the maximized state communicated to the window's client.
+        The dimensions a maximized window takes are those the window manager
+        proposes; the compositor only informs the client.
+
+        This request modifies management state.
+      </description>
+      <arg name="maximized" type="uint" summary="1 to set, 0 to clear"/>
+    </request>
+
+    <request name="set_fullscreen">
+      <description summary="set the window's fullscreen state">
+        Set or clear the fullscreen state communicated to the window's
+        client. While fullscreen, the compositor sizes the window to fill its
+        place's presentation band and ignores set_pose and
+        propose_dimensions for it.
+
+        This request modifies management state.
+      </description>
+      <arg name="fullscreen" type="uint" summary="1 to set, 0 to clear"/>
+    </request>
+
+    <request name="focus_hint">
+      <description summary="suggest keyboard focus for this window">
+        Suggest that this window receive keyboard focus. The compositor's
+        focus rules decide whether the hint is honored; there is no
+        guarantee that focus changes. Ignored unless the focus_hint
+        capability is advertised. This request modifies management state.
+      </description>
+    </request>
+
+    <request name="grant_exclusive">
+      <description summary="grant or revoke exclusive presentation">
+        Grant the window's client exclusive presentation of the environment
+        layer, or revoke it. At most one window may hold the grant; granting
+        a second revokes the first. The compositor's own layers remain
+        presented and the wearer's recenter gesture ends the grant. Ignored
+        unless the exclusive capability is advertised.
+
+        This request modifies management state.
+      </description>
+      <arg name="granted" type="uint" summary="1 to grant, 0 to revoke"/>
+    </request>
+  </interface>
+
+  <interface name="zxr_managed_place_v1" version="1">
+    <description summary="the management extension of a place">
+      Window-management state of one place: the engine that arranges its
+      members and the emphasis of one member. Membership is conveyed by
+      member_enter and member_leave events; a done event closes each batch of
+      membership changes.
+    </description>
+
+    <enum name="error">
+      <entry name="already_managed" value="0"
+             summary="the place already has a management object"/>
+    </enum>
+
+    <enum name="engine">
+      <entry name="free" value="0" summary="members keep the poses they were given"/>
+      <entry name="arc" value="1" summary="members occupy slots on an arc around the wearer"/>
+      <entry name="dock" value="2" summary="members occupy slots on a bar facing the wearer"/>
+      <entry name="band" value="3" summary="members tile into one curved band"/>
+      <entry name="custom" value="4" summary="the window manager arranges members itself"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the managed place object">
+        Destroy the zxr_managed_place_v1 object. The place and its members are
+        not affected.
+      </description>
+    </request>
+
+    <event name="engine">
+      <description summary="the place's engine">
+        Sent once before the first manage_start that includes this place and
+        whenever the engine changes.
+      </description>
+      <arg name="engine" type="uint" enum="engine"/>
+    </event>
+
+    <event name="member_enter">
+      <description summary="a window became a member of the place"/>
+      <arg name="window" type="object" interface="zxr_managed_window_v1"/>
+    </event>
+
+    <event name="member_leave">
+      <description summary="a window ceased to be a member of the place"/>
+      <arg name="window" type="object" interface="zxr_managed_window_v1"/>
+    </event>
+
+    <event name="done">
+      <description summary="all information about the place has been sent">
+        This event is sent after all changes to the place's state have been
+        sent. This allows changes to the place's membership and engine to be
+        seen as atomic, even if they happen via multiple events.
+      </description>
+    </event>
+
+    <event name="removed">
+      <description summary="the place has been removed">
+        The compositor will immediately consider the object inert. Any
+        requests will be ignored except the destroy request. There won't be
+        any more events referencing this object.
+      </description>
+    </event>
+
+    <request name="set_engine">
+      <description summary="set the place's engine">
+        Set the engine that arranges the place's managed members. With the
+        custom engine the compositor arranges nothing and the window manager
+        sets every member's pose itself. Ignored unless the engine
+        capability is advertised. This request modifies rendering state.
+      </description>
+      <arg name="engine" type="uint" enum="engine"/>
+    </request>
+
+    <request name="arrange">
+      <description summary="arrange the place's members once">
+        Ask the place's engine to arrange its managed, unpinned members once.
+        The resulting poses are reported in each member's state event.
+        Ignored with the custom engine or unless the engine capability is
+        advertised. This request modifies rendering state.
+      </description>
+    </request>
+
+    <request name="set_emphasis">
+      <description summary="emphasize one member of the place">
+        Present window with emphasis: the compositor dims the environment
+        layer and the other members of the place while window is emphasized.
+        A null window ends the emphasis. Ignored unless the emphasis
+        capability is advertised. This request modifies rendering state.
+      </description>
+      <arg name="window" type="object" interface="zxr_managed_window_v1"
+           allow-null="true" summary="the window to emphasize or null"/>
+    </request>
+  </interface>
+</protocol>

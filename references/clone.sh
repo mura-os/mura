@@ -270,6 +270,13 @@ repos=(
   # xwayland-satellite = the out-of-process X11 WM niri and wayvr use (research/59 §9): what it
   # requires of the compositor, what it maps, and where it stops.
   'xwayland-satellite|https://github.com/Supreeeme/xwayland-satellite.git|'
+  # --- window / workspace management study (docs/research/64) ---
+  # flatland = StardustXR's 2D-window manager as a *client* of a server that owns only the graph;
+  # hyprland = the most-used pluggable WM surface today (dispatchers, plugin API);
+  # paperwm = scrollable tiling replacing GNOME's policy as an extension, compositor untouched.
+  'flatland|https://github.com/StardustXR/flatland.git|'
+  'hyprland|https://github.com/hyprwm/Hyprland.git|'
+  'paperwm|https://github.com/paperwm/PaperWM.git|'
 )
 
 mkdir -p .logs

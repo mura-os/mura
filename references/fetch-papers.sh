@@ -7,7 +7,7 @@
 set -u
 
 cd "$(dirname "$0")"
-mkdir -p papers/eye-tracking
+mkdir -p papers/eye-tracking papers/xr-windowing
 
 # name|topic|url  (url = CITE_ONLY:<citation> for paywalled/cite-only entries)
 papers=(
@@ -21,6 +21,16 @@ papers=(
   'guestrin-eizenman-2006-pccr|eye-tracking|CITE_ONLY:Guestrin & Eizenman 2006, "General theory of remote gaze estimation using the pupil center and corneal reflections", IEEE TBME 53(6). doi:10.1109/TBME.2005.863952'
   'dierkes-2018-refraction-eye-model|eye-tracking|CITE_ONLY:Dierkes, Kassner, Bulling 2018, "A novel approach to single camera, glint-free 3D eye model fitting including corneal refraction", ETRA 2018. doi:10.1145/3204493.3204525 (basis of pye3d; see references/pye3d clone)'
   'santini-2018-purest|eye-tracking|CITE_ONLY:Santini, Fuhl, Kasneci 2018, "PuReST: robust pupil tracking for real-time pervasive eye tracking", ETRA 2018. doi:10.1145/3204493.3204578'
+  # --- xr-windowing: window/workspace management in head-worn displays (docs/research/64) ---
+  'ens-2014-ethereal-planes|xr-windowing|https://blog.jhincapie.com/wp-content/uploads/2010/02/2014-ethereal-planes-sui.pdf'
+  'ens-2014-personal-cockpit|xr-windowing|CITE_ONLY:Ens, Finnegan, Irani 2014, "The Personal Cockpit: A Spatial Interface for Effective Task Switching on Head-Worn Displays", CHI 2014. doi:10.1145/2556288.2557058'
+  'lindlbauer-2019-context-aware-mr|xr-windowing|https://3dvar.com/Lindlbauer2019Context.pdf'
+  'cheng-2021-semanticadapt|xr-windowing|https://3dvar.com/Cheng2021SemanticAdapt.pdf'
+  'pavanatto-2021-virtual-monitors|xr-windowing|CITE_ONLY:Pavanatto, North, Bowman, Badea, Stoakley 2021, "Do we still need physical monitors? An evaluation of the usability of AR virtual monitors for productivity work", IEEE VR 2021. doi:10.1109/VR50410.2021.00103'
+  'mcgill-2020-seated-workspaces|xr-windowing|CITE_ONLY:McGill, Kehoe, Freeman, Brewster 2020, "Expanding the Bounds of Seated Virtual Workspaces", ACM TOCHI 27(3). doi:10.1145/3380959'
+  'biener-2022-vr-one-week|xr-windowing|https://arxiv.org/pdf/2206.03189'
+  'feiner-1993-windows-on-the-world|xr-windowing|CITE_ONLY:Feiner, MacIntyre, Haupt, Solomon 1993, "Windows on the World: 2D windows for 3D augmented reality", UIST 1993. doi:10.1145/168642.168657'
+  'robertson-2000-task-gallery|xr-windowing|CITE_ONLY:Robertson, van Dantzich, Robbins, Czerwinski, Hinckley, Risden, Thiel, Gorokhovsky 2000, "The Task Gallery: a 3D window manager", CHI 2000. doi:10.1145/332040.332482'
   'fuhl-2015-excuse|eye-tracking|CITE_ONLY:Fuhl et al. 2015, "ExCuSe: Robust pupil detection in real-world scenarios", CAIP 2015. doi:10.1007/978-3-319-23192-1_4'
 )
 
