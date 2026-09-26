@@ -5,6 +5,7 @@
 //! 2026-09-26). Each tick runs the frame procedure of spec §7 once.
 
 mod control;
+mod input;
 mod journal;
 mod render;
 mod scene;
@@ -136,6 +137,10 @@ fn run() -> Result<(), String> {
     st.frames_limit = args.frames;
     st.journal_path = args.journal.clone();
     st.debug_panels = args.debug_panels;
+    // the input chain (spatial-input §1a): the spine installs the R0 head-ray floor in the seat
+    // slot; the stages replace it as they land
+    st.input.chain.set(input::Slot::Seat, Box::new(input::HeadFloor));
+    tracing::info!(stages = ?st.input.chain.names(), "input chain");
     st.hold = args.hold;
     tracing::info!(debug_panels = ?st.debug_panels, "composition: quads always, projection only with depth content (ADR 0006 amendment 2)");
     tracing::info!(socket = ?st.socket_name, "listening");
@@ -317,7 +322,13 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
             st.journal.locate_spaces_ticks += 1;
         }
     }
-    st.update_gaze_pointer(head);
+    // the input module (spatial-input §1a): presence event → mode stage; the head sample and the
+    // XR action samples through the chain; libinput/EI/injector samples queued since the last tick
+    if let Some(p) = st.xr.presence_event.take() {
+        st.input.set_present(p);
+        st.journal.input_presence_changes += 1;
+    }
+    input::tick(st, head, time, now_ns());
 
     // 2. this frame's slot: wait for its previous submission, release what it sampled
     let slot = (tick.frame_id % 2) as usize;
@@ -737,6 +748,19 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
         Quiet(on) => {
             st.set_quiet(on);
             format!("quiet {}", if on { "on" } else { "off" })
+        }
+        Present(on) => {
+            st.input.set_present(on);
+            st.journal.input_presence_changes += 1;
+            format!("present {}", if on { "on" } else { "off" })
+        }
+        Source(cmd) => {
+            let now = now_ns();
+            let Zxr { input, .. } = &mut *st;
+            match input.injector.apply(&cmd, now, &mut input.queue) {
+                Ok(r) => format!("queued {r}"),
+                Err(e) => format!("error {e}"),
+            }
         }
         Hide(on) => match st.scene.focused {
             Some(id) => {

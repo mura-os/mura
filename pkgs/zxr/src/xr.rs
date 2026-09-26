@@ -54,6 +54,9 @@ pub struct XrCore {
     pub max_layer_count: u32,
     pub session_running: bool,
     pub exit_requested: bool,
+    /// `XR_EXT_user_presence` (`XrEventDataUserPresenceChangedEXT`): the last value the runtime
+    /// reported, taken by `input::tick`; `None` = no event yet (or the extension is absent)
+    pub presence_event: Option<bool>,
     /// per-call latencies (research/63 Phase 0); the loop merges them into the journal
     pub calls: crate::journal::Calls,
     events: xr::EventDataBuffer,
@@ -112,6 +115,9 @@ impl XrCore {
         exts.khr_vulkan_enable2 = true;
         // one round trip for every frame the views do not give (spec §5a); Monado always has it
         exts.khr_locate_spaces = available.khr_locate_spaces;
+        // headset on/off as a session event (spatial-input §1a; Monado reports it from the head
+        // device's HEAD_DETECT input — not on the simulated HMD)
+        exts.ext_user_presence = available.ext_user_presence;
         if overlay.is_some() {
             if !available.extx_overlay {
                 return Err("runtime lacks XR_EXTX_overlay (needed for --overlay)".into());
@@ -264,7 +270,7 @@ impl XrCore {
         }
 
         Ok((
-            XrCore { instance, system, session, stream, space, views, swapchains, color_format, environment_blend: blend, max_layer_count, session_running: false, exit_requested: false, calls: Default::default(), events: xr::EventDataBuffer::new(), handshake, ticks: Some(ticks) },
+            XrCore { instance, system, session, stream, space, views, swapchains, color_format, environment_blend: blend, max_layer_count, session_running: false, exit_requested: false, presence_event: None, calls: Default::default(), events: xr::EventDataBuffer::new(), handshake, ticks: Some(ticks) },
             VkCore { entry: vk_entry, instance: vk_instance, physical, device, queue_family, queue },
         ))
     }
@@ -304,10 +310,20 @@ impl XrCore {
                 }
             } else if let xr::Event::InstanceLossPending(_) = ev {
                 self.exit_requested = true;
+            } else if let xr::Event::UserPresenceChangedEXT(e) = ev {
+                // headset on/off (spatial-input §1a; ADR 0007 doff → blank + grace): an event,
+                // not a source — `input::tick` hands it to the mode stage
+                tracing::info!(present = e.is_user_present(), "user presence");
+                self.presence_event = Some(e.is_user_present());
             }
         }
         Ok(())
     }
+
+    /// The XR side of intake (spatial-input §1a): sync the action set once per tick and push one
+    /// `Sample` per source kind that has state. **Spine stub** — lane D (the action set) fills
+    /// it; until then the only XR source is the head ray `input::tick` builds from the views.
+    pub fn sync_samples(&mut self, _time: xr::Time, _now_ns: u64, _out: &mut Vec<crate::input::Sample>) {}
 
     /// Orderly session exit: `xrRequestExitSession`, then drive the state machine until the
     /// runtime has taken the session out of the running state (STOPPING → `xrEndSession`), so

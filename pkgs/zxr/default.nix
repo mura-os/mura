@@ -1,5 +1,6 @@
 # pkgs/zxr — Mura's compositor, R0 bring-up (specs/zxr-core.md). Rust; smithay (Wayland frontend
-# only, no GL/pixman renderers, no winit, no in-process Xwayland), openxrs on the runtime-created
+# only, no GL/pixman renderers, no winit, no in-process Xwayland; libinput + libseat + libei
+# intake for the input module, spatial-input §1a), openxrs on the runtime-created
 # Vulkan device (XR_KHR_vulkan_enable2), ash for the renderer. Shaders compile at build time
 # with glslc; the OpenXR loader and the Xwayland satellite are baked in by path so the binary
 # needs no environment beyond a runtime's XR_RUNTIME_JSON. Budget fence (spec §12): binary
@@ -9,6 +10,8 @@
 , pkg-config
 , shaderc
 , libxkbcommon
+, libinput
+, seatd
 , openxr-loader
 , vulkan-loader
 , xwayland-satellite
@@ -24,7 +27,7 @@ rustPlatform.buildRustPackage {
     };
   };
   nativeBuildInputs = [ pkg-config shaderc ];
-  buildInputs = [ libxkbcommon ];
+  buildInputs = [ libxkbcommon libinput seatd ];
   GLSLC = "${shaderc.bin}/bin/glslc";
   MURA_OPENXR_LOADER = "${openxr-loader}/lib/libopenxr_loader.so.1";
   MURA_XWAYLAND_SATELLITE = "${xwayland-satellite}/bin/xwayland-satellite";

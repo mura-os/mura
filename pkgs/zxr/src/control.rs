@@ -25,7 +25,35 @@ pub enum Command {
     Quiet(bool),
     /// research/69: hide / show the focused member (window-workspace-management.md "hidden")
     Hide(bool),
+    /// The test-only source injector (spatial-input §1a; plan judgment 1): a synthetic sample
+    /// for one source kind, fed into the input chain at the next tick with `Flags::SYNTHETIC`.
+    /// Monado's simulated controllers never change a value (`simulated_controller.c:96-115`),
+    /// so this is the only way to drive controller/hand/gaze paths on the host.
+    Source(SourceCmd),
+    /// `present on|off`: user presence (`XR_EXT_user_presence`) from the harness
+    Present(bool),
     Unknown(String),
+}
+
+/// `source <kind> <verb> …` — kinds: head gaze hand-left hand-right controller-left
+/// controller-right pointer keyboard.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SourceCmd {
+    /// `pose x y z qx qy qz qw [quality]` — quality: nominal|subnominal|lost (default nominal)
+    Pose { kind: String, pos: [f32; 3], quat: [f32; 4], quality: String },
+    /// `press|release <button>` — select|secondary|middle|menu|back|system|grip|<evdev code>
+    Button { kind: String, button: String, pressed: bool },
+    /// `value <name> <f>` — pinch|aim_activate|grasp|poke
+    Value { kind: String, name: String, value: f32 },
+    /// `delta dx dy` (pointer) or `axis h v [wheel|finger|continuous]`
+    Delta { kind: String, dx: f64, dy: f64 },
+    Axis { kind: String, h: f64, v: f64, source: String },
+    /// `flag <name> on|off` — system_gesture|menu_pressed|dominant
+    Flag { kind: String, name: String, on: bool },
+    /// `joints <26×7 floats>` — hand joints for the bridge (pos xyz, quat xyzw per joint)
+    Joints { kind: String, joints: Vec<f32> },
+    /// `off` — the source is gone (tracking lost / device removed)
+    Off { kind: String },
 }
 
 /// ASCII → evdev keycode on the US layout (letters, digits, space, enter, minus, dot, slash).
@@ -90,7 +118,35 @@ pub fn parse(line: &str) -> Command {
             }
         }
         (Some("spawn"), Some(_)) => Command::Spawn(line.trim_start_matches("spawn").trim().to_string()),
+        (Some("present"), Some(v)) => Command::Present(v == "on" || v == "1"),
+        (Some("source"), Some(kind)) => parse_source(kind, it.collect::<Vec<_>>().as_slice()).map(Command::Source).unwrap_or_else(|| Command::Unknown(line.to_string())),
         _ => Command::Unknown(line.to_string()),
+    }
+}
+
+fn parse_source(kind: &str, rest: &[&str]) -> Option<SourceCmd> {
+    let kind = kind.to_string();
+    let f = |s: &&str| s.parse::<f32>().ok();
+    let d = |s: &&str| s.parse::<f64>().ok();
+    match rest {
+        ["pose", x, y, z, qx, qy, qz, qw, more @ ..] => {
+            let v: Option<Vec<f32>> = [*x, *y, *z, *qx, *qy, *qz, *qw].iter().map(f).collect();
+            let v = v?;
+            let quality = more.first().map(|s| s.to_string()).unwrap_or_else(|| "nominal".into());
+            Some(SourceCmd::Pose { kind, pos: [v[0], v[1], v[2]], quat: [v[3], v[4], v[5], v[6]], quality })
+        }
+        ["press", b] => Some(SourceCmd::Button { kind, button: b.to_string(), pressed: true }),
+        ["release", b] => Some(SourceCmd::Button { kind, button: b.to_string(), pressed: false }),
+        ["value", name, v] => Some(SourceCmd::Value { kind, name: name.to_string(), value: f(v)? }),
+        ["delta", dx, dy] => Some(SourceCmd::Delta { kind, dx: d(dx)?, dy: d(dy)? }),
+        ["axis", h, v, more @ ..] => Some(SourceCmd::Axis { kind, h: d(h)?, v: d(v)?, source: more.first().map(|s| s.to_string()).unwrap_or_else(|| "wheel".into()) }),
+        ["flag", name, on] => Some(SourceCmd::Flag { kind, name: name.to_string(), on: *on == "on" || *on == "1" }),
+        ["joints", vals @ ..] if vals.len() == 26 * 7 => {
+            let v: Option<Vec<f32>> = vals.iter().map(f).collect();
+            Some(SourceCmd::Joints { kind, joints: v? })
+        }
+        ["off"] => Some(SourceCmd::Off { kind }),
+        _ => None,
     }
 }
 
@@ -136,6 +192,27 @@ mod tests {
         assert_eq!(parse("type hello world"), Command::Type("hello world".into()));
         assert!(matches!(parse("resize x y"), Command::Unknown(_)));
         assert!(matches!(parse("bogus"), Command::Unknown(_)));
+    }
+
+    #[test]
+    fn parses_the_injector() {
+        assert_eq!(
+            parse("source hand-left pose 0 1 -1 0 0 0 1"),
+            Command::Source(SourceCmd::Pose { kind: "hand-left".into(), pos: [0.0, 1.0, -1.0], quat: [0.0, 0.0, 0.0, 1.0], quality: "nominal".into() })
+        );
+        assert_eq!(
+            parse("source gaze pose 0 0 0 0 0 0 1 subnominal"),
+            Command::Source(SourceCmd::Pose { kind: "gaze".into(), pos: [0.0; 3], quat: [0.0, 0.0, 0.0, 1.0], quality: "subnominal".into() })
+        );
+        assert_eq!(parse("source controller-right press select"), Command::Source(SourceCmd::Button { kind: "controller-right".into(), button: "select".into(), pressed: true }));
+        assert_eq!(parse("source hand-right value pinch 0.9"), Command::Source(SourceCmd::Value { kind: "hand-right".into(), name: "pinch".into(), value: 0.9 }));
+        assert_eq!(parse("source pointer delta 3 -2"), Command::Source(SourceCmd::Delta { kind: "pointer".into(), dx: 3.0, dy: -2.0 }));
+        assert_eq!(parse("source pointer axis 0 15 wheel"), Command::Source(SourceCmd::Axis { kind: "pointer".into(), h: 0.0, v: 15.0, source: "wheel".into() }));
+        assert_eq!(parse("source hand-left flag system_gesture on"), Command::Source(SourceCmd::Flag { kind: "hand-left".into(), name: "system_gesture".into(), on: true }));
+        assert_eq!(parse("source hand-left off"), Command::Source(SourceCmd::Off { kind: "hand-left".into() }));
+        assert_eq!(parse("present off"), Command::Present(false));
+        assert!(matches!(parse("source hand-left pose 0 1"), Command::Unknown(_)));
+        assert!(matches!(parse("source hand-left joints 1 2 3"), Command::Unknown(_)));
     }
 
     #[test]

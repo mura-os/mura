@@ -132,6 +132,8 @@ pub struct Zxr {
     /// Set by the primary-client observer (libmonado, M1); the control socket toggles it for
     /// measurement.
     pub quiet: bool,
+    /// the input module (spatial-input §1a): the stage chain, the intake queue, presence
+    pub input: crate::input::Input,
     /// research/69: release moment for buffers of non-sampled surfaces (`--debug-hold`)
     pub hold: HoldPolicy,
     /// `HoldPolicy::Tick`: released at the top of the next tick
@@ -363,6 +365,7 @@ impl Zxr {
             last_head_pose: None,
             debug_panels: DebugPanels::default(),
             quiet: false,
+            input: crate::input::Input::default(),
             hold: HoldPolicy::default(),
             held_tick: Vec::new(),
             held_callback: Vec::new(),

@@ -90,6 +90,10 @@ pub struct Journal {
     pub dirty_fallbacks: u64,
     /// ticks that made the batched `xrLocateSpacesKHR` call (only with `Xr` frames present)
     pub locate_spaces_ticks: u64,
+    /// input module (spec §11 rev 3.5): samples through the chain, and how many each slot consumed
+    pub input_samples: u64,
+    pub input_consumed: [u64; 9],
+    pub input_presence_changes: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -218,6 +222,10 @@ impl Journal {
         let _ = writeln!(s, "panel_swapchains_churn_per_s_x100={}", (self.panel_swapchains_created + self.panel_swapchains_destroyed) * 100 / secs);
         let _ = writeln!(s, "dirty_fallbacks={}", self.dirty_fallbacks);
         let _ = writeln!(s, "locate_spaces_ticks={}", self.locate_spaces_ticks);
+        let _ = writeln!(s, "input_samples={}", self.input_samples);
+        let _ = writeln!(s, "input_samples_per_frame_x100={}", self.input_samples * 100 / f);
+        let _ = writeln!(s, "input_consumed_by_slot={}", self.input_consumed.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(","));
+        let _ = writeln!(s, "input_presence_changes={}", self.input_presence_changes);
         s
     }
 }
