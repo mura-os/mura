@@ -224,9 +224,6 @@ impl Journal {
         c.sync_actions.render(&mut s, "sync_actions");
         c.get_action_state.render(&mut s, "get_action_state");
         c.hand_joints.render(&mut s, "hand_joints");
-        c.sync_actions.render(&mut s, "sync_actions");
-        c.get_action_state.render(&mut s, "get_action_state");
-        c.hand_joints.render(&mut s, "hand_joints");
         // GPU structure (research/63 §2): analytic, not measured
         let _ = writeln!(s, "passes_per_frame={}", self.passes_per_frame);
         let _ = writeln!(s, "attachment_bytes_est_per_frame={}", self.attachment_bytes_est);
