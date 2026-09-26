@@ -602,7 +602,7 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   the head-ray stand-in; M1 implements the seat with pointer + keyboard + touch, the tier rule for
   the sources the dev host and first hardware have (head ray, libinput mouse/keyboard, controller
   aim ray, hand aim ray via the zxr-side bridge), focus-on-commit and `xdg-activation`, the
-  cursors, the text-input chain, and measures at its gate the stand-in thresholds, the libinput-event→`xrEndFrame` latency under the research/62 §8 client storm (the input-thread trigger of research/68 §9.1: a dedicated thread for the libinput source only if it exceeds one display period) and `runtime_calls_per_frame` with the action set attached; gaze targeting
+  cursors, the text-input chain, and measures at its gate the stand-in thresholds, the libinput-event→`xrEndFrame` latency under the research/62 §8 client storm (the input-thread trigger of research/68 §9.1: a dedicated thread for the libinput source only if it exceeds one display period; measured with the buffer-hold policy of research/69 §3 in place — release at replacement, so the storm is the client's commit rate, not a hold) and `runtime_calls_per_frame` with the action set attached; gaze targeting
   lands with the first eye-tracking target's Monado driver (research/29: Galaxy XR, Play For
   Dream, Steam Frame); the `XR_EXT_hand_interaction` device in Monado is an upstream item raised
   before M1's hand work so the bridge can delete; 3D-client input (spatial-input §11) is M2's
@@ -660,6 +660,14 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   first run of the real hand matte over a real game on device, with the hands-in-view fraction
   and the per-shape round trip measured. Until then Q-D(b) stands as written and the OSD toggle
   exists under every option.
+- **Frame-path follow-up, host-measurable (from
+  [research/69](../research/69-buffer-hold-policy-for-non-presented-surfaces.md) §4):** the
+  retention of *sampled* buffers to the slot fence (§6.5) against Mesa EGL's roundtrip spin — a
+  composed GPU-bound EGL client at ≈ 1 k fps costs zxr 450 ms/s and 75 k wake-ups/s; wlroots,
+  mutter and KWin release the `wl_buffer` at replacement and fence only the explicit-sync release
+  point. Decided in the frame-path pass that follows research/65, before M1 widens the client mix
+  (GL toolkits are EGL clients). Also from §4.1: whether the frustum gates the panel pass (KWin's
+  paint-time texture work is the candidate shape) — a research pass of its own, ordered after M1.
 
 ### 5.2 Satellite registers (gate detail lives there; order authority lives here)
 

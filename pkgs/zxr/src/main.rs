@@ -27,11 +27,11 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use render::PlaneDraw;
 use scene::{MemberId, M_PER_PX};
-use state::{now_ns, spawn_client, DebugPanels, PanelSwapchain, TexRef, Zxr, PANEL_SHRINK_TICKS};
+use state::{now_ns, spawn_client, DebugPanels, HoldPolicy, PanelSwapchain, TexRef, Zxr, PANEL_SHRINK_TICKS};
 use xr::math;
 use xr::{FrameTick, QuadLayer, XrCore};
 
-const USAGE: &str = "zxr [--socket NAME] [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--debug-panels projection] [--overlay PLACEMENT]\n       zxr ctl SOCKET COMMAND...";
+const USAGE: &str = "zxr [--socket NAME] [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--debug-panels projection] [--debug-hold replacement|tick|callback|fence] [--overlay PLACEMENT]\n       zxr ctl SOCKET COMMAND...";
 
 struct Args {
     socket: Option<String>,
@@ -42,11 +42,12 @@ struct Args {
     drm_node: Option<String>,
     xwayland: Option<String>,
     debug_panels: DebugPanels,
+    hold: HoldPolicy,
     overlay: Option<u32>,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, debug_panels: DebugPanels::Auto, overlay: None };
+    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, debug_panels: DebugPanels::Auto, hold: HoldPolicy::Replacement, overlay: None };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut val = || it.next().ok_or_else(|| format!("{arg} needs a value\n{USAGE}"));
@@ -64,6 +65,15 @@ fn parse_args() -> Result<Args, String> {
                     "auto" => DebugPanels::Auto,
                     "projection" => DebugPanels::Projection,
                     other => return Err(format!("--debug-panels: {other} (auto|projection)")),
+                }
+            }
+            "--debug-hold" => {
+                a.hold = match val()?.as_str() {
+                    "replacement" => HoldPolicy::Replacement,
+                    "tick" => HoldPolicy::Tick,
+                    "callback" => HoldPolicy::Callback,
+                    "fence" => HoldPolicy::Fence,
+                    other => return Err(format!("--debug-hold: {other} (replacement|tick|callback|fence)")),
                 }
             }
             "-h" | "--help" => return Err(USAGE.into()),
@@ -126,6 +136,7 @@ fn run() -> Result<(), String> {
     st.frames_limit = args.frames;
     st.journal_path = args.journal.clone();
     st.debug_panels = args.debug_panels;
+    st.hold = args.hold;
     tracing::info!(debug_panels = ?st.debug_panels, "composition: quads always, projection only with depth content (ADR 0006 amendment 2)");
     tracing::info!(socket = ?st.socket_name, "listening");
 
@@ -314,6 +325,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     st.renderer.wait_slot(slot)?;
     let gpu_ns = if st.journal.last_tick_submitted { st.renderer.read_gpu_time() } else { None };
     st.release_held(slot, tick.frame_id);
+    // research/69 `--debug-hold tick`: buffers of non-sampled surfaces held since the last tick
+    st.release_held_tick(tick.frame_id);
 
     // quiet mode (native-openxr-apps.md §4; spec §7 rev 3.2): the frame-loop round trips and
     // nothing else — no compose, no frustum, no sort, no passes, zero layers.
@@ -323,14 +336,21 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         st.xr.end_frame(time, None)?;
         let now = Duration::from_millis(st.now_ms() as u64);
         let output = st.output.clone();
-        let Zxr { scene, journal, .. } = &mut *st;
-        for (_, m) in scene.iter_mut() {
-            if m.m.mapped() && tick.frame_id.saturating_sub(m.m.last_frame_callback) >= FALLBACK_TICKS {
-                m.m.window.send_frame(&output, now, Some(Duration::ZERO), |_, _| Some(output.clone()));
-                m.m.last_frame_callback = tick.frame_id;
-                journal.frame_callbacks += 1;
-                journal.frame_callbacks_occluded += 1;
+        let mut called_back: Vec<scene::MemberId> = Vec::new();
+        {
+            let Zxr { scene, journal, .. } = &mut *st;
+            for (id, m) in scene.iter_mut() {
+                if m.m.mapped() && tick.frame_id.saturating_sub(m.m.last_frame_callback) >= FALLBACK_TICKS {
+                    m.m.window.send_frame(&output, now, Some(Duration::ZERO), |_, _| Some(output.clone()));
+                    m.m.last_frame_callback = tick.frame_id;
+                    journal.frame_callbacks += 1;
+                    journal.frame_callbacks_occluded += 1;
+                    called_back.push(id);
+                }
             }
+        }
+        for id in called_back {
+            st.release_held_callback(id, tick.frame_id);
         }
         let wake_to_end = now_ns().saturating_sub(tick.woke_at_ns);
         st.journal.record_frame(true, gpu_ns, wake_to_end, wake_to_end > tick.predicted_display_period.as_nanos().max(1) as u64);
@@ -345,7 +365,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     let head_pos = [head.position.x, head.position.y, head.position.z];
     let budget = if st.debug_panels == DebugPanels::Projection { 0 } else { st.quad_budget() };
     let mut submit = std::mem::take(&mut st.scene.submit);
-    st.scene.flatten_into(&mut submit, head_pos, budget, |p| p.mapped());
+    st.scene.flatten_into(&mut submit, head_pos, budget, |p| p.presentable());
     let depth = st.depth_content_present(!submit.overflow.is_empty());
     st.journal.members_composed += (submit.quads.len() + submit.overflow.len()) as u64;
     st.journal.quads_submitted += submit.quads.len() as u64;
@@ -556,6 +576,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     //    waiting on a callback never stalls, but stops driving the GPU at display rate.
     let now = Duration::from_millis(st.now_ms() as u64);
     let output = st.output.clone();
+    let mut called_back: Vec<MemberId> = Vec::new();
     {
         let Zxr { scene, journal, .. } = &mut *st;
         for q in submit.quads.iter().chain(submit.overflow.iter()) {
@@ -572,10 +593,24 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 m.m.window.send_frame(&output, now, Some(Duration::ZERO), |_, _| Some(output.clone()));
                 m.m.last_frame_callback = tick.frame_id;
                 journal.frame_callbacks += 1;
+                called_back.push(q.member);
+            }
+        }
+        // hidden members are not in the flatten: fallback cadence only (research/69 A/B)
+        for (id, m) in scene.iter_mut() {
+            if m.m.mapped() && m.m.hidden && tick.frame_id.saturating_sub(m.m.last_frame_callback) >= FALLBACK_TICKS {
+                m.m.window.send_frame(&output, now, Some(Duration::ZERO), |_, _| Some(output.clone()));
+                m.m.last_frame_callback = tick.frame_id;
+                journal.frame_callbacks += 1;
+                journal.frame_callbacks_occluded += 1;
+                called_back.push(id);
             }
         }
     }
     st.scene.submit = submit;
+    for id in called_back {
+        st.release_held_callback(id, tick.frame_id);
+    }
 
     let wake_to_end = now_ns().saturating_sub(tick.woke_at_ns);
     let period = tick.predicted_display_period.as_nanos().max(1) as u64;
@@ -700,9 +735,24 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
         }
         Journal => st.journal.render(now_ns()).trim_end().to_string(),
         Quiet(on) => {
-            st.quiet = on;
+            st.set_quiet(on);
             format!("quiet {}", if on { "on" } else { "off" })
         }
+        Hide(on) => match st.scene.focused {
+            Some(id) => {
+                if let Some(m) = st.scene.get_mut(id) {
+                    m.m.hidden = on;
+                    // returning to view: the panel must be repainted from the latest buffer
+                    if !on {
+                        m.m.dirty = true;
+                    }
+                }
+                let quiet = st.quiet;
+                st.set_suspended(id, on || quiet);
+                format!("hide {}", if on { "on" } else { "off" })
+            }
+            None => "no focused member".into(),
+        },
         Quit => {
             st.loop_signal.stop();
             "bye".into()

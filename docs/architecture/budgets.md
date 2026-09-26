@@ -98,7 +98,12 @@ per the standing rule when hardware lands. The table is deliberately coarse — 
   three 20 s runs, ±5 ms/s): game alone Monado 32 ms/s GPU; + zxr quiet (0 layers) 37 (fast path
   kept), + 1 quad 37, + 16 quads 52 (≈ 0.02 ms per quad here; Quest publishes 0.1 ms per layer,
   0.6 ms per fullscreen layer on a Quest 2), + a full-view layer 34–45; quiet zxr 8 ms/s CPU +
-  5 ms/s in `monado-service`; session recreation to `FOCUSED` 37–41 ms.
+  5 ms/s in `monado-service`; session recreation to `FOCUSED` 37–41 ms. A client committing
+  while zxr is quiet (research/69 §0, buffers released at replacement): a frame-callback-respecting
+  client 5–8 ms/s at 1 commit/s; a GPU-bound client ignoring them 36 µs of zxr per commit — ≈ 3.6 ms/s
+  per 100 fps, +17 % rate over composed; the trivial-renderer bound 500 ms/s at 29 k commits/s
+  (the client pays 915). A composed GPU-bound Mesa EGL client at ≈ 1 k fps costs 450 ms/s and
+  75 k wake-ups/s through the roundtrip spin of research/69 §4.2 — the frame path's open number.
   (research/65 §2.3). **Analytic device band:** 11 RPCs × 20–60 µs aarch64 socket RTT =
   0.2–0.7 ms of a 90 Hz frame; at 2 × 1832×1920 the projection path stores 28 MB and Monado
   reads 28 MB per frame, 5 GB/s at 90 Hz; a panel blit costs 2 × its bytes per commit.

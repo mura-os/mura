@@ -69,6 +69,12 @@ pub struct Journal {
     pub panels_only_frames: u64,
     /// ticks in quiet mode (a native app primary): zero layers, no passes
     pub quiet_frames: u64,
+    /// research/69: buffers held at commit for surfaces zxr was not sampling (policy != replacement)
+    pub held_unsampled: u64,
+    /// research/69: most client buffers held at once (all lists)
+    pub held_outstanding_max: u64,
+    /// research/69 §3: xdg_toplevel.suspended state changes sent (quiet / hidden)
+    pub suspended_configures: u64,
     /// spec §5a scene counters (§11 rev 3.3)
     pub members_composed: u64,
     pub members_dirty: u64,
@@ -192,6 +198,9 @@ impl Journal {
         let _ = writeln!(s, "projection_layer_frames={}", self.projection_layer_frames);
         let _ = writeln!(s, "panels_only_frames={}", self.panels_only_frames);
         let _ = writeln!(s, "quiet_frames={}", self.quiet_frames);
+        let _ = writeln!(s, "held_unsampled={}", self.held_unsampled);
+        let _ = writeln!(s, "held_outstanding_max={}", self.held_outstanding_max);
+        let _ = writeln!(s, "suspended_configures={}", self.suspended_configures);
         // scene (spec §5a / §11 rev 3.3): per-tick means ×100 where a mean is the useful form
         let f = self.frames.max(1);
         let secs = (now_ns.saturating_sub(self.started_at_ns) / 1_000_000_000).max(1);

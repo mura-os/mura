@@ -265,8 +265,12 @@ replacement makes it worse**, because the only back-pressure such a client feels
 the buffer-hold policy while quiet is a rule 7 question, not a patch — what mutter, KWin,
 weston, gamescope and smithay's own defaults do with the buffers of a surface they are not
 presenting (hold the latest, release on replacement, or release immediately), and *why*, has to
-be read before zxr's shape is chosen. It is recorded as an open item in §9; the FIFO row is the
-one that describes a real game or toolkit, the MAILBOX row is the adversarial bound.
+be read before zxr's shape is chosen. **Closed by [research/69](69-buffer-hold-policy-for-non-presented-surfaces.md)
+§3:** release at replacement stays (eleven of eleven comparables; the protocol; a Mesa EGL client
+held for throttling spams roundtrips and costs 445–554 ms/s against 59), the throttle is frame
+callbacks plus `xdg_toplevel.suspended`, and the number above is a budget note — a GPU-bound
+client's rate is its GPU's (+17 %). The FIFO row is the one that describes a real game or
+toolkit, the MAILBOX row is the adversarial bound.
 
 ## 7. Issue 6 — the summoned shell's footprint
 
@@ -320,10 +324,9 @@ cutout stand-in's cost at panel resolution.
 Determinations: zero layers while quiet, placeholder forbidden (§5); no fast-path-with-overlays
 patch or ask (§2.2); the quiet loop kept, recreation recorded as the alternative (§4); the
 quiet-mode client rule as implemented (§6); the summoned footprint rule (§7); the cutout
-lifetime rule (§3); `libmonado` polled at 1 Hz + on events (§7.3). **Open (rule 7 loop owed,
-no patch):** the buffer-hold policy while quiet — release-at-replacement doubles a
-frame-callback-ignoring dmabuf client's commit rate (§6); the comparables' policies for a
-non-presented surface's buffers, with their reasons, decide zxr's. **Owner item, recorded and
+lifetime rule (§3); `libmonado` polled at 1 Hz + on events (§7.3). **Closed (research/69 §3):**
+the buffer-hold policy while quiet — release at replacement, `xdg_toplevel.suspended`, the
+doubling of §6 a budget note. **Owner item, recorded and
 held** (rule 8; options and costs tabled in §3): the cutout default over games — the owner
 ruled on 2026-09-26 that it is decided on the first device with the real matte pipeline over a
 real game, not on the host stand-ins; the deferral lives in implementation-path §5.1.

@@ -132,6 +132,12 @@ pub struct Zxr {
     /// Set by the primary-client observer (libmonado, M1); the control socket toggles it for
     /// measurement.
     pub quiet: bool,
+    /// research/69: release moment for buffers of non-sampled surfaces (`--debug-hold`)
+    pub hold: HoldPolicy,
+    /// `HoldPolicy::Tick`: released at the top of the next tick
+    pub held_tick: Vec<HeldBuffer>,
+    /// `HoldPolicy::Callback`: released when the member's frame callback is sent
+    pub held_callback: Vec<(MemberId, HeldBuffer)>,
     /// depth-content hooks (spec §7 rev 3): counts of what needs zxr's projection layer. All zero
     /// until M2 (volumes) and the passthrough rung (environment, cutout sources).
     pub volumes_mapped: u32,
@@ -148,6 +154,22 @@ pub enum DebugPanels {
     Auto,
     /// measurement override: every plane drawn in the projection layer, no quads
     Projection,
+}
+
+/// research/69: when the buffer of a surface zxr is *not* sampling (quiet mode, hidden or
+/// unmapped member) is released back to the client. The axis is the release moment; a composed
+/// member's buffers are always held to the fence of the frame that sampled them (§6.5).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum HoldPolicy {
+    /// released by the replacing commit (smithay's default; nothing held)
+    #[default]
+    Replacement,
+    /// released at the next tick
+    Tick,
+    /// released when the member next receives a frame callback (the fallback cadence)
+    Callback,
+    /// held like a sampled buffer: released when this slot's fence completes (two ticks later)
+    Fence,
 }
 
 /// A 2D plane's runtime-owned panel swapchain and the render target over its images. Grow-only:
@@ -180,11 +202,19 @@ pub struct Payload {
     pub mapped_at: u64,
     /// the last tick this member received `wl_surface.frame` (research/65 §4.2)
     pub last_frame_callback: u64,
+    /// window-workspace-management.md: hidden — not rendered, keeps place and pose. Excluded
+    /// from the flatten and the dirty walk; frame callbacks on the fallback cadence (research/69
+    /// A/B; the design's stricter "no frame callbacks" is river's `hide`).
+    pub hidden: bool,
 }
 
 impl Payload {
     pub fn mapped(&self) -> bool {
         self.mapped_at != 0
+    }
+    /// composed this tick when zxr presents: mapped and not hidden
+    pub fn presentable(&self) -> bool {
+        self.mapped() && !self.hidden
     }
     pub fn root(&self) -> Option<WlSurface> {
         self.window.toplevel().map(|t| t.wl_surface().clone())
@@ -333,6 +363,9 @@ impl Zxr {
             last_head_pose: None,
             debug_panels: DebugPanels::default(),
             quiet: false,
+            hold: HoldPolicy::default(),
+            held_tick: Vec::new(),
+            held_callback: Vec::new(),
             volumes_mapped: 0,
             environment_source: false,
             cutout_source: false,
@@ -528,6 +561,92 @@ impl Zxr {
         for h in held {
             self.journal.record_release(frame.saturating_sub(h.since_frame));
             drop(h.buffer);
+        }
+    }
+
+    /// research/69: a commit to a surface zxr will not sample this tick (quiet, or the member is
+    /// hidden / unmapped). Under `Replacement` nothing is held and smithay releases the previous
+    /// buffer now; under the other policies the committed buffer is held until the policy's
+    /// release moment, which is the only back-pressure a client that ignores frame callbacks
+    /// feels. The commit handler is the one place a non-sampled buffer is ever held.
+    pub fn hold_if_not_sampled(&mut self, id: MemberId, surface: &WlSurface) {
+        if self.hold == HoldPolicy::Replacement {
+            return;
+        }
+        let sampled = !self.quiet && self.scene.get(id).map(|m| m.m.presentable()).unwrap_or(false);
+        if sampled {
+            return;
+        }
+        let Some(Some(buffer)) = with_renderer_surface_state(surface, |st| st.buffer().cloned()) else { return };
+        let frame = self.frame_id;
+        self.journal.held_unsampled += 1;
+        let h = HeldBuffer { buffer, since_frame: frame };
+        match self.hold {
+            HoldPolicy::Replacement => unreachable!(),
+            HoldPolicy::Tick => self.held_tick.push(h),
+            HoldPolicy::Callback => self.held_callback.push((id, h)),
+            HoldPolicy::Fence => self.held[self.slot].push(h),
+        }
+        let outstanding = self.held_tick.len() + self.held_callback.len() + self.held[0].len() + self.held[1].len();
+        self.journal.held_outstanding_max = self.journal.held_outstanding_max.max(outstanding as u64);
+    }
+
+    /// research/69 §3: `xdg_toplevel.suspended` (xdg-shell v6: "the surface is currently not
+    /// ordinarily being repainted") is the protocol's word for a plane zxr is not composing —
+    /// quiet mode or a hidden member. KWin sets it on the visibility change
+    /// (`windowitem.cpp:195-203`), mutter 3 s after the window hides (`window.c:110, 2286-2335`);
+    /// zxr sets it immediately (the hysteresis is a flagged judgment, research/69 §3).
+    pub fn set_suspended(&mut self, id: MemberId, on: bool) {
+        let Some(m) = self.scene.get(id) else { return };
+        let Some(t) = m.m.window.toplevel().cloned() else { return };
+        let changed = t.with_pending_state(|s| {
+            let had = s.states.contains(xdg_toplevel::State::Suspended);
+            if on {
+                s.states.set(xdg_toplevel::State::Suspended);
+            } else {
+                s.states.unset(xdg_toplevel::State::Suspended);
+            }
+            had != on
+        });
+        if changed {
+            t.send_pending_configure();
+            self.journal.suspended_configures += 1;
+        }
+    }
+
+    /// Quiet mode on/off: every mapped plane is (un)suspended (spec §7 rev 3.3).
+    pub fn set_quiet(&mut self, on: bool) {
+        self.quiet = on;
+        let ids: Vec<MemberId> = self.scene.iter_mut().filter(|(_, m)| m.m.mapped()).map(|(id, _)| id).collect();
+        for id in ids {
+            let hidden = self.scene.get(id).map(|m| m.m.hidden).unwrap_or(false);
+            self.set_suspended(id, on || hidden);
+        }
+    }
+
+    /// `HoldPolicy::Tick`: the top of a tick releases everything held since the last one.
+    pub fn release_held_tick(&mut self, frame: u64) {
+        let held = std::mem::take(&mut self.held_tick);
+        for h in held {
+            self.journal.record_release(frame.saturating_sub(h.since_frame));
+            drop(h.buffer);
+        }
+    }
+
+    /// `HoldPolicy::Callback`: a member that just received `wl_surface.frame` gets its buffers back.
+    pub fn release_held_callback(&mut self, id: MemberId, frame: u64) {
+        if self.held_callback.is_empty() {
+            return;
+        }
+        let mut i = 0;
+        while i < self.held_callback.len() {
+            if self.held_callback[i].0 == id {
+                let (_, h) = self.held_callback.swap_remove(i);
+                self.journal.record_release(frame.saturating_sub(h.since_frame));
+                drop(h.buffer);
+            } else {
+                i += 1;
+            }
         }
     }
 
@@ -762,6 +881,7 @@ impl CompositorHandler for Zxr {
             };
             window.on_commit();
             self.mark_dirty(id);
+            self.hold_if_not_sampled(id, surface);
             // xdg toplevel: initial configure, then map on first buffer
             if root.as_ref() == Some(surface) {
                 let initial_sent = with_states(surface, |states| states.data_map.get::<XdgToplevelSurfaceData>().unwrap().lock().unwrap().initial_configure_sent);
@@ -852,7 +972,7 @@ impl XdgShellHandler for Zxr {
         // mapped_at 0 = not yet mapped; commit() flips it on the first buffer. Placement is the
         // stand-in fan in the default place (spec §5a) until M1's `free` engine.
         let size = plane_size_of(&window);
-        let payload = Payload { window, panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0 };
+        let payload = Payload { window, panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0, hidden: false };
         let id = self.scene.add_fanned(Shape::Plane { size }, Flags::WINDOW, payload);
         // a new, unmapped toplevel must not steal focus from a mapped one
         if let Some(prev) = self.scene.iter().filter(|(i, m)| *i != id && m.m.mapped()).map(|(i, _)| i).last() {

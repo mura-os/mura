@@ -304,8 +304,9 @@ for a system client; a real `set_focused_client`). The zero-layer bring-up test 
 (research/67 §5). **From research/67:** the cutout default over games (§4(b)) is the owner's
 item, options and costs recorded, decided on device with the real matte; the quiet-mode client rule (no tree walk,
 textures, held buffers or passes for non-presented planes; fallback callbacks only — 20 → 6 ms/s
-under a frame-callback-respecting client; the buffer-hold policy for a client that ignores them
-is open, research/67 §6), the summoned-footprint rule (one panel for the shell's
+under a frame-callback-respecting client; for a client that ignores them the buffers are released
+at replacement and the toplevel is `suspended` — research/69 §3, the comparables' converging shape;
+holding backfires with Mesa EGL clients), the summoned-footprint rule (one panel for the shell's
 own UI, one quad per notification, one for the affordance; surfaces not shown are destroyed,
 not hidden), and the `libmonado` cadence (one `update_client_list` per second while a game is
 primary, plus on the reserved input and on session events) are determinations recorded there.

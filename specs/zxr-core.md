@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 3.3 (2026-09-26; rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3.4 (2026-09-26; rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -198,13 +198,27 @@ submit:  { quads: Vec<QuadEntry>, projection: Vec<DrawItem> }   // per-tick scra
   dirty members only and records one panel pass each (§6.2). Nothing is hashed per tick. This is
   the 2D compositors' damage-from-commit (niri, KWin, mutter — research/65 §4.2's set). When root
   resolution fails the fallback is conservative: every mapped member is marked dirty that tick.
-- **Non-dirty members hold no client buffers.** A `Buffer` clone is taken by the panel pass that
-  samples it and dropped on that pass's slot fence (§6.3); a member whose tree did not commit
-  holds nothing. This is what makes the steady-state tick O(members' poses) rather than
+- **Only a sampled buffer is held.** A `Buffer` clone is taken by the panel pass that samples it
+  and dropped on that pass's slot fence (§6.3); a member whose tree did not commit holds nothing,
+  and — rev 3.4, [research/69](../docs/research/69-buffer-hold-policy-for-non-presented-surfaces.md)
+  §3 — **a member zxr is not composing (quiet mode, hidden, unmapped) holds nothing either**: its
+  committed buffers are released at replacement, the eleven comparables' converging shape and the
+  protocol's ("compositors may release buffers without ever reading from them"). Withholding
+  releases is not zxr's throttle: a Mesa EGL client waiting for a buffer spams roundtrips
+  (`wait_for_free_buffer`), and holding cost 445–554 ms/s against 59 at replacement (research/69
+  §2). The throttle is the protocol's — frame callbacks on the fallback cadence and
+  `xdg_toplevel.suspended` (below). `--debug-hold tick|callback|fence` keeps the alternatives
+  measurable. This is what makes the steady-state tick O(members' poses) rather than
   O(surfaces): a tick that clones a buffer per surface to find out nothing changed costs
   28 ms/s of CPU with 16 static clients (research/67, host).
+- **A member that is not composed is `suspended`.** Its toplevel's configure carries
+  `xdg_toplevel.suspended` (xdg-shell v6 — "the surface is currently not ordinarily being
+  repainted") while zxr is quiet or the member is hidden, cleared on return; set on the state
+  change (KWin `windowitem.cpp:195-203`; mutter's 3 s delay, `window.c:110`, is a flagged
+  judgment, research/69 §3). `Zxr::set_suspended`, `Zxr::set_quiet`; `hidden` is a payload
+  field excluded from the flatten and the dirty walk (`Payload::presentable`).
 - **Panel state lives in the member payload.** `M` is the frontend's production struct — the
-  smithay `Window`, `panel: Option<PanelSwapchain>`, `dirty`, `mapped_at`, `last_frame_callback`
+  smithay `Window`, `panel: Option<PanelSwapchain>`, `dirty`, `mapped_at`, `last_frame_callback`, `hidden` (rev 3.4)
   — and a test struct in tests; `scene` names no Wayland or Vulkan type and the ownership table of
   zxr-architecture.md ("`scene` owns the panel handle") is literally true.
 - **Panel swapchains grow only and shrink lazily.** A swapchain is recreated when the tree's
@@ -370,12 +384,15 @@ game keeps its single-layer fast path, and a transparent placeholder layer is fo
 would put the game in the squasher every frame). Measured (host): ≈ 8 ms/s zxr CPU, 5 RPCs and
 ≈ 10 wake-ups per tick, 0 GPU; a frame-callback-respecting dmabuf client drops zxr from 20 to
 6 ms/s (it idles at the ≈ 1 Hz fallback cadence). A client that ignores frame callbacks is bounded
-only by protocol dispatch, and **the buffer-hold policy while quiet is open** (research/67 §6, §9):
-release-at-replacement doubled such a client's commit rate on the host (290 → 488 ms/s), so the
-policy — hold the latest buffer, release on replacement, or release at once — is chosen from
-the 2D compositors' handling of non-presented surfaces with their reasons, not from this
-measurement alone. The flag is `Zxr::quiet`, set by the primary-client observer (M1) and by the
-control socket's `quiet on|off` for measurement.
+only by protocol dispatch; **rev 3.4 rules the buffer-hold policy while quiet** (§5a;
+[research/69](../docs/research/69-buffer-hold-policy-for-non-presented-surfaces.md) §3): its
+buffers are released at replacement, its toplevel carries `xdg_toplevel.suspended`, and its cost is
+a budget line — the research/67 doubling (290 → 488 ms/s) needs a client whose frame costs less
+than a dispatch; a GPU-bound client's rate is its GPU's (+17 %, 49 ms/s at 1.4 k fps), and holding
+its buffers to throttle it costs 445–554 ms/s with a Mesa EGL client because the blocked client
+spams roundtrips. Quiet on/off goes through `Zxr::set_quiet` (sets the flag and the `suspended`
+state of every mapped plane), called by the primary-client observer (M1) and by the control
+socket's `quiet on|off` for measurement.
 
 **Rev 3.2 — the overlay session.** zxr's session is created with `XrSessionCreateInfoOverlayEXTX`
 chained under the graphics binding (`--overlay PLACEMENT`; openxrs has no builder, the struct is
@@ -501,6 +518,10 @@ harness. **Rev 3.3 — the scene counters** (§5a): members composed and members
 quads submitted and overflow per tick, panel acquires/releases (the inherent per-dirty-panel
 round trips), and panel swapchains created/destroyed — the last pair is what proves the
 grow-only lifecycle (0 per second in a steady session with popups opening and closing).
+**Rev 3.4 — the hold counters** (research/69): `held_unsampled` (buffers held at commit for a
+surface zxr was not sampling — 0 under the ruled `replacement` policy, non-zero only under
+`--debug-hold`), `held_outstanding_max` (most client buffers held at once, the pinned-memory
+bound), `suspended_configures` (`xdg_toplevel.suspended` state changes sent).
 
 ## 12. Conformance — the R0 gates (research/39 §5, measured)
 

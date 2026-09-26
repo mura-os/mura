@@ -23,6 +23,8 @@ pub enum Command {
     Key(u32, Option<bool>),
     Type(String),
     Quiet(bool),
+    /// research/69: hide / show the focused member (window-workspace-management.md "hidden")
+    Hide(bool),
     Unknown(String),
 }
 
@@ -61,6 +63,7 @@ pub fn parse(line: &str) -> Command {
         (Some("journal"), _) => Command::Journal,
         (Some("quit"), _) => Command::Quit,
         (Some("quiet"), Some(v)) => Command::Quiet(v == "on" || v == "1"),
+        (Some("hide"), Some(v)) => Command::Hide(v == "on" || v == "1"),
         (Some("close"), _) => Command::Close,
         (Some("key"), Some(code)) => match code.parse() {
             Ok(code) => Command::Key(
