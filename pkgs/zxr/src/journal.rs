@@ -15,6 +15,8 @@ pub struct Journal {
     pub shm_uploads: u64,
     pub dmabuf_imports: u64,
     pub dmabuf_cpu_copies: u64,
+    pub acquire_syncobj: u64,
+    pub acquire_implicit: u64,
     pub buffers_released: u64,
     pub retention_frames_total: u64,
     pub retention_frames_max: u64,
@@ -66,6 +68,8 @@ impl Journal {
         let _ = writeln!(s, "shm_uploads={}", self.shm_uploads);
         let _ = writeln!(s, "dmabuf_imports={}", self.dmabuf_imports);
         let _ = writeln!(s, "dmabuf_cpu_copies={}", self.dmabuf_cpu_copies);
+        let _ = writeln!(s, "acquire_syncobj={}", self.acquire_syncobj);
+        let _ = writeln!(s, "acquire_implicit={}", self.acquire_implicit);
         let _ = writeln!(s, "buffers_released={}", self.buffers_released);
         let _ = writeln!(s, "retention_frames_mean_x100={}", if self.buffers_released > 0 { self.retention_frames_total * 100 / self.buffers_released } else { 0 });
         let _ = writeln!(s, "retention_frames_max={}", self.retention_frames_max);

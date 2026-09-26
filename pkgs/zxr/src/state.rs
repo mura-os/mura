@@ -103,8 +103,10 @@ pub struct Zxr {
     pub dmabuf_textures: HashMap<ObjectId, (Texture, wl_buffer::WlBuffer)>,
     pub pending_dmabufs: HashMap<ObjectId, Dmabuf>,
 
-    pub xr: XrCore,
+    /// declared before `xr`: fields drop in order, and the renderer's views of the swapchain
+    /// images must go before the runtime frees the images (teardown, `Drop for Zxr`)
     pub renderer: Renderer,
+    pub xr: XrCore,
     pub frame_id: u64,
     pub slot: usize,
     /// buffers each frame slot's last submission sampled; released after that slot's fence
@@ -113,6 +115,8 @@ pub struct Zxr {
     pub frames_limit: Option<u64>,
     pub journal_path: Option<std::path::PathBuf>,
     pub children: Vec<Child>,
+    /// xwayland-satellite's pid when spawned: its toplevels are the X11 ones (gate 4)
+    pub satellite_pid: Option<u32>,
     pub pointer_focus: Option<WlSurface>,
     pub last_head_pose: Option<openxr::Posef>,
 }
@@ -246,9 +250,29 @@ impl Zxr {
             frames_limit: None,
             journal_path: None,
             children: Vec::new(),
+            satellite_pid: None,
             pointer_focus: None,
             last_head_pose: None,
         })
+    }
+
+    /// Synthesised keyboard input through the seat (the harness's `key`/`type`): evdev code →
+    /// xkb keycode (+8), forwarded to the focused surface like any device key.
+    pub fn send_key(&mut self, evdev: u32, pressed: bool) {
+        use smithay::backend::input::KeyState;
+        use smithay::input::keyboard::{FilterResult, Keycode};
+        let kb = self.seat.get_keyboard().unwrap();
+        let serial = SERIAL_COUNTER.next_serial();
+        let time = smithay::backend::input::InputTime::now();
+        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
+        kb.input::<(), _>(self, Keycode::new(evdev + 8), state, serial, time, |_, _, _| FilterResult::Forward);
+    }
+
+    fn client_is_satellite(&self, surface: &WlSurface) -> bool {
+        match (self.satellite_pid, surface.client()) {
+            (Some(pid), Some(client)) => client.get_credentials(&self.dh).map(|c| c.pid as u32 == pid).unwrap_or(false),
+            _ => false,
+        }
     }
 
     pub fn window_for_root(&self, root: &WlSurface) -> Option<&Window> {
@@ -421,6 +445,33 @@ pub enum TexRef {
     Surface(ObjectId),
 }
 
+impl Drop for Zxr {
+    /// Teardown order (spec §9 restart contract): GPU idle → held client buffers released →
+    /// textures destroyed on the still-live device → then the fields drop: renderer (its views
+    /// of the swapchain images) before `xr` (the session that owns those images).
+    fn drop(&mut self) {
+        // SAFETY: idle the queue before destroying anything the frames referenced
+        unsafe {
+            let _ = self.renderer.device.device_wait_idle();
+        }
+        for slot in 0..self.held.len() {
+            self.held[slot].clear();
+        }
+        for (_, e) in self.surface_tex.drain() {
+            if let Some(t) = e.texture {
+                self.renderer.destroy_texture(t);
+            }
+        }
+        for (_, (t, _)) in self.dmabuf_textures.drain() {
+            self.renderer.destroy_texture(t);
+        }
+        for c in &mut self.children {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+}
+
 pub fn now_ns() -> u64 {
     let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
     // SAFETY: plain clock_gettime into a stack struct.
@@ -476,10 +527,12 @@ impl CompositorHandler for Zxr {
                         .is_ok()
                     {
                         add_blocker(surface, blocker);
+                        state.journal.acquire_syncobj += 1;
                         return;
                     }
                 }
             }
+            state.journal.acquire_implicit += 1;
             if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
                 if state
                     .loop_handle
@@ -523,8 +576,7 @@ impl CompositorHandler for Zxr {
             } else if self.scene.planes[idx].mapped_at_frame == 0 && with_renderer_surface_state(surface, |st| st.buffer().is_some()).unwrap_or(false) {
                 self.scene.planes[idx].mapped_at_frame = self.frame_id.max(1);
                 self.journal.toplevels_mapped += 1;
-                let is_x11 = with_states(surface, |states| states.data_map.get::<XdgToplevelSurfaceData>().unwrap().lock().unwrap().app_id.as_deref().map(|a| a.starts_with("xwayland") || a.is_empty()).unwrap_or(false));
-                if is_x11 {
+                if self.client_is_satellite(surface) {
                     self.journal.xwayland_toplevels += 1;
                 }
                 self.focus_window(Some(idx));
@@ -682,8 +734,21 @@ smithay::delegate_dispatch2!(Zxr);
 
 /// Spawn a client with `WAYLAND_DISPLAY` (and `DISPLAY` if given) set.
 pub fn spawn_client(cmd: &str, wayland_display: &OsString, x_display: Option<&str>) -> std::io::Result<Child> {
+    use std::os::unix::process::CommandExt;
     let mut c = std::process::Command::new("/bin/sh");
     c.arg("-c").arg(cmd).env("WAYLAND_DISPLAY", wayland_display).env_remove("WAYLAND_SOCKET");
+    // SAFETY: async-signal-safe calls only; undoes the loop's signal block for the child.
+    unsafe {
+        c.pre_exec(|| {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            for s in [libc::SIGTERM, libc::SIGINT, libc::SIGUSR1] {
+                libc::sigaddset(&mut set, s);
+            }
+            libc::pthread_sigmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut());
+            Ok(())
+        });
+    }
     match x_display {
         Some(d) => {
             c.env("DISPLAY", d);

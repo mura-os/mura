@@ -257,6 +257,28 @@ impl XrCore {
         Ok(())
     }
 
+    /// Orderly session exit: `xrRequestExitSession`, then drive the state machine until the
+    /// runtime has taken the session out of the running state (STOPPING → `xrEndSession`), so
+    /// the wait thread is parked on the handshake, not inside the runtime, when handles drop.
+    pub fn shutdown(&mut self) {
+        if !self.session_running {
+            return;
+        }
+        if let Err(e) = self.session.request_exit() {
+            tracing::warn!("xrRequestExitSession: {e}");
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        while self.session_running && std::time::Instant::now() < deadline {
+            if self.poll_events().is_err() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        if self.session_running {
+            tracing::warn!("session still running after exit request; tearing down anyway");
+        }
+    }
+
     /// `xrBeginFrame`, then release the wait thread for the next `xrWaitFrame`.
     pub fn begin_frame(&mut self, tick: &FrameTick) -> Result<(), String> {
         self.stream.begin().map_err(|e| format!("xrBeginFrame: {e}"))?;

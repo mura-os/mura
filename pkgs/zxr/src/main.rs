@@ -80,6 +80,18 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let args = parse_args()?;
+    // Block the signals the loop handles *before* any thread exists (the wait thread, Mesa's
+    // workers inherit the mask): otherwise the kernel may deliver SIGTERM to a thread without
+    // the signalfd and the default action kills the process before the journal is written.
+    // SAFETY: plain sigset manipulation on the main thread at startup.
+    unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        for s in [libc::SIGTERM, libc::SIGINT, libc::SIGUSR1] {
+            libc::sigaddset(&mut set, s);
+        }
+        libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
+    }
     let loader = std::env::var("ZXR_OPENXR_LOADER").ok().or_else(|| option_env!("MURA_OPENXR_LOADER").map(String::from)).unwrap_or_else(|| "libopenxr_loader.so.1".into());
 
     let (mut xr, vk) = XrCore::new(&loader, "zxr")?;
@@ -158,7 +170,8 @@ fn run() -> Result<(), String> {
         let bin = option_env!("MURA_XWAYLAND_SATELLITE").unwrap_or("xwayland-satellite");
         match spawn_client(&format!("exec {bin} {disp}"), &st.socket_name, None) {
             Ok(c) => {
-                tracing::info!(display = %disp, "xwayland-satellite spawned");
+                tracing::info!(display = %disp, pid = c.id(), "xwayland-satellite spawned");
+                st.satellite_pid = Some(c.id());
                 st.children.push(c);
             }
             Err(e) => tracing::warn!("xwayland-satellite: {e}"),
@@ -180,10 +193,9 @@ fn run() -> Result<(), String> {
     if let Some(p) = &st.journal_path {
         let _ = std::fs::write(p, &journal);
     }
-    for c in &mut st.children {
-        let _ = c.kill();
-        let _ = c.wait();
-    }
+    // orderly exit: session out of the running state first, then `Drop for Zxr` orders the rest
+    st.xr.shutdown();
+    drop(st);
     let _ = std::fs::remove_file(&control_path);
     res.map_err(|e| e.to_string())
 }
@@ -382,6 +394,27 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             }
             None => "no focus".into(),
         },
+        Key(code, state) => {
+            match state {
+                Some(pressed) => st.send_key(code, pressed),
+                None => {
+                    st.send_key(code, true);
+                    st.send_key(code, false);
+                }
+            }
+            format!("key {code}")
+        }
+        Type(text) => {
+            let mut n = 0;
+            for c in text.chars() {
+                if let Some(code) = control::ascii_keycode(c) {
+                    st.send_key(code, true);
+                    st.send_key(code, false);
+                    n += 1;
+                }
+            }
+            format!("typed {n}")
+        }
         Spawn(cmd) => match spawn_client(&cmd, &st.socket_name, None) {
             Ok(c) => {
                 let pid = c.id();

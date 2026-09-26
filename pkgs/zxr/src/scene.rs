@@ -94,24 +94,10 @@ impl Scene {
         let dir = math::rotate(pose.orientation, [0.0, 0.0, -1.0]);
         let mut best: Option<(f32, usize, [f32; 2])> = None;
         for (i, p) in self.planes.iter().enumerate() {
-            // into plane space: translate by -pos, rotate by -yaw about Y
-            let o = [origin[0] - p.pos[0], origin[1] - p.pos[1], origin[2] - p.pos[2]];
-            let (s, c) = (-p.yaw).sin_cos();
-            let rot = |v: [f32; 3]| [c * v[0] - s * v[2], v[1], s * v[0] + c * v[2]];
-            let o = rot(o);
-            let d = rot(dir);
-            if d[2].abs() < 1e-5 {
-                continue;
-            }
-            let t = -o[2] / d[2];
-            if t <= 0.0 {
-                continue;
-            }
-            let hx = o[0] + d[0] * t;
-            let hy = o[1] + d[1] * t;
-            let [hw, hh] = p.half_size();
-            if hx.abs() <= hw && hy.abs() <= hh && best.map(|b| t < b.0).unwrap_or(true) {
-                best = Some((t, i, [hx, hy]));
+            if let Some((t, local)) = ray_plane(origin, dir, p.pos, p.yaw, p.half_size()) {
+                if best.map(|b| t < b.0).unwrap_or(true) {
+                    best = Some((t, i, local));
+                }
             }
         }
         let (_, i, local) = best?;
@@ -119,5 +105,68 @@ impl Scene {
         let logical = p.local_to_logical(local);
         let (surface, loc) = p.window.surface_under(logical, WindowSurfaceType::ALL)?;
         Some((i, surface, logical - loc.to_f64()))
+    }
+}
+
+/// Ray (origin, unit-ish direction) against a plane at `pos` yawed about Y by `yaw`, extents
+/// `half` — returns the distance and the plane-local hit point, or None if missed / behind.
+pub fn ray_plane(origin: [f32; 3], dir: [f32; 3], pos: [f32; 3], yaw: f32, half: [f32; 2]) -> Option<(f32, [f32; 2])> {
+    // into plane space: translate by -pos, rotate by -yaw about Y
+    let o = [origin[0] - pos[0], origin[1] - pos[1], origin[2] - pos[2]];
+    let (s, c) = (-yaw).sin_cos();
+    let rot = |v: [f32; 3]| [c * v[0] - s * v[2], v[1], s * v[0] + c * v[2]];
+    let o = rot(o);
+    let d = rot(dir);
+    if d[2].abs() < 1e-5 {
+        return None;
+    }
+    let t = -o[2] / d[2];
+    if t <= 0.0 {
+        return None;
+    }
+    let hx = o[0] + d[0] * t;
+    let hy = o[1] + d[1] * t;
+    if hx.abs() <= half[0] && hy.abs() <= half[1] {
+        Some((t, [hx, hy]))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ray_hits_centre_of_facing_plane() {
+        let (t, local) = ray_plane([0.0; 3], [0.0, 0.0, -1.0], [0.0, 0.0, PLANE_DISTANCE], 0.0, [0.5, 0.3]).unwrap();
+        assert!((t - 1.5).abs() < 1e-5);
+        assert!(local[0].abs() < 1e-5 && local[1].abs() < 1e-5);
+    }
+
+    #[test]
+    fn ray_misses_outside_extents_and_behind() {
+        assert!(ray_plane([0.0; 3], [0.0, 0.0, -1.0], [1.0, 0.0, PLANE_DISTANCE], 0.0, [0.5, 0.3]).is_none());
+        assert!(ray_plane([0.0; 3], [0.0, 0.0, 1.0], [0.0, 0.0, PLANE_DISTANCE], 0.0, [0.5, 0.3]).is_none());
+    }
+
+    #[test]
+    fn yawed_plane_is_hit_where_it_actually_is() {
+        // plane at x = 0.9, yawed −0.35 rad toward the viewer (the fan's second slot): a ray aimed
+        // at its centre hits at local (0, 0)
+        let pos = [0.9, 0.0, PLANE_DISTANCE];
+        let dir = {
+            let l = (pos[0] * pos[0] + pos[2] * pos[2]).sqrt();
+            [pos[0] / l, 0.0, pos[2] / l]
+        };
+        let (_, local) = ray_plane([0.0; 3], dir, pos, -0.35, [0.5, 0.3]).unwrap();
+        assert!(local[0].abs() < 1e-4 && local[1].abs() < 1e-4);
+    }
+
+    #[test]
+    fn fan_alternates_sides() {
+        // the placement rule as data: slot n → x = ±0.9·ceil(n/2), yaw toward the viewer
+        let slots: Vec<i32> = (0..5).map(|n: i32| (n + 1) / 2 * if n % 2 == 1 { 1 } else { -1 }).collect();
+        assert_eq!(slots, vec![0, 1, -1, 2, -2]);
     }
 }
