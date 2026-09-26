@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 3.2 (2026-09-26; rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3.3 (2026-09-26; rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -8,7 +8,7 @@ amendments). Normative for `pkgs/zxr`. Its conformance checklist (§12) *is* the
 spike; **rev 2 records what R0 taught** ([research/61](../docs/research/61-r0-bring-up-results.md)
 §6): the runtime-event timer (§7), the signal mask and teardown order (§9), both acquire paths
 exercised (§6.3), the fast client's per-commit cost (§6.4), the RSS fence's host caveat (§12),
-and the measured values beside each gate (§12). The scene data model of §5a stays **draft**.
+and the measured values beside each gate (§12). The scene data model of §5a is normative from rev 3.3.
 **Design sources:** ADR 0006 (the model, the base), ADR 0007 (greeter/lock mode), ADR 0012 (the
 seams), composition §7 (the MVP, constraints 1–9, milestones), [places-model.md](../docs/architecture/places-model.md),
 [session-bootstrap.md](session-bootstrap.md) rev 3 (the unit contract), [session-auth.md](session-auth.md)
@@ -77,7 +77,7 @@ flowchart LR
 | `frontend` | smithay `wayland_frontend`: globals, `xdg-shell`, layer-shell, seat, dmabuf feedback, syncobj, the M1 protocol set (§10) | renders; decides placement |
 | `xr` | openxrs: instance, system, session on the runtime-created Vulkan device, reference spaces, swapchains, the wait thread, `xrLocateViews` | touches Wayland state |
 | `render` | ash: the device from `xrCreateVulkanDeviceKHR`, dmabuf → `VkImage` import with modifiers, shm upload, the scene pass (planes, then 3D clients' colour+depth at M2) into the runtime's swapchain images, timestamps | owns buffers' lifetime (the scene does) |
-| `scene` | the layer model (§4), the frame graph and places boundary (§5), window/plane state, stacking, the depth sort, buffer references and release-point signalling | protocol objects |
+| `scene` | the layer model (§4), the frame graph and places boundary (§5), the three arenas and their mutation API (§5a), stacking, per-member panel handle and dirty state, the per-tick layer list, buffer references and release-point signalling | protocol objects; Vulkan and Wayland types (the member payload is the frontend's) |
 | `input` | the ray from head/hand pose or the dev pointer → plane hit → `wl_pointer`/`wl_keyboard`/touch through the seat; the input floor (head-aim + `hmdButtons.<selectRole>`, dwell); 6DoF events for 3D clients at M2 | policy about focus (scene's) |
 | `policy` | window-management policy in-process (ADR 0012 §2, amended), specified in [window-workspace-management.md](../docs/architecture/window-workspace-management.md) (draft): placement and sizing over the scene's mutation API (§5a) — head-relative spawn below the eye line, siblings offset, apps never place themselves; the one in-process layer-3 engine (`free`, angular-slot spawn and tidy — ruled minimal; `arc`/`dock`/`band` are shipped default external managers over the seam) with one-shot `arrange`; lifecycle states (hidden / maximized / fullscreen; minimize is policy, never a compositor state); layer-2 attachment defaults (rigid; opt-in lazy-follow with threshold/hysteresis/rate; billboard while moving); emphasis; reads its keys from `org.mura.Settings1`. Its external face is `protocols/zxr-window-management-v1.xml` (draft): the same verbs on the wire, river's manage/render sequences, proposals clamped to `limits` | authority (focus rules, boundary, frames, comfort limits, perception layers — the compositor's, reported to the manager, never delegated) |
 | `modes` | `--greeter`/lock restricted scene (ADR 0007, session-auth §2–§5): no listening socket, the auth scene, `mura-authd` over a seqpacket pair; normal mode | PAM |
@@ -140,11 +140,15 @@ head frame and a fixed layout; the pager and place transitions are shell clients
 runtime owns recentering (LOCAL's origin); the compositor owns currency and which frame a plane
 attaches to.
 
-### 5a. The scene data model (DRAFT, 2026-09-26 — from research/62; enters rev 2 as normative)
+### 5a. The scene data model (normative from rev 3.3, 2026-09-26 — research/62 §7, reconciled with §4 rev 3)
 
-**Status: work in progress.** Derived in [research/62](../docs/research/62-scene-data-model-from-comparables.md)
-from fourteen comparables (§6 verdicts) and the embedded/runtime-proximity analysis of §7; the
-owner has seen the shape and asked for it to be recorded as draft. Stand-ins are marked.
+**Status: normative.** Derived in [research/62](../docs/research/62-scene-data-model-from-comparables.md)
+from fourteen comparables (§6 verdicts) and the embedded/runtime-proximity analysis of §7,
+endorsed independently by the frame-path pass (research/65's recommendation), and rewritten here
+for the composition ruling (§4 rev 3: 2D planes are runtime quad layers rendered on commit; the
+projection layer exists only with depth content). The draft of the same day described the
+flatten's output as a per-tick draw list for a projection layer "re-rendered every frame" — that
+premise no longer holds for bands 2–5 and the text below replaces it. Stand-ins are marked.
 
 **The hierarchy is fixed-depth, not a general tree.** The places model fixes it: layer → frame →
 place → window (→ transient children). Places do not nest; a window has one place (ADR 0016
@@ -154,43 +158,94 @@ is a space the runtime locates *directly against the session's base space*. So `
 **three typed arenas with generational handles**, not a node graph:
 
 ```
-frames:  Vec<Frame>  { space: Xr(xr::Space) | Service(anchor)  // Service = M1 anchors before the EXT family (spatial-mapping §11)
-                       kind, pose: Posef /* in LOCAL */, valid: bool }
-places:  Vec<Place>  { frame: FrameId, local: Posef, layer: u8, layout, entry, pin: Option<AnchorUuid + name> }
-members: Vec<Member<M>> { place: PlaceId, local: Posef, shape: Plane{size} | Volume{half_size, clip}, flags, m: M }
-draw:    [Vec<DrawItem>; LAYERS]   // per-tick scratch, reused; DrawItem { world: Mat4, half_size, tex, z_view }
+frames:  Arena<Frame>     { space: Base | Xr(xr::Space) | Service(anchor) | Views,
+                            kind, pose: Posef /* in LOCAL */, valid: bool }
+places:  Arena<Place>     { frame: FrameId, local: Posef, band: u8 /* §4 band 1–6 */, layout, entry,
+                            pin: Option<AnchorUuid + name> }
+members: Arena<Member<M>> { place: PlaceId, local: Posef, shape: Plane{size_m} | Volume{half_size, clip},
+                            flags, m: M }
+submit:  { quads: Vec<QuadEntry>, projection: Vec<DrawItem> }   // per-tick scratch, reused
 ```
 
 - **Poses, not matrices**, as the stored form: the runtime speaks `XrPosef` (28 B); rigid
-  composition is a quaternion multiply and a rotate; matrices are built once per draw item per
-  view.
-- **Frames are located in one call**: `xrLocateSpaces` (Monado: one IPC exchange for all spaces,
-  `ipc_client_space_overseer.c:161-195`, vs one per `xrLocateSpace`, `:135-157`). Until the
-  `XR_EXT_spatial_entity` family exists in Monado (spatial-mapping §11 M4), M1 anchors arrive from
-  the mapping service as poses in LOCAL — the `Service` arm; one extra query per tick.
-- **Layers are the ordered buckets** (§4), not a sort key on nodes; within a bucket draw items
-  are sorted back-to-front by view-space z (planes alpha-blend — CSD shadows — so painter's order
-  within a layer is required). The environment and foreground buckets hold the perception
-  service's per-eye images/mattes and are never traversed (research/62 §3.5).
+  composition is a quaternion multiply and a rotate (`world = frame.pose ∘ place.local ∘
+  member.local`); matrices are built only where a pass needs one.
+- **Frames are located in one call, and only when needed.** `Base` (LOCAL) is the identity;
+  `Views` (VIEW) is the midpoint of the two `xrLocateViews` poses the tick already has — no
+  extra round trip. Every `Xr` frame beyond those (hands, STAGE, anchors — M1) is located by one
+  `xrLocateSpacesKHR` for the whole array (Monado: one IPC exchange for all spaces,
+  `ipc_client_space_overseer.c:161-195`, vs one per `xrLocateSpace`, `:135-157`; the extension is
+  always enabled in Monado, `oxr_extension_support.py:60`). **The call exists only when such a
+  frame exists.** Until the `XR_EXT_spatial_entity` family exists in Monado (spatial-mapping §11
+  M4), M1 anchors arrive from the mapping service as poses in LOCAL — the `Service` arm; one
+  extra query per tick.
+- **The per-tick output is a layer list, not a draw list.** Every mapped member of bands 2–5
+  becomes one `QuadEntry` (its panel swapchain, world pose, size in metres); members of band 1,
+  3D volumes in band 3 and band 6 become `DrawItem`s for the projection pass, which exists only
+  when that list is non-empty (§7 predicate). Quads are ordered **band ascending, then
+  nearest-last within a band** — submission order is composition order (`rendering.adoc:1143-1147`)
+  and planes alpha-blend (CSD shadows), so painter's order within a band is required.
+- **The quad budget is allotted by band priority.** `maxLayerCount − 1` quads (one reserved for
+  the projection layer) go to band 5 first, then 4, 3, 2, nearest-first within a band; members
+  past the budget are drawn in the projection layer that frame, which then exists. This follows
+  from §4's ordering — an overflowed overlay-band plane drawn in the projection layer would sit
+  *behind* every window quad — and replaces a global nearest-first rule. On Monado the budget is
+  moot below the cap (a second layer already puts the runtime in the squasher, research/65 §2.1);
+  it bites at Android-class caps (32), where pre-composed popups keep the count down.
+- **Dirtiness is commit-driven.** The frontend's commit handler resolves the committing surface
+  to its root member (the subsurface parent chain, depth ≤ 3; a popup to its parent toplevel
+  through smithay's `PopupManager`) and sets `member.dirty`; the tick walks the surface tree of
+  dirty members only and records one panel pass each (§6.2). Nothing is hashed per tick. This is
+  the 2D compositors' damage-from-commit (niri, KWin, mutter — research/65 §4.2's set). When root
+  resolution fails the fallback is conservative: every mapped member is marked dirty that tick.
+- **Non-dirty members hold no client buffers.** A `Buffer` clone is taken by the panel pass that
+  samples it and dropped on that pass's slot fence (§6.3); a member whose tree did not commit
+  holds nothing. This is what makes the steady-state tick O(members' poses) rather than
+  O(surfaces): a tick that clones a buffer per surface to find out nothing changed costs
+  28 ms/s of CPU with 16 static clients (research/67, host).
+- **Panel state lives in the member payload.** `M` is the frontend's production struct — the
+  smithay `Window`, `panel: Option<PanelSwapchain>`, `dirty`, `mapped_at`, `last_frame_callback`
+  — and a test struct in tests; `scene` names no Wayland or Vulkan type and the ownership table of
+  zxr-architecture.md ("`scene` owns the panel handle") is literally true.
+- **Panel swapchains grow only and shrink lazily.** A swapchain is recreated when the tree's
+  bounds *exceed* its extent; while the bounds shrink (a popup closed) the larger image is kept
+  and the quad's `imageRect` and size come from the current bounds; it is dropped on unmap or
+  after a debounce (stand-in **60 ticks**, fixed by measurement). The exact-bounds rule cost one
+  `xrDestroySwapchain` + `xrCreateSwapchain` + a full panel pass on every popup open *and* close
+  (research/67). Recorded alternative, condition-shaped: popups as their own small quad layers
+  **when the layer budget allows** (one layer per popup against the cap); pre-composition into
+  the parent panel (wayvr `hit_test.rs:59-136`) stays the fallback where caps bite.
+- **Quiet mode skips the flatten.** While a native application is primary and nothing is
+  summoned (§7 rev 3.2) the tick returns before compose, frustum and sort — the frame-loop round
+  trips and nothing else.
+- **Per-dirty-panel round trips are inherent and counted.** Each dirty panel costs an acquire
+  (two RPCs on Monado's Vulkan path) and a release in the tick it commits — a 60 fps video window
+  is +3 RPCs per tick; no API batches it. The journal reports panel acquires and releases per
+  tick (§11) so the cost is visible.
 - **Transient children are not stored**: smithay's surface tree and `PopupManager` already hold
-  popups/subsurfaces with offsets; the flatten walks them and applies the z-gap (stand-in:
-  0.5 mm; motorcar used 0.05 m; no comparable derives the value — fixed by the M1 depth budget).
+  popups/subsurfaces with offsets; the panel pass walks them and pre-composes them into the panel
+  at their logical offsets, back to front in tree order.
 - **Reparent verbs are index writes**: `pin` = `place.frame = anchor`; `summon` = a presentation
   pose on the place; `grab-all` = `place.frame = head`; `assign-to-frame` likewise. "One place per
   window" and "one frame per place" are type-level facts (a single field), not checked
-  invariants. Overlay-class members (places-model §4.3) are members of a place parented to VIEW.
+  invariants. Overlay-class members (places-model §4.3) are members of a place parented to `Views`.
 - **The policy boundary is the mutation API**: `add / remove / reparent / set_local / set_flags /
   focus` over the arenas — in-process `policy` calls it now; the bounded `zxr_window_management`
   protocol (ADR 0012 amendment) exposes the same verbs later. Flags carry xrdesktop's vocabulary
-  (`draggable | managed | hoverable | pinned`).
-- **Generic over the member and tested without a runtime**: `Member<M>` where `M` is the smithay
-  `Window` in production and a test struct in tests; a property sweep of the verbs checks the
-  places-model invariants (C1–C7) after each operation (niri's `Op` + `verify_invariants`
-  shape). Rendering is *not* in the member trait.
+  (`draggable | managed | hoverable | pinned`). Until M1's `free` engine, placement is R0's fan
+  (motorcar's `WindowManager` shape) written through `add`.
+- **Generic over the member and tested without a runtime**: `Member<M>` with a test `M`; a
+  seeded property sweep of the verbs checks the **arena invariants** after each operation — every
+  live member names a live place, every live place a live frame, no handle survives its
+  generation, focus names a live member or nothing (niri's `Op` + `verify_invariants` shape).
+  The places-model scenarios C1–C7 are *currency* behaviour and are `policy`'s tests at M1, not
+  the arena's. Rendering is *not* in the member trait.
 - **One mutation phase per tick**: protocol handlers and policy mutate before `xrLocateViews`;
   nothing mutates between the flatten and `xrEndFrame` (motorcar's `handleFrameBegin` rule).
-- **Hit test**: the member pass with a ray — nearest plane wins, then smithay's 2D hit within
-  the plane; events bubble to the parent when the child declines (zen's contract).
+- **Hit test**: the member pass with a ray in world space, transformed into each plane's frame by
+  the inverse pose — nearest plane wins, then smithay's 2D hit within the plane; events bubble
+  to the parent when the child declines (zen's contract). Class-aware arbitration is the `input`
+  module's (spatial-input §4) over this primitive.
 
 **Ownership of pinning** (spatial-mapping §3–§4, ADR 0009, ADR 0016): the runtime and the
 mapping service own *where an anchor is* (`T_local_map`, keyframe-relative anchors, the
@@ -201,10 +256,14 @@ which anchor UUID with which members and layout* (places-model §7 restore). Two
 by the anchor UUID. zxr never computes a correction; it draws where the located pose says.
 
 **Budget** (invariant 9): ≈10 KB of scene state at session scale (10 frames, 20 places, 50
-members); per tick one batched locate, ~70 pose compositions, ≤ 50-element sorts, no allocation;
-below measurement noise against the GPU pass (§12). The 2D desktops' second structure (KWin
-`Item`, mutter `MetaWindowActor`) is not adopted because it serves damage-driven partial repaint,
-which an XR projection layer re-rendered every frame does not do.
+members). Per tick in steady state: one pose composition and one frustum test per mapped member,
+one sort of ≤ 50 entries, no allocation (the `submit` scratch is reused), no round trip beyond
+the frame loop, no GPU work — microseconds at this N, so **no incremental transform-dirty
+scheme** (it would be more code than it saves). Per commit: one root resolution and one flag.
+Per dirty member: one tree walk, one panel pass, one acquire/release pair. The 2D desktops'
+second structure (KWin `Item`, mutter `MetaWindowActor`) is not adopted because it serves
+damage-driven partial repaint of one framebuffer; here damage is per panel and the runtime
+re-samples the panels, so the member *is* the damage unit.
 
 ## 6. The buffer and sync path (research/59 §4–§5)
 
@@ -293,8 +352,10 @@ In the `no` shape zxr acquires no projection images and records no scene pass; w
 in the tick it submits nothing to the GPU at all — the runtime re-samples the panels at the
 display pose. Quads are ordered by band (§4) then by distance, nearest last within a band. The
 projection layer, when present, is submitted first. **Overflow:** the runtime's
-`maxLayerCount` (Monado 128 Linux / 32 Android) minus one bounds the quads; the nearest planes
-get quads, the farthest are drawn in the projection layer that frame — which then exists.
+`maxLayerCount` (Monado 128 Linux / 32 Android) minus one bounds the quads; the budget is
+allotted by band priority (band 5 first, then 4, 3, 2) and nearest-first within a band (§5a);
+the remainder is drawn in the projection layer that frame — which then exists. "Whose surface
+tree committed" is the member's commit-set dirty flag (§5a), not a per-tick comparison.
 `--debug-panels projection` forces every plane into the projection layer (the R0 path) for
 measurement; it is not a mode the session has.
 
@@ -429,7 +490,10 @@ submit, `xrEndFrame`, GPU time (two timestamps around the scene pass), missed-de
 (`xrEndFrame` after the predicted display time), buffers imported/released this frame, CPU
 copies (must be 0), retention per released buffer (commit → release-point signal). Printed as
 `key=value` on `SIGUSR1` and on exit (the perception harness's convention), read by the R0
-harness.
+harness. **Rev 3.3 — the scene counters** (§5a): members composed and members dirty per tick,
+quads submitted and overflow per tick, panel acquires/releases (the inherent per-dirty-panel
+round trips), and panel swapchains created/destroyed — the last pair is what proves the
+grow-only lifecycle (0 per second in a steady session with popups opening and closing).
 
 ## 12. Conformance — the R0 gates (research/39 §5, measured)
 

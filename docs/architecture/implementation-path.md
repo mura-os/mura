@@ -593,6 +593,10 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   M1's `policy`/`input`; the launcher's native-app activation and the per-app scope with the
   launcher client; the controller system-click reservation and `set_focused_client` are Monado
   upstream items on ADR 0013's list, with `io_blocks` as the interim.
+- **The scene arenas precede input and policy** — spec §5a (normative, rev 3.3) is implemented
+  in `pkgs/zxr/src/scene.rs` before M1's `input` and `policy` work starts, because the hit test
+  (spatial-input §4) and the WM verbs (window-workspace-management §2) run over its member pass
+  and mutation API; the R0 flat plane list is not a base for either.
 - **The input model** — [spatial-input.md](spatial-input.md) (draft rev 0) specifies the tier
   rule, the two transports, focus/activation, cursors, peripherals and text entry. Order: R0 keeps
   the head-ray stand-in; M1 implements the seat with pointer + keyboard + touch, the tier rule for

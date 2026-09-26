@@ -401,7 +401,17 @@ There is no graph on the runtime side; whatever shape zxr keeps is invisible pas
    (zen `node.c:29-86`). wxrc's first-hit-wins is the prototype defect. StardustXR's SDF fields
    are the hit model for M2 volumes; planes stay planes.
 
-## 7. What this selects for `scene` — recorded as DRAFT in specs/zxr-core.md §5a (2026-09-26)
+## 7. What this selects for `scene` — recorded in specs/zxr-core.md §5a (draft 2026-09-26; normative from spec rev 3.3 the same day)
+
+*Amendment (rev 3.3).* This section was written when every plane was drawn into zxr's projection
+layer, so it describes the flatten's output as "a flat, layer-bucketed draw list". Under the
+composition ruling (ADR 0006 amendment 2: 2D planes are runtime quad layers rendered only on
+commit; the projection layer exists only with depth content) the per-tick output is a
+**band-ordered layer list** — one quad entry per mapped 2D member, draw items only for depth
+content and overflow — and dirtiness is set by the commit handler rather than found per tick.
+The arenas, the fixed depth, poses-not-matrices, the one batched locate and the mutation API are
+unchanged; spec §5a carries the reconciled text and the frame-path pass's endorsement
+(research/65's recommendation converged on this shape independently).
 
 The verdicts of §6 admit a general node graph (motorcar's, StardustXR's). Applying AGENTS.md
 rule 6 to them — what is the cheapest structure on a battery SoC that is closest to the runtime

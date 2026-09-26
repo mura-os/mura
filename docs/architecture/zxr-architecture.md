@@ -35,7 +35,7 @@ flowchart TB
         subgraph loopT["state loop thread (calloop)"]
             direction LR
             frontend["frontend<br/>smithay globals, xdg-shell,<br/>seat, dmabuf+feedback, syncobj"]
-            scene["scene<br/>planes · layers · frames ·<br/>stacking · focus · buffer refs"]
+            scene["scene<br/>frames · places · members ·<br/>bands · focus · panel state"]
             input["input<br/>ray → plane → surface;<br/>seat events"]
             policy["policy<br/>placement rules, comfort caps<br/>(in-process; bounded protocol later)"]
             render["render (ash)<br/>dmabuf→VkImage, shm upload,<br/>scene pass into runtime swapchains"]
@@ -43,7 +43,7 @@ flowchart TB
             frontend -- "commit → texture current" --> scene
             input -- "focus / pointer" --> scene
             policy -- "where new planes go" --> scene
-            scene -- "draw list" --> render
+            scene -- "layer list: quads + projection items" --> render
             render -- "images released" --> xr
         end
         wait["xrWaitFrame thread<br/>blocks in the runtime"]
@@ -77,7 +77,7 @@ therefore never blocks on the runtime or on a GPU.
 | an shm surface's texture | `render`, owned by the surface | re-created on size change, re-uploaded on commit change, dropped when the surface is unseen for 120 frames |
 | the Vulkan instance/device/queue | the **runtime** creates them (`XR_KHR_vulkan_enable2`); `render` borrows | the session's |
 | swapchain images | the runtime; `render` holds framebuffers for them | the session's |
-| a plane's panel swapchain (one per 2D plane; ADR 0006 amendment 2) | the runtime allocates it; `scene` owns the handle and the commit it holds | recreated when the plane's bounds change; dropped with the plane |
+| a plane's panel swapchain (one per 2D plane; ADR 0006 amendment 2) | the runtime allocates it; `scene`'s member payload owns the handle and the dirty flag | grows when the tree's bounds exceed it; kept while they shrink; dropped on unmap or after a debounce (§5a) |
 | planes (windows in space), focus, stacking | `scene` | mapped on first buffer, removed on toplevel destroy |
 | the head pose of the frame | `input`, from `xrLocateViews(predicted_display_time)` | the frame's |
 | the OpenXR session state machine | `xr` (`poll_events` → begin/end session) | driven by the runtime's events |
@@ -127,9 +127,10 @@ becomes a readable-fd blocker. The commit is not applied until the fd fires. The
 on a GPU for a client.
 
 **Release is GPU-done, nothing earlier.** The scene holds one `Buffer` clone per surface per
-frame that sampled it. smithay's `InnerBuffer::drop` sends `wl_buffer.release` and signals the
-release point (`backend/renderer/utils/wayland.rs:68-79`); zxr drops the clones only after the
-fence of the frame that used them completes (step 3). Retention at R0 with one client: max 2
+*panel pass* that sampled it — a member whose tree did not commit holds nothing (spec §5a).
+smithay's `InnerBuffer::drop` sends `wl_buffer.release` and signals the release point
+(`backend/renderer/utils/wayland.rs:68-79`); zxr drops the clones only after the fence of the
+frame that used them completes (step 3). Retention at R0 with one client: max 2
 frames (the two slots), mean 2.0 — gate 2's bound.
 
 ## 5. Code layout: the spec's nine modules in six files
@@ -143,7 +144,7 @@ them, so splitting later is a file move, not a redesign.
 | `xr` | `src/xr.rs` | instance → system → runtime-created Vulkan instance/device → session → per-view swapchains → `LOCAL` space; the wait thread + handshake; `math` (column-major mat4, asymmetric-fov projection, pose inverse, ray rotate) | `STAGE`/hand spaces (with hands, M1); session restart (with `modes`) |
 | `render` | `src/render.rs` | render pass + pipeline (push constants, alpha blend, depth), shm staging path, dmabuf import with DRM modifiers, per-view depth + framebuffers, 2 frame slots (cmd + fence), timestamp queries, `sampled_modifiers` for the feedback table | 3D clients' colour+depth composition (M2, zxr-shell-v2); damage-aware upload |
 | `frontend` | `src/state.rs` (handler half) | every smithay delegate state + handler impl (compositor, buffer, shm, dmabuf, syncobj, xdg-shell, seat, data-device, DnD, output, pointer-constraints); `ClientState`; the acquire hook; dmabuf validation; the one `wl_output` | layer-shell and the M1 protocol set (spec §10); `--greeter` mode |
-| `scene` | `src/scene.rs` + `src/state.rs` (texture-cache half) | `Plane { window, pos, yaw }`; fan placement; focus; ray→plane→surface hit; `local_to_logical` | the layer model, places/frames, stacking beyond the depth test, 3D nodes — **the data-model shape is the open item of §7** |
+| `scene` | `src/scene.rs` (arenas, verbs, flatten, hit) + `src/state.rs` (the member payload: window, panel, dirty) | `Arena<T>` with generational handles; `frames` / `places` / `members` (spec §5a normative); `add / remove / reparent / set_local / set_flags / focus`; `flatten` → band-ordered quad list + overflow, budget by band priority; full-pose ray→plane→surface hit; fan placement as the stand-in policy | 3D nodes (M2); the WM `free` engine (M1) |
 | `input` | `state.rs::update_gaze_pointer` | head ray → seat pointer; keyboard focus follows scene focus | hands, `hmdButtons.<selectRole>`, dwell, 6DoF events (M1/M2) |
 | `policy` | `Scene::add` (the fan) | — (a stand-in, §6) | placement rules and comfort caps from research/36; preferences from `org.mura.Settings1`; the bounded `zxr_window_management` face (ADR 0012 amendment) |
 | `modes`, `unit` | — | — | `--greeter` restricted scene, `sd_notify`, variable publication (M1; session-bootstrap rev 3) |
@@ -189,20 +190,15 @@ mechanism the bring-up showed was missing, no comparable needed, recorded for th
 | one virtual `wl_output` "XR-1", 1920×1080 @ 60 Hz, scale 1 | **stand-in, discretionary — flagged**: KWin VR's virtual output is also scale 1 / 60 Hz (research/31 §2.12); clients need *some* output to size against; what the output(s) should advertise in XR is an M1 question (research/60 §17 notes) | owner / M1 |
 | control socket line protocol (`focus next`, `list`, `journal`, `move`, `resize`, `close`, `spawn`, `quit`) | stand-in for the harness; **not** a policy seam (ADR 0012) | — |
 | dmabuf import rejects multi-plane and non-8888 formats at R0 | stand-in (R0 clients are ARGB/XRGB) | gate 2 widens by evidence |
-| `scene` = three typed arenas (frames / places / members) + layer-bucketed draw scratch; no node graph, no retained render tree; frames located by one `xrLocateSpaces` | **draft** (owner: "document as WIP") — converging XR comparables for the content, rule 6 for the shape | spec §5a; research/62 §6–§7 |
+| `scene` = three typed arenas (frames / places / members) whose per-tick output is a band-ordered layer list (quads) plus the projection draw items; commit-driven dirtiness; non-dirty members hold no buffers; grow-only panel swapchains; frames located by one `xrLocateSpacesKHR` only when a frame the views do not give exists | **normative** (spec rev 3.3, 2026-09-26; two agents converged on the shape — research/62 §7, research/65) | spec §5a; research/62 §6–§7; research/67 (the 16-client and popup costs it removes) |
 | pinning ownership: runtime + mapping service → where the anchor is; zxr → what is attached (place.frame); session state → which named place on which anchor UUID | draft, restating ADR 0009 / ADR 0016 / spatial-mapping §3–§4 | spec §5a |
 
 ## 7. Open items (deciders named)
 
-- **The scene data model** — `Vec<Plane>` today. Recorded as **draft** in
-  [specs/zxr-core.md §5a](../../specs/zxr-core.md) from
-  [research/62](../research/62-scene-data-model-from-comparables.md): three typed arenas
-  (`frames` = the spaces located per tick in one `xrLocateSpaces`, `places`, `members`) with
-  generational handles, poses not matrices, layer-bucketed per-tick draw scratch, transient
-  children read from smithay's tree at flatten, reparent verbs as index writes, policy through the
-  `add / remove / reparent / set_local / set_flags / focus` API, generic over the member and
-  property-tested against places-model C1–C7. Two stand-ins remain flagged inside the draft (the
-  popup z-gap value; overlay-class members as a VIEW-parented place). Becomes normative at rev 2.
+- **The scene data model** — normative since spec rev 3.3 (§5a) and implemented
+  (`src/scene.rs`); no longer open. What remains inside it are two stand-ins the M1 gate fixes by
+  measurement: the panel-swapchain shrink debounce (60 ticks) and overlay-class members as a
+  `Views`-parented place.
 - **Xwayland** — examined against the virtual-desktop case in research/59 §9a; the
   determination stands. Two items left that section for other deciders: mode 3 for GNOME is a
   viewer client of *headless* mutter (mutter has no nested-Wayland-client backend any more) —
