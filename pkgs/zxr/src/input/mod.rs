@@ -462,13 +462,16 @@ pub struct Input {
     pub presence_changed: bool,
     /// the head pose this tick (the `Views` frame), for the floor and for stages that need it
     pub head: Option<xr::Posef>,
+    /// the oldest event sample processed this tick (for the event → `xrEndFrame` latency the
+    /// input gate measures; `main.rs` closes it after `xrEndFrame`)
+    pub tick_oldest_event_ns: Option<u64>,
     /// the test-only injector's latched per-kind state
     pub injector: Injector,
 }
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, injector: Injector::default() }
+        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, injector: Injector::default() }
     }
 }
 
@@ -511,6 +514,7 @@ pub fn tick(st: &mut Zxr, head: xr::Posef, time: xr::Time, now_ns: u64) {
             st.journal.input_event_age_ns_total += age;
             st.journal.input_event_age_ns_max = st.journal.input_event_age_ns_max.max(age);
             st.journal.input_events += 1;
+            st.input.tick_oldest_event_ns = Some(st.input.tick_oldest_event_ns.map_or(s.time_ns, |t| t.min(s.time_ns)));
         }
         if let Some(slot) = chain.run(&mut s, st) {
             st.journal.input_consumed[slot as usize] += 1;

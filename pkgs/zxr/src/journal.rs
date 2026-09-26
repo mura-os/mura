@@ -98,6 +98,10 @@ pub struct Journal {
     pub input_events: u64,
     pub input_event_age_ns_total: u64,
     pub input_event_age_ns_max: u64,
+    /// event timestamp → the consuming tick's completed `xrEndFrame` (the gate's trigger number)
+    pub input_event_to_end_n: u64,
+    pub input_event_to_end_ns_total: u64,
+    pub input_event_to_end_ns_max: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -233,6 +237,8 @@ impl Journal {
         let _ = writeln!(s, "input_events={}", self.input_events);
         let _ = writeln!(s, "input_event_age_us_mean={}", if self.input_events > 0 { self.input_event_age_ns_total / self.input_events / 1000 } else { 0 });
         let _ = writeln!(s, "input_event_age_us_max={}", self.input_event_age_ns_max / 1000);
+        let _ = writeln!(s, "input_event_to_end_us_mean={}", if self.input_event_to_end_n > 0 { self.input_event_to_end_ns_total / self.input_event_to_end_n / 1000 } else { 0 });
+        let _ = writeln!(s, "input_event_to_end_us_max={}", self.input_event_to_end_ns_max / 1000);
         s
     }
 }
