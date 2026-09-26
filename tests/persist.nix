@@ -85,6 +85,9 @@ let
         && !(frame.image.repart.partitions."10-esp".contents ? "/loader/entries/recovery.conf")
         && frame.image.repart.partitions."15-mura-recovery".repartConfig.Type == "xbootldr"
         && frame.image.repart.partitions."15-mura-recovery".repartConfig.Label == "mura_recovery"
+        && frame.image.repart.partitions."15-mura-recovery".repartConfig.SizeMinBytes == "260M"
+        && frame.image.repart.partitions."15-mura-recovery".repartConfig.SizeMaxBytes == "260M"
+        && !(frame.image.repart.partitions."15-mura-recovery".repartConfig ? Minimize)
         && frame.image.repart.partitions."15-mura-recovery".contents ? "/loader/entries/recovery.conf"
         && frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/mura-recovery/mura-recovery.efi"
         && !(frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/Linux/mura-recovery.efi")

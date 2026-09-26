@@ -129,9 +129,11 @@ records small and fixed-layout.
   its current generation, the producer tries another slot or drops. No lock, no wait, no retry
   loop; the consumer's pass gains one store and two loads on a selection attempt. Cost of the
   omission had the harness not caught it: silent pool exhaustion whenever the compositor
-  falls behind the producer. Decider: the owner (rule 8 — the comparables converge; the shape
-  chosen, shared memory over a `TAKEN` message, is the one that keeps the never-block rules
-  without a round trip).
+  falls behind the producer. If `pending[]` is full, the consumer clears `intent` and refuses
+  the selection **before** submitting GPU work; an undeclared live use is forbidden. The
+  comparables establish the consumer's release/declaration **obligation**, not this mechanism:
+  the use page and two-flag exchange are a Mura-specific proposal chosen to preserve the
+  never-block rule without a `TAKEN` round trip. Decider: the owner (rule 8).
 
 ## 5. Never-block rules (normative)
 
@@ -184,12 +186,13 @@ timelines on the VM's virtio-gpu render node). Each item states what was observe
    retirement 509 ms later and returned to baseline (+ the socket) after it.
 2. Stall the consumer 1 s: producer drops with OVERRUN counts, memory bounded to the pool; on
    resume the consumer reads the latest generation, not a queue.
-   **Verified, with a correction** — a *conforming* consumer never causes a drop: with §4.4 the
-   skipped generations are reclaimed (180 published, 0 dropped, ≥170 reclaimed, RSS flat within
-   noise), and on resume ≈60 generations were jumped over in one selection. The OVERRUN path
-   itself was exercised by a consumer that holds more uses than it declared (`--exceed-in-flight
-   6`, 300 ms fake GPU): the producer dropped with matching counts on both sides, never
-   overwrote a held slot, and resumed publishing when releases came.
+   **⚠ Not verified as the rev-2 criterion under the unruled rev-3 proposal.** With §4.4, a
+   conforming stalled consumer instead allowed skipped never-used generations to be reclaimed
+   (180 published, 0 dropped, ≥170 reclaimed, RSS flat), then jumped ≈60 generations in one
+   selection. The OVERRUN mechanism itself was separately verified with a deliberately
+   non-conforming consumer that exceeded its declared in-flight limit (`--exceed-in-flight 6`,
+   300 ms fake GPU): matching drop counts, no overwrite, publication resumed after releases.
+   Ruling §4.4 decides which expectation becomes normative.
 3. Recalibration: no composed frame pairs pixels and pose across `calibration_ver` values within
    a group; dual-rate pairing across groups uses `T_geom_to_colour` of the geometry group only.
    **Verified** — one `calibration_ver` change mid-run, 120 selections, 0 group mismatches.
@@ -206,6 +209,10 @@ timelines on the VM's virtio-gpu render node). Each item states what was observe
    release points (never the shared-timeline shortcut).
    **Verified** — every other use released its second image 3× later than the next use's; 25
    out-of-order completions observed, 0 slots rewritten while any image of a use was held.
+6. A full use-page pending table refuses the selection before GPU submission; the generation
+   remains reclaimable rather than becoming a live undeclared use.
+   **Verified** — `max_in_flight=17` filled the 16-entry table; refusals were counted, with zero
+   stamp mismatches and zero rewrites while in use.
 
 Also verified: REGISTER + 6× REGISTER_MORE carrying 32 images × 3 fds + the memfd; the ack
 asynchronous (the producer publishes before it; the consumer selects after it); epoch

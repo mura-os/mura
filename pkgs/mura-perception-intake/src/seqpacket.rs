@@ -8,6 +8,15 @@ use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 pub const MAX_FDS_PER_DATAGRAM: usize = 16;
 /// Largest control record: a REGISTER/REGISTER_MORE with 16 image entries; GENERATION is 1 KiB.
 pub const MAX_DATAGRAM: usize = 4096;
+// cmsghdr + 16 RawFds is < 256 bytes on every supported Linux ABI. Stack storage keeps the
+// consumer's nonblocking per-pass recv path allocation-free when generation notifications carry
+// no fds.
+const CMSG_BUFFER_SIZE: usize = 256;
+#[repr(C)]
+union CmsgBuffer {
+    _align: libc::cmsghdr,
+    bytes: [u8; CMSG_BUFFER_SIZE],
+}
 
 pub struct Socket {
     fd: OwnedFd,
@@ -49,13 +58,15 @@ impl Socket {
         assert!(fds.len() <= MAX_FDS_PER_DATAGRAM);
         let mut iov = libc::iovec { iov_base: bytes.as_ptr() as *mut libc::c_void, iov_len: bytes.len() };
         let space = unsafe { libc::CMSG_SPACE((fds.len() * std::mem::size_of::<RawFd>()) as u32) } as usize;
-        let mut cbuf = vec![0u8; space];
+        assert!(space <= CMSG_BUFFER_SIZE);
+        let mut cbuf = CmsgBuffer { bytes: [0u8; CMSG_BUFFER_SIZE] };
         // SAFETY: msghdr assembled per cmsg(3); buffers outlive the call.
         let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
         msg.msg_iov = &mut iov;
         msg.msg_iovlen = 1;
         if !fds.is_empty() {
-            msg.msg_control = cbuf.as_mut_ptr() as *mut libc::c_void;
+            // SAFETY: the union gives the byte storage cmsghdr alignment.
+            msg.msg_control = unsafe { cbuf.bytes.as_mut_ptr() } as *mut libc::c_void;
             msg.msg_controllen = space as _;
             unsafe {
                 let c = libc::CMSG_FIRSTHDR(&msg);
@@ -77,12 +88,14 @@ impl Socket {
     pub fn recv(&self, buf: &mut [u8], nonblocking: bool) -> io::Result<Option<Datagram>> {
         let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut libc::c_void, iov_len: buf.len() };
         let space = unsafe { libc::CMSG_SPACE((MAX_FDS_PER_DATAGRAM * std::mem::size_of::<RawFd>()) as u32) } as usize;
-        let mut cbuf = vec![0u8; space];
+        assert!(space <= CMSG_BUFFER_SIZE);
+        let mut cbuf = CmsgBuffer { bytes: [0u8; CMSG_BUFFER_SIZE] };
         // SAFETY: as in `send`.
         let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
         msg.msg_iov = &mut iov;
         msg.msg_iovlen = 1;
-        msg.msg_control = cbuf.as_mut_ptr() as *mut libc::c_void;
+        // SAFETY: the union gives the byte storage cmsghdr alignment.
+        msg.msg_control = unsafe { cbuf.bytes.as_mut_ptr() } as *mut libc::c_void;
         msg.msg_controllen = space as _;
         let flags = libc::MSG_CMSG_CLOEXEC | if nonblocking { libc::MSG_DONTWAIT } else { 0 };
         let n = unsafe { libc::recvmsg(self.fd.as_raw_fd(), &mut msg, flags) };

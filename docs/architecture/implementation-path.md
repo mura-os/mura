@@ -430,25 +430,29 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   `pkgs/mura-perception-intake` (Rust, libc only): the protocol *library* (`perception_intake`:
   §7 framing + SCM_RIGHTS, §3 tables, §4 memfd register, DRM syncobj timelines and udmabuf as raw
   ioctls) the real ends are meant to link, plus the test-only `intake-fake-producer` /
-  `intake-test-consumer`; `nix build .#vm-test-perception-intake` (11 subtests on the VM's
-  virtio-gpu render node + `/dev/udmabuf`): every §8 item, registration over `REGISTER_MORE`,
-  epoch supersession, the §7 framing rules, `hand_top`; check 4 traced with strace between the
+  `intake-test-consumer`; `nix build .#vm-test-perception-intake` (12 subtests on the VM's
+  virtio-gpu render node + `/dev/udmabuf`): verified §8 scenarios plus rev 3's separately
+  labelled alternative observation for item 2, registration over `REGISTER_MORE`, epoch
+  supersession, the §7 framing rules, `hand_top`; check 4 traced with strace between the
   consumer's pass markers (window = `clock_gettime`, `ioctl` query/signal, `recvmsg(MSG_DONTWAIT)`
   only). **The harness found a protocol gap**: fence-only reclamation (§4 rev 2) cannot tell a
   never-used generation from one in flight and wedges the pool under a slow consumer; rev 3
   adds the consumer's *use page* (`pending[]` + `intent`, one fd in `REGISTER_ACK`) and a two-flag
-  slot agreement (Dekker) — the explicit-sync release-point obligation's shape
-  (`linux-drm-syncobj-v1.xml:210-222`), adapted to a consumer that reads only the latest. Marked
-  ⚠ in the spec: **the owner rules on rev 3**. §8.2 corrected as observed: a conforming consumer
-  never causes a drop; the OVERRUN path exists for a consumer exceeding its declared
-  `max_in_flight`. Reserved hook: the in-thread seccomp never-block guard for zxr's intake.
+  slot agreement (Dekker). `linux-drm-syncobj-v1.xml:210-222` is precedent for the consumer's
+  release/declaration **obligation**, not for this Mura-specific shared-page mechanism. Marked ⚠
+  in the spec: **the owner rules on rev 3**. Until then §8.2's rev-2 drop expectation is not
+  marked verified; the observed rev-3 behavior is zero drops for a conforming stalled consumer,
+  while OVERRUN remains verified for a consumer exceeding its declaration. A full pending table
+  now refuses selection before GPU submission (VM-proven), so no live use can be undeclared.
+  Reserved hook: the in-thread seccomp never-block guard for zxr's intake.
 - **Mura recovery environment** ([research/56 §3](../research/56-defaults-from-comparables.md),
   [research/57](../research/57-recovery-environments-and-boot-failure-feedback.md),
   [specs/recovery-menu.md](../../specs/recovery-menu.md); ruled 2026-09-25). The OS owns its
   recovery as a **dedicated Mura recovery boot partition/image**, separate from normal Mura boot
-  artifacts and from the hardware's stock/vendor recovery. It contains its own kernel+systemd
-  initrd but no third root filesystem (Mobile NixOS/Lineage's recovery-image boundary; pmOS's
-  stage-1 contents). On uefi-rauc it is the `mura_recovery` XBOOTLDR partition: one UKI binds
+  artifacts and from the hardware's stock/vendor recovery. It contains its own kernel and a
+  separately evaluated, stripped systemd initrd but no third root filesystem (Mobile
+  NixOS/Lineage's recovery-image boundary; pmOS's stage-1 contents); recovery-only daemons do
+  not ship in the normal ESP initrd. On uefi-rauc it is the `mura_recovery` XBOOTLDR partition: one UKI binds
   kernel+initrd+`rd.systemd.unit=mura-recovery.target`, and stable `recovery.conf` points to it;
   the normal entries and boot files stay on the ESP. It is readonly RAUC `rescue.0`: ordinary
   A/B bundles leave it untouched (RAUC's Additional Rescue Slot shape). A future recovery update
@@ -506,7 +510,8 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   embedded `rd.systemd.unit=mura-recovery.target` command line to ttyAMA0. The proof
   also corrected copied-without-reason foundations: BLS IDs include `.conf`; slot selection uses
   systemd ≥260's assessment-aware `preferred` with the other slot as `default` (an exhausted
-  primary therefore falls back instead of being explicitly reselected); the sole ESP is `/efi`
+  primary therefore falls back instead of being explicitly reselected; the aarch64
+  `frame-bootconf-test` exercises plain and exhausted-entry re-arming); the sole ESP is `/efi`
   (systemd/mkosi's semantic layout, research/33 §10), with XBOOTLDR at `/boot`; and
   `frame-vm-run` seeds its writable pflash from QEMU's initialized variables template rather
   than a zero file. **Still hardware-only:** `--boot-loader-entry` writes an EFI variable at

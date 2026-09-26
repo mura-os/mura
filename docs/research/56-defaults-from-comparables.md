@@ -105,6 +105,13 @@ its own kernel+stage-1 initrd, while stock/vendor recovery, fastboot, EDL or Dow
 to reinstall Mura when Mura's own image is broken. Rescue Party's last level reboots into
 recovery and *offers* the wipe. So:
 
+**Record correction, 2026-09-26.** The first 2026-09-25 implementation plan replaced the
+discussed dedicated Mura recovery partition/image with a same-normal-initrd boot entry as an
+agent judgment, then this section recorded that override as the determination. That was not an
+owner reversal: the earlier discussion had already concluded that vendor recovery cannot run
+Mura recovery and that Mura needs its own partition/image. The dedicated-partition text below
+restores that decision and records why the first rendering was wrong.
+
 - **Feedback on the first hard failure** (pmOS: the plymouth splash says what failed and how to
   reach the device) — not on the third. The count decides only when to leave the slot.
 - **At the count, reboot into Mura's own recovery environment, automatically** (ruled: Android's

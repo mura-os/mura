@@ -6,10 +6,12 @@ how do shipping systems (a) tell the person holding it, (b) get it into a recove
 environment ruled in [research/56 §3](56-defaults-from-comparables.md) is derived, not invented.
 **Method:** AGENTS rules 7/8; pinned clones (`references/`, file:line) first, [external] sources
 named and verified where the comparable is not cloned. **Budget impact** (overview invariant 9):
-a dedicated recovery boot partition per image family (uefi-rauc: 512 MiB XBOOTLDR carrying one
-self-contained recovery UKI; Android-derived: a separate Mura recovery boot image only where the boot chain can
+a dedicated recovery boot partition per image family (uefi-rauc: 260 MiB XBOOTLDR — systemd-
+repart's VFAT/4K-sector minimum and build-time cap — carrying one measured 103 MiB recovery UKI;
+Android-derived: a separate Mura recovery boot image only where the boot chain can
 select an additional partition without replacing stock recovery). Runtime cost is recovery-only:
-plymouth and the menu are absent from the normal frame path.
+the recovery image is evaluated with a separate stripped initrd closure, so hostapd, recovery
+sshd/menu/web and their dependencies are absent from the normal ESP initrd and frame path.
 
 ## 1. Two failure classes, two mechanisms
 
@@ -132,8 +134,9 @@ semantics are Android recovery's (`recovery_ui/ui.cpp` `ProcessKey`: register on
 auto-repeat ignored, 750 ms long press a distinct event; `recovery.cpp`: a destructive action
 behind a separate confirm menu defaulting to the safe item), not Quest's second-press countdown,
 for which no comparable's source was available; reflash from Mura recovery (RAUC bundle over
-ssh; Lineage "Apply update") — the track's follow-up; the Android-derived families' separate
-Mura-owned recovery partition **and** one-shot selector — each device's bring-up must prove the
+ssh; Lineage "Apply update") is a reserved action and remains absent unless a family defines and
+qualifies recovery-side bundle ingest; the Android-derived families' separate Mura-owned
+recovery partition **and** one-shot selector — each device's bring-up must prove the
 bootloader can select an added partition without replacing stock recovery; otherwise that target
 does not yet have Mura Recovery. Stock recovery remains the reflash-from-scratch path. The
 recovery hotspot is **required** (owner clarification 2026-09-25): it exposes both sshd and

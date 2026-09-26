@@ -108,6 +108,16 @@
         assert c["overwritten_while_in_use"] == "0" and c["stamp_mismatch"] == "0", c
         assert int(c["max_pending_uses"]) >= 3, c                        # it really did exceed its declaration
 
+    with subtest("intake: a full use-page pending table refuses selection before GPU submission"):
+        c, p = run(
+            "pending-full",
+            "--max-in-flight 17 --exceed-in-flight 17 --gpu-ms 1000",
+            "--max-in-flight 17 --generations 100 --rate-hz 200",
+        )
+        assert int(c["pending_table_full_refused"]) > 0, c
+        assert c["overwritten_while_in_use"] == "0" and c["stamp_mismatch"] == "0", c
+        assert int(p["published"]) > 20, p
+
     with subtest("intake §8.3: recalibration — no composed pass pairs pixels and pose across calibration_ver values within a group"):
         c, p = run("recal", "", "--generations 120 --rate-hz 60 --recalibrate-at 60")
         assert c["calibration_changes_seen"] == "1" and c["calibration_mismatch"] == "0" and c["stamp_mismatch"] == "0", c

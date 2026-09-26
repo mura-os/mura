@@ -19,13 +19,17 @@
 //!   --width W --height H     image size (default 64×64, 4 bytes/px)
 //!   --report PATH            key=value counters on exit
 
+#[path = "../harness.rs"]
+mod harness;
+
+use harness::Report;
 use perception_intake::kernel::{self, Drm, Mapping, Timeline, Udmabuf};
 use perception_intake::record::{ColourGroup, GeometryGroup, ImageRef, Record, Stamp, FLAG_COMPLETE, MAX_IMAGES};
 use perception_intake::register::{Declared, Pool, ProducerRegister};
 use perception_intake::usepage::ProducerUsePage;
 use perception_intake::seqpacket::{Socket, MAX_DATAGRAM};
 use perception_intake::wire::{self, ImageEntry, Message, ENTRIES_PER_MORE, ENTRIES_PER_REGISTER};
-use perception_intake::{layer_name, parse_layer, Report, LAYER_ENVIRONMENT, LAYER_HAND_TOP};
+use perception_intake::{layer_name, parse_layer, LAYER_ENVIRONMENT, LAYER_HAND_TOP};
 use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 

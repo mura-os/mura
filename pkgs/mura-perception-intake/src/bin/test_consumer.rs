@@ -23,13 +23,17 @@
 //!   --report PATH            key=value counters on exit
 //!   --probe                  print the DRM node/caps and udmabuf presence; exit 0 if usable
 
+#[path = "../harness.rs"]
+mod harness;
+
+use harness::{open_fd_count, Report};
 use perception_intake::kernel::{self, Drm, Mapping, Timeline, NONZERO_TIMEOUT_WAITS};
 use perception_intake::record::{Record, Stamp, STAMP_SIZE};
 use perception_intake::register::ConsumerRegister;
 use perception_intake::seqpacket::{Socket, MAX_DATAGRAM};
 use perception_intake::usepage::ConsumerUsePage;
 use perception_intake::wire::{self, DecodeError, ImageEntry, Message, FDS_PER_ENTRY};
-use perception_intake::{layer_name, open_fd_count, Report};
+use perception_intake::layer_name;
 use std::io::Write;
 use std::os::unix::io::{AsRawFd, OwnedFd};
 use std::sync::atomic::Ordering;
@@ -190,6 +194,7 @@ struct Counters {
     out_of_order_releases: u64,
     max_pending_uses: u64,
     fallback_in_flight_full: u64,
+    pending_table_full_refused: u64,
     overrun_reports: u64,
     overrun_dropped_total: u64,
     generation_notifications: u64,
@@ -401,6 +406,18 @@ fn main() {
                         let mut points = vec![0u64; handles.len()];
                         let ok = handles.len() == refs.len() && kernel::query_many(&drm, &handles, &mut points).is_ok() && refs.iter().zip(&points).all(|(r, p)| *p >= r.acquire_point);
                         if ok {
+                            if !page.pending_add(rec.generation) {
+                                // Refuse before submitting any GPU use. Publishing the use without
+                                // its declaration would let the producer reclaim live images.
+                                eprintln!("consumer: pending table full — refusing selection");
+                                page.clear_intent();
+                                c.pending_table_full_refused += 1;
+                                if ep.current.is_some() {
+                                    c.fallback_reused_current += 1;
+                                } else {
+                                    c.layer_absent += 1;
+                                }
+                            } else {
                             // stamps: pixels and record agree, per group's calibration (§8 items 1, 3)
                             for r in &rec.colour.images[..rec.colour.image_count as usize] {
                                 let s = stamp_of(ep.images[r.slot_index as usize].as_ref().unwrap());
@@ -443,14 +460,12 @@ fn main() {
                                 })
                                 .collect();
                             ep.uses.push(Use { generation: rec.generation, images, submitted_at: now });
-                            if !page.pending_add(rec.generation) {
-                                eprintln!("consumer: pending table full — our own max_in_flight exceeded");
-                            }
                             page.clear_intent();
                             c.uses_submitted += 1;
                             c.selections += 1;
                             c.last_generation = rec.generation;
                             ep.current = Some((slot, rec));
+                            }
                         } else {
                             page.clear_intent();
                             if ep.current.is_some() {
@@ -570,6 +585,7 @@ fn main() {
     report.set("out_of_order_releases", c.out_of_order_releases);
     report.set("max_pending_uses", c.max_pending_uses);
     report.set("fallback_in_flight_full", c.fallback_in_flight_full);
+    report.set("pending_table_full_refused", c.pending_table_full_refused);
     report.set("overrun_reports", c.overrun_reports);
     report.set("overrun_dropped_total", c.overrun_dropped_total);
     report.set("generation_notifications", c.generation_notifications);

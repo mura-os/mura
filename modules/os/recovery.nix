@@ -214,6 +214,12 @@ let
 in
 {
   options.mura.recovery = {
+    buildImage = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      internal = true;
+      description = "Build the dedicated recovery-image stage-1 closure (set only by an image family).";
+    };
     rebootCommand = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -273,175 +279,177 @@ in
     # The panel frontend reads the HMD's buttons as raw evdev (/dev/input/event*): the event
     # interface must exist in stage 1 (a module on the NixOS kernel). The button drivers
     # themselves are the device's declaration (gpio-keys/pmic on the targets; PS/2 in the VM).
-    boot.initrd.kernelModules = [ "evdev" ];
-    boot.initrd.systemd = {
-      # networkd only in recovery (the gadget interface + a DHCP server for the cable's host);
-      # a normal boot leaves it to stage 2.
-      network.enable = true;
-      network.networks."10-mura-recovery-usb0" = {
-        matchConfig.Name = "usb0";
-        address = [ "${gadgetAddr}/24" ];
-        networkConfig.DHCPServer = true;
-        # the gadget has no carrier until a host enumerates it; hold the address regardless
-        networkConfig.ConfigureWithoutCarrier = true;
-        dhcpServerConfig = { PoolOffset = 2; PoolSize = 19; EmitDNS = false; EmitRouter = false; };
-      };
-      services.systemd-networkd.wantedBy = lib.mkForce [ "mura-recovery.target" ];
-      sockets.systemd-networkd.wantedBy = lib.mkForce [ "mura-recovery.target" ];
+    boot.initrd = lib.mkIf cfg.recovery.buildImage {
+      kernelModules = [ "evdev" ];
+      systemd = {
+        # networkd only in recovery (the gadget interface + a DHCP server for the cable's host);
+        # a normal boot leaves it to stage 2.
+        network.enable = true;
+        network.networks."10-mura-recovery-usb0" = {
+          matchConfig.Name = "usb0";
+          address = [ "${gadgetAddr}/24" ];
+          networkConfig.DHCPServer = true;
+          # the gadget has no carrier until a host enumerates it; hold the address regardless
+          networkConfig.ConfigureWithoutCarrier = true;
+          dhcpServerConfig = { PoolOffset = 2; PoolSize = 19; EmitDNS = false; EmitRouter = false; };
+        };
+        services.systemd-networkd.wantedBy = lib.mkForce [ "mura-recovery.target" ];
+        sockets.systemd-networkd.wantedBy = lib.mkForce [ "mura-recovery.target" ];
 
-      users.sshd = { uid = 1; group = "sshd"; };
-      groups.sshd = { gid = 1; };
-      contents = {
-        "/etc/ssh/sshd_recovery_config".text = ''
-          UsePAM no
-          Port 22
-          PasswordAuthentication no
-          KbdInteractiveAuthentication no
-          AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u
-          HostKey /run/mura-recovery/ssh_host_ed25519_key
-          Banner /run/mura-recovery/banner
-        '';
-        "/etc/ssh/authorized_keys.d/root".text = lib.concatStringsSep "\n" authorizedKeys + "\n";
-        "/etc/repart.d".source = lib.mkDefault (pkgs.runCommand "empty-repart.d" { } "mkdir $out");
-        "/etc/mura/recovery.json".source = recoveryConfig;
-      };
-      storePaths = [
-        "${pkgs.openssh}/bin/sshd"
-        "${pkgs.openssh}/bin/ssh-keygen"
-        "${pkgs.openssh}/libexec/sshd-auth"
-        "${pkgs.openssh}/libexec/sshd-session"
-        recovery
-        "${lib.getExe pkgs.mura.setup}"
-        "${pkgs.hostapd}/bin/hostapd"
-        "${pkgs.hostapd}/bin/hostapd_cli"
-        recoveryHotspot
-        waysIn
-        plymouthSay
-        "${pkgs.gnused}/bin/sed"
-      ];
-      extraBin = {
-        sed = "${pkgs.gnused}/bin/sed";
-        ssh-keygen = "${pkgs.openssh}/bin/ssh-keygen";
-        mura-recovery = recovery;
-      };
+        users.sshd = { uid = 1; group = "sshd"; };
+        groups.sshd = { gid = 1; };
+        contents = {
+          "/etc/ssh/sshd_recovery_config".text = ''
+            UsePAM no
+            Port 22
+            PasswordAuthentication no
+            KbdInteractiveAuthentication no
+            AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u
+            HostKey /run/mura-recovery/ssh_host_ed25519_key
+            Banner /run/mura-recovery/banner
+          '';
+          "/etc/ssh/authorized_keys.d/root".text = lib.concatStringsSep "\n" authorizedKeys + "\n";
+          "/etc/repart.d".source = lib.mkDefault (pkgs.runCommand "empty-repart.d" { } "mkdir $out");
+          "/etc/mura/recovery.json".source = recoveryConfig;
+        };
+        storePaths = [
+          "${pkgs.openssh}/bin/sshd"
+          "${pkgs.openssh}/bin/ssh-keygen"
+          "${pkgs.openssh}/libexec/sshd-auth"
+          "${pkgs.openssh}/libexec/sshd-session"
+          recovery
+          "${lib.getExe pkgs.mura.setup}"
+          "${pkgs.hostapd}/bin/hostapd"
+          "${pkgs.hostapd}/bin/hostapd_cli"
+          recoveryHotspot
+          waysIn
+          plymouthSay
+          "${pkgs.gnused}/bin/sed"
+        ];
+        extraBin = {
+          sed = "${pkgs.gnused}/bin/sed";
+          ssh-keygen = "${pkgs.openssh}/bin/ssh-keygen";
+          mura-recovery = recovery;
+        };
 
-      # NixOS's repart module intentionally orders its service after sysroot.mount when no
-      # explicit whole-disk device is configured: that is how it discovers the root disk
-      # (nixpkgs repart.nix:202-210). Mura Recovery deliberately never mounts sysroot. Skip the
-      # automatic grow/add pass in this mode; a confirmed reset invokes systemd-repart directly
-      # with the whole disk resolved from the persist partition. This is systemd's standard
-      # per-boot-mode condition shape (ConditionKernelCommandLine), not a failed-unit exception.
-      services.systemd-repart.unitConfig.ConditionKernelCommandLine =
-        "!rd.systemd.unit=mura-recovery.target";
+        # NixOS's repart module intentionally orders its service after sysroot.mount when no
+        # explicit whole-disk device is configured: that is how it discovers the root disk
+        # (nixpkgs repart.nix:202-210). Mura Recovery deliberately never mounts sysroot. Skip the
+        # automatic grow/add pass in this mode; a confirmed reset invokes systemd-repart directly
+        # with the whole disk resolved from the persist partition. This is systemd's standard
+        # per-boot-mode condition shape (ConditionKernelCommandLine), not a failed-unit exception.
+        services.systemd-repart.unitConfig.ConditionKernelCommandLine =
+          "!rd.systemd.unit=mura-recovery.target";
 
-      # `rd.systemd.unit=mura-recovery.target` makes this the initrd's default target in place of
-      # initrd.target, so like initrd.target it must pull basic.target itself (journald, udev,
-      # plymouth-start, the test driver's initrd backdoor all hang off sysinit/basic).
-      targets.mura-recovery = {
-        description = "Mura recovery environment (stage 1: panel, USB + hotspot ssh/web, offered reset)";
-        requires = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-sshd.service" "mura-recovery-panel.service" "mura-setup-recovery.service" ];
-        wants = [ "mura-recovery-hotspot.service" ];
-        after = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-hotspot.service" "mura-recovery-sshd.service" "mura-recovery-panel.service" "mura-setup-recovery.service" ];
-        unitConfig.AllowIsolate = true;
-      };
+        # `rd.systemd.unit=mura-recovery.target` makes this the initrd's default target in place of
+        # initrd.target, so like initrd.target it must pull basic.target itself (journald, udev,
+        # plymouth-start, the test driver's initrd backdoor all hang off sysinit/basic).
+        targets.mura-recovery = {
+          description = "Mura recovery environment (stage 1: panel, USB + hotspot ssh/web, offered reset)";
+          requires = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-sshd.service" "mura-recovery-panel.service" "mura-setup-recovery.service" ];
+          wants = [ "mura-recovery-hotspot.service" ];
+          after = [ "basic.target" "mura-recovery-identity.service" "mura-recovery-hotspot.service" "mura-recovery-sshd.service" "mura-recovery-panel.service" "mura-setup-recovery.service" ];
+          unitConfig.AllowIsolate = true;
+        };
 
-      # The host key: the device's own, when /persist mounts read-only; else generated for this
-      # session, its fingerprint shown on the panels. Also assembles the banner.
-      services.mura-recovery-identity = {
-        description = "Mura recovery: host key and banner";
-        after = [ "systemd-udev-settle.service" ];
-        wants = [ "systemd-udev-settle.service" ];
-        serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
-        script = ''
-          mkdir -p /run/mura-recovery /run/mura
-          key=/run/mura-recovery/ssh_host_ed25519_key
-          dev="${persistFs.device}"; [ -n "$dev" ] || dev=/dev/disk/by-partlabel/syspersist
-          if [ -e "$dev" ] && mkdir -p /run/mura-persist \
-             && mount -o ro -t ${persistFs.fsType} "$dev" /run/mura-persist 2>/dev/null; then
-            if [ -r /run/mura-persist/mura/identity/ssh/ssh_host_ed25519_key ]; then
-              cp /run/mura-persist/mura/identity/ssh/ssh_host_ed25519_key "$key"
-              cp /run/mura-persist/mura/identity/ssh/ssh_host_ed25519_key.pub "$key.pub" 2>/dev/null || true
-              echo "host key: the device's own"; echo own > /run/mura-recovery/keysource
+        # The host key: the device's own, when /persist mounts read-only; else generated for this
+        # session, its fingerprint shown on the panels. Also assembles the banner.
+        services.mura-recovery-identity = {
+          description = "Mura recovery: host key and banner";
+          after = [ "systemd-udev-settle.service" ];
+          wants = [ "systemd-udev-settle.service" ];
+          serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
+          script = ''
+            mkdir -p /run/mura-recovery /run/mura
+            key=/run/mura-recovery/ssh_host_ed25519_key
+            dev="${persistFs.device}"; [ -n "$dev" ] || dev=/dev/disk/by-partlabel/syspersist
+            if [ -e "$dev" ] && mkdir -p /run/mura-persist \
+               && mount -o ro -t ${persistFs.fsType} "$dev" /run/mura-persist 2>/dev/null; then
+              if [ -r /run/mura-persist/mura/identity/ssh/ssh_host_ed25519_key ]; then
+                cp /run/mura-persist/mura/identity/ssh/ssh_host_ed25519_key "$key"
+                cp /run/mura-persist/mura/identity/ssh/ssh_host_ed25519_key.pub "$key.pub" 2>/dev/null || true
+                echo "host key: the device's own"; echo own > /run/mura-recovery/keysource
+              fi
+              umount /run/mura-persist
             fi
-            umount /run/mura-persist
-          fi
-          if [ ! -s "$key" ]; then
-            ssh-keygen -q -t ed25519 -N "" -f "$key"
-            echo "host key: generated for this recovery session (persist unreadable)"; echo generated > /run/mura-recovery/keysource
-          fi
-          chmod 0600 "$key"
-          fp=$(ssh-keygen -lf "$key.pub" | cut -d' ' -f2)
-          {
-            echo "Mura recovery on this headset. Host key $fp"
-            echo "Run: mura-recovery"
-          } > /run/mura-recovery/banner
-          echo "$fp" > /run/mura-recovery/fingerprint
-        '';
-      };
-
-      services.mura-recovery-hotspot = {
-        description = "Mura recovery: per-boot-PSK Wi-Fi hotspot (hostapd)";
-        after = [ "systemd-udev-settle.service" ];
-        wants = [ "systemd-udev-settle.service" ];
-        serviceConfig = {
-          ExecStart = recoveryHotspot;
-          Type = "notify";
-          NotifyAccess = "all";
-          Restart = "on-failure";
-          RestartSec = "2s";
+            if [ ! -s "$key" ]; then
+              ssh-keygen -q -t ed25519 -N "" -f "$key"
+              echo "host key: generated for this recovery session (persist unreadable)"; echo generated > /run/mura-recovery/keysource
+            fi
+            chmod 0600 "$key"
+            fp=$(ssh-keygen -lf "$key.pub" | cut -d' ' -f2)
+            {
+              echo "Mura recovery on this headset. Host key $fp"
+              echo "Run: mura-recovery"
+            } > /run/mura-recovery/banner
+            echo "$fp" > /run/mura-recovery/fingerprint
+          '';
         };
-      };
 
-      services.mura-recovery-sshd = {
-        description = "Mura recovery: sshd on the USB gadget and recovery hotspot";
-        after = [ "mura-recovery-identity.service" "systemd-networkd.service" "mura-usb-gadget.service" ];
-        requires = [ "mura-recovery-identity.service" ];
-        wants = [ "systemd-networkd.service" "mura-usb-gadget.service" ];
-        before = [ "shutdown.target" ];
-        conflicts = [ "shutdown.target" ];
-        serviceConfig = {
-          ExecStart = "${pkgs.openssh}/bin/sshd -D -e -f /etc/ssh/sshd_recovery_config";
-          Type = "simple";
-          KillMode = "process";
-          Restart = "on-failure";
-          RestartSec = "2s";
+        services.mura-recovery-hotspot = {
+          description = "Mura recovery: per-boot-PSK Wi-Fi hotspot (hostapd)";
+          after = [ "systemd-udev-settle.service" ];
+          wants = [ "systemd-udev-settle.service" ];
+          serviceConfig = {
+            ExecStart = recoveryHotspot;
+            Type = "notify";
+            NotifyAccess = "all";
+            Restart = "on-failure";
+            RestartSec = "2s";
+          };
         };
-      };
 
-      # Plymouth is an optional surface, never a recovery availability dependency. pmOS waits
-      # 10 s for its framebuffer and then continues (research/56 §5); apply the same bound to
-      # plymouth-start. Units ordered after it proceed whether it starts or times out, avoiding
-      # both a permanent dark-device hang and a one-shot ping race in the panel frontend.
-      services.plymouth-start.serviceConfig.TimeoutStartSec = lib.mkDefault "10s";
-
-      # The panel frontend (specs/recovery-menu.md §4–§5): the HMD's buttons over raw evdev
-      # (register on release, long press ignored — Android recovery's semantics), the menu drawn
-      # through plymouth; the ways-in lines drawn once and left standing. Runs for the life of
-      # stage 1; a restart re-scans the input devices.
-      services.mura-recovery-panel = {
-        description = "Mura recovery: the panel menu (HMD buttons, plymouth)";
-        after = [ "mura-recovery-identity.service" "mura-recovery-hotspot.service" "plymouth-start.service" "systemd-udev-settle.service" ];
-        requires = [ "mura-recovery-identity.service" ];
-        wants = [ "plymouth-start.service" "systemd-udev-settle.service" ];
-        serviceConfig = {
-          ExecStart = "${recovery} panel";
-          Restart = "on-failure";
-          RestartSec = "2s";
+        services.mura-recovery-sshd = {
+          description = "Mura recovery: sshd on the USB gadget and recovery hotspot";
+          after = [ "mura-recovery-identity.service" "systemd-networkd.service" "mura-usb-gadget.service" ];
+          requires = [ "mura-recovery-identity.service" ];
+          wants = [ "systemd-networkd.service" "mura-usb-gadget.service" ];
+          before = [ "shutdown.target" ];
+          conflicts = [ "shutdown.target" ];
+          serviceConfig = {
+            ExecStart = "${pkgs.openssh}/bin/sshd -D -e -f /etc/ssh/sshd_recovery_config";
+            Type = "simple";
+            KillMode = "process";
+            Restart = "on-failure";
+            RestartSec = "2s";
+          };
         };
-      };
 
-      # The web frontend (§7): the setup program's recovery instance on the gadget and hotspot
-      # addresses — the keyless way in for a phone or a laptop on the cable. Root: no other
-      # identity exists in stage 1.
-      services.mura-setup-recovery = {
-        description = "Mura recovery: the web page on the cable/hotspot addresses";
-        after = [ "systemd-networkd.service" "mura-usb-gadget.service" "mura-recovery-identity.service" ];
-        wants = [ "systemd-networkd.service" "mura-usb-gadget.service" ];
-        requires = [ "mura-recovery-identity.service" ];
-        serviceConfig = {
-          ExecStart = "${lib.getExe pkgs.mura.setup} --recovery";
-          Restart = "on-failure";
-          RestartSec = "2s";
+        # Plymouth is an optional surface, never a recovery availability dependency. pmOS waits
+        # 10 s for its framebuffer and then continues (research/56 §5); apply the same bound to
+        # plymouth-start. Units ordered after it proceed whether it starts or times out, avoiding
+        # both a permanent dark-device hang and a one-shot ping race in the panel frontend.
+        services.plymouth-start.serviceConfig.TimeoutStartSec = lib.mkDefault "10s";
+
+        # The panel frontend (specs/recovery-menu.md §4–§5): the HMD's buttons over raw evdev
+        # (register on release, long press ignored — Android recovery's semantics), the menu drawn
+        # through plymouth; the ways-in lines drawn once and left standing. Runs for the life of
+        # stage 1; a restart re-scans the input devices.
+        services.mura-recovery-panel = {
+          description = "Mura recovery: the panel menu (HMD buttons, plymouth)";
+          after = [ "mura-recovery-identity.service" "mura-recovery-hotspot.service" "plymouth-start.service" "systemd-udev-settle.service" ];
+          requires = [ "mura-recovery-identity.service" ];
+          wants = [ "plymouth-start.service" "systemd-udev-settle.service" ];
+          serviceConfig = {
+            ExecStart = "${recovery} panel";
+            Restart = "on-failure";
+            RestartSec = "2s";
+          };
+        };
+
+        # The web frontend (§7): the setup program's recovery instance on the gadget and hotspot
+        # addresses — the keyless way in for a phone or a laptop on the cable. Root: no other
+        # identity exists in stage 1.
+        services.mura-setup-recovery = {
+          description = "Mura recovery: the web page on the cable/hotspot addresses";
+          after = [ "systemd-networkd.service" "mura-usb-gadget.service" "mura-recovery-identity.service" ];
+          wants = [ "systemd-networkd.service" "mura-usb-gadget.service" ];
+          requires = [ "mura-recovery-identity.service" ];
+          serviceConfig = {
+            ExecStart = "${lib.getExe pkgs.mura.setup} --recovery";
+            Restart = "on-failure";
+            RestartSec = "2s";
+          };
         };
       };
     };

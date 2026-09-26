@@ -12,10 +12,17 @@
 #     happens outside the store; test keys are cacheable)
 #
 # Frame-scoped by design (design-backlog standing rule): no speculative generality.
-{ lib, config, pkgs, modulesPath, ... }:
+{ lib, config, pkgs, modulesPath, extendModules, ... }:
 let
   cfg = config.mura;
   compatible = "mura-${cfg.device.codename}";
+  recoverySystem = extendModules {
+    modules = [{ mura.recovery.buildImage = true; }];
+  };
+  recoveryUki =
+    if cfg.recovery.buildImage
+    then config.system.build.uki
+    else recoverySystem.config.system.build.uki;
 
   toplevel = config.system.build.toplevel;
   kernelParamsCommon = lib.concatStringsSep " " ([
@@ -86,9 +93,10 @@ let
   bootconf = pkgs.writeShellApplication {
     name = "mura-bootconf";
     text = ''
-      LOADER=/efi/loader/loader.conf
-      STATE=/efi/loader/mura-slot-state
-      ENTRIES=/efi/loader/entries
+      ESP="''${MURA_BOOTCONF_ESP:-/efi}"
+      LOADER="$ESP/loader/loader.conf"
+      STATE="$ESP/loader/mura-slot-state"
+      ENTRIES="$ESP/loader/entries"
       cmd="''${1:-}"; slot="''${2:-}"; val="''${3:-}"
       to_id() { case "$1" in A) echo a ;; B) echo b ;; *) echo "unknown slot $1" >&2; exit 1 ;; esac; }
       case "$cmd" in
@@ -143,6 +151,34 @@ let
       esac
     '';
   };
+  bootconfTest = pkgs.runCommand "mura-bootconf-test" { nativeBuildInputs = [ bootconf ]; } ''
+    export MURA_BOOTCONF_ESP="$PWD/efi"
+    mkdir -p "$MURA_BOOTCONF_ESP/loader/entries"
+    cat > "$MURA_BOOTCONF_ESP/loader/loader.conf" <<EOF
+    preferred a*.conf
+    default b*.conf
+    timeout 3
+    EOF
+    touch "$MURA_BOOTCONF_ESP/loader/entries/a.conf"
+    touch "$MURA_BOOTCONF_ESP/loader/entries/b+0-3.conf"
+
+    # Reinstalling/selecting an exhausted slot must re-arm it and make the other slot fallback.
+    mura-bootconf set-primary B
+    test -e "$MURA_BOOTCONF_ESP/loader/entries/b+${bootTries}.conf"
+    test ! -e "$MURA_BOOTCONF_ESP/loader/entries/b+0-3.conf"
+    test "$(mura-bootconf get-primary)" = B
+    grep -qx 'preferred b\*\.conf' "$MURA_BOOTCONF_ESP/loader/loader.conf"
+    grep -qx 'default a\*\.conf' "$MURA_BOOTCONF_ESP/loader/loader.conf"
+
+    # A plain blessed entry is armed the same way.
+    mura-bootconf set-primary A
+    test -e "$MURA_BOOTCONF_ESP/loader/entries/a+${bootTries}.conf"
+    test "$(mura-bootconf get-primary)" = A
+    grep -qx 'preferred a\*\.conf' "$MURA_BOOTCONF_ESP/loader/loader.conf"
+    grep -qx 'default b\*\.conf' "$MURA_BOOTCONF_ESP/loader/loader.conf"
+
+    touch "$out"
+  '';
 
   # In-store TEST key/cert (never a release key; invariant 5). Non-deterministic
   # keygen is acceptable for the scaffold; the release path signs out-of-store.
@@ -194,22 +230,24 @@ in
       };
       # A dedicated Mura recovery UKI, physically separate from both normal Mura boot artifacts
       # and any hardware/vendor recovery. XBOOTLDR is systemd-boot's standard second boot
-      # partition; the stable Type #1 entry points at one Type #2 UKI. 512 MiB follows NixOS's
-      # installer ESP size and is measured below against the generated UKI.
+      # partition; the stable Type #1 entry points at one UKI. At 4K filesystem sectors,
+      # systemd-repart requires VFAT ESP/XBOOTLDR to be at least 260 MiB
+      # (repart.c:115-122,1194-1197). The measured UKI is 103 MiB; fixing the readonly slot at
+      # that upstream floor leaves 157 MiB growth budget and makes excess growth fail the build.
       "15-mura-recovery" = {
         repartConfig = {
           Type = "xbootldr";
           Label = "mura_recovery";
           Format = "vfat";
-          SizeMinBytes = "512M";
-          SizeMaxBytes = "512M";
+          SizeMinBytes = "260M";
+          SizeMaxBytes = "260M";
           SplitName = "mura_recovery";
         };
         contents = {
           # Outside /EFI/Linux: systemd-boot must expose only the stable recovery.conf entry,
           # not a duplicate auto-discovered Type #2 menu item for the same UKI.
           "/EFI/mura-recovery/mura-recovery.efi".source =
-            "${config.system.build.uki}/${config.system.boot.loader.ukiFile}";
+            "${recoveryUki}/mura-recovery.efi";
           "/loader/entries/recovery.conf".source = recoveryEntry;
         };
       };
@@ -328,6 +366,7 @@ in
 
   ###### RAUC ######
   environment.systemPackages = [ pkgs.rauc bootconf ];
+  system.build.muraBootconfTest = bootconfTest;
   services.dbus.packages = [ pkgs.rauc ];
 
   environment.etc."rauc/system.conf".text = ''

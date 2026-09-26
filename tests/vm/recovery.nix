@@ -25,6 +25,7 @@
         openssh.authorizedKeys.keys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA guest-not-an-admin" ];
       };
       testing.initrdBackdoor = true;
+      mura.recovery.buildImage = true;
       boot.kernelParams = [ "rd.systemd.unit=mura-recovery.target" ];
       # cdc_ncm = the HOST end of the cable; hwsim gives recovery wlan0 (headset AP) and wlan1
       # (phone) so the required hotspot is exercised in stage 1.

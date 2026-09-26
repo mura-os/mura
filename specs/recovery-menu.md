@@ -2,8 +2,8 @@
 
 **Status:** rev 2 (2026-09-25) — normative for `pkgs/mura-recovery`, `mura-setup --recovery`,
 the stage-1 half of `modules/os/recovery.nix`, and the dedicated-family recovery-image boundary.
-Revised when Android-derived partition selection lands and when the button proof runs on
-hardware.
+Android-derived partition selection and per-target hardware-button qualification are outside
+rev 2; their contracts must amend this spec rather than silently specialize it.
 **Design source:** [research/56 §3](../docs/research/56-defaults-from-comparables.md) (the ruling),
 [research/57](../docs/research/57-recovery-environments-and-boot-failure-feedback.md) (the
 comparables and their reasons), [implementation-path.md §4 "Mura recovery environment"](../docs/architecture/implementation-path.md),
@@ -11,8 +11,10 @@ ADR 0017 decision 10 (one program, several instances — the `mura-setup` shape)
 **Grounding:** "stage 1" is the systemd initrd (`boot.initrd.systemd`); "the panels" are the HMD's
 displays driven by plymouth on the DRM device; key names are Linux evdev `KEY_*` codes as the
 device contract declares them (`mura.hardware.input.hmdButtons`).
-**Budget impact** (overview invariant 9): stage 1 only. One process asleep in `poll(2)` on the
-input devices; a plymouth message per redraw; nothing on the frame path, nothing in a normal boot.
+**Budget impact** (overview invariant 9): recovery stage 1 only. The family builds a separate
+recovery initrd closure; hostapd, recovery sshd/menu/web and their dependencies are not copied
+into the normal ESP initrd. In recovery, one process sleeps in `poll(2)` on input devices and a
+plymouth message is sent per redraw; nothing runs on the normal frame path.
 
 ## 1. The problem
 

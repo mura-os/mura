@@ -211,7 +211,7 @@ edk2 firmware) on the x86_64 dev host via `nix run .#frame-vm-run`:
 |---|---|
 | Image | `packages.aarch64-linux.frame-image`: 33.6 GiB sparse GPT (zstd artifact ~2 GiB after the dedicated recovery partition); remote build via `nix run .#frame-build` |
 | Boot | UEFI → systemd-boot → slot A; `multi-user.target` + `graphical.target` active; autologin session; sshd up |
-| Layout | `esp / mura_recovery / rootfs_a / rootfs_b / syspersist / home`; `mura_recovery` is a separate 512 MiB XBOOTLDR image (62.8 MiB compressed) carrying stable `recovery.conf` + one 103 MiB self-contained recovery UKI (kernel+initrd+cmdline, including USB/hotspot services), registered as readonly RAUC `rescue.0` so ordinary A/B bundles leave it untouched; cmdline `root=PARTLABEL=rootfs_a rauc.slot=A` (the donor's slot-cmdline contract, §3) |
+| Layout | `esp / mura_recovery / rootfs_a / rootfs_b / syspersist / home`; `mura_recovery` is a separate 260 MiB XBOOTLDR image (63.8 MiB compressed) — systemd-repart's VFAT/4K-sector minimum and a hard build cap — carrying stable `recovery.conf` + one measured 103 MiB self-contained recovery UKI (kernel+initrd+cmdline, including USB/hotspot services), registered as readonly RAUC `rescue.0` so ordinary A/B bundles leave it untouched; cmdline `root=PARTLABEL=rootfs_a rauc.slot=A` (the donor's slot-cmdline contract, §3) |
 | RAUC | `compatible=Mura-deckard`, booted `rootfs.0 (A)`, custom backend (`mura-bootconf`) reporting primary correctly |
 | XR wiring | `monado.socket` active (user unit); `/etc/mura-device.json` correct |
 | Update round-trip | test-signed 2.1 GiB `.raucb` → `rauc install` into slot B (**4 m 42 s** with the VM disk on fast local SSD; effectively unbounded on slow storage — see lessons), backend flipped primary to B, reboot → **booted `rootfs.1 (B)`** with `root=PARTLABEL=rootfs_b rauc.slot=B`, `rauc status mark-good` → both slots good |
@@ -272,6 +272,8 @@ kernel (§4), and the not-yet-obtained flash/recovery procedure — the hardware
   `default` fallback ([external, pinned nixpkgs]
   `nixos/modules/system/boot/loader/systemd-boot/systemd-boot-builder.py:297-314`). Mura's
   two-slot translation writes `preferred a*.conf` + `default b*.conf` (or the reverse).
+  `packages.aarch64-linux.frame-bootconf-test` exercises both a plain entry and an exhausted
+  `+0-N` entry, asserting re-arm plus the opposite-slot fallback.
 - **Recovery is one UKI, not loose boot files.** systemd-boot scans Type #2 UKIs on XBOOTLDR
   (`references/systemd/man/systemd-boot.xml:31-49`), and NixOS's pinned `system.build.uki`
   uses ukify to bind kernel, initrd, cmdline and OS metadata into one PE artifact ([external,
@@ -279,6 +281,13 @@ kernel (§4), and the not-yet-obtained flash/recovery procedure — the hardware
   kernel/initrd window and makes the dedicated-image boundary real. RAUC's Additional Rescue
   Slot is readonly: normal bundles cannot target it. Mutable recovery is a later design requiring
   versioned whole-UKI staging; raw overwrite of the sole rescue partition is not atomic.
+- **Recovery partition size is 260 MiB, derived rather than copied.** systemd-repart enforces a
+  260 MiB minimum for VFAT ESP/XBOOTLDR at 4 KiB filesystem sectors
+  (`references/systemd/src/repart/repart.c:115-122,1194-1197`). The built UKI is 103 MiB, leaving
+  157 MiB growth budget. `SizeMaxBytes=260M` makes growth beyond that budget fail at build time;
+  readonly recovery needs no in-place update staging space. The recovery-specific extended
+  module evaluation also keeps its hostapd/sshd/menu/web closure out of normal boot: the normal
+  initrd measured 37 MiB versus 41 MiB before the split.
 - Closure size is the slot-size driver: the VM-proof userspace closed at **12.1 GiB** (16 GiB
   slots as a result). Before any real update channel, closure slimming is mandatory
   (docs/man pages, firmware pruning, sway-vs-zxr) — follow-up, not blocking.

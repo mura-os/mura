@@ -131,6 +131,8 @@
           # Steam Frame uefi-rauc artifacts (build with `nix run .#frame-build`).
           frame-image = self.nixosConfigurations.valve-steam-frame.config.system.build.image;
           frame-bundle = self.nixosConfigurations.valve-steam-frame.config.system.build.raucBundle;
+          frame-bootconf-test =
+            self.nixosConfigurations.valve-steam-frame.config.system.build.muraBootconfTest;
           frame-recovery-proof-image =
             self.nixosConfigurations.valve-steam-frame-recovery-proof.config.system.build.image;
         });
