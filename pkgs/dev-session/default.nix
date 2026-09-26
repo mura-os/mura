@@ -17,6 +17,8 @@
 , foot
 , xrgears
 , vulkan-tools
+, glmark2
+, vkmark
 , xterm
 , coreutils
 , gnugrep
@@ -43,7 +45,8 @@ writeShellApplication {
   # its glibc matches the host's Mesa ICDs. A vkcube from an unrelated store path once fell
   # back to llvmpipe and mislabelled a whole set of host benches as dmabuf (research/65 §2.3,
   # research/67 §6): bench clients are taken from this PATH, never from a hard-coded path.
-  runtimeInputs = [ monado sway foot xrgears vulkan-tools xterm coreutils gnugrep procps mura.zxr ];
+  # glmark2 / vkmark are the GPU-bound Wayland bench clients (research/69 Phase 0).
+  runtimeInputs = [ monado sway foot xrgears vulkan-tools glmark2 vkmark xterm coreutils gnugrep procps mura.zxr ];
   text = ''
     usage() {
       cat <<USAGE
