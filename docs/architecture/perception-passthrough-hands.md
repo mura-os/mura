@@ -26,6 +26,30 @@ hand matte is applied after that resolve as a policy-driven top layer. Neither i
 they are compositor-internal, like 2D-plane rasterization, so they are never subject to the client
 composition cutoff.
 
+### §1a. The cutout under the composition ruling (2026-09-26): hands above windows, shape open
+
+[ADR 0006 amendment 2](adr/0006-compositor-strategy.md) makes 2D windows runtime quad layers
+and zxr's projection layer conditional. **Ruled:** the cutout is a runtime layer submitted
+*after every quad*, so hands composite above all windows — the mechanism is OpenXR's painter's
+order (`rendering.adoc:1143-1147`) and Monado's per-layer source-alpha blending
+(`render_gfx.c:409, 767-776`); its alpha is the matte, its colour the hand's passthrough
+pixels. This holds regardless of depth (a window nearer than the hand still shows the hand),
+which is the "your hands are always yours" posture visionOS takes at the system level
+[external, mechanism only] and what `handCutout.upperLimbVisibility` already models. **Open —
+the layer's shape, decider: the owner at the passthrough rung, on measured edge quality and
+bandwidth:**
+
+| shape | mechanism | cost per matte update (camera rate, hands in view) | fidelity | notes |
+|---|---|---|---|---|
+| (i) view-aligned cutout projection layer, submitted last | one RGBA image per eye, α = matte, colour = hand pixels, transparent elsewhere; may run at reduced resolution | a full-view store per eye: ~7 MB at 896×1007, ~28 MB at XR2-class; ÷4 at half resolution | exact by construction (view-aligned, any hand pose) | simplest; the projection-path bandwidth but only at camera rate and only with hands in view |
+| (ii) one billboard quad per hand, submitted last | a small swapchain (≈ 384²) per hand at the hand's depth, facing the viewer, covering its projected bounding box; matte reprojected from the camera onto the plane | ≈ 0.6 MB per hand; zero with no hand in view | approximate at the hand's edges: a hand is 10–20 cm deep at 40–60 cm, the billboard is flat, so the runtime's reprojection under head motion between camera and display is slightly off at the silhouette | the efficient shape; measure the silhouette error before adopting |
+| (iii) depth-correct ordering | windows the hand intersects are drawn in zxr's projection layer with the cutout, so a nearer window can hide the hand | those windows' render every frame | depth-correct | not what the ruling asks for (hands above, always); recorded because it is the only way to get occlusion *by* a window on Monado, which never depth-tests across layers |
+
+No open-source XR compositor implements any of these (research/62 §3.5); the evidence is the
+compositing facts above and Mura's own perception research (13, 15). My read, labelled as
+such: (i) at reduced resolution first, (ii) once the matte pipeline exists and the silhouette
+error can be measured.
+
 The two are coupled through depth: **hands are simultaneously the hardest passthrough depth (nearest,
 fastest, low-texture — reprojection error scales `≈ f·t·δZ/Z²`, so ~3 px of stereo-inconsistent swim
 at 30 cm for a 1 cm error, invisible at 3 m) and the object of the cutout.** So the hand matte does

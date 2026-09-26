@@ -238,19 +238,26 @@ commit is unavoidable for runtime layers), and what the foreground cutout can co
   consumer platforms' recommendation for UI. Keeps: legibility, runtime-side reprojection at
   the latest pose, zxr idle when only the head moves (measured: −47 % CPU, −48 % wake-ups, 0
   GPU), 5 RPCs. Costs: a copy per commit; painter's order only (no window intersections); the
-  cutout cannot cover windows; popups/subsurfaces pre-composed per window; a layer cap (128 /
+  cutout must be its own layer submitted last (~~cannot cover windows~~ — corrected 2026-09-26: painter's order puts a last-submitted cutout layer above every quad, perception-passthrough-hands §1a); popups/subsurfaces pre-composed per window; a layer cap (128 /
   32 on Android) that a busy desktop can approach.
 - **(c) Hybrid** — quads for the window tiers and overlay; projection layer for environment, 3D
   volumes and the foreground cutout. Keeps (b)'s wins for windows and (a)'s depth for the rest;
   costs both paths' fixed overheads every frame (measured worst at R0, where the projection
-  layer is empty) and the cutout still cannot cover windows.
+  layer is empty); the cutout is a last-submitted layer in every shape.
 
 *My read, labelled as such:* (b) for M1's flat panels with (c) as the shape once depth content
 exists — the spec's own text and the only XR comparable that ships a desktop-like set of panels
 both point there, and the measurement is unambiguous for the common case. The blit per commit
 is the price; whether it is acceptable at panel resolution is a hardware number. The foreground
-cutout not covering windows is the design consequence to weigh — perception-passthrough-hands.md
-assumes the matte composites over *everything*.
+cutout is a separate top layer in every shape (corrected 2026-09-26 — I had written that it could
+not cover windows; painter's order is what makes it cover them), so perception-passthrough-hands.md's
+"matte composites over everything" holds; its shape is recorded there (§1a).
+
+**Ruled 2026-09-26 (ADR 0006 amendment 2): (c) made conditional.** Windows are always quad
+layers; the projection layer exists only while depth content (volumes, environment, cutout) or
+panel overflow exists — so a windows-only session runs the (b) path with no render pass. The
+consequences above are accepted and recorded in the ADR; the M2 occlusion question (a window a
+volume should hide) is spec §14's open item; the cutout's reach is the passthrough rung's.
 
 ## 3. Memory (Phase 4)
 
@@ -367,11 +374,11 @@ transient attachments.
 resolution; Monado's squasher on an XR2-class GPU; real RSS with one ICD; wake-ups and CPU under
 the device's power management; big-core affinity.
 
-## 6. Determinations and the one owner item
+## 6. Determinations and the ruling
 
 Determinations (converging evidence, acted on in the branch or recorded for spec rev 3): stay an
 IPC client and batch `xrLocateSpaces` (§1.4); frame callbacks visibility-gated with a fallback
 timer (§4.2); minimum-RT-priority with `RESET_ON_FORK` through the unit, in-code fallback (§4.3);
 transient/lazily-allocated depth (§0.2, §3.3); damage-aware shm upload (§3.2); multiview for the
 projection pass when it carries 3D content (§4.4); no depth-layer submission on Monado (§4.4);
-display refresh rate as a user setting (§4.4). **Owner item:** the composition fork, §2.4.
+display refresh rate as a user setting (§4.4). **Ruled (2026-09-26):** the composition fork, §2.4 — quads always, projection only with depth content (ADR 0006 amendment 2).

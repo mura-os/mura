@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 2.1 (2026-09-26; rev 2 + research/65 additions: §6.6 visibility-gated frame callbacks, §6.7 the round-trip census, §14 the composition fork and the frame-path determinations). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3 (2026-09-26; rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -106,6 +106,28 @@ Layer-shell's four layers keep their upstream meanings (the wlr protocol text's 
 environment and foreground layers are Mura's, owned by the compositor's composition and fed by
 separate services. A plane's stacking within a tier is depth, not z-order.
 
+**Rev 3 — how the bands reach the display (ADR 0006 amendment 2, ruled 2026-09-26).** Two
+transports, chosen per band by whether the content has depth:
+
+- **Runtime layers**: every 2D plane in bands 2–5 (windows, shell layer-shell surfaces, the
+  overlay scene) is one `XrCompositionLayerQuad` per plane (cylinder later), whose swapchain zxr
+  renders **only when the plane's surface tree commits**; the runtime samples it every display
+  frame at the display pose. Order among quads is submission order = this list's band order,
+  then depth within a band (painter's algorithm, `rendering.adoc:1143-1147`).
+- **zxr's projection layer**: band 1 (environment), 3D clients' colour+depth in band 3, and band
+  6 (the cutout) — everything that has depth of its own — composited by zxr into one stereo
+  projection layer, submitted *before* the quads. **It exists only while such content exists**
+  (or while panel overflow puts planes into it, §7); a session of 2D planes alone submits no
+  projection layer and runs no render pass.
+
+Consequences the rule accepts: quads always composite over the projection layer (a plane a 3D
+volume should hide cannot be — §14, M2); one copy per commit into the panel swapchain (§6.2).
+**The foreground cutout (band 6) is a runtime layer submitted after every quad: hands composite
+above all windows** (ruled 2026-09-26). Its shape — view-aligned cutout projection layer,
+per-hand billboard quads, or depth-correct ordering — is open ([perception-passthrough-hands.md
+§1a](../docs/architecture/perception-passthrough-hands.md)); whichever is chosen, it is the last
+layer in `xrEndFrame` and its alpha is the matte.
+
 ## 5. Places and frames (research/60 §2; places-model.md)
 
 The scene holds the frame graph — world (OpenXR LOCAL / LOCAL_FLOOR; STAGE where the runtime
@@ -188,7 +210,11 @@ which an XR projection layer re-rendered every frame does not do.
 2. **Import**: dmabuf → `VkImage` with the buffer's modifier, `VK_KHR_external_memory_fd`,
    dedicated allocation; imported once per `wl_buffer`, cached on the buffer. shm → one upload
    into a device image per commit. **A CPU copy on the dmabuf path is a bug**; `trace` counts
-   copies and R0 asserts zero.
+   copies and R0 asserts zero. **Rev 3 — the one designed GPU copy:** a plane that is a runtime
+   quad layer (§4) has its surface tree rendered into a runtime-owned panel swapchain image once
+   per commit (OpenXR swapchain images are allocated by the runtime — `comp_swapchain.c:693-704`
+   — so a client buffer can never be one). Import stays zero-copy; the panel pass is a GPU→GPU
+   render, never a CPU copy, and `trace` counts it (`panel_passes`, analytic `panel_bytes`).
 3. **Acquire**: `wp_linux_drm_syncobj_v1` acquire points gate the surface transaction through
    smithay's `DrmSyncPointBlocker` (an eventfd source; the loop never blocks); a dmabuf without
    an acquire point gates on its implicit fence through the readable-fd blocker (cosmic-comp's
@@ -242,7 +268,32 @@ loop:         on FrameState: xrLocateViews(predictedDisplayTime) → snapshot th
 
 `shouldRender == false` skips the pass and still submits an empty frame. Missed frames are
 counted (§11), never compensated by waiting. Depth to Monado is for reprojection only (the
-runtime does not depth-test across layers; research/59 §3).
+runtime does not depth-test across layers; research/59 §3) — and not submitted while the runtime
+does not read it (research/65 §4.4).
+
+**Rev 3 — the tick has two shapes, selected by a condition, not a mode (ADR 0006 amendment 2):**
+
+```
+every tick:   xrBeginFrame → xrLocateViews → gaze/hand input → wait slot fence, release held buffers
+              → for each plane whose surface tree committed since its last panel image:
+                  acquire its panel swapchain image → record the panel pass (tree → image) → release
+              → depth content present?  (a mapped 3D volume | environment source | cutout source
+                                          | panel overflow past maxLayerCount − 1)
+                  no:  submit the panel passes on the slot fence (if any) → xrEndFrame(quads)
+                  yes: acquire the projection images → record the scene pass (volumes, environment,
+                       cutout, overflow planes) with the panel passes → submit on the slot fence →
+                       release → xrEndFrame(projection, quads)
+              → frame callbacks (§6.6) → journal
+```
+
+In the `no` shape zxr acquires no projection images and records no scene pass; with no commit
+in the tick it submits nothing to the GPU at all — the runtime re-samples the panels at the
+display pose. Quads are ordered by band (§4) then by distance, nearest last within a band. The
+projection layer, when present, is submitted first. **Overflow:** the runtime's
+`maxLayerCount` (Monado 128 Linux / 32 Android) minus one bounds the quads; the nearest planes
+get quads, the farthest are drawn in the projection layer that frame — which then exists.
+`--debug-panels projection` forces every plane into the projection layer (the R0 path) for
+measurement; it is not a mode the session has.
 
 **Runtime events have their own source (rev 2, research/61 §6.1).** `xrPollEvent` runs on a
 calloop timer — 5 ms until the session is running, 250 ms after — and on every tick. Session
@@ -361,7 +412,13 @@ headset). Each gate is a written result with numbers in
    reach the renderer with **0 CPU copies** (the counter); the feedback table is computed from the
    device; `wp_linux_drm_syncobj_v1` acquire wait and release-point signal after composition
    completes, end to end; a client submitting faster than composition is bounded (buffer
-   retention ≤ 2 frames, no unbounded queue).
+   retention ≤ 2 frames, no unbounded queue). **Rev 3 restatement:** the 0-CPU-copy assertion is
+   unchanged (import); the panel pass is the designed GPU render (§6.2) and is gated separately:
+   `panel_passes == displayed commits` (one per plane per tick in which its tree committed, never
+   per frame), retention and acquire counters as before.
+   **Panels path** (rev 3): with 2D planes only, `projection_layer_frames == 0`, GPU pass count
+   0 in ticks with no commit, runtime calls per tick ≤ 6 (wait ×1 on the wait thread + begin,
+   poll, end + panel acquire/release only when a panel committed).
 3. **Window behaviour under churn.** Resize, positioner-constrained popups, focus handoff, client
    `kill -9` mid-frame, surface destruction with in-flight GPU work — no unresolved GPU waits
    (every submitted fence signals), no stale textures (a destroyed surface is not sampled), the
@@ -407,15 +464,15 @@ compositor-kept set; focus (interaction-backed, urgency-only on refusal), exclus
 Hyprland-shape disconnect are ruled (ADR 0012 amendment (ii)); the reserved system input that
 leaves an exclusive scene is the remaining item — research/64 §16, the owner with the input
 workstream.
-**The composition fork** ([research/65 §2.4](../docs/research/65-embedded-frame-path-efficiency.md)):
-whether 2D windows reach the display through this spec's projection pass (§7; motorcar,
-kwin-vr, Simula, StardustXR) or as runtime quad/cylinder layers (wayvr; the OpenXR spec's
-recommendation for UI, `rendering.adoc:1223-1230`), or a hybrid — host A/B: quads halve zxr's
-CPU and wake-ups and remove its GPU pass for static UI under head motion at the price of a blit
-per commit, painter's order only between windows, and a foreground cutout that cannot cover
-windows — decider: the owner; §7 and research/59 §2 amend after the ruling. Until then §7 stands
-and the `--panels` flag is measurement scaffolding. Also from research/65, recorded as
-determinations for the next revision that touches them: depth as a transient, lazily-allocated
+**The composition fork — ruled** (ADR 0006 amendment 2, 2026-09-26; §4, §6.2, §7,
+[research/65 §2.4](../docs/research/65-embedded-frame-path-efficiency.md)): quads always, the
+projection layer only with depth content. **Open from it (M2, decider: the owner, with volumes
+present):** a plane that a 3D volume should occlude cannot be under painter's order; candidate
+rule — a plane whose quad intersects a volume is drawn in the projection layer that frame.
+**Open from it (passthrough rung, decider: the owner):** the cutout layer's *shape* — hands
+above windows is ruled (§4); which of the three recorded shapes (perception-passthrough-hands
+§1a) delivers it at acceptable edge quality and bandwidth is decided on measurement. Determinations from
+research/65 recorded for the next revision that touches them: depth as a transient, lazily-allocated
 attachment (§7); the compositor's scheduling request through the unit (minimum RT priority,
 `RESET_ON_FORK`; §9); no depth-layer submission while the runtime does not read it (§7);
 multiview for the projection pass once it carries 3D content (M2); display refresh rate as a

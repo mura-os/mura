@@ -119,6 +119,15 @@ now given by the runtime: the frame callback's timestamp and the clients' target
 bounded buffering is the release-point contract (§5). **Verdict: lineage confirmed, refined by
 the runtime's prediction and the niri/cosmic throttle.**
 
+**Amendment 2026-09-26 (ruled — ADR 0006 amendment 2, from research/65 §2).** "One stereo
+projection layer" above and in §3 is now *conditional*: 2D windows are runtime quad layers, one
+per window, rendered by zxr only on commit; the projection layer exists only while depth content
+(3D volumes, environment, cutout) or panel overflow exists. The frame-pacing verdict is
+unchanged — zxr still never waits on a client, and frame callbacks still follow `xrEndFrame` —
+but in a windows-only session the tick has no render pass and five round trips instead of
+eleven. The reasons and the accepted consequences are in the ADR; the measurements in
+research/65 §2.3.
+
 ## 3. Renderer and device ownership; who composites depth
 
 **Lineage.** motorcar: the compositor composites depth from client depth buffers (packed into

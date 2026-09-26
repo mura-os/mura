@@ -77,6 +77,7 @@ therefore never blocks on the runtime or on a GPU.
 | an shm surface's texture | `render`, owned by the surface | re-created on size change, re-uploaded on commit change, dropped when the surface is unseen for 120 frames |
 | the Vulkan instance/device/queue | the **runtime** creates them (`XR_KHR_vulkan_enable2`); `render` borrows | the session's |
 | swapchain images | the runtime; `render` holds framebuffers for them | the session's |
+| a plane's panel swapchain (one per 2D plane; ADR 0006 amendment 2) | the runtime allocates it; `scene` owns the handle and the commit it holds | recreated when the plane's bounds change; dropped with the plane |
 | planes (windows in space), focus, stacking | `scene` | mapped on first buffer, removed on toplevel destroy |
 | the head pose of the frame | `input`, from `xrLocateViews(predicted_display_time)` | the frame's |
 | the OpenXR session state machine | `xr` (`poll_events` → begin/end session) | driven by the runtime's events |
@@ -95,18 +96,24 @@ Every `FrameTick` from the wait thread runs this once, in order, on the state lo
    R0): `scene.hit` → nearest plane → surface under the point → `wl_pointer.motion` + `frame`.
 3. Slot N mod 2: wait the fence of the frame that used this slot two frames ago; read its GPU
    timestamps; **drop the `Buffer` clones it held** (= release to clients, §4).
-4. Build the draw list: for each mapped plane, walk the toplevel's surface tree
-   (`with_surface_tree_downward`, offsets from `SurfaceView`) plus its popups
-   (`PopupManager::popups_for_surface`, offset `geo.loc + popup_offset − popup.geometry().loc`,
-   smithay's own convention); for each surface bring the texture current (shm: staging upload on
-   commit change; dmabuf: one import per `wl_buffer`, then none) and hold a `Buffer` clone.
-   Sub-surfaces and popups sit 0.5 mm in front of their parent so the depth test orders them.
-5. Acquire one swapchain image per view; one render pass per view; every dmabuf drawn gets a
-   foreign-queue **acquire** barrier before and **release** barrier after (wlroots' shape,
-   `render/vulkan/pass.c:337-359`); release the images; `xrEndFrame` with one projection layer.
-6. `wl_surface.frame` callbacks to every mapped window — once per refresh, after `xrEndFrame`
-   (spec §6.6).
-7. Journal: rendered, GPU ns, wake→end ns, missed (wake→end > predicted period), retention.
+4. **Panel passes** (ADR 0006 amendment 2): for each mapped plane whose surface tree committed
+   since its last panel image, walk the tree (`with_surface_tree_downward`, offsets from
+   `SurfaceView`) plus its popups (`PopupManager::popups_for_surface`), bring every texture
+   current (shm: staging upload on commit change; dmabuf: one import per `wl_buffer`, then none),
+   hold `Buffer` clones, acquire the plane's runtime-owned panel swapchain image and record an
+   orthographic pass of the whole tree into it (bounds = geometry ∪ popups). Every dmabuf drawn
+   gets a foreign-queue **acquire** barrier before and **release** barrier after (wlroots' shape,
+   `render/vulkan/pass.c:337-359`).
+5. **Depth content present?** (a mapped 3D volume, an environment or cutout source, or panel
+   overflow past `maxLayerCount − 1`). *No:* submit the panel passes on the slot fence, release
+   the panel images, `xrEndFrame(quads)` — no projection images acquired, no scene pass; with no
+   commit in the tick, nothing reaches the GPU. *Yes:* acquire the projection images, record the
+   scene pass (volumes, environment, cutout, overflow planes) alongside the panel passes, submit,
+   release, `xrEndFrame(projection, quads)`. Quads ordered by band then distance; the projection
+   layer first.
+6. `wl_surface.frame` callbacks — visibility-gated (frustum test on the quad pose), with a
+   fallback cadence for out-of-view planes (spec §6.6).
+7. Journal: shape taken, panel passes, GPU ns, wake→end ns, missed, retention, runtime calls.
 
 A tick with `shouldRender = false` does 1, then `xrEndFrame` with no layers, then 7.
 
@@ -165,6 +172,7 @@ mechanism the bring-up showed was missing, no comparable needed, recorded for th
 | xwayland-satellite for X11; smithay `X11Wm` the recorded fallback | determined; re-examined against the virtual-desktop modes at the owner's request and **stands** (nested DEs are Wayland clients; delegated X11 windows carry the *producer's* X11 issues; satellite's fatal set is in the R0 protocol set) | research/59 §9 + §9a |
 | no compositor-side windowed backend; Monado's mirror is the dev view | ruled | research/59; spec §1 |
 | painter's order across layers; depth test only within the projection layer | determined | research/59 §2 (`rendering.adoc:1143-1147`; Monado `comp_render.h:42-43`) |
+| **2D planes are runtime quad layers; the projection layer exists only with depth content** (volumes, environment, cutout, or panel overflow) — a windows-only session has no render pass | **ruled** 2026-09-26 (ADR 0006 amendment 2) on research/65 §2: equal pass counts on Monado, −47 % CPU / −48 % wake-ups / 0 GPU for static UI under head motion, the spec's quad-for-UI text, wayvr; accepted: one GPU copy per commit, painter's order only; **the cutout is the last layer — hands above all windows** (shape open, perception-passthrough-hands §1a) | ADR 0006 amendment 2; spec §4, §6.2, §7 |
 | acquire via fd blockers (syncobj eventfd, else implicit fence) | determined | research/59 §4–5; cosmic-comp shape |
 | release = drop held `Buffer` after the frame's fence | determined | research/59 §5; smithay `InnerBuffer::drop` |
 | one `VkImage` per `wl_buffer` (dmabuf), one texture per surface (shm) | determined | research/59 §4 (niri/cosmic/wlroots caches are per buffer) |

@@ -254,3 +254,54 @@ evidence for or against. Results, recorded here so the program spec
   `default-features = false` (niri's convention); wlroots fallback only on a structural
   frontend defect. Budgets measured (niri 35.5 MB / 30 MB / 1 thread; cosmic-comp 115 MB / 28;
   gamescope 144 MB / 17) set the fence in the spec.
+
+## Amendment 2 (2026-09-26) — the composition path: quads always, the projection layer only with depth content
+
+**Ruled by the owner, 2026-09-26**, on [research/65 §2](../../research/65-embedded-frame-path-efficiency.md)
+(the fork brought under AGENTS rule 8 with the comparables' three positions).
+
+- **Every 2D window reaches the display as a runtime composition layer** (`XrCompositionLayerQuad`,
+  cylinder later), one per window, its content rendered by zxr into a runtime-owned panel
+  swapchain **only when the window's surface tree commits**. The runtime re-samples the panels
+  every display frame at the display pose.
+- **zxr submits its projection layer only while something needs depth**: a mapped 3D process
+  (zxr-shell-v2 volume), the environment (passthrough) layer, the foreground (hand cutout)
+  layer — or panel overflow past the runtime's layer cap. **A windows-only session has no
+  projection layer**: zxr does no GPU work and makes five runtime round trips per tick instead of
+  eleven.
+- **Why.** On Monado the two paths cost the same number of full-resolution passes (one
+  projection layer takes the distortion fast path; N quads take the layer squasher then
+  distortion — `comp_compositor.c:272-303`, `comp_render.h:64-68`), so the projection path buys
+  no bandwidth; what it costs is that zxr must re-render every frame the head moves. Measured on
+  the dev host with a static client under head motion: quads −47 % zxr CPU, −48 % wake-ups,
+  0 GPU, Monado's cost flat (research/65 §2.3). The OpenXR spec's own recommendation for UI is
+  the quad layer — "a better match between the resolutions of the XrSwapchain image and
+  footprint of that image in the final composition … improves legibility … allows optimal
+  sampling during any composition distortion corrections" (`rendering.adoc:1223-1230`) — and the
+  one XR comparable that ships desktop-like panels (wayvr/wlx-overlay-s) does exactly this
+  (`backend/openxr/overlay.rs:133-199`), re-submitting a stale swapchain image when nothing
+  changed (`mod.rs:406-424`).
+- **What the model keeps.** The thesis's model — clients render, the compositor composites depth
+  — is untouched for what has depth: 3D volumes, the environment and the cutout are composited by
+  zxr in its projection layer exactly as the first amendment states. What changes is that flat
+  panels, which have no depth of their own, are handed to the runtime's compositor instead of
+  being rasterised twice.
+- **Accepted consequences, stated so they are not rediscovered:** (1) a copy per commit — OpenXR
+  swapchain images are runtime-allocated (`comp_swapchain.c:693-704`), so a Wayland client's
+  buffer can never *be* a panel image; import stays zero-copy, the panel pass is the one designed
+  copy and the journal counts it; (2) painter's order only, between windows and between windows
+  and the projection layer — quads always composite over depth content (`rendering.adoc:1143-1147`);
+  a window a volume should occlude cannot be, which is spec §14's M2 item (candidate rule: a
+  window whose quad intersects a volume is drawn in the projection layer that frame); (3) **the
+  hand cutout is a runtime layer submitted after every quad — hands composite above all
+  windows** (ruled 2026-09-26; painter's order is the mechanism, and Monado alpha-blends every
+  layer by its source alpha, premultiplied or not — `render_gfx.c:409, 767-776`,
+  `comp_render_gfx.c:236, 848-867`). Its *shape* is open, recorded in
+  [perception-passthrough-hands.md](../perception-passthrough-hands.md) §1a: a view-aligned
+  cutout projection layer at reduced resolution, per-hand billboard quads at the hand's depth,
+  or depth-correct ordering by drawing intersecting windows in zxr's projection layer — decider:
+  the owner, at the passthrough rung, on measured edge quality and bandwidth; (4) the runtime's layer cap
+  (`XrSystemGraphicsProperties::maxLayerCount`; Monado 128 on Linux, 32 on Android,
+  `xrt_limits.h:80-89`) bounds the panel count — the nearest panels get layers, the rest fall
+  into the projection layer for that frame.
+- Spec: [specs/zxr-core.md](../../../specs/zxr-core.md) rev 3 §4, §6.2, §7, §12, §14.
