@@ -760,3 +760,6 @@ mod tests {
         assert_eq!(r.0, (0..SLOT_COUNT).collect::<Vec<_>>());
     }
 }
+
+pub mod stabilize;
+pub mod hit;

@@ -140,6 +140,8 @@ fn run() -> Result<(), String> {
     // the input chain (spatial-input §1a): the spine installs the R0 head-ray floor in the seat
     // slot; the stages replace it as they land
     st.input.chain.set(input::Slot::Seat, Box::new(input::HeadFloor));
+    st.input.chain.set(input::Slot::Stabilize, Box::new(input::stabilize::Stabilize::new()));
+    st.input.chain.set(input::Slot::Hit, Box::new(input::hit::HitStage::new()));
     tracing::info!(stages = ?st.input.chain.names(), "input chain");
     st.hold = args.hold;
     tracing::info!(debug_panels = ?st.debug_panels, "composition: quads always, projection only with depth content (ADR 0006 amendment 2)");
