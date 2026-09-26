@@ -158,6 +158,8 @@ fn run() -> Result<(), String> {
     // §5, §7, §4); keeps the head-ray floor for `Head` samples until the Hit stage produces hits
     let seat_stage = input::seat::SeatStage::new(&mut st);
     st.input.chain.set(input::Slot::Seat, Box::new(seat_stage));
+    // lane F: the IM stage (spatial-input §1a line 129, §12)
+    st.input.chain.set(input::Slot::Im, Box::new(input::text::ImStage));
     tracing::info!(stages = ?st.input.chain.names(), "input chain");
     st.hold = args.hold;
     tracing::info!(debug_panels = ?st.debug_panels, "composition: quads always, projection only with depth content (ADR 0006 amendment 2)");
@@ -220,6 +222,22 @@ fn run() -> Result<(), String> {
             Ok(PostAction::Continue)
         })
         .map_err(|e| e.to_string())?;
+
+    // ---- lane F: peripheral intake on the state loop (spatial-input §1a lines 77, 80) ----
+    // libinput over a libseat session (absent nested on a host: logged, continued) and the EIS
+    // server socket for libei sender clients; both queue `Sample`s drained at the next tick.
+    {
+        let handle = event_loop.handle();
+        match input::libinput::start(&mut st, &handle) {
+            Ok(true) => {}
+            Ok(false) => tracing::info!("no libinput intake this run"),
+            Err(e) => tracing::warn!("libinput intake failed: {e}"),
+        }
+        if let Err(e) = input::ei::start(&mut st, &handle) {
+            tracing::warn!("EIS server failed: {e}");
+        }
+    }
+    // ---- end lane F ----
 
     // Xwayland via the satellite (gate 4): an ordinary client with an X display of its own
     if let Some(disp) = &args.xwayland {

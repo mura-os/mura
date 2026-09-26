@@ -834,3 +834,8 @@ pub mod emphasis;
 pub mod pointer;
 pub mod seat;
 pub mod touch;
+// lane F: focus and activation, the text-entry seam, libinput and EI intake
+pub mod focus;
+pub mod text;
+pub mod libinput;
+pub mod ei;

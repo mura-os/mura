@@ -32,6 +32,8 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::dmabuf::{get_dmabuf, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjCachedState, DrmSyncobjHandler, DrmSyncobjState};
+use smithay::wayland::input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface as ImPopupSurface};
+use smithay::wayland::keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor};
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::selection::data_device::{set_data_device_focus, DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler};
@@ -40,8 +42,12 @@ use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurfac
 use smithay::wayland::shm::{with_buffer_contents, ShmHandler, ShmState};
 use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
+use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+use smithay::wayland::xdg_activation::{XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData};
 
+use crate::input::{ei, focus, libinput, text};
 use crate::journal::Journal;
 use crate::render::{Renderer, Texture};
 use crate::scene::{self, Flags, MemberId, Scene, Shape, M_PER_PX};
@@ -95,9 +101,26 @@ pub struct Zxr {
     pub _viewporter: ViewporterState,
     pub _presentation: PresentationState,
     pub _single_pixel: SinglePixelBufferState,
+    /// spatial-input §6: `xdg_activation_v1` — tokens carry the commit's serial (`focus.rs`)
+    pub activation_state: XdgActivationState,
+    /// spatial-input §12: the text-entry seam — `text-input-v3`, `input-method-v2`,
+    /// `virtual-keyboard-v1`; smithay routes focus and activate/deactivate (`text.rs`)
+    pub _text_input_state: TextInputManagerState,
+    pub _input_method_state: InputMethodManagerState,
+    pub _virtual_keyboard_state: VirtualKeyboardManagerState,
+    /// spatial-input §8: `keyboard-shortcuts-inhibit`, recorded per surface in `text`
+    pub shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     pub popups: PopupManager,
     pub seat: Seat<Zxr>,
     pub output: Output,
+    /// spatial-input §6: the focus stack, the last commit serial, activation counters
+    pub focus: focus::Focus,
+    /// spatial-input §12: OSK suppression, shortcuts inhibitors
+    pub text: text::Text,
+    /// spatial-input §8: libinput intake state and the `hmdButtons` roles
+    pub peripherals: libinput::Peripherals,
+    /// spatial-input §1a: the EIS server
+    pub ei: ei::EiServer,
 
     /// spec §5a: the three arenas; the member payload is `Payload` (this module's)
     pub scene: Scene<Payload>,
@@ -208,6 +231,15 @@ pub struct Payload {
     /// from the flatten and the dirty walk; frame callbacks on the fallback cadence (research/69
     /// A/B; the design's stricter "no frame callbacks" is river's `hide`).
     pub hidden: bool,
+    /// spatial-input §6: demands attention — a refused activation, a new window a commit
+    /// pre-empted. The shell presents it; the compositor never moves or raises for it.
+    pub urgent: bool,
+    /// the seat's `last_commit_serial` when this toplevel was requested (`new_toplevel`); the
+    /// new-window rule compares it at map time (mutter `intervening_user_event_occurred`)
+    pub requested_at_commit: Option<Serial>,
+    /// an `xdg_activation_v1.activate` arrived before the first buffer (niri keeps the token on
+    /// the unmapped window, `handlers/mod.rs:836-838`): its serial, applied at map
+    pub pending_activation: Option<Option<Serial>>,
 }
 
 impl Payload {
@@ -251,6 +283,18 @@ impl Zxr {
         let presentation = PresentationState::new::<Self>(&dh, libc::CLOCK_MONOTONIC as u32);
         let single_pixel = SinglePixelBufferState::new::<Self>(&dh);
         let popups = PopupManager::default();
+        // ---- focus/activation and the text-entry seam (spatial-input §6, §8, §12)
+        let activation_state = XdgActivationState::new::<Self>(&dh);
+        let text_input_state = TextInputManagerState::new::<Self>(&dh);
+        // The IM and virtual-keyboard globals are privileged (a client that binds them reads
+        // and writes every keystroke). niri gates them on the security context
+        // (`niri.rs:2462-2466`, `client_is_unrestricted`); zxr's gate — the session's keyboard
+        // component only — is the filter closure here. Open to every client until the
+        // component and its unit exist (flagged in the lane report).
+        let input_method_state = InputMethodManagerState::new::<Self, _>(&dh, |_client| true);
+        let virtual_keyboard_state = VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
+        let shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
+        tracing::info!("text-input-v3, input-method-v2, virtual-keyboard-v1, keyboard-shortcuts-inhibit, xdg-activation globals created (spatial-input §6, §12)");
 
         // ---- dmabuf v4 with feedback: the render node + the modifiers the device samples (§6.1)
         let node = drm_node.map(String::from).or_else(find_render_node);
@@ -343,9 +387,18 @@ impl Zxr {
             _viewporter: viewporter,
             _presentation: presentation,
             _single_pixel: single_pixel,
+            activation_state,
+            _text_input_state: text_input_state,
+            _input_method_state: input_method_state,
+            _virtual_keyboard_state: virtual_keyboard_state,
+            shortcuts_inhibit_state,
             popups,
             seat,
             output,
+            focus: focus::Focus::default(),
+            text: text::Text::default(),
+            peripherals: libinput::Peripherals::default(),
+            ei: ei::EiServer::default(),
             scene: Scene::new(),
             retired_panels: Vec::new(),
             surface_tex: HashMap::new(),
@@ -379,13 +432,38 @@ impl Zxr {
     /// Synthesised keyboard input through the seat (the harness's `key`/`type`): evdev code →
     /// xkb keycode (+8), forwarded to the focused surface like any device key.
     pub fn send_key(&mut self, evdev: u32, pressed: bool) {
+        let time = smithay::backend::input::InputTime::now();
+        self.send_key_at(evdev, pressed, time.micros() * 1000);
+    }
+
+    /// A key edge with the device's own CLOCK_MONOTONIC time (libinput / EI samples). smithay
+    /// routes it inside `KeyboardHandle::input`: to the input method's grab when one holds the
+    /// keyboard (`InputMethodKeyboardGrab`), else to the focused surface (spatial-input §12).
+    pub fn send_key_at(&mut self, evdev: u32, pressed: bool, time_ns: u64) {
         use smithay::backend::input::KeyState;
         use smithay::input::keyboard::{FilterResult, Keycode};
         let kb = self.seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
-        let time = smithay::backend::input::InputTime::now();
+        let time = smithay::backend::input::InputTime::from_micros(time_ns / 1000);
         let state = if pressed { KeyState::Pressed } else { KeyState::Released };
         kb.input::<(), _>(self, Keycode::new(evdev + 8), state, serial, time, |_, _, _| FilterResult::Forward);
+    }
+
+    /// spatial-input §8: does the keyboard-focused surface hold an active
+    /// `keyboard-shortcuts-inhibit` inhibitor? The compositor's own key chords (none yet) check
+    /// this after the `Reserved` stage — the reserved input is never inhibited.
+    #[allow(dead_code)] // no compositor key chord exists yet to ask
+    pub fn shortcuts_inhibited(&self) -> bool {
+        let Some(kb) = self.seat.get_keyboard() else { return false };
+        let Some(focus) = kb.current_focus() else { return false };
+        self.text.inhibitor_for(&focus).map(|i| i.is_active()).unwrap_or(false)
+    }
+
+    /// spatial-input §8 / §12: a physical key was pressed recently — the shell keeps the
+    /// on-screen keyboard down (`text.rs` for what smithay lets the compositor do about it).
+    #[allow(dead_code)] // read by the shell protocol / `zxr ctl` once they carry it
+    pub fn osk_suppressed(&self) -> bool {
+        self.text.suppressed(now_ns())
     }
 
     fn client_is_satellite(&self, surface: &WlSurface) -> bool {
@@ -779,6 +857,10 @@ impl Drop for Zxr {
             let _ = c.kill();
             let _ = c.wait();
         }
+        // the EIS listener lives in the loop, which outlives `Zxr`; unlink its socket here
+        if let Some(p) = &self.ei.socket_path {
+            let _ = std::fs::remove_file(p);
+        }
     }
 }
 
@@ -909,14 +991,35 @@ impl CompositorHandler for Zxr {
                     let size = plane_size_of(&window);
                     self.scene.set_shape(id, Shape::Plane { size });
                     if newly_mapped {
-                        if let Some(m) = self.scene.get_mut(id) {
-                            m.m.mapped_at = self.frame_id.max(1);
-                        }
+                        let (at_request, pending) = match self.scene.get_mut(id) {
+                            Some(m) => {
+                                m.m.mapped_at = self.frame_id.max(1);
+                                (m.m.requested_at_commit, m.m.pending_activation.take())
+                            }
+                            None => (None, None),
+                        };
                         self.journal.toplevels_mapped += 1;
                         if self.client_is_satellite(surface) {
                             self.journal.xwayland_toplevels += 1;
                         }
-                        self.focus_window(Some(id));
+                        // spatial-input §6 lines 288-290: a new window takes focus unless a user
+                        // commit intervened since the request that mapped it (mutter
+                        // `window.c:2013, 2125`; niri `ActivateWindow::Smart`); an activation
+                        // token delivered before the map is judged by the serial rule instead.
+                        match pending {
+                            Some(token_serial) => {
+                                focus::activate(self, id, token_serial);
+                            }
+                            None if focus::new_window_takes_focus(at_request, self.focus.last_commit_serial) => {
+                                self.focus.new_windows_focused += 1;
+                                self.focus.stack.touch(id);
+                                self.focus_window(Some(id));
+                            }
+                            None => {
+                                self.focus.new_windows_urgent += 1;
+                                focus::set_urgent(self, id, true);
+                            }
+                        }
                     }
                 }
             }
@@ -981,7 +1084,8 @@ impl XdgShellHandler for Zxr {
         // mapped_at 0 = not yet mapped; commit() flips it on the first buffer. Placement is the
         // stand-in fan in the default place (spec §5a) until M1's `free` engine.
         let size = plane_size_of(&window);
-        let payload = Payload { window, panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0, hidden: false };
+        // the new-window rule's "request time" (spatial-input §6): the seat's last commit now
+        let payload = Payload { window, panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0, hidden: false, urgent: false, requested_at_commit: self.focus.last_commit_serial, pending_activation: None };
         let id = self.scene.add_fanned(Shape::Plane { size }, Flags::WINDOW, payload);
         // a new, unmapped toplevel must not steal focus from a mapped one
         if let Some(prev) = self.scene.iter().filter(|(i, m)| *i != id && m.m.mapped()).map(|(i, _)| i).last() {
@@ -990,18 +1094,29 @@ impl XdgShellHandler for Zxr {
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        if let Some(id) = self.member_for_root(surface.wl_surface()) {
-            if let Some(member) = self.scene.remove(id) {
-                if member.m.mapped() {
-                    self.journal.toplevels_unmapped += 1;
-                }
-                if let Some(panel) = member.m.panel {
-                    self.retire_panel(panel);
-                }
+        let Some(id) = self.member_for_root(surface.wl_surface()) else {
+            let focus = self.scene.focused;
+            self.focus_window(focus);
+            return;
+        };
+        let had_focus = self.scene.focused == Some(id);
+        if let Some(member) = self.scene.remove(id) {
+            if member.m.mapped() {
+                self.journal.toplevels_unmapped += 1;
+            }
+            if let Some(panel) = member.m.panel {
+                self.retire_panel(panel);
             }
         }
-        let focus = self.scene.focused;
-        self.focus_window(focus);
+        // spatial-input §6 line 297: focus restore = the most recently committed still-mapped
+        // member (the stack; cosmic `FocusStack::last`), not `Scene::remove`'s "last live member"
+        if had_focus {
+            focus::restore_after_close(self, id);
+        } else {
+            self.focus.stack.remove(id);
+            let focus = self.scene.focused;
+            self.focus_window(focus);
+        }
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -1072,6 +1187,89 @@ impl WaylandDndGrabHandler for Zxr {
 
 impl OutputHandler for Zxr {}
 impl smithay::wayland::pointer_constraints::PointerConstraintsHandler for Zxr {}
+
+/// spatial-input §6 lines 291-297 (`xdg_activation_v1`): the token's serial decides; refusal is
+/// urgency-only. Ported from niri (`references/niri/src/handlers/mod.rs:761-838`): `token_created`
+/// keeps every token (a token without a serial is urgency-only — niri's `UrgentOnlyMarker`,
+/// `:766-773`; here the absent serial itself says so at request time); `request_activation`
+/// validates against both devices' `last_enter` (`:790-802`), keeps the token on an unmapped
+/// window (`:836-838`) and otherwise focuses or marks urgent. Tokens older than niri's
+/// `XDG_ACTIVATION_TOKEN_TIMEOUT` (10 s, `:88`) are ignored — a stand-in from the comparable.
+const ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+impl XdgActivationHandler for Zxr {
+    fn activation_state(&mut self) -> &mut XdgActivationState {
+        &mut self.activation_state
+    }
+
+    fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
+        // the serial the client attached is the commit's (§6 line 291: "granted with the serial
+        // of the commit that produced it"); nothing to record beyond what smithay keeps
+        self.focus.tokens_created += 1;
+        if data.serial.is_none() {
+            self.focus.tokens_without_serial += 1;
+        }
+        true
+    }
+
+    fn request_activation(&mut self, _token: XdgActivationToken, token_data: XdgActivationTokenData, surface: WlSurface) {
+        if token_data.timestamp.elapsed() >= ACTIVATION_TOKEN_TIMEOUT {
+            self.focus.activations_expired += 1;
+            return;
+        }
+        let serial = token_data.serial.as_ref().map(|(s, _)| *s);
+        let Some(id) = self.member_for_root(&surface) else { return };
+        let mapped = self.scene.get(id).map(|m| m.m.mapped()).unwrap_or(false);
+        if mapped {
+            focus::activate(self, id, serial);
+        } else if let Some(m) = self.scene.get_mut(id) {
+            m.m.pending_activation = Some(serial);
+        }
+    }
+}
+
+/// spatial-input §12: the input-method popup is a popup of the focused text-input's toplevel,
+/// drawn on that member's plane (niri `references/niri/src/handlers/mod.rs:237-274` — the same
+/// four hooks over its `PopupManager`).
+impl InputMethodHandler for Zxr {
+    fn new_popup(&mut self, surface: ImPopupSurface) {
+        if let Err(e) = self.popups.track_popup(PopupKind::InputMethod(surface)) {
+            tracing::warn!("input-method popup: {e:?}");
+        }
+        self.journal.popups += 1;
+    }
+
+    fn dismiss_popup(&mut self, surface: ImPopupSurface) {
+        if let Some(parent) = surface.get_parent().map(|p| p.surface.clone()) {
+            let _ = PopupManager::dismiss_popup(&parent, &PopupKind::from(surface));
+        }
+    }
+
+    fn popup_repositioned(&mut self, _surface: ImPopupSurface) {}
+
+    fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, smithay::utils::Logical> {
+        self.window_for_root(parent).map(|w| w.geometry()).unwrap_or_default()
+    }
+}
+
+/// spatial-input §8 line 337: inhibitors are activated on creation (niri
+/// `references/niri/src/handlers/mod.rs:281-287`, the confirmation dialog a FIXME there too) and
+/// recorded per surface; `Zxr::shortcuts_inhibited` answers for the focused one.
+impl KeyboardShortcutsInhibitHandler for Zxr {
+    fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
+        &mut self.shortcuts_inhibit_state
+    }
+
+    fn new_inhibitor(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
+        inhibitor.activate();
+        self.text.add_inhibitor(inhibitor);
+        tracing::info!(inhibitors = self.text.inhibitors.len(), "keyboard-shortcuts-inhibit: inhibitor activated");
+    }
+
+    fn inhibitor_destroyed(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
+        self.text.remove_inhibitor(&inhibitor);
+    }
+}
 
 smithay::delegate_dispatch2!(Zxr);
 
