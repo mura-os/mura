@@ -581,6 +581,16 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   exclusive-scene exit input) are ruled; the shipped default external managers (`arc`, then
   `dock`/`band` as the shell clients need them; emphasis) follow the seam; adaptive engines
   only as external managers.
+- **The input model** — [spatial-input.md](spatial-input.md) (draft rev 0) specifies the tier
+  rule, the two transports, focus/activation, cursors, peripherals and text entry. Order: R0 keeps
+  the head-ray stand-in; M1 implements the seat with pointer + keyboard + touch, the tier rule for
+  the sources the dev host and first hardware have (head ray, libinput mouse/keyboard, controller
+  aim ray, hand aim ray via the zxr-side bridge), focus-on-commit and `xdg-activation`, the
+  cursors, the text-input chain, and measures the stand-in thresholds at its gate; gaze targeting
+  lands with the first eye-tracking target's Monado driver (research/29: Galaxy XR, Play For
+  Dream, Steam Frame); the `XR_EXT_hand_interaction` device in Monado is an upstream item raised
+  before M1's hand work so the bridge can delete; 3D-client input (spatial-input §11) is M2's
+  protocol revision.
 - **Places implementation** beyond what M1's window model needs; the model is specified
   (ADR 0016) and its protocol drafted (`zxr-workspace-v1`), but residency/currency machinery
   waits for a session that has windows worth organizing.

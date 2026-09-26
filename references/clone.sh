@@ -270,6 +270,13 @@ repos=(
   # xwayland-satellite = the out-of-process X11 WM niri and wayvr use (research/59 §9): what it
   # requires of the compositor, what it maps, and where it stops.
   'xwayland-satellite|https://github.com/Supreeeme/xwayland-satellite.git|'
+  # --- XR input / focus / selection study (docs/research/63) ---
+  # mrtk3 = the open implementation of the HoloLens gaze-pinch / hand-ray / poke model with its
+  # rationale in code; stereokit = a small C hands+gaze UI input model (focus/active, hysteresis);
+  # godot-xr-tools = the Godot community's converged pointer/poke patterns.
+  'mrtk3|https://github.com/MixedRealityToolkit/MixedRealityToolkit-Unity.git|'
+  'stereokit|https://github.com/StereoKit/StereoKit.git|'
+  'godot-xr-tools|https://github.com/GodotVR/godot-xr-tools.git|'
   # --- window / workspace management study (docs/research/64) ---
   # flatland = StardustXR's 2D-window manager as a *client* of a server that owns only the graph;
   # hyprland = the most-used pluggable WM surface today (dispatchers, plugin API);

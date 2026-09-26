@@ -183,3 +183,46 @@ GL-multiview path; our Vulkan renderer uses `VK_KHR_multiview`, unaffected).
   (ADR 0011 unchanged; foveation policy placement remains open).
 - `mura.xr.shell = kwin-vr` is reserved in documentation; contract/packaging changes land with the packaging work (implementation-path §5 owns the ordering).
 - The references manifest pins the four fork repos for reproducible future study.
+
+## Amendment 2026-09-26 — the input seams given their model (research/63)
+
+Decision 2 mirrored five seams from the fork's record, two of them input seams: hover/focus
+resolution as a pluggable policy and an unbounded pointer space. They named *where* the policy
+sits, not *what* it is. [research/63](../../research/63-xr-input-focus-selection-from-comparables.md)
+derived the model from the comparables (the pinned XR shells, the OpenXR standard and Monado's
+status, the Wayland seat model, the 2D desktops' focus policy, MRTK3/StereoKit/godot-xr-tools,
+and visionOS/Horizon/Android XR/HoloLens as mechanism evidence). The owner ruled the three forks
+the evidence split on; the converging items were acted on under rule 8. The design is
+[spatial-input.md](../spatial-input.md); this amendment records the rulings.
+
+1. **Tiered targeting, one active mode, degrade by precision** (owner's rule: "highest precision
+   with eye gaze and degrade down"). With eye tracking, gaze targets whatever commits — pinch,
+   controller trigger, HMD button, dwell (visionOS's position, incl. for tracked controllers).
+   Without eyes and with controllers in hand, the controller aim ray targets. Without eyes and
+   with hands, the hand ray targets. The floor is the head ray (research/42). Direct touch
+   overrides rays inside a distance band. The tier comes from the device contract and the
+   runtime's reported capabilities, never from code. Meta's opposite choice with eyes on
+   (controllers switch targeting to their ray) is the recorded dissent.
+2. **Two transports, by device class.** Hands and gaze are **touch-class**: the client sees
+   `wl_touch` — a position at `down`, drags as touch motion, each hand a contact (two-handed
+   zoom/rotate are two contacts) — and never a hover position. Mice, trackpads and controllers
+   (when controllers target) are **pointer-class**: `wl_pointer` with hover, cursor and axis.
+   This is the visionOS/Android XR model in Wayland terms; it makes gaze privacy a property of
+   the transport rather than a policy.
+3. **Gaze never reaches a client**, with one specified exception: scrolling the gazed element
+   from a stick or wheel enters the pointer at the gaze point, sends `axis`, leaves — disclosure
+   only on the user's scroll action, the class of a tap.
+4. **One logical pointer per seat**, handed to the pointer-class device that last committed
+   (kwin-vr, xrdesktop, WiVRn); hands need no such rule.
+5. **Focus follows the commit, never hover.** Activation is serial-validated (`xdg-activation`
+   tokens carry the commit's serial; tokens without one are urgency-only); refused activation is
+   urgency, presented by a shell component, never by the compositor moving anything. Universal
+   across the four 2D desktops' defaults, the XR shells and visionOS; Jacob 1990 is the reason.
+6. **The mouse pointer is placed by gaze-warp, degrading to head-warp**; on a plane it moves in
+   plane-local coordinates; between planes it is an angular ray from the head until it lands.
+7. **Hand aim/pinch/poke synthesis is the runtime's** (`XR_EXT_hand_interaction` over Monado's
+   Mercury joints, `ht_ctrl_emu`'s shape); zxr synthesizes from joints only as a bridge behind
+   the same interface. The perception service produces layers, never input.
+
+Numbers in the design (pinch hysteresis, hover ramp, near/far band, dwell, eyes→head timeout) are
+stand-ins from the comparables until measured on Mura's trackers; the design marks each.

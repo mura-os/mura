@@ -251,14 +251,53 @@ session, so an event poll bound to ticks alone never starts: R0 found this as a 
 The wait thread additionally gates on "session running" in its handshake and retries on
 `XR_ERROR_SESSION_NOT_RUNNING`. The loop-shape ruling (§2) is unchanged by this.
 
-## 8. Input (research/59 §6)
+## 8. Input (research/59 §6; research/63; ADR 0013 amendment 2026-09-26)
 
-The input floor first (research/42): head-aim ray + `hmdButtons.<selectRole>`, dwell where the
-button is unusable, a physical keyboard when present; controller rays when the runtime has them.
-Ray → plane intersection → surface-local coordinates → the seat's `wl_pointer` (enter/motion/
-button/axis), keyboard focus following the compositor's focus rule; `pointer-constraints` and
-`relative-pointer` served for clients that lock the pointer (games, 3D viewers). 6DoF and ray
-objects of `zxr-shell-v2` at M2. Nothing about focus is a client's decision (ADR 0012 §3).
+The design is [spatial-input.md](../docs/architecture/spatial-input.md) (draft rev 0); this
+section is the module's contract.
+
+- **Sources** (§2 there): gaze (`XR_EXT_eye_gaze_interaction`), hands (`XR_EXT_hand_interaction`
+  aim/pinch/poke/grip + values + `ready`; §10 for the Monado bridge), controllers (the device's
+  profile, `khr/simple_controller` guaranteed), the head ray + `hmdButtons` (the floor,
+  research/42), libinput peripherals on the seat (smithay's backend, fd source, no thread).
+- **The tier rule**: exactly one targeting source, by precision — gaze (nominal) → controller
+  aim ray (when held, no gaze) → hand aim ray → head ray; any device may commit; direct touch
+  overrides a ray inside the 0.18/0.22 m band (stand-in, WiVRn); tier changes are events and
+  never happen mid-gesture.
+- **Two transports**: hands and gaze are **touch-class** (`wl_touch` — a position only at
+  `down`, each hand a contact; the compositor renders plane-level emphasis; no cursor); mice,
+  trackpads and controllers-when-targeting are **pointer-class** (`wl_pointer` with hover,
+  cursor and axis; one logical pointer per seat handed to the device that last committed).
+- **Stabilize, then arbitrate** (composition constraint 7): orientation low-pass, target lock for
+  the commit's duration, relaxation before retargeting, event-time compensation; the hit test is
+  the scene's member pass (§5a) — nearest plane, then smithay's surface tree, bubbling to the
+  parent; class-aware (affordance / shell / content).
+- **Focus follows the commit, never hover.** `xdg-activation` tokens carry the commit's serial;
+  without a valid serial they are urgency-only; refusal is urgency presented by the shell, the
+  compositor never raises for it. New windows take focus unless a commit intervened. Focus
+  restore = most recently committed mapped member. Nothing about focus is a client's or a
+  manager's decision — managers send hints (window-workspace-management.md §11).
+- **Gaze never reaches a client.** One exception, named: scrolling the gazed element from a
+  stick or wheel enters the pointer at the gaze point, sends `axis`, leaves.
+- **Cursors** by class: none for gaze; a compositor reticle at the hit for rays and poke (sized in
+  visual angle); for pointer-class, the reticle plus the client's cursor meaning —
+  `cursor-shape-v1` names rendered from the compositor's theme, else the client's `set_cursor`
+  image drawn on the plane with its hotspot.
+- **The mouse pointer** lives on a plane in plane-local coordinates (libinput flat profile +
+  compositor gain); warps to the looked-at plane when the look has moved (gaze, degrading to
+  head); leaving a plane without a look change it becomes an angular ray from the head until it
+  lands. Unbounded (ADR 0013 constraint 2).
+- **Text fields**: `text-input-v3` `enable` → input-method `activate` → the keyboard component
+  summoned near the committed member; a physical keyboard's keys suppress it; Look-to-Dictate is
+  compositor-side.
+- **Protocols served for input** (with §10): `wl_seat` with pointer + keyboard + touch,
+  `pointer-constraints`, `relative-pointer`, `pointer-gestures` (libinput's touchpad gestures),
+  `cursor-shape`, `xdg-activation`, `keyboard-shortcuts-inhibit`, `text-input-v3` /
+  `input-method-v2`; `pointer-warp-v1` is honoured per its own rule (focus + valid enter serial).
+- **3D clients (M2)**: `zxr-shell-v2` input takes `XR_EXT_hand_interaction`'s shape (poses,
+  values, `ready`) with exclusive capture; gaze not delivered by default (permission model open).
+- **Stand-ins** (measured at M1's gate): pinch thresholds, hover ramp 500–1000 ms, near/far band,
+  dwell 150–250 + 650–850 ms, eyes→head timeout 500–1500 ms.
 
 ## 9. Modes, unit, restart (ADR 0007; session-bootstrap rev 3)
 

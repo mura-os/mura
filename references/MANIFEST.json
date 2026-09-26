@@ -182,6 +182,9 @@
   "xdg-desktop-portal-gnome": {"url": "https://gitlab.gnome.org/GNOME/xdg-desktop-portal-gnome.git", "commit": "a4f6ed64474ff6fe6c4eb9dbe092d97cafd6ea81", "ref": "main", "cloned": "2026-09-26T08:00:25Z"},
   "xdg-desktop-portal-kde": {"url": "https://invent.kde.org/plasma/xdg-desktop-portal-kde.git", "commit": "a5d9198ff29bad08db0c68ffd189ea72b4cb7352", "ref": "master", "cloned": "2026-09-26T08:00:25Z"},
   "xwayland-satellite": {"url": "https://github.com/Supreeeme/xwayland-satellite.git", "commit": "63cdf17f17b4ee231ef862690048549f218e8e0e", "ref": "main", "cloned": "2026-09-26T10:27:07Z"},
+  "mrtk3": {"url": "https://github.com/MixedRealityToolkit/MixedRealityToolkit-Unity.git", "commit": "acdec2d5a8e290892be4d6ceceaed51fa5563700", "ref": "main", "cloned": "2026-09-26T11:35:48Z"},
+  "stereokit": {"url": "https://github.com/StereoKit/StereoKit.git", "commit": "422752b4b2ec02b2933ae7959acb687b71f17f20", "ref": "master", "cloned": "2026-09-26T11:35:48Z"},
+  "godot-xr-tools": {"url": "https://github.com/GodotVR/godot-xr-tools.git", "commit": "2d8db860d1adbee97c0968c4b07afe9348263926", "ref": "master", "cloned": "2026-09-26T11:35:48Z"},
   "flatland": {"url": "https://github.com/StardustXR/flatland.git", "commit": "2a652b688b45e3e2e8eb5cc51014e9a7c874ec2b", "ref": "main", "cloned": "2026-09-26T11:41:32Z"},
   "hyprland": {"url": "https://github.com/hyprwm/Hyprland.git", "commit": "c6f11721168908e3608b2517e84df62c9c35064f", "ref": "main", "cloned": "2026-09-26T11:41:32Z"},
   "paperwm": {"url": "https://github.com/paperwm/PaperWM.git", "commit": "8bf6dd264f60d6c0c402b63df7b424b888959a48", "ref": "release", "cloned": "2026-09-26T11:41:32Z"}
