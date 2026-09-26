@@ -90,8 +90,8 @@
         absent capability are ignored; clients should hide or disable the UI
         elements that depend on them.
       </description>
-      <entry name="focus_hint" value="1"
-             summary="zxr_managed_window_v1.focus_hint is honored"/>
+      <entry name="focus" value="1"
+             summary="zxr_managed_window_v1.focus is honored"/>
       <entry name="hide" value="2"
              summary="zxr_managed_window_v1.hide and show are honored"/>
       <entry name="engine" value="4"
@@ -508,13 +508,29 @@
       <arg name="fullscreen" type="uint" summary="1 to set, 0 to clear"/>
     </request>
 
-    <request name="focus_hint">
-      <description summary="suggest keyboard focus for this window">
-        Suggest that this window receive keyboard focus. The compositor's
-        focus rules decide whether the hint is honored; there is no
-        guarantee that focus changes. Ignored unless the focus_hint
-        capability is advertised. This request modifies management state.
+    <event name="interaction">
+      <description summary="the user committed on this window">
+        The user performed a commit (a press or an equivalent selection)
+        on this window. The serial identifies the interaction and may be
+        passed to the focus request. This event is sent as part of a manage
+        sequence before manage_start.
       </description>
+      <arg name="serial" type="uint" summary="serial of the interaction"/>
+    </event>
+
+    <request name="focus">
+      <description summary="request keyboard focus for this window">
+        Request that this window receive keyboard focus on behalf of a user
+        interaction. The serial must be one received in an interaction event
+        on any managed window; the compositor's focus rules decide whether a
+        serial is recent enough. If the request is honored the window
+        receives keyboard focus; if it is not, or if the serial is zero or
+        unknown, the compositor instead marks the window as demanding
+        attention. There is no guarantee that focus changes. Ignored unless
+        the focus capability is advertised. This request modifies
+        management state.
+      </description>
+      <arg name="serial" type="uint" summary="serial from an interaction event, or 0"/>
     </request>
 
     <request name="grant_exclusive">

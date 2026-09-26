@@ -1,11 +1,11 @@
 # Window and workspace management — the manager's design
 
-**Status: DRAFT, rev 0 (2026-09-26).** Derived from
+**Status: DRAFT, rev 0.1 (2026-09-26; six items ruled the same day, one — the exclusive-scene exit input — sent to research).** Derived from
 [research/64](../research/64-window-workspace-management-from-comparables.md) (twelve rows, the
-matrix, twelve verdicts) under ADR 0012's amendment (c) and ADR 0016. Six items are **open** and
-carried here as such with the comparables' positions and a labelled read (§13); nothing in
-those items is a decision until the owner rules. Design docs specify; ordering and deferral live
-only in [implementation-path.md §5](implementation-path.md).
+matrix, twelve verdicts) under ADR 0012's amendment (c) and ADR 0016. The six forks it raised
+were brought to the owner and are ruled (§13; ADR 0012 amendment (ii)); the one item still
+open — the reserved system input that leaves an exclusive scene — names its research. Design docs
+specify; ordering and deferral live only in [implementation-path.md §5](implementation-path.md).
 
 **What this document is.** The compositor's `policy` module (spec §3) has two faces: the
 **in-process default manager** every session runs, and the **bounded seam** —
@@ -252,7 +252,7 @@ platform facts; the decider is the owner, jointly with the input workstream.
 
 **Shape.** river's (`river-window-management-v1.xml`): one manager client; two disjoint state
 categories — *management state* (what the compositor tells windows: dimensions, fullscreen,
-place assignment, focus hint), mutable only inside a `manage_start … manage_finish` sequence,
+place assignment, focus requests), mutable only inside a `manage_start … manage_finish` sequence,
 and *rendering state* (pose, hide/show, flags, engine, arrange), applied at `render_finish` —
 so multi-window changes land in one frame. Stardust's `set_parent`/`set_transform` supply the
 spatial verbs river's 2D `set_position` lacks. The wire text is in the XML; this section states
@@ -261,9 +261,18 @@ the boundary.
 **Delegated (the manager's):** which place a member belongs to (`assign`); its local pose
 (`set_pose`, clamped); proposed dimensions (`propose_dimensions` — a proposal the client may not
 honour, river's semantics); hide/show; flags; maximize/fullscreen; a place's engine and
-`arrange`; focus *hints* (§13 Q5); responses to client requests the compositor re-emits
-(`move_requested`, `resize_requested`, `maximize_requested`, `fullscreen_requested`,
-`minimize_requested`, `exclusive_requested`).
+`arrange`; **focus requests backed by a user interaction** — ruled (2026-09-26): the compositor
+tells the manager of every commit on a managed window with its serial (`interaction`); a
+`focus(window, serial)` is honoured under [spatial-input.md §6](spatial-input.md)'s rule (the
+serial is a user interaction at least as recent as the seat's last commit) and is otherwise
+**urgency-only** — the window is marked as demanding attention, never raised or focused. The
+manager thus has exactly an application's standing under `xdg-activation` and can no more break
+the wearer's focus than an app can; it may build a focus *policy* on the user's actions ("focus
+what was just pinched into", "focus what was just docked") but cannot originate focus. visionOS
+is the same rule with no manager at all: the active window follows the eyes and typing needs the
+tap, and nothing an app can call changes either. Also delegated: responses to client requests the
+compositor re-emits (`move_requested`, `resize_requested`, `maximize_requested`,
+`fullscreen_requested`, `minimize_requested`, `exclusive_requested`).
 
 **Kept (the compositor's, never on the wire):** the existence and poses of frames (runtime-
 located); the boundary; the comfort limits every pose is clamped to and reported back in
@@ -320,7 +329,9 @@ in-process default). The `ownership` of each is declarative by default (settings
   shell/recenter/passthrough by press length). Needs its own short research pass; research/64
   §16 holds the platform facts gathered so far. Decider: the owner, jointly with the input
   workstream.
-- **Q5-focus — may an external manager set keyboard focus, or only ask for it?** Open; the
-  positions and the terms are laid out in research/64 §15 Q5 and in the owner conversation of
-  2026-09-26. Decider: the owner, jointly with the input workstream (which owns the focus rules
-  themselves).
+- **Q5-focus — ruled (2026-09-26): a manager requests focus only on the back of a user
+  interaction.** "A window manager should not be able to break the user's experience of focus."
+  The manager receives every commit's serial (`interaction`) and may `focus(window, serial)`;
+  the compositor applies spatial-input.md §6's rule and, on refusal, marks urgency (§11). Same
+  standing as an application under `xdg-activation`; consistent with visionOS, where the active
+  window follows the eyes, typing needs the tap, and no program can set either.

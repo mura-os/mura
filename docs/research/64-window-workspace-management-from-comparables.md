@@ -601,7 +601,7 @@ window-workspace-management.md §9), with the exit path explicitly **not** a ges
 and sent to research (§16); Q6 ruled never-by-default, opt-in per window/application. Q2 ruled
 minimal in-process (`free` only; `arc`/`dock`/`band` built by Mura as default external managers
 and shipped). Q5-disconnect ruled Hyprland's shape (continue with built-ins; placements kept;
-reconnecting manager takes over). Q5-focus open pending the owner's request for the terms.*
+reconnecting manager takes over). Q5-focus ruled (3): interaction-backed focus requests, urgency-only on refusal — spatial-input.md §6's rule extended to the manager.*
 
 **Q1 — What does "minimize" mean by default?**
 *Why a decision:* three shipping positions, none dominant; the protocol is neutral (verdict 7)

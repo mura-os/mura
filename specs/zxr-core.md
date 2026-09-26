@@ -403,8 +403,10 @@ the 2D semantics may hold since a ray crossing planes is pointer motion across s
 decider: the owner, at M1's acceptance. GPU-side acquire waits (rev 2, from R0's numbers).
 The bounded `zxr_window_management` protocol's invariant set (ADR 0012 amendment) — drafted in
 `protocols/zxr-window-management-v1.xml` from research/64 §11; the `limits` event carries the
-compositor-kept set; focus hint, exclusive grant and disconnect behaviour await the owner's
-rulings on window-workspace-management.md §13 Q4–Q5.
+compositor-kept set; focus (interaction-backed, urgency-only on refusal), exclusive grant and
+Hyprland-shape disconnect are ruled (ADR 0012 amendment (ii)); the reserved system input that
+leaves an exclusive scene is the remaining item — research/64 §16, the owner with the input
+workstream.
 **The composition fork** ([research/65 §2.4](../docs/research/65-embedded-frame-path-efficiency.md)):
 whether 2D windows reach the display through this spec's projection pass (§7; motorcar,
 kwin-vr, Simula, StardustXR) or as runtime quad/cylinder layers (wayvr; the OpenXR spec's

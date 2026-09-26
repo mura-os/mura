@@ -254,6 +254,11 @@ From [research/64](../../research/64-window-workspace-management-from-comparable
   — the owner: "minimal in process, but we'll build the rest as default and ship them."
 - **Disconnect — ruled: Hyprland's shape.** The compositor continues with its built-ins,
   placements untouched; a reconnecting manager takes over from current state.
-- **Open:** whether an external manager may *set* keyboard focus or only request it under the
-  compositor's rules (window-workspace-management.md §13 Q5-focus); the exit path from an
-  exclusive scene (Q4-exit).
+- **Focus on the seam — ruled: interaction-backed requests only.** The compositor reports
+  every user commit on a managed window with its serial; a manager's `focus(window, serial)` is
+  honoured under spatial-input.md §6's rule and is urgency-only otherwise — an application's
+  standing under `xdg-activation`, no more ("a window manager should not be able to break the
+  user's experience of focus"). This holds for Mura's shipped managers as for a user's own,
+  because the seam is one interface.
+- **Open:** the reserved system input that leaves an exclusive scene (Q4-exit; research/64
+  §16; the owner with the input workstream).

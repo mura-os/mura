@@ -188,8 +188,11 @@ This is the one place gaze position reaches a client, and it is named as such.
 - **Layer-shell keyboard interactivity** (`exclusive` for the greeter/lock scene and the
   keyboard component while shown; `on_demand` otherwise) sits above member focus as in niri's
   `update_keyboard_focus`.
-- **What a manager may do** ([window-workspace-management.md §11](window-workspace-management.md)):
-  send focus *hints*; the rule above is the compositor's and is not on the wire.
+- **What a manager may do** ([window-workspace-management.md §11](window-workspace-management.md),
+  ruled 2026-09-26): request focus with the serial of a user commit the compositor delivered to
+  it (`interaction` → `focus(window, serial)`); the rule above decides, and refusal is
+  urgency-only — the manager has an application's standing under `xdg-activation`, no more. The
+  rule itself is the compositor's and is not on the wire.
 
 ## 7. Cursors
 
