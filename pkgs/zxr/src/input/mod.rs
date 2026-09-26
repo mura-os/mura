@@ -767,3 +767,9 @@ mod tests {
 
 pub mod stabilize;
 pub mod hit;
+// the stages above targeting: `Slot::Reserved`, `Slot::Mode` (+ presence), `Slot::A11y`, and the
+// user-activity side effect (spatial-input §1a lines 113-117; ADR 0007; §13)
+pub mod a11y;
+pub mod activity;
+pub mod mode;
+pub mod reserved;

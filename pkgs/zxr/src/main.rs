@@ -142,6 +142,12 @@ fn run() -> Result<(), String> {
     st.input.chain.set(input::Slot::Seat, Box::new(input::HeadFloor));
     st.input.chain.set(input::Slot::Stabilize, Box::new(input::stabilize::Stabilize::new()));
     st.input.chain.set(input::Slot::Hit, Box::new(input::hit::HitStage::new()));
+    // the stages above targeting (spatial-input §1a lines 113-117): the reserved system input
+    // first of all (native-openxr-apps §6), then the greeter/lock gate and presence (ADR 0007),
+    // then the accessibility transforms (§13)
+    st.input.chain.set(input::Slot::Reserved, Box::new(input::reserved::Reserved::default()));
+    st.input.chain.set(input::Slot::Mode, Box::new(input::mode::ModeGate::default()));
+    st.input.chain.set(input::Slot::A11y, Box::new(input::a11y::A11y::default()));
     tracing::info!(stages = ?st.input.chain.names(), "input chain");
     st.hold = args.hold;
     tracing::info!(debug_panels = ?st.debug_panels, "composition: quads always, projection only with depth content (ADR 0006 amendment 2)");
