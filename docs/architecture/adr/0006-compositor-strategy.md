@@ -306,7 +306,7 @@ evidence for or against. Results, recorded here so the program spec
   into the projection layer for that frame.
 - Spec: [specs/zxr-core.md](../../../specs/zxr-core.md) rev 3 §4, §6.2, §7, §12, §14.
 
-## Amendment 3 (2026-09-26) — native OpenXR applications beside zxr (DRAFT pending the owner's rulings)
+## Amendment 3 (2026-09-26) — native OpenXR applications beside zxr (DRAFT; the five forks ruled by the owner the same day)
 
 From [research/66](../../research/66-native-openxr-apps-and-the-system-input.md) and
 [native-openxr-apps.md](../native-openxr-apps.md), under the owner's framing that zxr is a
@@ -316,17 +316,22 @@ GNOME/KDE:
 - **zxr's OpenXR session is an `XR_EXTX_overlay` session** so that a native application may be
   Monado's main session beside it — the shape of WayVR, kwin-vr, xrdesktop and Valve's Steam
   Frame shell (Steam's UI as the SteamVR dashboard overlay). "One OpenXR client of Monado" in
-  this ADR and spec §1 is qualified accordingly: one *always-present* client. Open to the owner
-  (Q-A) whether this or a role-switching main session — the latter has no comparable.
+  this ADR and spec §1 is qualified accordingly: one *always-present* client. Ruled (Q-A):
+  always the overlay session, never a role switch, with the owner's condition that yielding be
+  "efficient and minimally taxing" — quiet mode's bound.
 - **Quiet mode**: while a native application is primary zxr submits no layers (the unredirect
-  analogue, with mutter's stated reason: "reduces the overhead for apps like games") and resumes
-  for overlay-class surfaces and what the wearer summons. **The game is VISIBLE, not FOCUSED,
+  analogue, with mutter's stated reason: "reduces the overhead for apps like games") and costs
+  only the frame-loop IPC and the Wayland loop; it resumes for layer 5 always, for the layer-6
+  hand cutout by default with a wearer toggle in the OSD (visionOS's default, ruled Q-D), for
+  what the wearer summons, and for planes kept per window. **The game is VISIBLE, not FOCUSED,
   while the shell is up** (the spec's and every platform's rule; Monado `io_blocks` until a
   focus switch exists upstream).
 - **The reserved system input** — one control per tier no application receives — is the
-  compositor's non-maskable chord; it summons the shell; long press recenters; quit is a shell
-  menu item plus a force chord. Owner's remaining forks: the press map, hands-only tiers,
-  HMD-body vs controller.
+  compositor's non-maskable chord; it summons the shell; long press recenters; double press
+  shows/hides or toggles passthrough; quit is a shell menu item plus a force chord (ruled Q-B).
+  Carried by the HMD-body button where one exists, the controller system button with identical
+  semantics (ruled Q-E), and on every tier a posture-gated held palm gesture — the owner's
+  requirement being that no reserved gesture interrupt the experience (ruled Q-C).
 - **Launch/close**: spawn as a systemd scope with the runtime environment; set primary over
   `libmonado`; `request_exit` then kill the scope. zxr's death does not take the game with it.
 - **Upstream (Monado)**: reservation of `/input/system/click` for a system client; a real

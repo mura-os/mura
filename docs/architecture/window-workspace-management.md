@@ -229,16 +229,17 @@ desktop and most games will require this." Two mechanisms exist and both are Mur
    kwin-vr (research/31 §2.2, its Qt patch 0002) and WayVR already use. zxr is then the *shell
    that switches Monado's primary client*, which is what Monado's IPC hook is for.
 
-**The exit path is open and needs its own research (§13 Q4-exit).** The owner: a "gesture" is
-underdefined and should not be assumed; what must exist is a way to bring the shell's layers
-back and leave the exclusive scene or quit the app. Every platform reserves a *system input* for
-exactly this — OpenXR itself marks `/input/system/click` "may not be available for application
-use" on every profile that has it (`openxr-docs/…/semantic_paths.adoc:716, 759, 886`), and the
-device contract already names HMD-body buttons by role (`hmdButtons`, `selectRole`). The
-research question is which reserved input(s) per device tier, what a short/long/double press
-does (return shell / recenter / passthrough are the three actions the platforms split across
-one button), and how that composes with the input floor — research/64 §16 collects the
-platform facts; the decider is the owner, jointly with the input workstream.
+**The exit path is the reserved system input — specified in
+[native-openxr-apps.md §6](native-openxr-apps.md) (researched in research/66, ruled
+2026-09-26).** The owner's requirement was that no exit gesture may interrupt the experience —
+not that there be none. What exists: every platform reserves a *system input* for exactly this
+— OpenXR itself marks `/input/system/click` "may not be available for application use" on every
+profile that has it (`openxr-docs/…/semantic_paths.adoc:716, 759, 886`), and the device
+contract names HMD-body buttons by role (`hmdButtons`, `selectRole`, `systemRole`). Mura's is
+one control per tier that no application receives — the HMD-body button where one exists, the
+controller system button, and a posture-gated, held palm gesture on every tier — with short =
+summon the shell, long = recenter, double = show/hide or passthrough, quit as a shell menu item
+plus a force chord.
 
 ## 10. Scene kinds
 
@@ -312,8 +313,10 @@ in-process default). The `ownership` of each is declarative by default (settings
   to close-is-the-verb when no dock client runs (§5). The tray/launcher component of ADR 0012 is
   the dock.
 - **Q3 cap** — none; "the user's responsibility" (§1.4).
-- **Q4 exclusivity** — yes, fullscreen's analogue; both mechanisms of §9 are Mura's. **The exit
-  path is not a gesture to be assumed; it is open** — see below.
+- **Q4 exclusivity** — yes, fullscreen's analogue; both mechanisms of §9 are Mura's. The exit
+  path was researched separately (research/66) and is the reserved system input of
+  native-openxr-apps.md §6 — the owner's requirement being that no exit gesture interrupt the
+  experience, met by posture gating and a deliberate hold.
 - **Q6 follow** — never by default; opt-in per window/application (§1.5, §7).
 
 **Open (deciders named):**

@@ -313,8 +313,10 @@ gamescope's/KWin's shape (nested compositor as an xdg client); it is headless mu
 PipeWire *viewer* client with input over `org.gnome.Mutter.RemoteDesktop` — capture semantics
 for the picture, remote-desktop semantics for input, exactly the pairing research/32 §2 says is
 not delegation. Mode 3 remains zero-new-protocol for GNOME, but the client zxr hosts is a
-viewer (mutter-devkit's shape), not mutter itself. **Decider:** the owner, in
-foreign-session-integration.md (the taxonomy row for mode 3 should split by producer).
+viewer (mutter-devkit's shape), not mutter itself. **Ruled (owner, 2026-09-26):** the mode-3 row
+splits by producer — KWin as a nested compositor in one `xdg_toplevel`; GNOME as headless
+gnome-shell plus a PipeWire/libei viewer client hosted by zxr — recorded in
+foreign-session-integration.md §2, the viewer client added to the component registry.
 
 **Finding 2 — the X11 pain of "windows out of the desktop" lives in the producer, whichever
 Xwayland zxr picks.** kwin-vr is the single-process proof of §3.7, and its X11 handling is

@@ -84,9 +84,14 @@ device tier — the contract's `hmdButtons.systemRole` and the controller's `/in
 it is the compositor's non-maskable chord (mutter's `restore-shortcuts`, niri's hardcoded binds —
 "the user has no way to unlock the compositor… 'jailing' the user"), OpenXR's `system` semantics
 ("may not be available to applications"), and every platform's rule. Short press summons the
-shell, long press recenters (research/36 §8); the exact map, the hands-only tiers and the case of
-both an HMD-body and a controller control are open to the owner
-([native-openxr-apps.md §10](native-openxr-apps.md) Q-B, Q-C, Q-E). On Monado today a
+shell, long press recenters (research/36 §8), double press shows/hides or toggles passthrough;
+quit is a shell menu item plus a force chord ([native-openxr-apps.md §6](native-openxr-apps.md),
+ruled). On every tier the same role is also carried by a **posture-gated, held palm gesture**
+(palm toward the face + pinch-and-hold, the platforms' shape) — the owner's requirement is that
+no reserved gesture may interrupt the experience, which is why it is posture-gated, deliberate,
+shows its affordance only while the posture is held, and suspends clients' gesture recognition
+while in progress; thresholds and affordance are this workstream's to specify. Where both an
+HMD-body and a controller control exist they carry identical semantics (PICO's rule). On Monado today a
 controller system click also reaches the focused app — the runtime-side reservation is an
 upstream item (research/66 §14); HMD-body buttons reach zxr alone through libinput (contract A2).
 

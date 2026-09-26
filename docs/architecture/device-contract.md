@@ -260,15 +260,17 @@ buttons, dwell where a button is unusable. Declared facts:
 - `backRole` (nullable) — "back/cancel" at the floor (default `volumeDown`; null = scenes expose
   an on-scene cancel); **asserted** when set. Recenter is a long press of select by convention.
   Per-target conventions and codes: [research/42 §4.3a](../research/42-input-bootstrap.md).
-- `systemRole` (nullable; added 2026-09-26, draft) — which `hmdButtons` role is the **reserved
+- `systemRole` (nullable; added 2026-09-26, ruled) — which `hmdButtons` role is the **reserved
   system control** ([native-openxr-apps.md §6](native-openxr-apps.md)): the button that summons
   the shell over a running native OpenXR application, recenters on a long press, and is never
   delivered to any application. It may name the same role as `selectRole` (the Steam Frame's Aux
-  `KEY_SELECT`; the Galaxy XR's top button `KEY_POWER`) — at the input floor nothing is running
-  to escape from, and press duration disambiguates in a session; **asserted** to name an
-  existing button when set. Null on targets with no HMD-body candidate (Quest-class: power and
-  volume only), where the controller system click and the hands-only rule of research/66 §13
-  Q-C apply. Not yet in `lib/contract` — lands with the M1 policy that reads it.
+  `KEY_SELECT`; the Galaxy XR's top button `KEY_POWER`; the Lynx R-1's R) — at the input floor
+  nothing is running to escape from, and press duration disambiguates in a session; **asserted**
+  to name an existing button when set. Null on targets with no HMD-body candidate (Quest-class:
+  power and volume only). The controller system button carries the same role with identical
+  semantics wherever one exists, and the posture-gated palm gesture carries it on every tier —
+  so the role is never absent, only its HMD-body carrier. Not yet in `lib/contract` — lands with
+  the M1 policy that reads it.
 - `controllers` ∈ `none | imu-3dof | optical-6dof` — the controller class available before
   cameras are up (`optical-6dof` counts as `imu-3dof` pre-login).
 - `bluetooth` — adapter present; gates the pre-login pairing agent and the `pairing/` state

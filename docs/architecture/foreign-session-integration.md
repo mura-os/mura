@@ -47,16 +47,28 @@ KWin-maintainer/Mutter-maintainer persona and revised.
 
 ## 2. The client-integration taxonomy
 
-Four ways a "foreign" application or session appears in Mura space. All four land as
-surfaces in zxr's world model (T1 — free-floating, no output binding); they differ in *who owns
-the app* and *what crosses the boundary*:
+Four ways a "foreign" application or session appears in Mura space (the third splits by
+producer). All land as surfaces in zxr's world model (T1 — free-floating, no output binding);
+they differ in *who owns the app* and *what crosses the boundary*:
 
 | Mode | What crosses | Granularity | Pacing | Input | Status |
 |---|---|---|---|---|---|
 | **Native client** | Wayland protocol (app ↔ zxr directly) | per toplevel | zxr-driven frame callbacks | full, native | the default; composition doc §7.3 |
 | **Protocol-proxied client** (waypipe/wprs; VM via virtio) | Wayland protocol over a transport | per toplevel | zxr-driven (proxy passes callbacks through) | full, native | designed — sharing mode 4 ([spatial-sharing.md §3](spatial-sharing.md)) |
-| **Nested foreign compositor as one quad** | one output-sized surface (the nested session's whole display) | per session | nested compositor's own clock | seat-level into the nested session | works today with zero new protocol; the "virtual screen" compat artifact |
+| **Nested foreign session as one quad — KWin** | one output-sized `xdg_toplevel` per nested output (KWin's Wayland backend nests as an ordinary client) | per session | nested compositor's own clock | seat-level, as a Wayland client (keyboard/pointer/touch focus) | works today with zero new protocol; the "virtual screen" compat artifact |
+| **Nested foreign session as one quad — GNOME** | one PipeWire stream per virtual monitor (mutter headless: `RecordVirtual` on `org.gnome.Mutter.ScreenCast`), input back over **libei** (`org.gnome.Mutter.RemoteDesktop`) | per session | mutter's own clock (PipeWire stream) | emulated seat over libei from a small **viewer client** hosted by zxr | the mutter-devkit shape (`references/mutter/mdk/`); the viewer client is a Mura component (registry) |
 | **Per-toplevel delegated session** (this seam) | client buffers + input + pacing, per window, via the producer compositor | per toplevel | **consumer-driven** (paced to zxr's `xrWaitFrame` cadence) | per-export protocol channel | **specified here; not yet implemented** |
+
+The third mode splits by producer (owner's ruling, 2026-09-26, from research/59 §9a) because
+mutter **dropped its X11 backend** (`references/mutter/NEWS:308`, "Drop the X11 backend", !4505)
+and never had a nested Wayland backend: gnome-shell cannot appear as a client of another
+compositor. What GNOME ships instead is the *headless* backend plus screen-cast/remote-desktop
+D-Bus APIs — the shape GNOME's own developer tool uses (`mdk-session.c:969-1018` creates the
+session and a `RecordVirtual` stream; `mdk-ei.c` connects the libei sender for keyboard,
+pointer and touch). The Mura viewer client is that tool's core without its GTK window: a
+Wayland client of zxr that imports the PipeWire dmabuf stream into one plane and forwards the
+plane's seat events over libei. KWin needs none of this — its Wayland backend already nests as a
+client (`references/kwin/src/backends/wayland/`) and receives seat input as any surface.
 
 The fourth mode is what upgrades "your Plasma session, as a picture on a slab" into "your Plasma
 session's windows, floating individually in the room" — while KWin (or any producer) keeps its

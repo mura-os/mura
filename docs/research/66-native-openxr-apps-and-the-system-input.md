@@ -287,8 +287,14 @@ never delivered — unreconciled); Quest-class has no HMD-body system button (po
 the 3S's action button is `KEY_SWITCHVIDEOMODE`, a passthrough toggle) and a controller Home;
 the Galaxy XR has the top button (= `KEY_POWER`) and a touchpad; Lynx R-1's R button opens the
 Lynx Menu; button-less glasses have nothing. Hands-only, every platform reserves a **gesture**
-(Meta palm pinch, Apple palm tap, HoloLens wrist tap, Android XR palm-inward pinch-hold) — the
-owner's stated preference is against gestures; the evidence is recorded for the ruling (§13 Q-C).
+(Meta palm pinch, Apple palm tap, HoloLens wrist tap, Android XR palm-inward pinch-hold). The
+owner's requirement is not "no gestures" but **"no gesture that might interrupt the user
+experience"** — a specificity requirement the platforms meet the same way: the reserved gesture
+is gated by a posture rare during app use (palm turned toward the face; a look at the wrist or
+palm) *and* a deliberate action (pinch-and-hold, tap), and the runtime tells apps to "suspend any
+custom gesture processing when the user is in the process of performing a system gesture" (Meta
+[B]) so an in-app gesture can neither fire it nor be fired by it. Recorded for the ruling (§13
+Q-C).
 
 **Transfer.** (1) The escape is a **physical control the application never receives**, owned by
 the shell — universal, with Valve's and Meta's reasons stated and niri's "jailing" argument as
@@ -420,6 +426,18 @@ Home key; Android XR's gesture menu with Back/Launcher/Recents. **Transfer**: "s
 
 ## 13. Questions to the owner — one item each, the comparables' positions as the options
 
+*Status (2026-09-26, later the same day) — all five ruled, recorded in
+[native-openxr-apps.md](../architecture/native-openxr-apps.md): **Q-A** (a) always an overlay
+session, "efficient and minimally taxing when it yields" (the quiet-mode bound: the frame-loop
+IPC and the Wayland loop, nothing else); **Q-B** the platforms' split as written — the control
+per target is named in native-openxr-apps.md §6; **Q-C** (a)+(b)+(c): the posture-gated palm
+gesture on every tier, the body button where one exists, the select long-press convention kept
+— the owner: "I said I was against gestures that might interrupt the user experience";
+**Q-D** layer 5 always; layer 6 (the hand cutout) over games with visionOS's default (real hands
+visible over immersive content) and a wearer toggle in the OSD layer; planes only when summoned
+or kept per window; **Q-E** identical semantics on the body and controller controls, the
+physical control per hardware target's convention.*
+
 **Q-A — Is zxr always an overlay session, or a main session that yields to a game?**
 (a) *Always overlay* — WayVR (placement 5), kwin-vr (20), xrdesktop/gxr (1), Steam-on-Frame
 (gamepad UI as the SteamVR dashboard overlay). Consequence: zxr's layers are always composited
@@ -443,7 +461,8 @@ chord as the kill.
 exists?** Every hands-first platform reserves one (Meta palm pinch "system gesture", Apple palm
 tap = Home View, HoloLens wrist tap = Start, Android XR palm-inward pinch-hold menu); Mura's
 Quest-class targets have no HMD-body system button, and button-less glasses have nothing. The
-owner's stated preference is against gestures. Options: (a) a reserved gesture on hands-only
+owner's requirement: no gesture that might interrupt the user experience (posture-gated and
+deliberate, as the platforms'). Options: (a) a reserved gesture on hands-only
 tiers, as the platforms; (b) no gesture — hands-only tiers exit via the HMD-body button where one
 exists (Frame Aux, Galaxy XR top, Lynx R) and have no exit on devices without one; (c) the
 input floor's select-button long-press (research/42 convention: "recenter is a long press of

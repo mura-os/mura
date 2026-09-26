@@ -362,15 +362,17 @@ acknowledges `start_session`. `zxr` (session): binds the socket, publishes `WAYL
 `RestartMode=direct` in the same logind session (D4); clients die with the compositor (every
 comparable; research/59 §11) and the wrapper returns to the greeter.
 
-**Quiet mode (DRAFT, 2026-09-26 — [native-openxr-apps.md §4–§6](../docs/architecture/native-openxr-apps.md)):**
+**Quiet mode (DRAFT, 2026-09-26, forks ruled — [native-openxr-apps.md §4–§6](../docs/architecture/native-openxr-apps.md)):**
 while a native OpenXR application is Monado's primary, zxr submits no layers and runs no GPU
-pass (the fullscreen-game unredirect analogue), resuming only for overlay-class surfaces
-(layer-shell `overlay`, the lock/greeter scene, the foreground cutout) and for what the wearer
-summons with the **reserved system input** — the one control per tier no application receives
-(`hmdButtons.systemRole` through libinput; the controller's `system/click`). Summoning draws
-layers 4–6 over the game and demotes it to VISIBLE (`io_blocks` on the primary until Monado has
-a focus switch); dismissing restores it. Launch/primary/quit and the press-length map are the
-design's; five items are open there.
+pass (the fullscreen-game unredirect analogue) and costs only the frame-loop IPC and the Wayland
+loop — measured as a gate. It resumes for layer 5 always (layer-shell `overlay`, the
+lock/greeter scene, the system-gesture affordance), for the layer-6 hand cutout by default with
+a wearer toggle in the OSD, for planes kept per window, and for what the wearer summons with the
+**reserved system input** — the one control per tier no application receives
+(`hmdButtons.systemRole` through libinput; the controller's `system/click`; a posture-gated
+held palm gesture on every tier). Summoning draws layers 4–6 over the game and demotes it to
+VISIBLE (`io_blocks` on the primary until Monado has a focus switch); dismissing restores it.
+Launch/primary/quit and the press-length map are the design's.
 
 **Signals and teardown (rev 2, research/61 §6.2–6.3).** The signals the loop handles
 (`SIGTERM`, `SIGINT`, `SIGUSR1`) are blocked with `pthread_sigmask` **before any thread exists**
@@ -478,8 +480,7 @@ The bounded `zxr_window_management` protocol's invariant set (ADR 0012 amendment
 `protocols/zxr-window-management-v1.xml` from research/64 §11; the `limits` event carries the
 compositor-kept set; focus (interaction-backed, urgency-only on refusal), exclusive grant and
 Hyprland-shape disconnect are ruled (ADR 0012 amendment (ii)); the reserved system input that
-leaves an exclusive scene is the remaining item — research/64 §16, the owner with the input
-workstream.
+leaves an exclusive scene is ruled too (research/66; native-openxr-apps.md §6, §10).
 **The composition fork — ruled** (ADR 0006 amendment 2, 2026-09-26; §4, §6.2, §7,
 [research/65 §2.4](../docs/research/65-embedded-frame-path-efficiency.md)): quads always, the
 projection layer only with depth content. **Open from it (M2, decider: the owner, with volumes

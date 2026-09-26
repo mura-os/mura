@@ -241,9 +241,11 @@ From [research/64](../../research/64-window-workspace-management-from-comparable
   layer (`grant_exclusive` on the seam; a zxr-shell-v2 request for 3D clients), at most one at a
   time, layers 4–6 always presented in front; and a native OpenXR application as Monado's
   primary session with zxr as an `XR_EXTX_overlay` session — zxr is the shell that switches
-  Monado's primary client (its IPC hook exists for this). **The exit path is not a gesture to be
-  assumed**; it is a reserved system input to be researched (research/64 §16) — the owner with
-  the input workstream.
+  Monado's primary client (its IPC hook exists for this). The exit path is the reserved system
+  input (researched in research/66, ruled 2026-09-26; specified in native-openxr-apps.md §6):
+  one control per tier no application receives — HMD-body button, controller system button, and
+  a posture-gated held palm gesture — the owner's requirement being that no exit gesture
+  interrupt the experience, not that there be none.
 - **Defaults ruled for the in-process manager:** minimize keeps state on the launcher/dock
   client (the tray/launcher component of this ADR is the dock), degrading to close-as-the-verb
   without one; no window cap ("the user's responsibility"); follow never by default, opt-in per

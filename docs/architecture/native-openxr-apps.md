@@ -1,11 +1,10 @@
 # Native OpenXR applications beside zxr — the fullscreen-game model and the reserved system input
 
-**Status: DRAFT, rev 0 (2026-09-26).** Derived from
-[research/66](../research/66-native-openxr-apps-and-the-system-input.md) under the owner's
-framing: *zxr is a desktop environment's compositor, and a native OpenXR application is what a
-fullscreen game is to GNOME/KDE.* Five items are open (§10) with the comparables' positions and a
-labelled read; nothing there is a decision until the owner rules. Design docs specify; ordering
-lives only in [implementation-path.md §5](implementation-path.md).
+**Status: DRAFT, rev 0.1 (2026-09-26; the five forks ruled by the owner the same day — §10).**
+Derived from [research/66](../research/66-native-openxr-apps-and-the-system-input.md) under the
+owner's framing: *zxr is a desktop environment's compositor, and a native OpenXR application is
+what a fullscreen game is to GNOME/KDE.* Design docs specify; ordering lives only in
+[implementation-path.md §5](implementation-path.md).
 
 **What this document is.** A native OpenXR application — a game with its own session, an OpenVR
 title through xrizer/OpenComposite, any program that talks to Monado directly — is not zxr's
@@ -34,7 +33,7 @@ an existing button reaching zxr instead of an app.
 
 Monado has one **main** session — the game — and any number of **overlay** sessions whose
 layers are always composited above it (`extx_overlay.adoc:65-67`). zxr is an overlay session,
-always (§10 Q-A). When no game runs, zxr's layers are the whole picture. When the launcher starts
+always (ruled, §10 Q-A). When no game runs, zxr's layers are the whole picture. When the launcher starts
 a game, zxr spawns it, and when its session activates zxr makes it Monado's primary
 (`mnd_root_set_client_primary`); from then on zxr **submits no layers** — the unredirect
 analogue — until an overlay-class surface must be shown or the wearer presses the **reserved
@@ -61,10 +60,11 @@ flowchart LR
 
 ## 2. zxr's session
 
-- **An `XR_EXTX_overlay` session, always** — the shape of WayVR (placement 5), kwin-vr (20),
-  xrdesktop/gxr (1) and Valve's Frame shell (Steam's UI as the SteamVR dashboard overlay); all
-  run with no game present, so no role switch is ever needed. Placement: above any other
-  overlay Mura ships (a stand-in value until another overlay exists). Open: §10 Q-A.
+- **An `XR_EXTX_overlay` session, always — ruled (2026-09-26, Q-A).** The shape of WayVR
+  (placement 5), kwin-vr (20), xrdesktop/gxr (1) and Valve's Frame shell (Steam's UI as the
+  SteamVR dashboard overlay); all run with no game present, so no role switch is ever needed.
+  Placement: above any other overlay Mura ships (a stand-in value until another overlay exists).
+  The owner's condition — "efficient and minimally taxing when it yields" — is §4's bound.
 - **Consequences zxr manages:** its layers are always above the game's (the platforms' "windows
   render in front of immersive content", spec §4's layers 5–6 semantics); Monado marks overlay
   sessions visible and focused unconditionally (`ipc_server_process.c:562-567`), so zxr always
@@ -112,12 +112,22 @@ While a native app is primary:
   uploads stop; the state loop keeps serving Wayland clients' protocol (commits are accepted and
   held). The `xrWaitFrame` thread keeps its cadence so `xrPollEvent` and the session state
   machine run (a tick with nothing to draw ends with an empty `xrEndFrame`).
-- zxr **resumes rendering only for**: (a) overlay-class surfaces — layer-shell `overlay`
-  (notifications, OSD), the lock/greeter scene (ADR 0007 — it *must* be presentable over a game),
-  the foreground cutout if the perception layers are active; (b) whatever the wearer summons with
-  the reserved input (§6); (c) planes the wearer explicitly kept over games (§10 Q-D). This is
-  the DEs' list: the surfaces that take mutter's `disable_unredirect` are the overview, the
-  message tray and the OSD; niri draws only its Overlay layer above a fullscreen window.
+- **The bound (owner's condition, Q-A):** quiet mode costs the OpenXR frame-loop IPC — one
+  `xrWaitFrame`/`xrBeginFrame`/`xrEndFrame` triple per refresh, no rendering — and the Wayland
+  event loop, nothing else. A running session may not stop its frame loop, and ending the
+  session to save those messages would cost the summon latency none of the overlay shells
+  accept. The bring-up measures zxr's CPU and RSS with a game primary as a gate number.
+- zxr **resumes rendering only for** — ruled (Q-D): (a) **layer 5 always** — layer-shell
+  `overlay` (notifications, OSD), the lock/greeter scene (ADR 0007 — it *must* be presentable
+  over a game), the system-gesture affordance; (b) **layer 6, the hand cutout, over games by
+  default** — visionOS's default ("fully obscures passthrough except for the user's upper limbs"),
+  the owner's stated preference — with a **wearer toggle in the OSD layer** to turn real hands off
+  for a game (or on again); in passthrough/alpha-blend games the cutout is simply the shell's
+  normal behaviour; (c) whatever the wearer summons with the reserved input (§6); (d) **planes only
+  when summoned or explicitly kept over games per window** (HoloLens's Follow-me toggle is the
+  precedent for the per-window keep). This is the DEs' list plus the hands: the surfaces that
+  take mutter's `disable_unredirect` are the overview, the message tray and the OSD; niri draws
+  only its Overlay layer above a fullscreen window.
 - Resuming for (a) draws *only* those surfaces, above the game, with the game still FOCUSED —
   a notification does not take the game's input (GNOME's notifications do not either). Summoning
   (b) does (§5).
@@ -160,9 +170,34 @@ actions").
   XR fork's `EVIOCGRAB` → `system/click`) or a state-tracker reservation for a designated system
   client is the upstream item (research/66 §14). Until then: on tiers where the HMD-body button
   exists, that is the guaranteed path; the controller button is best-effort.
-- **Hands-only tiers with no body button** — open (§10 Q-C).
+- **The palm gesture — ruled (Q-C), on every tier, not only where no button exists.** The
+  owner's requirement is that no reserved gesture may interrupt the experience; the platforms'
+  shape meets it and is adopted: the gesture is **posture-gated** (palm turned toward the face —
+  Meta's system gesture, Android XR's palm-inward menu; Apple's and HoloLens's look-at-palm/wrist
+  are the gaze-tier form) **and deliberate** (pinch-and-hold, the most conservative of the four),
+  a system-rendered affordance appears at the hand only while the posture is held (layer 5,
+  drawn by zxr even over a game), and applications are told to suspend their own gesture
+  recognition while it is in progress (Meta's rule) so an in-app gesture can neither fire it nor
+  be fired by it. Posture thresholds, hold time and the affordance are the input workstream's to
+  specify with the MRTK3/StereoKit evidence it pinned.
+- **Both physical controls, identical — ruled (Q-E).** Where a target has an HMD-body control
+  and a controller system button, both carry the same `system` role with the same semantics
+  (PICO's rule: "Home button of the Controller or VR Headset"); which physical control carries
+  it follows the hardware target's own convention.
 
-**What a press does** — open as to the exact map (§10 Q-B); the platforms' unanimous split:
+**Per target** (from research/42 §4.3a and the device files; values become each device's
+`systemRole` and controller mapping):
+
+| target | HMD-body system control | controller system control | hands |
+|---|---|---|---|
+| Steam Frame | **Aux** (`KEY_SELECT`, right side above power) — the same button as `selectRole`; duration disambiguates | the **Steam-logo button** on each controller (`frame_controller` `/input/system/click`) | palm gesture |
+| Quest 1/2/3 | none (power, volume only) | right controller **Meta/Oculus button** | palm gesture |
+| Quest 3S | none for summon; the **action button** (`KEY_SWITCHVIDEOMODE`) is the passthrough toggle — the "double" action below | as above | palm gesture |
+| Galaxy XR | **Top button** (= `KEY_POWER`, short press; Samsung: 1× launcher, hold = assistant, > 7 s force restart) | controller **Launcher** button | palm gesture; touchpad hold = recenter |
+| Lynx R-1 | **R** button (opens the vendor menu today) | — | palm gesture |
+| virtual headset (dev) | a keyboard key (Super) | — | — |
+
+**What a press does — ruled (Q-B): the platforms' split as written.**
 
 | press | action | the 2D analogue | precedent |
 |---|---|---|---|
@@ -172,8 +207,8 @@ actions").
 | chord (system + select held) | **force quit** the primary app: kill its scope | the compositor's kill chord | Apple Crown + top button, Deck Steam+B long |
 | *quit* | a menu item in the summoned shell (§3.4) | Alt+F4 → close request | Navigator "quit and return home", SteamVR dashboard, HoloLens Start → home |
 
-**What a press is not:** a gesture by assumption (owner). Where a platform's hands-only exit is a
-reserved gesture, that is Q-C's evidence, not this rule.
+**What a press is not:** anything an application can rebind, receive or suppress; and the palm
+gesture is not a free-air pinch — only the posture-gated, held form above qualifies.
 
 **Named actions.** "summon shell", "recenter", "quit app", "force quit" are named actions the
 accessibility stack, voice and switch devices can trigger (research/37, /42), independent of the
@@ -185,7 +220,9 @@ Recenter is the runtime's re-seat of `LOCAL` (`mnd_root_recenter_local_spaces`):
 content moves with it as on every platform; pinned places do not. Passthrough while a game is
 primary is the game's blend mode (§2); when the shell is summoned zxr is the focused overlay and
 may request its own blend for the duration; the perception layers' safety occlusion (research/62
-§3.5) is never suspended by a game.
+§3.5) is never suspended by a game. **Real hands over a game** (the layer-6 cutout) are on by
+default and toggled from the OSD layer (§4, Q-D) — the one perception layer the wearer, not the
+game, decides.
 
 ## 8. The two exclusivity mechanisms — one experience
 
@@ -209,28 +246,30 @@ component in both.
 per window), `games.controllerSystemButton` (best-effort until the runtime reserves it). All
 `ownership = declarative` (settings-schema.md), seeded from the device contract.
 
-## 10. Open items (deciders named; research/66 §13 has the full positions)
+## 10. Rulings (2026-09-26; research/66 §13 has the full positions)
 
-- **Q-A — always an overlay session** (WayVR, kwin-vr, xrdesktop, Steam-on-Frame) **vs a main
-  session that yields** (no comparable; zxr's layers would be dropped while a game runs). My
-  read, labelled: always overlay. Owner.
-- **Q-B — the press-length map.** The platforms' split as written in §6 (quit as a menu item +
-  force chord, never a press) vs making long press the quit (no comparable; long press is
-  recenter everywhere and research/36 §8's determination). My read, labelled: the split as
-  written. Owner.
-- **Q-C — hands-only tiers.** (a) a reserved gesture as every hands-first platform does; (b) the
-  HMD-body button only, no exit on button-less devices; (c) the input floor's select long-press
-  extended to the system role. My read, labelled: (b)+(c) where a body button exists; on a device
-  with neither, (a) is the only exit and rule 3 argues for offering it. Owner, with the input
-  workstream.
-- **Q-D — what draws over a primary game by default.** (a) overlay-class only (GNOME/niri;
-  layers 5–6), planes when summoned or kept per window (HoloLens Follow-me); (b) up to N planes
-  (Horizon 3); (c) everything (the Linux XR shells — no rule). My read, labelled: (a) with the
-  per-window opt-in. Owner.
-- **Q-E — HMD-body vs controller system button when both exist.** One `system` role satisfied
-  by either, identical (PICO's rule) — near a determination; flagged because Valve documents the
-  Frame's Aux only as a login aid. Owner.
+- **Q-A — zxr is always an overlay session** (WayVR, kwin-vr, xrdesktop, Steam-on-Frame), with
+  the owner's condition that yielding be "efficient and minimally taxing" — the bound in §4.
+- **Q-B — the reserved control's press map is the platforms' split as written in §6**: short =
+  summon the shell (Alt+Tab/Super), long = recenter, double = show-hide or passthrough, chord =
+  force quit; quit is a menu item in the summoned shell (Alt+F4's analogue), never a press. The
+  physical control per target is §6's table.
+- **Q-C — (a)+(b)+(c): the posture-gated palm gesture on every tier, the HMD-body button where
+  one exists, the input floor's select long-press convention kept.** The owner: "I said I was
+  against gestures that might interrupt the user experience" — the requirement §6 turns into
+  posture gating, a deliberate hold, an affordance only while the posture is held, and app
+  gesture recognition suspended during it.
+- **Q-D — layer 5 always; layer 6 (the hand cutout) over games on by default — visionOS's
+  approach, "my favourite" — with a wearer toggle in the OSD layer; planes only when summoned or
+  kept per window.** (§4, §7.)
+- **Q-E — one `system` role on both the HMD-body and controller controls, identical semantics;
+  which physical control carries it follows the hardware target's convention.** (§6.)
 
-**Also open, not decisions:** the foreign-session mode-3 taxonomy for GNOME (headless mutter +
-libei/PipeWire viewer, not a nested compositor — research/59 §9a, the `mdk` read in the
-2026-09-26 owner conversation) — owner, in foreign-session-integration.md.
+**Recorded elsewhere from the same conversation:** the foreign-session mode-3 taxonomy splits
+by producer — KWin as a nested compositor in one `xdg_toplevel`; GNOME as a headless shell plus
+a PipeWire/libei viewer client hosted by zxr — in
+[foreign-session-integration.md §2](foreign-session-integration.md) and the component registry.
+
+**Still open, not decisions:** the Monado upstream items (a `/input/system/click` reservation
+for a system client; a real `set_focused_client`) and the zero-layer bring-up test (research/66
+§14).
