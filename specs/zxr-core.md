@@ -217,7 +217,9 @@ submit:  { quads: Vec<QuadEntry>, projection: Vec<DrawItem> }   // per-tick scra
   the parent panel (wayvr `hit_test.rs:59-136`) stays the fallback where caps bite.
 - **Quiet mode skips the flatten.** While a native application is primary and nothing is
   summoned (§7 rev 3.2) the tick returns before compose, frustum and sort — the frame-loop round
-  trips and nothing else.
+  trips and nothing else. No member is walked, so no buffer is held: a *committing* member's
+  buffers are released at replacement, which is the open buffer-hold policy of §7 rev 3.2
+  (research/67 §9) — this rule covers non-dirty members and says nothing about it.
 - **Per-dirty-panel round trips are inherent and counted.** Each dirty panel costs an acquire
   (two RPCs on Monado's Vulkan path) and a release in the tick it commits — a 60 fps video window
   is +3 RPCs per tick; no API batches it. The journal reports panel acquires and releases per
