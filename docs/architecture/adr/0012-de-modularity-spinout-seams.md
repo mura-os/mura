@@ -1,7 +1,8 @@
 # ADR 0012: Desktop-environment modularity and spin-out seams
 
-**Status:** accepted (draft)
-**Date:** 2026-09-22
+**Status:** accepted (draft); amended 2026-09-26 (window-management seam; shell components as
+processes — §Amendment below)
+**Date:** 2026-09-22 (amended 2026-09-26)
 **Context sources:** [30-wayland-de-anatomy-protocol-seams](../../research/30-wayland-de-anatomy-protocol-seams.md)
 (protocol inventory, KWin/COSMIC precedent, per-candidate verdicts),
 [desktop-environment.md](../desktop-environment.md) (the plane model this ADR applies),
@@ -195,3 +196,32 @@ system.
   forfeits ecosystem clients (Waybar-class tools, portal consumers) and the upstreaming path.
 - **External decoration-renderer process** (a "decoration client"): rejected — input-dispatch
   correctness would depend on an untrusted process's honesty about hit regions.
+
+
+## Amendment 2026-09-26 — the window-management seam and the shell-component rule
+
+From [research/60](../../research/60-de-abstractions-mapped-to-xr.md), ruled by the owner:
+
+- **Window-management policy — ruled (c).** §2's verdict stands as the *default*: policy
+  in-process (KWin's scripting shape), declarative configuration (niri's), the knobs in the
+  settings store (D7). It is no longer the *only* seam: river re-split the window manager out of
+  the compositor over a protocol ("river does not combine the compositor and window manager into
+  one program") for developer reasons that are real for Mura — languages, hot-swap, and that "in
+  VR/XR it's not obvious how window/workspace management should be done yet" (the owner). A
+  **bounded `zxr_window_management` protocol** is therefore the developer surface, designed when
+  there are windows worth managing (after M1): the compositor keeps the invariants a WM may not
+  override — frame limits, boundary, focus rules, the comfort caps of §2 — and an external WM
+  proposes everything else. Under X11 the WM was always a separate client; Wayland folded it into
+  the compositor (mutter, KWin; gnome-shell's JS runs inside mutter's process); river is the
+  first to re-split it. Mura takes both: in-process by default, the bounded protocol for those
+  who want their own.
+- **Every shell component is its own process over a standard seam, placed through anchoring
+  frames.** Notifications (FDO + layer-shell, mako's shape), the system tray (**ruled: carried**
+  — a separate StatusNotifier host applet, Plasma's and COSMIC's shape, because applications
+  expect it; GNOME's refusal is recorded as the other position), launcher/dock/overview
+  (foreign-toplevel-list + xdg-activation clients), the on-screen keyboard (a layer-shell client
+  binding `virtual-keyboard-v1` + `input-method-v2`, squeekboard's shape — already the registry's
+  row), the OSD (a layer-shell client fed over D-Bus), portal backends. COSMIC's process split
+  with the spatial frame added — so the spatial desktop environment is user-configurable at the
+  process level, which is the owner's stated goal. The compositor keeps what §3 already names:
+  focus, hit-testing, the window and place model, the boundary, composition.

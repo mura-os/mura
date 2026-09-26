@@ -381,6 +381,13 @@ frontend defect.**
   cost: one more thread and a handoff, gain: smithay used as designed and input handled between
   frames. The spec's Q1 answer fixes the module boundary; R0 gate 1 measures the missed-deadline
   count either way.
+  **Ruled 2026-09-26: (b)** — the owner: "we want what is most efficient, robust and reliable, its
+  also not a great idea to fight smithay", after the follow-up pass on *why* the single-loop
+  comparables chose as they did (none states a reason; the spec intends the runtime to own the
+  throttle and expects pipelined apps off the main thread — `fundamentals.adoc:164-171`,
+  `rendering.adoc:818-822,1011-1014`; Qt Quick 3D XR's `WaitForFrame` worker, gamescope's
+  `vrflip` thread, KWin's and mutter's display threads, smithay's eventfd blockers all move the
+  blocking wait off the state loop). Recorded in ADR 0006's 2026-09-26 amendment.
 
 Everything else above converged or refined without a fork, and is applied in
 [specs/zxr-core.md](../../specs/zxr-core.md). The DE-level abstractions (layers, places,

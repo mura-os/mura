@@ -406,9 +406,16 @@ differently, so they wait.
   languages, hot-swap, diversity. (c) both: in-process by default, the bounded protocol as the
   developer surface, later. The owner named user/developer-defined workspace management as a
   requirement, which is why this is asked rather than left as ruled.
+  **Ruled 2026-09-26: (c)** — in-process default now, the bounded protocol as the developer
+  surface after M1 (ADR 0012 amendment). The owner's framing: under X11 the WM was a separate
+  process; Wayland folded it in; "in VR/XR it's not obvious how window/workspace management
+  should be done yet, and we should allow users/developers flexibility while still allowing them
+  to use our compositor."
 - **Q3 — the system tray.** (a) carry SNI as a separate host applet (Plasma, COSMIC — apps expect
   it); (b) refuse it (GNOME — the shell does not want status icons). Nothing XR-specific decides
-  it; it decides a registry row.
+  it; it decides a registry row. **Ruled 2026-09-26: (a), carried** — the owner's general rule:
+  shell elements modular, their own processes, so the spatial desktop environment is
+  user-configurable (the keyboard and the tray named alongside the WM).
 
 Everything else converged: the layer model, places over `ext-workspace-v1`, foreign sessions in
 two modes, the proxied-client discipline, the 3D-process protocol as the lineage's derivation,

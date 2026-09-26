@@ -2,7 +2,7 @@
 
 **Status:** accepted (draft); **base library ratified 2026-09-23** (Rust + smithay, see §The
 compositor base; evidence in [39-compositor-base-landscape](../../research/39-compositor-base-landscape.md))
-**Date:** 2026-09-22 (amended 2026-09-23)
+**Date:** 2026-09-22 (amended 2026-09-23; amended 2026-09-26 — §Program shape, below)
 **Context sources:** [08-wxrc](../../research/08-wxrc.md) (Motorcar→wxrc→wxrd lineage + code),
 [09-wxrc-ecosystem-gap-2026](../../research/09-wxrc-ecosystem-gap-2026.md) (2026 patch archaeology),
 [10-xr-wayland-protocol-comparison](../../research/10-xr-wayland-protocol-comparison.md) (five-model
@@ -215,3 +215,42 @@ protocol is finished, and it directly closes the open 2D-app question in
   XR-preflight and dmabuf-format-filter patterns) and reserved as an optional session
   (`mura.xr.shell = kwin-vr`). Its topology — one process, one projection layer, ray→plane
   input, zero-copy dmabuf — independently validates this ADR's shape at daily-driver quality.
+
+
+## Amendment 2026-09-26 — the program shape, from comparables with the lineage first
+
+[research/59](../../research/59-xr-compositor-architecture-from-comparables.md) re-derived every
+mechanism the compositor program must fix under AGENTS rules 7/8, reading **motorcar and wxrc**
+— the lineage, held by the owner as the design centre — first and every other comparable as
+evidence for or against. Results, recorded here so the program spec
+([specs/zxr-core.md](../../../specs/zxr-core.md)) is built on decisions rather than drafts:
+
+- **The model is confirmed, not re-opened.** Clients render; the compositor composites depth
+  into one scene and submits one stereo projection layer. OpenXR composes layers by painter's
+  algorithm "whether or not the new layers are virtually closer to the viewer" and Monado never
+  depth-tests across layers, so the thesis's argument is stronger under OpenXR than it was.
+- **Loop ownership — ruled (b), 2026-09-26.** The state loop (smithay's `calloop`) owns the
+  thread; a dedicated thread blocks in `xrWaitFrame` and posts the `XrFrameState` into the loop.
+  Why not the lineage's single loop (wxrc, wayvr): the spec intends the *runtime* to own the
+  throttle through `xrWaitFrame` and expects pipelined applications to call it off their main
+  thread ("intended to provide scalable performance when used on multiple host threads"; "a
+  pipelined system may call xrWaitFrame on a separate thread"); the single-loop comparables give
+  no reason for their choice, while every comparable with a latency reason — Qt Quick 3D XR's
+  `WaitForFrame` worker (KWin-VR's engine), gamescope's `vrflip` thread, KWin's and mutter's
+  display threads — moved the blocking wait off the state loop; and smithay's own explicit-sync
+  design refuses to block the loop thread (waits become eventfd sources). Two threads, calloop
+  used as designed, Wayland input handled between frames.
+- **Determinations that close research/39's open R0 outputs:** no compositor-side windowed
+  backend — Monado's simulated HMD in a desktop window is the development backend and
+  `pkgs/dev-session` already runs it (winit vs direct swapchain: neither); **xwayland-satellite**
+  for X11 (niri's reason — no global 2D coordinate system for X11 — holds a fortiori for planes
+  in a frame graph, and wayvr chose the same), smithay `X11Wm` the recorded fallback; tracing
+  spans plus a frame journal as instrumentation; frame callbacks after submit and never a wait
+  on clients (motorcar's stated policy, every 2D compositor's practice, Monado's expectation).
+- **Base re-affirmed with the lineage's own reasons:** motorcar chose QtWayland because it
+  "handles almost all of the behavior needed to correctly interact with 2D clients" and isolates
+  the 3D work — smithay's renderer-free frontend is that today; wxrc's hand-tracked wlroots 0.8
+  pin no longer preprocesses against 0.19. Rust + smithay pinned to a git rev with
+  `default-features = false` (niri's convention); wlroots fallback only on a structural
+  frontend defect. Budgets measured (niri 35.5 MB / 30 MB / 1 thread; cosmic-comp 115 MB / 28;
+  gamescope 144 MB / 17) set the fence in the spec.
