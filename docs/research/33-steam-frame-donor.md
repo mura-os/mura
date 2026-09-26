@@ -211,11 +211,11 @@ edk2 firmware) on the x86_64 dev host via `nix run .#frame-vm-run`:
 |---|---|
 | Image | `packages.aarch64-linux.frame-image`: 33.6 GiB sparse GPT (zstd artifact ~2 GiB after the dedicated recovery partition); remote build via `nix run .#frame-build` |
 | Boot | UEFI → systemd-boot → slot A; `multi-user.target` + `graphical.target` active; autologin session; sshd up |
-| Layout | `esp / mura_recovery / rootfs_a / rootfs_b / syspersist / home`; `mura_recovery` is a separate 512 MiB XBOOTLDR image (62.7 MiB compressed) carrying recovery entry+kernel+initrd (including the USB/hotspot recovery services) and registered as RAUC `rescue.0` (ordinary A/B bundles leave it untouched); cmdline `root=PARTLABEL=rootfs_a rauc.slot=A` (the donor's slot-cmdline contract, §3) |
+| Layout | `esp / mura_recovery / rootfs_a / rootfs_b / syspersist / home`; `mura_recovery` is a separate 512 MiB XBOOTLDR image (62.8 MiB compressed) carrying stable `recovery.conf` + one 103 MiB self-contained recovery UKI (kernel+initrd+cmdline, including USB/hotspot services), registered as readonly RAUC `rescue.0` so ordinary A/B bundles leave it untouched; cmdline `root=PARTLABEL=rootfs_a rauc.slot=A` (the donor's slot-cmdline contract, §3) |
 | RAUC | `compatible=Mura-deckard`, booted `rootfs.0 (A)`, custom backend (`mura-bootconf`) reporting primary correctly |
 | XR wiring | `monado.socket` active (user unit); `/etc/mura-device.json` correct |
 | Update round-trip | test-signed 2.1 GiB `.raucb` → `rauc install` into slot B (**4 m 42 s** with the VM disk on fast local SSD; effectively unbounded on slow storage — see lessons), backend flipped primary to B, reboot → **booted `rootfs.1 (B)`** with `root=PARTLABEL=rootfs_b rauc.slot=B`, `rauc status mark-good` → both slots good |
-| Recovery escalation (2026-09-25) | Test-only image forces P2 hard + threshold 2: first failure cycles, second writes LoaderEntryOneShot, third boot selects `recovery.conf` from XBOOTLDR; stage 1 reports `RECOVERY_PROOF_OK`, five recovery units active, and `initrd=\EFI\mura-recovery\initrd rd.systemd.unit=mura-recovery.target`. edk2 proof only; Frame U-Boot runtime-variable persistence remains hardware-only |
+| Recovery escalation (2026-09-25) | Test-only image forces P2 hard + threshold 2: first failure cycles, second writes LoaderEntryOneShot, third boot selects `recovery.conf` → recovery UKI from XBOOTLDR; stage 1 reports `RECOVERY_PROOF_OK`, five recovery units active, the selected entry, and embedded `rd.systemd.unit=mura-recovery.target`. edk2 proof only; Frame U-Boot runtime-variable persistence remains hardware-only |
 | Donor-kernel boot mode | **not executed — infeasible by evidence** (§4: no `VIRTIO_BLK/NET` in Valve's kernel) |
 
 Precise scope of the "technically flashable" claim: the artifact reproduces the donor's GPT
@@ -261,7 +261,7 @@ kernel (§4), and the not-yet-obtained flash/recovery procedure — the hardware
   image-builder mkosi is the exact comparable: it deliberately creates `/efi` for the ESP,
   reserves `/boot` for XBOOTLDR, and passes those paths to bootctl
   (`references/mkosi/mkosi/__init__.py:283-290`, `bootloader.py:749-760`) — no nested mounts and
-  a clean future XBOOTLDR boundary. That reason transfers, so Mura uses `/efi`; the choice is
+  a clean `/boot` XBOOTLDR boundary, now used by Mura Recovery. That reason transfers, so Mura uses `/efi`; the choice is
   systemd/mkosi's semantic layout, not a Mura convention. `/esp` also made
   `systemctl --boot-loader-entry` unable to enumerate `recovery.conf`.
 - **Boot assessment needs `preferred`, not `default`.** systemd-boot deliberately checks
@@ -272,6 +272,13 @@ kernel (§4), and the not-yet-obtained flash/recovery procedure — the hardware
   `default` fallback ([external, pinned nixpkgs]
   `nixos/modules/system/boot/loader/systemd-boot/systemd-boot-builder.py:297-314`). Mura's
   two-slot translation writes `preferred a*.conf` + `default b*.conf` (or the reverse).
+- **Recovery is one UKI, not loose boot files.** systemd-boot scans Type #2 UKIs on XBOOTLDR
+  (`references/systemd/man/systemd-boot.xml:31-49`), and NixOS's pinned `system.build.uki`
+  uses ukify to bind kernel, initrd, cmdline and OS metadata into one PE artifact ([external,
+  pinned nixpkgs] `nixos/modules/system/boot/uki.nix:78-116`). This removes the mixed-version
+  kernel/initrd window and makes the dedicated-image boundary real. RAUC's Additional Rescue
+  Slot is readonly: normal bundles cannot target it. Mutable recovery is a later design requiring
+  versioned whole-UKI staging; raw overwrite of the sole rescue partition is not atomic.
 - Closure size is the slot-size driver: the VM-proof userspace closed at **12.1 GiB** (16 GiB
   slots as a result). Before any real update channel, closure slimming is mandatory
   (docs/man pages, firmware pruning, sway-vs-zxr) — follow-up, not blocking.

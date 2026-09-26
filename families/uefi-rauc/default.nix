@@ -22,6 +22,12 @@ let
     "init=${toplevel}/init"
     "console=ttyAMA0"
   ] ++ config.boot.kernelParams);
+  recoveryCmdline = lib.concatStringsSep " " ([
+    "rd.systemd.unit=mura-recovery.target"
+    "console=ttyAMA0"
+  ] ++ lib.filter
+    (p: !(lib.hasPrefix "root=" p || lib.hasPrefix "init=" p || lib.hasPrefix "rauc.slot=" p))
+    config.boot.kernelParams);
 
   bootEntry = slot: pkgs.writeText "entry-${slot}.conf" ''
     title Mura (slot ${lib.toUpper slot})
@@ -29,10 +35,11 @@ let
     initrd /EFI/mura/initrd
     options root=PARTLABEL=rootfs_${slot} rauc.slot=${lib.toUpper slot} ${kernelParamsCommon}
   '';
-  # The recovery environment (modules/os/recovery.nix; research/57 §3): its own kernel+initrd
-  # copy on the dedicated XBOOTLDR partition, booted to mura-recovery.target. Never counted,
-  # never the default; reached with `systemctl reboot --boot-loader-entry=recovery.conf` (the
-  # LoaderEntryOneShot EFI variable), which is what the crash-loop counter does at its threshold.
+  # The recovery environment (modules/os/recovery.nix; research/57 §3): a self-contained UKI on
+  # the dedicated XBOOTLDR partition (kernel + initrd + recovery cmdline + metadata in one PE
+  # file), booted to mura-recovery.target. Never counted, never the default; reached with
+  # `systemctl reboot --boot-loader-entry=recovery.conf` (LoaderEntryOneShot), which is what the
+  # crash-loop counter does at its threshold.
   #
   # HARDWARE PROOF PENDING (implementation-path §4 track): that command — and
   # `systemd-factory-reset request` — needs runtime EFI SetVariable. On the Frame the UEFI
@@ -44,9 +51,15 @@ let
   # steamos-bootconf shape, which never touches EFI variables. That fallback is not wired yet.
   recoveryEntry = pkgs.writeText "entry-recovery.conf" ''
     title Mura recovery
-    linux /EFI/mura-recovery/Image
-    initrd /EFI/mura-recovery/initrd
-    options rd.systemd.unit=mura-recovery.target ${kernelParamsCommon}
+    efi /EFI/mura-recovery/mura-recovery.efi
+  '';
+  recoveryOsRelease = pkgs.writeText "mura-recovery-os-release" ''
+    NAME="Mura Recovery"
+    ID=mura
+    ID_LIKE=nixos
+    PRETTY_NAME="Mura Recovery"
+    IMAGE_ID=mura-recovery
+    VERSION_ID="${config.system.nixos.version}"
   '';
 
   # RAUC custom bootloader backend (interface: rauc calls with
@@ -59,7 +72,7 @@ let
   # `a+3.conf` → `a+2-1.conf` → `a.conf`. Slot state lives in
   # /efi/loader/mura-slot-state. Why `/efi`, not the donor's `/esp`: SteamOS has separate
   # per-slot EFI and shared ESP partitions; Mura has one. systemd/mkosi's semantic layout puts
-  # that ESP at `/efi` and leaves `/boot` for a future XBOOTLDR (research/33 §10, with the
+  # that ESP at `/efi` and `/boot` for the recovery XBOOTLDR (research/33 §10, with the
   # NixOS/Jovian `/boot` tradeoff). `/esp` also prevents systemd from discovering entries.
   # steamos-bootconf shape, minimal.
   #
@@ -179,11 +192,10 @@ in
           "/loader/entries/b.conf".source = bootEntry "b";
         };
       };
-      # A dedicated Mura recovery boot image, physically separate from both normal Mura boot
-      # artifacts and any hardware/vendor recovery. XBOOTLDR is systemd-boot's standard second
-      # boot partition: it discovers Type #1 entries and their kernel/initrd here
-      # (systemd-boot(7); research/57 §3). 512 MiB follows NixOS's installer ESP size and is
-      # ample for the measured single kernel+initrd while keeping the embedded storage bound.
+      # A dedicated Mura recovery UKI, physically separate from both normal Mura boot artifacts
+      # and any hardware/vendor recovery. XBOOTLDR is systemd-boot's standard second boot
+      # partition; the stable Type #1 entry points at one Type #2 UKI. 512 MiB follows NixOS's
+      # installer ESP size and is measured below against the generated UKI.
       "15-mura-recovery" = {
         repartConfig = {
           Type = "xbootldr";
@@ -194,10 +206,10 @@ in
           SplitName = "mura_recovery";
         };
         contents = {
-          "/EFI/mura-recovery/Image".source =
-            "${config.system.build.kernel}/${config.system.boot.loader.kernelFile}";
-          "/EFI/mura-recovery/initrd".source =
-            "${config.system.build.initialRamdisk}/${config.system.boot.loader.initrdFile}";
+          # Outside /EFI/Linux: systemd-boot must expose only the stable recovery.conf entry,
+          # not a duplicate auto-discovered Type #2 menu item for the same UKI.
+          "/EFI/mura-recovery/mura-recovery.efi".source =
+            "${config.system.build.uki}/${config.system.boot.loader.ukiFile}";
           "/loader/entries/recovery.conf".source = recoveryEntry;
         };
       };
@@ -284,6 +296,16 @@ in
 
   boot.initrd.systemd.enable = true;
   boot.initrd.supportedFilesystems = [ "btrfs" ];
+  # The normal slots keep their loose ESP kernel/initrd. system.build.uki is recovery's distinct
+  # image: its command line is embedded and cannot drift from the recovery initrd.
+  boot.uki = {
+    name = "mura-recovery";
+    version = null;
+    settings.UKI = {
+      Cmdline = recoveryCmdline;
+      OSRelease = "@${recoveryOsRelease}";
+    };
+  };
 
   # The runtime repart definitions the recovery environment's factory reset operates on: the
   # two state partitions, marked FactoryReset=yes (systemd-repart --factory-reset deletes and
@@ -320,12 +342,15 @@ in
     [keyring]
     path=/etc/rauc/keyring.pem
 
-    # RAUC's documented "Additional Rescue Slot": normal A/B updates do not touch it; an
-    # explicit rescue-image bundle may. The bootloader enters it after repeated failures or
-    # user request (references/rauc/docs/scenarios.rst:147-178).
+    # RAUC's documented "Additional Rescue Slot": normal A/B updates do not touch it and
+    # readonly=true makes the factory recovery image non-targetable. The bootloader enters it
+    # after repeated failures or user request (references/rauc/docs/scenarios.rst:147-178).
+    # A future mutable-recovery design needs versioned whole-UKI staging; raw overwrite is not
+    # atomic enough for the sole rescue image.
     [slot.rescue.0]
     device=/dev/disk/by-partlabel/mura_recovery
     type=raw
+    readonly=true
 
     [slot.rootfs.0]
     bootname=A

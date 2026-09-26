@@ -8,8 +8,9 @@
 #      and shows what failed and how to reach the device (ssh over the gadget, the hotspot, the
 #      docs). Nobody waits three boots to say something; Android's own reason for keeping its
 #      escalation short is that time with an inoperable device is what sends people to support.
-#   2. The recovery environment: the SAME initrd booted to `mura-recovery.target`
-#      (rd.systemd.unit=…; systemd's boot-menu-entry shape, Mobile NixOS's recovery-is-stage-1) —
+#   2. The recovery environment: a dedicated family recovery image booted to
+#      `mura-recovery.target` (uefi-rauc: a self-contained UKI; Mobile NixOS's
+#      recovery-is-stage-1 shape) —
 #      sshd on the gadget address with the device's own host key when /persist mounts, and the
 #      menu — pkgs/mura-recovery, specs/recovery-menu.md: the actions once (factory reset via
 #      systemd-repart --factory-reset over the FactoryReset=yes partitions — systemd's mechanism,
@@ -23,10 +24,9 @@
 #      automatically (ruled 2026-09-25) — where the family provides an entry
 #      (mura.recovery.rebootCommand); otherwise the old mura-recovery.target in stage 2.
 #
-# Per family: uefi-rauc adds the `recovery.conf` BLS entry and sets rebootCommand; the
-# Every family packages this stage-1 environment into a dedicated Mura recovery boot partition
-# with its own kernel+initrd copy (no recovery root filesystem), separate from normal Mura boot
-# artifacts. Android-derived families must additionally preserve stock/vendor recovery as the
+# Every family packages this stage-1 environment as a dedicated Mura recovery image (uefi-rauc:
+# one UKI binding kernel+initrd+cmdline; no recovery root filesystem), separate from normal Mura
+# boot artifacts. Android-derived families must additionally preserve stock/vendor recovery as the
 # independent path that can reinstall Mura when Mura itself is broken; their bring-up needs an
 # added Mura partition and selector, and `reboot recovery` is not that selector. The device
 # provides its DRM driver in the initrd (plymouth needs it: devices/virtual-headset adds

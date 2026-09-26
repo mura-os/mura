@@ -16,8 +16,9 @@ input devices; a plymouth message per redraw; nothing on the frame path, nothing
 
 ## 1. The problem
 
-This program runs from the **dedicated Mura recovery boot partition**: its own kernel+systemd
-initrd copy, booted to `mura-recovery.target`, with no recovery root filesystem. It is not a mode
+This program runs from the **dedicated Mura recovery boot partition**: on uefi-rauc, one
+self-contained UKI binding its kernel, systemd initrd and recovery command line, with no recovery
+root filesystem. It is not a mode
 that depends on the normal Mura boot files, and it never replaces or consumes stock/vendor
 recovery. On uefi-rauc the partition is XBOOTLDR (`mura_recovery`); Android-derived targets need
 an additional bootable Mura partition proven during device bring-up.

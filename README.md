@@ -94,12 +94,13 @@ nix run .#frame-build -- \
   -o result-frame-recovery-proof
 FRAME_VM_DIR=/path/on/fast-storage \
   nix run .#frame-vm-run -- \
-  result-frame-recovery-proof/spatial-deckard.raw.zst
+  result-frame-recovery-proof/mura-deckard.raw.zst
 ```
 
-Stop QEMU after the serial log reaches `Mura recovery`; the evidence expected before it is the
-first failure/cycle, the second failure reaching the threshold, and systemd-boot selecting the
-recovery entry. Keep `FRAME_VM_DIR` on fast local storage: QEMU TCG writes are storage-bound.
+Stop QEMU after the serial log reaches `RECOVERY_PROOF_OK`; the evidence expected before it is
+the first failure/cycle, the second failure reaching the threshold, and systemd-boot selecting
+`recovery.conf` → the dedicated recovery UKI. Keep `FRAME_VM_DIR` on fast local storage: QEMU
+TCG writes are storage-bound.
 
 ## Design rule
 

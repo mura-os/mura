@@ -120,7 +120,7 @@ in
         if [ "$n" -ge ${toString cfg.health.crashLoopThreshold} ]; then
           ${if cfg.recovery.rebootCommand != null then ''
             # the step systemd's boot counting cannot take (research/56 §3): into the family's
-            # dedicated Mura recovery boot image (its own kernel+initrd copy; recovery.nix)
+            # dedicated Mura recovery UKI (kernel+initrd+cmdline in one image; recovery.nix)
             echo "threshold reached: rebooting into the recovery environment"
             ${cfg.recovery.rebootCommand}
           '' else ''

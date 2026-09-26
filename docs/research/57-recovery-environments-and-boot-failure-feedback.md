@@ -7,7 +7,7 @@ environment ruled in [research/56 §3](56-defaults-from-comparables.md) is deriv
 **Method:** AGENTS rules 7/8; pinned clones (`references/`, file:line) first, [external] sources
 named and verified where the comparable is not cloned. **Budget impact** (overview invariant 9):
 a dedicated recovery boot partition per image family (uefi-rauc: 512 MiB XBOOTLDR carrying one
-kernel+initrd; Android-derived: a separate Mura recovery boot image only where the boot chain can
+self-contained recovery UKI; Android-derived: a separate Mura recovery boot image only where the boot chain can
 select an additional partition without replacing stock recovery). Runtime cost is recovery-only:
 plymouth and the menu are absent from the normal frame path.
 
@@ -63,8 +63,9 @@ request (`references/rauc/docs/scenarios.rst:147-178`). Mura registers `mura_rec
 `rescue.0`, so ordinary rootfs bundles leave it untouched. postmarketOS confirms that the environment
 itself belongs in small stage 1: its initramfs enters `debug_shell` on Volume-Down
 (`pmaports/main/postmarketos-initramfs/init_2nd.sh:35-42`,
-`init_functions.sh:1223-1241`) and on a hard failure (`init_functions.sh:1434-1441`). Mobile
-Thus the recovery partition carries its own kernel+initrd but no third root filesystem.
+`init_functions.sh:1223-1241`) and on a hard failure (`init_functions.sh:1434-1441`).
+Thus the recovery partition carries its own boot image but no third root filesystem (uefi-rauc
+binds kernel+initrd+cmdline as one UKI).
 `reboot recovery` continues to mean stock recovery and is never Mura's entry command.
 Android-family selection of an additional Mura partition needs proof during each bring-up; it
 cannot be assumed from AOSP's fixed partition names. SteamOS's full desktop on USB is the
@@ -98,10 +99,11 @@ NixOS's "pick a generation". Reflash from recovery (Lineage's "Apply update", St
    normal initrd; on a hard preflight failure, `plymouth display-message` with the failing
    check, `ssh mura@172.16.42.1`, the hotspot SSID and PSK when up, and the docs URL; the setup
    launcher shows the same. (pmOS, Mobile NixOS; Rescue Party's time-cost reason.)
-2. **The recovery environment is a dedicated Mura recovery boot partition/image**: its own copy
-   of the kernel and systemd initrd booted to `mura-recovery.target`, with no recovery root
-   filesystem and no dependency on the normal Mura boot files. On uefi-rauc the partition is
-   XBOOTLDR (`mura_recovery`) with `recovery.conf`, reached with
+2. **The recovery environment is a dedicated Mura recovery boot partition/image**, with no
+   recovery root filesystem and no dependency on the normal Mura boot files. On uefi-rauc the
+   partition is XBOOTLDR (`mura_recovery`) with one UKI binding kernel, systemd initrd,
+   `rd.systemd.unit=mura-recovery.target` and recovery metadata; stable `recovery.conf` points to
+   it and is reached with
    `systemctl reboot --boot-loader-entry=recovery.conf`; normal Mura boot files remain on the
    ESP. On Android-derived targets `reboot recovery` is reserved for stock/vendor recovery; an
    additional bootable Mura partition and selector is a bring-up gate, not assumed here.

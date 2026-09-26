@@ -86,10 +86,13 @@ let
         && frame.image.repart.partitions."15-mura-recovery".repartConfig.Type == "xbootldr"
         && frame.image.repart.partitions."15-mura-recovery".repartConfig.Label == "mura_recovery"
         && frame.image.repart.partitions."15-mura-recovery".contents ? "/loader/entries/recovery.conf"
-        && frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/mura-recovery/Image"
-        && frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/mura-recovery/initrd"
+        && frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/mura-recovery/mura-recovery.efi"
+        && !(frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/Linux/mura-recovery.efi")
+        && !(frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/mura-recovery/Image")
+        && !(frame.image.repart.partitions."15-mura-recovery".contents ? "/EFI/mura-recovery/initrd")
         && lib.hasInfix "[slot.rescue.0]" frame.environment.etc."rauc/system.conf".text
-        && lib.hasInfix "device=/dev/disk/by-partlabel/mura_recovery" frame.environment.etc."rauc/system.conf".text;
+        && lib.hasInfix "device=/dev/disk/by-partlabel/mura_recovery" frame.environment.etc."rauc/system.conf".text
+        && lib.hasInfix "readonly=true" frame.environment.etc."rauc/system.conf".text;
   };
 
   failures = lib.filterAttrs (_: v: v != true) results;

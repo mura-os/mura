@@ -447,13 +447,13 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   [specs/recovery-menu.md](../../specs/recovery-menu.md); ruled 2026-09-25). The OS owns its
   recovery as a **dedicated Mura recovery boot partition/image**, separate from normal Mura boot
   artifacts and from the hardware's stock/vendor recovery. It contains its own kernel+systemd
-  initrd booted to `mura-recovery.target`, but no third root filesystem (Mobile NixOS/Lineage's
-  recovery-image boundary; pmOS's stage-1 contents). On uefi-rauc it is the
-  `mura_recovery` XBOOTLDR partition: systemd-boot discovers `recovery.conf` and its kernel/initrd
-  there, selected once with `systemctl reboot --boot-loader-entry=recovery.conf`; the normal
-  entries and boot files stay on the ESP. It is RAUC `rescue.0`: ordinary A/B bundles leave it
-  untouched (RAUC's Additional Rescue Slot shape); updating recovery requires an explicit
-  rescue-image bundle. On Android-derived targets stock/vendor recovery
+  initrd but no third root filesystem (Mobile NixOS/Lineage's recovery-image boundary; pmOS's
+  stage-1 contents). On uefi-rauc it is the `mura_recovery` XBOOTLDR partition: one UKI binds
+  kernel+initrd+`rd.systemd.unit=mura-recovery.target`, and stable `recovery.conf` points to it;
+  the normal entries and boot files stay on the ESP. It is readonly RAUC `rescue.0`: ordinary
+  A/B bundles leave it untouched (RAUC's Additional Rescue Slot shape). A future recovery update
+  contract must stage versioned whole UKIs; raw overwrite of the sole rescue image is not
+  accepted. On Android-derived targets stock/vendor recovery
   remains the independent install/reflash path (`reboot recovery` still means that); each
   device's bring-up must prove that its boot chain can select an **additional** Mura recovery
   partition before setting `mura.recovery.rebootCommand`.
@@ -488,7 +488,7 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   **Status (2026-09-25): landed** —
   `modules/os/recovery.nix`, `pkgs/mura-recovery`, `pkgs/mura-plymouth-theme`,
   `mura-setup --recovery`; uefi-rauc's dedicated XBOOTLDR partition and
-  `FactoryReset=yes` definitions; `tests/persist.nix` pins that the recovery entry+kernel+initrd
+  `FactoryReset=yes` definitions; `tests/persist.nix` pins that the recovery entry+UKI
   are absent from the normal ESP and present on `mura_recovery`. Proof:
   `vm-test-recovery` (eight subtests: environment up and drawn on plymouth,
   per-boot-PSK hwsim hotspot association with ssh+web reachable,
@@ -502,8 +502,8 @@ conformance checklists that are ready-made test plans (authd moved onto the D-tr
   threshold of two, cycles the first failure, then the production counter writes
   LoaderEntryOneShot. systemd-boot selects `recovery.conf` from the separate
   `mura_recovery` XBOOTLDR partition; a test-only service inside stage 1 prints
-  `RECOVERY_PROOF_OK`, all five recovery units `active`, and
-  `initrd=\EFI\mura-recovery\initrd rd.systemd.unit=mura-recovery.target` to ttyAMA0. The proof
+  `RECOVERY_PROOF_OK`, all five recovery units `active`, `selected=recovery.conf`, and the
+  embedded `rd.systemd.unit=mura-recovery.target` command line to ttyAMA0. The proof
   also corrected copied-without-reason foundations: BLS IDs include `.conf`; slot selection uses
   systemd ≥260's assessment-aware `preferred` with the other slot as `default` (an exhausted
   primary therefore falls back instead of being explicitly reselected); the sole ESP is `/efi`

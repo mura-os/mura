@@ -19,13 +19,14 @@ let
           mura-setup-recovery.service; then
         cmdline=$(cat /proc/cmdline)
         case "$cmdline" in
-          *'initrd=\EFI\mura-recovery\initrd'*) ;;
-          *) sleep 1; i=$((i + 1)); continue ;;
-        esac
-        case "$cmdline" in
           *'rd.systemd.unit=mura-recovery.target'*) ;;
           *) sleep 1; i=$((i + 1)); continue ;;
         esac
+        selected=$(
+          ${pkgs.systemd}/bin/bootctl status --no-pager 2>/dev/null \
+            | ${pkgs.gnused}/bin/sed -n 's/^[[:space:]]*Current Entry:[[:space:]]*//p'
+        )
+        [ "$selected" = recovery.conf ] || { sleep 1; i=$((i + 1)); continue; }
         {
           echo RECOVERY_PROOF_OK
           ${pkgs.systemd}/bin/systemctl is-active \
@@ -34,6 +35,7 @@ let
             mura-recovery-sshd.service \
             mura-recovery-panel.service \
             mura-setup-recovery.service
+          echo "selected=$selected"
           cat /proc/cmdline
         } > /dev/ttyAMA0
         exit 0
@@ -43,6 +45,8 @@ let
     done
     {
       echo RECOVERY_PROOF_TIMEOUT
+      echo "selected=$(${pkgs.systemd}/bin/bootctl status --no-pager 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^[[:space:]]*Current Entry:[[:space:]]*//p')"
+      cat /proc/cmdline
       ${pkgs.systemd}/bin/systemctl list-jobs --no-pager
       ${pkgs.systemd}/bin/systemctl --failed --no-pager
       ${pkgs.systemd}/bin/systemctl status --no-pager \
