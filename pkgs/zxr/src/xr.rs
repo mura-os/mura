@@ -95,7 +95,10 @@ fn monotonic_ns() -> u64 {
 impl XrCore {
     /// Instance → system → Vulkan instance/device from the runtime → session → swapchains →
     /// reference space, then the wait thread. `loader`: the OpenXR loader path (baked by Nix).
-    pub fn new(loader: &str, app_name: &str) -> Result<(XrCore, VkCore), String> {
+    /// `overlay`: create an `XR_EXTX_overlay` session at this layer placement (native-openxr-apps.md
+    /// §2: zxr is always an overlay session in production; `None` keeps the plain main session
+    /// for measurement).
+    pub fn new(loader: &str, app_name: &str, overlay: Option<u32>) -> Result<(XrCore, VkCore), String> {
         // SAFETY: loading the OpenXR loader shared object by path.
         let entry = unsafe { xr::Entry::load_from(std::path::Path::new(loader), &()) }.map_err(|e| format!("openxr loader {loader}: {e}"))?;
         let available = entry.enumerate_extensions().map_err(|e| e.to_string())?;
@@ -104,6 +107,12 @@ impl XrCore {
         }
         let mut exts = xr::ExtensionSet::default();
         exts.khr_vulkan_enable2 = true;
+        if overlay.is_some() {
+            if !available.extx_overlay {
+                return Err("runtime lacks XR_EXTX_overlay (needed for --overlay)".into());
+            }
+            exts.extx_overlay = true;
+        }
         let instance = entry
             .create_instance(&xr::ApplicationInfo { application_name: app_name, application_version: 1, engine_name: "zxr", engine_version: 1, api_version: xr::Version::new(1, 0, 0) }, &exts, &[], &())
             .map_err(|e| format!("xrCreateInstance: {e}"))?;
@@ -163,9 +172,24 @@ impl XrCore {
 
         // ---- session ----
         let (session, waiter, stream) = unsafe {
-            instance
-                .create_session::<xr::Vulkan>(system, &xr::vulkan::SessionCreateInfo { instance: vk_instance_raw, physical_device: physical_raw, device: device_raw, queue_family_index: queue_family, queue_index: 0 })
-                .map_err(|e| format!("xrCreateSession: {e}"))?
+            match overlay {
+                None => instance
+                    .create_session::<xr::Vulkan>(system, &xr::vulkan::SessionCreateInfo { instance: vk_instance_raw, physical_device: physical_raw, device: device_raw, queue_family_index: queue_family, queue_index: 0 })
+                    .map_err(|e| format!("xrCreateSession: {e}"))?,
+                Some(placement) => {
+                    // openxrs has no builder for the overlay struct: chain it by hand under the Vulkan binding
+                    let overlay_info = xr::sys::SessionCreateInfoOverlayEXTX { ty: xr::sys::SessionCreateInfoOverlayEXTX::TYPE, next: std::ptr::null(), create_flags: Default::default(), session_layers_placement: placement };
+                    let binding = xr::sys::GraphicsBindingVulkanKHR { ty: xr::sys::GraphicsBindingVulkanKHR::TYPE, next: &overlay_info as *const _ as *const c_void, instance: vk_instance_raw, physical_device: physical_raw, device: device_raw, queue_family_index: queue_family, queue_index: 0 };
+                    let info = xr::sys::SessionCreateInfo { ty: xr::sys::SessionCreateInfo::TYPE, next: &binding as *const _ as *const c_void, create_flags: Default::default(), system_id: system };
+                    let mut handle = <xr::sys::Session as xr::sys::Handle>::NULL;
+                    let r = (instance.fp().create_session)(instance.as_raw(), &info, &mut handle);
+                    if r.into_raw() < 0 {
+                        return Err(format!("xrCreateSession(overlay): {r}"));
+                    }
+                    tracing::info!(placement, "XR_EXTX_overlay session");
+                    xr::Session::<xr::Vulkan>::from_raw(instance.clone(), handle, Box::new(()))
+                }
+            }
         };
         let views = instance.enumerate_view_configuration_views(system, VIEW_TYPE).map_err(|e| e.to_string())?;
         let blend = instance.enumerate_environment_blend_modes(system, VIEW_TYPE).map_err(|e| e.to_string())?[0];

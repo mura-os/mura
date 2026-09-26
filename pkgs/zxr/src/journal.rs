@@ -67,6 +67,8 @@ pub struct Journal {
     /// spec §7 rev 3: which shape each tick took
     pub projection_layer_frames: u64,
     pub panels_only_frames: u64,
+    /// ticks in quiet mode (a native app primary): zero layers, no passes
+    pub quiet_frames: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -174,6 +176,7 @@ impl Journal {
         let _ = writeln!(s, "panel_bytes={}", self.panel_bytes);
         let _ = writeln!(s, "projection_layer_frames={}", self.projection_layer_frames);
         let _ = writeln!(s, "panels_only_frames={}", self.panels_only_frames);
+        let _ = writeln!(s, "quiet_frames={}", self.quiet_frames);
         s
     }
 }

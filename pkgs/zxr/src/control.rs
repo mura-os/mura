@@ -22,6 +22,7 @@ pub enum Command {
     /// evdev keycode; `None` = press then release
     Key(u32, Option<bool>),
     Type(String),
+    Quiet(bool),
     Unknown(String),
 }
 
@@ -59,6 +60,7 @@ pub fn parse(line: &str) -> Command {
         (Some("list"), _) => Command::List,
         (Some("journal"), _) => Command::Journal,
         (Some("quit"), _) => Command::Quit,
+        (Some("quiet"), Some(v)) => Command::Quiet(v == "on" || v == "1"),
         (Some("close"), _) => Command::Close,
         (Some("key"), Some(code)) => match code.parse() {
             Ok(code) => Command::Key(

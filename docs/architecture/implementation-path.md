@@ -646,6 +646,10 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   power management; big-core affinity for the state loop and wait thread. Runs on the first
   device that boots the compositor; until then the host numbers in
   [budgets.md §5](budgets.md) stand with their labels.
+  **From [research/67](../research/67-overlay-efficiency-beside-native-apps.md) §8:** the
+  squasher round trip's cost on a tiler with a game primary and one overlay layer; session
+  recreation time on device; the fraction of a gaming session with hands in the camera view
+  (prices the cutout default); the cutout stand-ins at panel resolution.
 
 ### 5.2 Satellite registers (gate detail lives there; order authority lives here)
 

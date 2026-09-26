@@ -33,7 +33,7 @@ use state::{now_ns, spawn_client, DebugPanels, PanelSwapchain, TexRef, Zxr};
 use xr::math;
 use xr::{FrameTick, QuadLayer, XrCore};
 
-const USAGE: &str = "zxr [--socket NAME] [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--debug-panels projection]\n       zxr ctl SOCKET COMMAND...";
+const USAGE: &str = "zxr [--socket NAME] [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--debug-panels projection] [--overlay PLACEMENT]\n       zxr ctl SOCKET COMMAND...";
 
 struct Args {
     socket: Option<String>,
@@ -44,10 +44,11 @@ struct Args {
     drm_node: Option<String>,
     xwayland: Option<String>,
     debug_panels: DebugPanels,
+    overlay: Option<u32>,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, debug_panels: DebugPanels::Auto };
+    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, debug_panels: DebugPanels::Auto, overlay: None };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut val = || it.next().ok_or_else(|| format!("{arg} needs a value\n{USAGE}"));
@@ -59,6 +60,7 @@ fn parse_args() -> Result<Args, String> {
             "--journal" => a.journal = Some(val()?.into()),
             "--drm-node" => a.drm_node = Some(val()?),
             "--xwayland" => a.xwayland = Some(val()?),
+            "--overlay" => a.overlay = Some(val()?.parse().map_err(|e| format!("--overlay PLACEMENT: {e}"))?),
             "--debug-panels" => {
                 a.debug_panels = match val()?.as_str() {
                     "auto" => DebugPanels::Auto,
@@ -114,7 +116,7 @@ fn run() -> Result<(), String> {
     // exists so the wait thread inherits it.
     request_realtime();
 
-    let (mut xr, vk) = XrCore::new(&loader, "zxr")?;
+    let (mut xr, vk) = XrCore::new(&loader, "zxr", args.overlay)?;
     let extents: Vec<_> = xr.swapchains.iter().map(|s| s.extent).collect();
     let images: Vec<_> = xr.swapchains.iter().map(|s| s.images.clone()).collect();
     let renderer = render::Renderer::new(&vk, xr.color_format, &extents, &images)?;
@@ -275,7 +277,10 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     //    the plane's panel needs a pass (spec §6.2 rev 3: one pass per commit, never per frame).
     let head_pos = [head.position.x, head.position.y, head.position.z];
     let mut trees: Vec<PlaneTree> = Vec::new();
-    for pi in 0..st.scene.planes.len() {
+    // quiet mode (native-openxr-apps.md §4): nothing is presented, so no tree walk, no texture
+    // update, no held buffers, no panel or projection pass — the 2D compositors' unredirect shape.
+    let plane_range = if st.quiet { 0..0 } else { 0..st.scene.planes.len() };
+    for pi in plane_range {
         let (window, model, pos, yaw, geo) = {
             let p = &st.scene.planes[pi];
             if p.mapped_at_frame == 0 {
@@ -423,7 +428,9 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         }
     }
     st.journal.last_tick_submitted = submit;
-    if depth {
+    if st.quiet {
+        st.journal.quiet_frames += 1;
+    } else if depth {
         st.journal.projection_layer_frames += 1;
     } else {
         st.journal.panels_only_frames += 1;
@@ -462,10 +469,11 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     // every tick; a plane out of view gets one on a fallback cadence (niri: 995 ms) so a client
     // waiting on a callback never stalls, but stops driving the GPU at display rate.
     const FALLBACK_TICKS: u64 = 60;
+    let quiet = st.quiet;
     let journal = &mut st.journal;
     for p in &mut st.scene.planes {
         if p.mapped_at_frame != 0 {
-            let visible = views.iter().any(|v| plane_in_view(v, &p.model(), p.half_size()));
+            let visible = !quiet && views.iter().any(|v| plane_in_view(v, &p.model(), p.half_size()));
             let due = tick.frame_id.saturating_sub(p.last_frame_callback) >= FALLBACK_TICKS;
             if visible {
                 journal.frame_callbacks_visible += 1;
@@ -581,6 +589,10 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             s.trim_end().to_string()
         }
         Journal => st.journal.render(now_ns()).trim_end().to_string(),
+        Quiet(on) => {
+            st.quiet = on;
+            format!("quiet {}", if on { "on" } else { "off" })
+        }
         Quit => {
             st.loop_signal.stop();
             "bye".into()

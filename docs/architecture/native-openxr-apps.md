@@ -1,6 +1,6 @@
 # Native OpenXR applications beside zxr — the fullscreen-game model and the reserved system input
 
-**Status: DRAFT, rev 0.1 (2026-09-26; the five forks ruled by the owner the same day — §10).**
+**Status: DRAFT, rev 0.2 (2026-09-26; the five forks ruled by the owner the same day — §10; rev 0.2 adds the efficiency findings of [research/67](../research/67-overlay-efficiency-beside-native-apps.md): zero layers measured and the placeholder forbidden, the quiet-loop bound measured, the quiet-mode client rule, the summoned-footprint rule, the cutout lifetime rule, the client-list cadence — and records the owner's lifted constraint on Q-D(b) without changing the ruling).**
 Derived from [research/66](../research/66-native-openxr-apps-and-the-system-input.md) under the
 owner's framing: *zxr is a desktop environment's compositor, and a native OpenXR application is
 what a fullscreen game is to GNOME/KDE.* Design docs specify; ordering lives only in
@@ -72,9 +72,15 @@ flowchart LR
 - **Blend mode** is the focused client's in ascending z-order, i.e. the main session's while a
   game runs (`comp_multi_system.c:227-250`); zxr's passthrough preference applies only when it is
   the only session or when it is summoned and asks (§7).
-- **Zero layers is legal** (`extx_overlay.adoc:182-191`); WayVR's "Monado freaks out if no
-  layers are submitted" (`mod.rs:367-373`) is the first bring-up test; the fallback is one
-  transparent quad.
+- **Zero layers is the quiet shape — measured (research/67 §5).** An overlay `xrEndFrame`
+  with `layerCount == 0` is a discarded frame (`oxr_session_frame_end.c:1840-1852`) and the
+  multi-compositor retires the client's delivered frame (`comp_multi_compositor.c:609-623`;
+  Monado !2769 "Fixes layers from the previous frame being displayed when an app submits 0
+  layers"): the game's picture is intact and its frame stays single-layer — on the fast path.
+  WayVR's 1 mm dummy layer (`mod.rs:366-373`) is that bug's workaround and is **forbidden here**:
+  any layer from zxr, transparent or not, moves the game to the squasher (research/67 §2), and
+  Quest's guidance is the same — "setting a layer texture to 0-alpha still incurs the full
+  rendering cost — destroy layers you don't need".
 
 ## 3. Launch, primary, close (the lifecycle)
 
@@ -116,13 +122,23 @@ While a native app is primary:
   `xrWaitFrame`/`xrBeginFrame`/`xrEndFrame` triple per refresh, no rendering — and the Wayland
   event loop, nothing else. A running session may not stop its frame loop, and ending the
   session to save those messages would cost the summon latency none of the overlay shells
-  accept. The bring-up measures zxr's CPU and RSS with a game primary as a gate number.
+  accept. **Measured (host, research/67 §4):** quiet zxr beside xrgears costs ≈ 8 ms/s of zxr CPU
+  (5 RPCs and ≈ 10 wake-ups per 60 Hz tick, 0 GPU) plus ≈ 5 ms/s in `monado-service` for the
+  extra client; recreating the session on summon instead would take 37–41 ms to `FOCUSED` plus
+  one display period here — viable, but no overlay shell does it (WayVR, gxr, kwin-vr all keep
+  their loop), so the loop is kept and recreation is the recorded alternative. **The game keeps
+  its fast path while zxr is quiet** — that, not the loop, is the number that matters.
 - zxr **resumes rendering only for** — ruled (Q-D): (a) **layer 5 always** — layer-shell
   `overlay` (notifications, OSD), the lock/greeter scene (ADR 0007 — it *must* be presentable
   over a game), the system-gesture affordance; (b) **layer 6, the hand cutout, over games by
   default** — visionOS's default ("fully obscures passthrough except for the user's upper limbs"),
   the owner's stated preference — with a **wearer toggle in the OSD layer** to turn real hands off
-  for a game (or on again); in passthrough/alpha-blend games the cutout is simply the shell's
+  for a game (or on again). **Rev 0.2:** the owner lifted the hard constraint — off-by-default is
+  acceptable provided the reserved input (§6) always gives summon and quit — without ruling the
+  default; research/67 §3 prices it: any cutout layer moves the game to Monado's squasher, so the
+  cutout layer **exists only while a hand is in the camera view** (the lifetime rule; no layer
+  otherwise — never a faded one), and the default stays as ruled until the owner decides on
+  research/67 §9's item; in passthrough/alpha-blend games the cutout is simply the shell's
   normal behaviour; (c) whatever the wearer summons with the reserved input (§6); (d) **planes only
   when summoned or explicitly kept over games per window** (HoloLens's Follow-me toggle is the
   precedent for the per-window keep). This is the DEs' list plus the hands: the surfaces that
@@ -271,5 +287,11 @@ a PipeWire/libei viewer client hosted by zxr — in
 [foreign-session-integration.md §2](foreign-session-integration.md) and the component registry.
 
 **Still open, not decisions:** the Monado upstream items (a `/input/system/click` reservation
-for a system client; a real `set_focused_client`) and the zero-layer bring-up test (research/66
-§14).
+for a system client; a real `set_focused_client`). The zero-layer bring-up test is done
+(research/67 §5). **From research/67:** the cutout default over games (§4(b)) is the owner's
+item with the measured cost beside each option; the quiet-mode client rule (no tree walk,
+textures, held buffers or passes for non-presented planes; fallback callbacks only — halves
+zxr's CPU under a committing client), the summoned-footprint rule (one panel for the shell's
+own UI, one quad per notification, one for the affordance; surfaces not shown are destroyed,
+not hidden), and the `libmonado` cadence (one `update_client_list` per second while a game is
+primary, plus on the reserved input and on session events) are determinations recorded there.

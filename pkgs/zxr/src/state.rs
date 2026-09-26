@@ -122,6 +122,11 @@ pub struct Zxr {
     /// research/63 Phase 1b: how panels reach the runtime (projection pass / quad layers / both)
     /// `--debug-panels`: force every plane into the projection layer (the R0 path) for measurement
     pub debug_panels: DebugPanels,
+    /// native-openxr-apps.md §4 quiet mode: a native app is primary — submit no layers, run no
+    /// panel or projection pass, hold no client buffers; planes get fallback callbacks only.
+    /// Set by the primary-client observer (libmonado, M1); the control socket toggles it for
+    /// measurement.
+    pub quiet: bool,
     /// one runtime swapchain per 2D plane (spec §4 rev 3), keyed by the toplevel surface
     pub panel_swapchains: HashMap<ObjectId, PanelSwapchain>,
     /// depth-content hooks (spec §7 rev 3): counts of what needs zxr's projection layer. All zero
@@ -246,6 +251,7 @@ impl Zxr {
             })
             .map_err(|e| e.to_string())?;
 
+        let xr_max_layer_count = xr.max_layer_count;
         let mut journal = Journal::default();
         journal.started_at_ns = now_ns();
 
@@ -287,11 +293,12 @@ impl Zxr {
             pointer_focus: None,
             last_head_pose: None,
             debug_panels: DebugPanels::default(),
+            quiet: false,
             panel_swapchains: HashMap::new(),
             volumes_mapped: 0,
             environment_source: false,
             cutout_source: false,
-            max_layer_count: 16,
+            max_layer_count: xr_max_layer_count,
         })
     }
 

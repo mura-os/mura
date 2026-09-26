@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 3 (2026-09-26; rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3.2 (2026-09-26; rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -297,6 +297,24 @@ projection layer, when present, is submitted first. **Overflow:** the runtime's
 get quads, the farthest are drawn in the projection layer that frame — which then exists.
 `--debug-panels projection` forces every plane into the projection layer (the R0 path) for
 measurement; it is not a mode the session has.
+
+**Rev 3.2 — the quiet shape (native-openxr-apps.md §4; research/67).** While a native OpenXR
+app is Monado's primary the tick is the loop's minimum: `xrBeginFrame`, `xrLocateViews`,
+`xrPollEvent`, `xrEndFrame` with **no layers** — no tree walk, no texture update, no held
+client buffers, no panel or projection pass; planes receive only the fallback frame callback.
+Zero layers is a discarded frame on Monado (`oxr_session_frame_end.c:1840-1852`, !2769), the
+game keeps its single-layer fast path, and a transparent placeholder layer is forbidden (it
+would put the game in the squasher every frame). Measured (host): ≈ 8 ms/s zxr CPU, 5 RPCs and
+≈ 10 wake-ups per tick, 0 GPU; a MAILBOX client committing at 1.9 k/s costs 55 ms/s instead of
+117–137 because only protocol dispatch remains. The flag is `Zxr::quiet`, set by the primary-
+client observer (M1) and by the control socket's `quiet on|off` for measurement.
+
+**Rev 3.2 — the overlay session.** zxr's session is created with `XrSessionCreateInfoOverlayEXTX`
+chained under the graphics binding (`--overlay PLACEMENT`; openxrs has no builder, the struct is
+chained by hand and the handle wrapped with `Session::from_raw`); Monado exposes the extension
+by default. Placement is a stand-in until a second Mura overlay exists (WayVR 5, gxr 1, kwin-vr
+20 — no comparable states a reason). Overlays receive the same `predictedDisplayTime` as the
+main session on Monado (one value broadcast per system frame, `comp_multi_system.c:375-420`).
 
 **Runtime events have their own source (rev 2, research/61 §6.1).** `xrPollEvent` runs on a
 calloop timer — 5 ms until the session is running, 250 ms after — and on every tick. Session

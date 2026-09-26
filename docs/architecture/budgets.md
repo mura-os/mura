@@ -94,6 +94,11 @@ per the standing rule when hardware lands. The table is deliberately coarse — 
   calls 0.2–0.3 ms/frame; our GPU pass 44–109 µs; 2 passes and 7.2 MB of attachment stores per
   frame (analytic); RSS anon 7.5 MB + binary 2.7 MB + one ICD 4.8 MB. With panels as runtime
   quad layers: 5 RPCs, ~10 wake-ups, 0 GPU for static UI under head motion, Monado's cost flat
+  Beside a native OpenXR game (xrgears as Monado's main session; research/67 §2.1, medians of
+  three 20 s runs, ±5 ms/s): game alone Monado 32 ms/s GPU; + zxr quiet (0 layers) 37 (fast path
+  kept), + 1 quad 37, + 16 quads 52 (≈ 0.02 ms per quad here; Quest publishes 0.1 ms per layer,
+  0.6 ms per fullscreen layer on a Quest 2), + a full-view layer 34–45; quiet zxr 8 ms/s CPU +
+  5 ms/s in `monado-service`; session recreation to `FOCUSED` 37–41 ms.
   (research/65 §2.3). **Analytic device band:** 11 RPCs × 20–60 µs aarch64 socket RTT =
   0.2–0.7 ms of a 90 Hz frame; at 2 × 1832×1920 the projection path stores 28 MB and Monado
   reads 28 MB per frame, 5 GB/s at 90 Hz; a panel blit costs 2 × its bytes per commit.
