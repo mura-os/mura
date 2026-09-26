@@ -184,12 +184,23 @@ fast path. The fraction of a gaming session with hands in the camera view is unk
 (hardware-deferred: the first device with the matte pipeline measures it); the cost of
 on-by-default is that fraction × the round trip, not the whole session.
 
-**The default — owner item (§9), Q-D(b) standing until ruled.** On: real hands over immersive
-content by default (visionOS's posture), at the round-trip cost while hands are in view. Off: the
-game keeps its fast path always; the wearer gets hands back per game from the summoned shell,
-and the reserved input remains the guarantee of summon and quit either way. Shape (ii) with the
-lifetime rule is what makes "on" affordable; without a matte pipeline neither can be measured
-beyond the stand-ins above.
+**The default — recorded, not ruled (owner 2026-09-26).** The options and their costs are
+recorded here; the decision is taken on the first device that runs the real matte pipeline over a
+real game — the stand-ins above are billboards, not segmentation, and the hands-in-view fraction
+that prices "on" cannot be measured without hands in a camera. Q-D(b) stands as written until
+then; the reserved input (native-openxr-apps §6) is the guarantee of summon and quit under every
+option, so nothing below can strand the wearer. The deferral is placed in
+[implementation-path.md §5.1](../architecture/implementation-path.md).
+
+| Default over a game | Host stand-in (Monado GPU ms/s, xrgears; game alone 32, ±5) | Device measurement still owed | What it trades |
+|---|---|---|---|
+| **Off** — no cutout layer; the wearer turns hands on per game from the summoned shell (OSD toggle) | 32–37 (fast path kept for the whole session) | none beyond the baseline | hands invisible in immersive games until the wearer asks; every other platform's opt-in posture except visionOS |
+| **On, always** — cutout layer whenever the game is primary | 42 (two 300² billboards, shape ii, steady) | round trip on the tiler at panel resolution; shape (i)/(ii)/(iii) per perception-passthrough-hands §1a | hands always visible; the game is on the squasher for the whole session |
+| **On, with the lifetime rule** — cutout layer exists only while the matte is non-empty | 37 with no hand in view, 39 at a 50 % duty cycle | the hands-in-view fraction of a gaming session; matte latency to layer create/destroy | fast path lost only while hands are in view; cost = fraction × round trip; the layer must be destroyed, not faded (Quest's 0-alpha warning) |
+
+Whichever "on" is chosen, shape (ii) with the lifetime rule is the engineering candidate; the
+lifetime rule itself is a determination (above) and applies to any "on". The choice between the
+rows is the owner's, made with the device numbers in the third column filled in.
 
 ## 4. Issue 3 — the quiet frame loop vs a stopped session
 
@@ -288,5 +299,7 @@ cutout stand-in's cost at panel resolution.
 Determinations: zero layers while quiet, placeholder forbidden (§5); no fast-path-with-overlays
 patch or ask (§2.2); the quiet loop kept, recreation recorded as the alternative (§4); the
 quiet-mode client rule as implemented (§6); the summoned footprint rule (§7); the cutout
-lifetime rule (§3); `libmonado` polled at 1 Hz + on events (§7.3). **Owner item** (rule 8,
-prose, with the numbers beside each option): the cutout default over games (§3).
+lifetime rule (§3); `libmonado` polled at 1 Hz + on events (§7.3). **Owner item, recorded and
+held** (rule 8; options and costs tabled in §3): the cutout default over games — the owner
+ruled on 2026-09-26 that it is decided on the first device with the real matte pipeline over a
+real game, not on the host stand-ins; the deferral lives in implementation-path §5.1.

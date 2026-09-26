@@ -649,7 +649,13 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   **From [research/67](../research/67-overlay-efficiency-beside-native-apps.md) §8:** the
   squasher round trip's cost on a tiler with a game primary and one overlay layer; session
   recreation time on device; the fraction of a gaming session with hands in the camera view
-  (prices the cutout default); the cutout stand-ins at panel resolution.
+  (prices the cutout default); the cutout stand-ins at panel resolution. **Deferred to this
+  point (owner, 2026-09-26): the cutout-over-games default** —
+  [native-openxr-apps.md §4(b)](native-openxr-apps.md) tables the three options (off; on always;
+  on with the lifetime rule) with their host stand-in costs; the owner decides it after the
+  first run of the real hand matte over a real game on device, with the hands-in-view fraction
+  and the per-shape round trip measured. Until then Q-D(b) stands as written and the OSD toggle
+  exists under every option.
 
 ### 5.2 Satellite registers (gate detail lives there; order authority lives here)
 

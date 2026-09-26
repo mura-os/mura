@@ -1,6 +1,6 @@
 # Native OpenXR applications beside zxr — the fullscreen-game model and the reserved system input
 
-**Status: DRAFT, rev 0.2 (2026-09-26; the five forks ruled by the owner the same day — §10; rev 0.2 adds the efficiency findings of [research/67](../research/67-overlay-efficiency-beside-native-apps.md): zero layers measured and the placeholder forbidden, the quiet-loop bound measured, the quiet-mode client rule, the summoned-footprint rule, the cutout lifetime rule, the client-list cadence — and records the owner's lifted constraint on Q-D(b) without changing the ruling).**
+**Status: DRAFT, rev 0.3 (2026-09-26; the five forks ruled by the owner the same day — §10; rev 0.2 adds the efficiency findings of [research/67](../research/67-overlay-efficiency-beside-native-apps.md): zero layers measured and the placeholder forbidden, the quiet-loop bound measured, the quiet-mode client rule, the summoned-footprint rule, the cutout lifetime rule, the client-list cadence; rev 0.3 records the cutout-over-games default as an open question with its options and costs tabled in §4(b), decided by the owner on the first device with the real matte pipeline over a real game).**
 Derived from [research/66](../research/66-native-openxr-apps-and-the-system-input.md) under the
 owner's framing: *zxr is a desktop environment's compositor, and a native OpenXR application is
 what a fullscreen game is to GNOME/KDE.* Design docs specify; ordering lives only in
@@ -134,12 +134,23 @@ While a native app is primary:
   default** — visionOS's default ("fully obscures passthrough except for the user's upper limbs"),
   the owner's stated preference — with a **wearer toggle in the OSD layer** to turn real hands off
   for a game (or on again). **Rev 0.2:** the owner lifted the hard constraint — off-by-default is
-  acceptable provided the reserved input (§6) always gives summon and quit — without ruling the
-  default; research/67 §3 prices it: any cutout layer moves the game to Monado's squasher, so the
-  cutout layer **exists only while a hand is in the camera view** (the lifetime rule; no layer
-  otherwise — never a faded one), and the default stays as ruled until the owner decides on
-  research/67 §9's item; in passthrough/alpha-blend games the cutout is simply the shell's
-  normal behaviour; (c) whatever the wearer summons with the reserved input (§6); (d) **planes only
+  acceptable provided the reserved input (§6) always gives summon and quit — and **rev 0.3 holds
+  the default as an open question (decider: the owner) until the real matte pipeline has run over
+  a real game on device**; the host stand-ins (research/67 §3) are billboards, not segmentation,
+  and cannot measure the hands-in-view fraction that prices "on". What *is* ruled: any cutout
+  layer moves the game to Monado's squasher, so the cutout layer **exists only while a hand is in
+  the camera view** (the lifetime rule; no layer otherwise — never a faded one), and in
+  passthrough/alpha-blend games the cutout is simply the shell's normal behaviour. The options and
+  their measured cost, recorded for that decision:
+
+  | Default over a game | Host stand-in (Monado GPU ms/s; game alone 32, ±5) | Owed by the device | Trades |
+  |---|---|---|---|
+  | Off; wearer turns hands on per game from the OSD toggle | 32–37, fast path kept | — | hands invisible until asked; the opt-in posture of every platform but visionOS |
+  | On, always | 42 (two 300² billboards) | tiler round trip at panel resolution; shapes (i)/(ii)/(iii) of perception-passthrough-hands §1a | hands always visible; squasher for the whole session |
+  | On, with the lifetime rule | 37 no hand in view, 39 at 50 % duty | hands-in-view fraction of a session; matte→layer create/destroy latency | fast path lost only while hands are in view |
+
+  Under every row the reserved input (§6) gives summon and quit, so no option strands the
+  wearer; (c) whatever the wearer summons with the reserved input (§6); (d) **planes only
   when summoned or explicitly kept over games per window** (HoloLens's Follow-me toggle is the
   precedent for the per-window keep). This is the DEs' list plus the hands: the surfaces that
   take mutter's `disable_unredirect` are the overview, the message tray and the OSD; niri draws
@@ -236,9 +247,9 @@ Recenter is the runtime's re-seat of `LOCAL` (`mnd_root_recenter_local_spaces`):
 content moves with it as on every platform; pinned places do not. Passthrough while a game is
 primary is the game's blend mode (§2); when the shell is summoned zxr is the focused overlay and
 may request its own blend for the duration; the perception layers' safety occlusion (research/62
-§3.5) is never suspended by a game. **Real hands over a game** (the layer-6 cutout) are on by
-default and toggled from the OSD layer (§4, Q-D) — the one perception layer the wearer, not the
-game, decides.
+§3.5) is never suspended by a game. **Real hands over a game** (the layer-6 cutout) are toggled
+from the OSD layer (§4, Q-D) — the one perception layer the wearer, not the game, decides; the
+*default* position of that toggle is the open question of §4(b), held for the device.
 
 ## 8. The two exclusivity mechanisms — one experience
 
@@ -275,9 +286,11 @@ per window), `games.controllerSystemButton` (best-effort until the runtime reser
   against gestures that might interrupt the user experience" — the requirement §6 turns into
   posture gating, a deliberate hold, an affordance only while the posture is held, and app
   gesture recognition suspended during it.
-- **Q-D — layer 5 always; layer 6 (the hand cutout) over games on by default — visionOS's
-  approach, "my favourite" — with a wearer toggle in the OSD layer; planes only when summoned or
-  kept per window.** (§4, §7.)
+- **Q-D — layer 5 always; layer 6 (the hand cutout) over games with a wearer toggle in the OSD
+  layer; planes only when summoned or kept per window.** (§4, §7.) The cutout's *default* was
+  ruled on-by-default here (visionOS's approach, "my favourite"), then re-opened by the owner
+  (rev 0.2/0.3): the options and costs are tabled in §4(b) and the decision waits for the real
+  matte pipeline over a real game on device (implementation-path §5.1).
 - **Q-E — one `system` role on both the HMD-body and controller controls, identical semantics;
   which physical control carries it follows the hardware target's convention.** (§6.)
 
@@ -289,7 +302,7 @@ a PipeWire/libei viewer client hosted by zxr — in
 **Still open, not decisions:** the Monado upstream items (a `/input/system/click` reservation
 for a system client; a real `set_focused_client`). The zero-layer bring-up test is done
 (research/67 §5). **From research/67:** the cutout default over games (§4(b)) is the owner's
-item with the measured cost beside each option; the quiet-mode client rule (no tree walk,
+item, options and costs recorded, decided on device with the real matte; the quiet-mode client rule (no tree walk,
 textures, held buffers or passes for non-presented planes; fallback callbacks only — halves
 zxr's CPU under a committing client), the summoned-footprint rule (one panel for the shell's
 own UI, one quad per notification, one for the affordance; surfaces not shown are destroyed,
