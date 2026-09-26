@@ -44,7 +44,8 @@ use smithay::wayland::viewporter::ViewporterState;
 
 use crate::journal::Journal;
 use crate::render::{Renderer, Texture};
-use crate::scene::Scene;
+use crate::scene::{self, Flags, MemberId, Scene, Shape, M_PER_PX};
+use crate::xr::math;
 use crate::xr::XrCore;
 
 /// One client's compositor bookkeeping (smithay's `ClientData`).
@@ -98,7 +99,11 @@ pub struct Zxr {
     pub seat: Seat<Zxr>,
     pub output: Output,
 
-    pub scene: Scene,
+    /// spec §5a: the three arenas; the member payload is `Payload` (this module's)
+    pub scene: Scene<Payload>,
+    /// panel swapchains taken from removed members, destroyed once both slots' fences have
+    /// passed (a pass recorded this tick may still reference the target)
+    pub retired_panels: Vec<(u64, PanelSwapchain)>,
     pub surface_tex: HashMap<ObjectId, SurfaceTex>,
     pub dmabuf_textures: HashMap<ObjectId, (Texture, wl_buffer::WlBuffer)>,
     pub pending_dmabufs: HashMap<ObjectId, Dmabuf>,
@@ -127,8 +132,6 @@ pub struct Zxr {
     /// Set by the primary-client observer (libmonado, M1); the control socket toggles it for
     /// measurement.
     pub quiet: bool,
-    /// one runtime swapchain per 2D plane (spec §4 rev 3), keyed by the toplevel surface
-    pub panel_swapchains: HashMap<ObjectId, PanelSwapchain>,
     /// depth-content hooks (spec §7 rev 3): counts of what needs zxr's projection layer. All zero
     /// until M2 (volumes) and the passthrough rung (environment, cutout sources).
     pub volumes_mapped: u32,
@@ -147,16 +150,51 @@ pub enum DebugPanels {
     Projection,
 }
 
-/// A 2D plane's runtime-owned panel swapchain and the render target over its images.
+/// A 2D plane's runtime-owned panel swapchain and the render target over its images. Grow-only:
+/// the image may be larger than the panel (spec §5a); `bounds` is what the panel occupies now.
 pub struct PanelSwapchain {
     pub sc: crate::xr::Swapchain,
     pub target: crate::render::ViewTarget,
-    /// the surface tree's commit signature the current image holds; a pass happens only when
-    /// it changes (spec §6.2 rev 3: one pass per commit, never per frame)
-    pub signature: Option<u64>,
+    /// a pass has written the current bounds into the image (a fresh swapchain has nothing to show)
+    pub has_image: bool,
     /// panel bounds in logical px relative to the toplevel geometry origin (geometry union popups)
     pub bounds: smithay::utils::Rectangle<i32, smithay::utils::Logical>,
+    /// the tick the bounds first fell below the image extent — the lazy-shrink debounce
+    pub shrink_since: Option<u64>,
     pub passes: u64,
+}
+
+/// Ticks the bounds must stay smaller than the image before the swapchain is recreated smaller
+/// (spec §5a stand-in: 60 ≈ 1 s at 60 Hz; fixed by measurement).
+pub const PANEL_SHRINK_TICKS: u64 = 60;
+
+/// The frontend's member payload (spec §5a `M`): the smithay window, its panel, and the
+/// per-member state the tick reads. `scene` never sees these types.
+pub struct Payload {
+    pub window: Window,
+    pub panel: Option<PanelSwapchain>,
+    /// set by the commit handler when any surface of this member's tree committed; cleared by
+    /// the panel pass. Nothing is hashed per tick.
+    pub dirty: bool,
+    /// the tick the first buffer arrived (0 = not yet mapped)
+    pub mapped_at: u64,
+    /// the last tick this member received `wl_surface.frame` (research/65 §4.2)
+    pub last_frame_callback: u64,
+}
+
+impl Payload {
+    pub fn mapped(&self) -> bool {
+        self.mapped_at != 0
+    }
+    pub fn root(&self) -> Option<WlSurface> {
+        self.window.toplevel().map(|t| t.wl_surface().clone())
+    }
+}
+
+/// The plane extents in metres of a window's current geometry (`M_PER_PX`).
+pub fn plane_size_of(window: &Window) -> [f32; 2] {
+    let g = window.geometry().size;
+    [g.w.max(1) as f32 * M_PER_PX, g.h.max(1) as f32 * M_PER_PX]
 }
 
 impl Zxr {
@@ -276,7 +314,8 @@ impl Zxr {
             popups,
             seat,
             output,
-            scene: Scene::default(),
+            scene: Scene::new(),
+            retired_panels: Vec::new(),
             surface_tex: HashMap::new(),
             dmabuf_textures: HashMap::new(),
             pending_dmabufs: HashMap::new(),
@@ -294,7 +333,6 @@ impl Zxr {
             last_head_pose: None,
             debug_panels: DebugPanels::default(),
             quiet: false,
-            panel_swapchains: HashMap::new(),
             volumes_mapped: 0,
             environment_source: false,
             cutout_source: false,
@@ -333,8 +371,67 @@ impl Zxr {
         self.max_layer_count.saturating_sub(1).max(1) as usize
     }
 
+    /// The member whose toplevel surface is `root` (linear over N ≈ 50 members).
+    pub fn member_for_root(&self, root: &WlSurface) -> Option<MemberId> {
+        self.scene.find(|p| p.window.toplevel().map(|t| t.wl_surface() == root).unwrap_or(false))
+    }
+
     pub fn window_for_root(&self, root: &WlSurface) -> Option<&Window> {
-        self.scene.find(root).map(|i| &self.scene.planes[i].window)
+        self.member_for_root(root).and_then(|id| self.scene.get(id)).map(|m| &m.m.window)
+    }
+
+    /// Commit → member (spec §5a): the subsurface parent chain to its root, then — if the root
+    /// is a popup — the popup's toplevel root; `None` for surfaces no panel shows (cursors, drag
+    /// icons, not-yet-tracked popups).
+    pub fn member_for_committed(&self, surface: &WlSurface) -> Result<Option<MemberId>, ()> {
+        let mut root = surface.clone();
+        while let Some(parent) = get_parent(&root) {
+            root = parent;
+        }
+        if let Some(id) = self.member_for_root(&root) {
+            return Ok(Some(id));
+        }
+        if let Some(kind) = self.popups.find_popup(&root) {
+            return match find_popup_root_surface(&kind) {
+                Ok(toplevel) => Ok(self.member_for_root(&toplevel)),
+                // a popup whose parent chain is broken: the conservative fallback
+                Err(_) => Err(()),
+            };
+        }
+        Ok(None)
+    }
+
+    /// Mark a member's panel for a pass this tick.
+    pub fn mark_dirty(&mut self, id: MemberId) {
+        if let Some(m) = self.scene.get_mut(id) {
+            m.m.dirty = true;
+        }
+    }
+
+    pub fn mark_all_dirty(&mut self) {
+        for (_, m) in self.scene.iter_mut() {
+            if m.m.mapped() {
+                m.m.dirty = true;
+            }
+        }
+    }
+
+    /// Take a member's panel out of service; its Vulkan target dies after both slots' fences.
+    pub fn retire_panel(&mut self, panel: PanelSwapchain) {
+        self.journal.panel_swapchains_destroyed += 1;
+        self.retired_panels.push((self.frame_id, panel));
+    }
+
+    pub fn flush_retired_panels(&mut self, frame: u64) {
+        let mut i = 0;
+        while i < self.retired_panels.len() {
+            if frame.saturating_sub(self.retired_panels[i].0) >= 2 {
+                let (_, p) = self.retired_panels.swap_remove(i);
+                self.renderer.destroy_target(p.target);
+            } else {
+                i += 1;
+            }
+        }
     }
 
     /// Bring a surface's texture up to date with its committed buffer. Returns the texture
@@ -411,9 +508,11 @@ impl Zxr {
         Some(result)
     }
 
-    /// Drop textures of surfaces not seen for a while (unmapped / destroyed).
+    /// Drop textures of surfaces not sampled for a while. A surface is sampled only by a panel
+    /// pass (spec §5a), so a static surface's shm texture goes too — its content lives in the
+    /// panel image; the next commit re-creates and uploads it (10 s at 60 Hz).
     pub fn gc_textures(&mut self, frame: u64) {
-        let stale: Vec<ObjectId> = self.surface_tex.iter().filter(|(_, e)| frame.saturating_sub(e.last_used_frame) > 120).map(|(k, _)| k.clone()).collect();
+        let stale: Vec<ObjectId> = self.surface_tex.iter().filter(|(_, e)| frame.saturating_sub(e.last_used_frame) > 600).map(|(k, _)| k.clone()).collect();
         for id in stale {
             if let Some(e) = self.surface_tex.remove(&id) {
                 if let Some(t) = e.texture {
@@ -441,12 +540,14 @@ impl Zxr {
         kb.set_focus(self, surface, serial);
     }
 
-    pub fn focus_window(&mut self, idx: Option<usize>) {
-        self.scene.focused = idx;
-        for (i, p) in self.scene.planes.iter().enumerate() {
-            if let Some(t) = p.window.toplevel() {
+    pub fn focus_window(&mut self, id: Option<MemberId>) {
+        if !self.scene.focus(id) {
+            return;
+        }
+        for (i, m) in self.scene.iter() {
+            if let Some(t) = m.m.window.toplevel() {
                 t.with_pending_state(|s| {
-                    if Some(i) == idx {
+                    if Some(i) == id {
                         s.states.set(xdg_toplevel::State::Activated);
                     } else {
                         s.states.unset(xdg_toplevel::State::Activated);
@@ -455,15 +556,30 @@ impl Zxr {
                 t.send_pending_configure();
             }
         }
-        let surf = idx.and_then(|i| self.scene.planes.get(i)).and_then(|p| p.window.toplevel().map(|t| t.wl_surface().clone()));
+        let surf = self.scene.focused().and_then(|m| m.m.root());
         self.set_keyboard_focus(surf);
+    }
+
+    /// Spec §5a hit test, then smithay's 2D hit within the plane: the member, the surface under
+    /// the ray and the surface-local point.
+    pub fn hit_surface(&self, origin: [f32; 3], dir: [f32; 3]) -> Option<(MemberId, WlSurface, smithay::utils::Point<f64, smithay::utils::Logical>)> {
+        let (id, local, _) = self.scene.hit(origin, dir, |p| p.mapped())?;
+        let m = self.scene.get(id)?;
+        let Shape::Plane { size } = m.shape else { return None };
+        let g = m.m.window.geometry();
+        let (x, y) = scene::local_to_logical(local, size, (g.loc.x, g.loc.y, g.size.w, g.size.h));
+        let logical = smithay::utils::Point::<f64, smithay::utils::Logical>::from((x, y));
+        let (surface, loc) = m.m.window.surface_under(logical, smithay::desktop::WindowSurfaceType::ALL)?;
+        Some((id, surface, logical - loc.to_f64()))
     }
 
     /// Gaze pointer (§8 R0): cast the head ray, move the pointer to the surface under it.
     pub fn update_gaze_pointer(&mut self, pose: openxr::Posef) {
         self.last_head_pose = Some(pose);
         let pointer = self.seat.get_pointer().unwrap();
-        let hit = self.scene.hit(pose);
+        let origin = [pose.position.x, pose.position.y, pose.position.z];
+        let dir = math::rotate(pose.orientation, [0.0, 0.0, -1.0]);
+        let hit = self.hit_surface(origin, dir);
         let serial = SERIAL_COUNTER.next_serial();
         let time = smithay::backend::input::InputTime::now();
         match hit {
@@ -522,6 +638,14 @@ impl Drop for Zxr {
         }
         for (_, (t, _)) in self.dmabuf_textures.drain() {
             self.renderer.destroy_texture(t);
+        }
+        for (_, m) in self.scene.iter_mut() {
+            if let Some(p) = m.m.panel.take() {
+                self.retired_panels.push((0, p));
+            }
+        }
+        for (_, p) in self.retired_panels.drain(..) {
+            self.renderer.destroy_target(p.target);
         }
         for c in &mut self.children {
             let _ = c.kill();
@@ -610,41 +734,62 @@ impl CompositorHandler for Zxr {
     fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler::<Self>(surface);
         self.journal.commits += 1;
-        if !is_sync_subsurface(surface) {
-            let mut root = surface.clone();
-            while let Some(parent) = get_parent(&root) {
-                root = parent;
-            }
-            if let Some(window) = self.window_for_root(&root) {
-                window.on_commit();
-            }
-        }
-        // xdg toplevel: initial configure, then map on first buffer
-        if let Some(idx) = self.scene.find(surface) {
-            let window = self.scene.planes[idx].window.clone();
-            let initial_sent = with_states(surface, |states| states.data_map.get::<XdgToplevelSurfaceData>().unwrap().lock().unwrap().initial_configure_sent);
-            if !initial_sent {
-                if let Some(t) = window.toplevel() {
-                    t.with_pending_state(|s| {
-                        s.size = None;
-                        s.states.set(xdg_toplevel::State::Activated);
-                    });
-                    t.send_configure();
-                }
-            } else if self.scene.planes[idx].mapped_at_frame == 0 && with_renderer_surface_state(surface, |st| st.buffer().is_some()).unwrap_or(false) {
-                self.scene.planes[idx].mapped_at_frame = self.frame_id.max(1);
-                self.journal.toplevels_mapped += 1;
-                if self.client_is_satellite(surface) {
-                    self.journal.xwayland_toplevels += 1;
-                }
-                self.focus_window(Some(idx));
-            }
-        }
-        // popups
+        // popups first so a popup's first commit is tracked before root resolution
         self.popups.commit(surface);
         if let Some(PopupKind::Xdg(xdg)) = self.popups.find_popup(surface) {
             if !xdg.is_initial_configure_sent() {
                 let _ = xdg.send_configure();
+            }
+        }
+        // spec §5a: the commit sets the member's dirty flag — the only per-commit scene work
+        let member = if is_sync_subsurface(surface) {
+            // a sync subsurface's state applies with its parent's commit; that commit marks
+            None
+        } else {
+            match self.member_for_committed(surface) {
+                Ok(m) => m,
+                Err(()) => {
+                    self.journal.dirty_fallbacks += 1;
+                    self.mark_all_dirty();
+                    None
+                }
+            }
+        };
+        if let Some(id) = member {
+            let (window, root) = {
+                let m = self.scene.get(id).unwrap();
+                (m.m.window.clone(), m.m.root())
+            };
+            window.on_commit();
+            self.mark_dirty(id);
+            // xdg toplevel: initial configure, then map on first buffer
+            if root.as_ref() == Some(surface) {
+                let initial_sent = with_states(surface, |states| states.data_map.get::<XdgToplevelSurfaceData>().unwrap().lock().unwrap().initial_configure_sent);
+                if !initial_sent {
+                    if let Some(t) = window.toplevel() {
+                        t.with_pending_state(|s| {
+                            s.size = None;
+                            s.states.set(xdg_toplevel::State::Activated);
+                        });
+                        t.send_configure();
+                    }
+                } else {
+                    let has_buffer = with_renderer_surface_state(surface, |st| st.buffer().is_some()).unwrap_or(false);
+                    let newly_mapped = has_buffer && !self.scene.get(id).map(|m| m.m.mapped()).unwrap_or(true);
+                    // the plane's extents follow the window geometry
+                    let size = plane_size_of(&window);
+                    self.scene.set_shape(id, Shape::Plane { size });
+                    if newly_mapped {
+                        if let Some(m) = self.scene.get_mut(id) {
+                            m.m.mapped_at = self.frame_id.max(1);
+                        }
+                        self.journal.toplevels_mapped += 1;
+                        if self.client_is_satellite(surface) {
+                            self.journal.xwayland_toplevels += 1;
+                        }
+                        self.focus_window(Some(id));
+                    }
+                }
             }
         }
     }
@@ -704,15 +849,26 @@ impl XdgShellHandler for Zxr {
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::new_wayland_window(surface);
-        // mapped_at_frame 0 = not yet mapped; commit() flips it on the first buffer
-        let idx = self.scene.add(window, 0);
-        self.scene.planes[idx].mapped_at_frame = 0;
+        // mapped_at 0 = not yet mapped; commit() flips it on the first buffer. Placement is the
+        // stand-in fan in the default place (spec §5a) until M1's `free` engine.
+        let size = plane_size_of(&window);
+        let payload = Payload { window, panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0 };
+        let id = self.scene.add_fanned(Shape::Plane { size }, Flags::WINDOW, payload);
+        // a new, unmapped toplevel must not steal focus from a mapped one
+        if let Some(prev) = self.scene.iter().filter(|(i, m)| *i != id && m.m.mapped()).map(|(i, _)| i).last() {
+            self.scene.focus(Some(prev));
+        }
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        if let Some(plane) = self.scene.remove(surface.wl_surface()) {
-            if plane.mapped_at_frame != 0 {
-                self.journal.toplevels_unmapped += 1;
+        if let Some(id) = self.member_for_root(surface.wl_surface()) {
+            if let Some(member) = self.scene.remove(id) {
+                if member.m.mapped() {
+                    self.journal.toplevels_unmapped += 1;
+                }
+                if let Some(panel) = member.m.panel {
+                    self.retire_panel(panel);
+                }
             }
         }
         let focus = self.scene.focused;

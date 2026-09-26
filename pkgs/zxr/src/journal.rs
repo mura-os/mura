@@ -69,6 +69,21 @@ pub struct Journal {
     pub panels_only_frames: u64,
     /// ticks in quiet mode (a native app primary): zero layers, no passes
     pub quiet_frames: u64,
+    /// spec §5a scene counters (§11 rev 3.3)
+    pub members_composed: u64,
+    pub members_dirty: u64,
+    pub quads_submitted: u64,
+    pub overflow: u64,
+    pub panel_acquires: u64,
+    pub panel_releases: u64,
+    pub panel_swapchains_created: u64,
+    pub panel_swapchains_destroyed: u64,
+    pub panel_swapchains_grown: u64,
+    pub panel_swapchains_shrunk: u64,
+    /// commits whose root could not be resolved: every mapped member marked dirty
+    pub dirty_fallbacks: u64,
+    /// ticks that made the batched `xrLocateSpacesKHR` call (only with `Xr` frames present)
+    pub locate_spaces_ticks: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -177,6 +192,23 @@ impl Journal {
         let _ = writeln!(s, "projection_layer_frames={}", self.projection_layer_frames);
         let _ = writeln!(s, "panels_only_frames={}", self.panels_only_frames);
         let _ = writeln!(s, "quiet_frames={}", self.quiet_frames);
+        // scene (spec §5a / §11 rev 3.3): per-tick means ×100 where a mean is the useful form
+        let f = self.frames.max(1);
+        let secs = (now_ns.saturating_sub(self.started_at_ns) / 1_000_000_000).max(1);
+        let _ = writeln!(s, "members_composed_per_frame_x100={}", self.members_composed * 100 / f);
+        let _ = writeln!(s, "members_dirty_per_frame_x100={}", self.members_dirty * 100 / f);
+        let _ = writeln!(s, "members_dirty_total={}", self.members_dirty);
+        let _ = writeln!(s, "quads_submitted_per_frame_x100={}", self.quads_submitted * 100 / f);
+        let _ = writeln!(s, "overflow_per_frame_x100={}", self.overflow * 100 / f);
+        let _ = writeln!(s, "panel_acquires={}", self.panel_acquires);
+        let _ = writeln!(s, "panel_releases={}", self.panel_releases);
+        let _ = writeln!(s, "panel_swapchains_created={}", self.panel_swapchains_created);
+        let _ = writeln!(s, "panel_swapchains_destroyed={}", self.panel_swapchains_destroyed);
+        let _ = writeln!(s, "panel_swapchains_grown={}", self.panel_swapchains_grown);
+        let _ = writeln!(s, "panel_swapchains_shrunk={}", self.panel_swapchains_shrunk);
+        let _ = writeln!(s, "panel_swapchains_churn_per_s_x100={}", (self.panel_swapchains_created + self.panel_swapchains_destroyed) * 100 / secs);
+        let _ = writeln!(s, "dirty_fallbacks={}", self.dirty_fallbacks);
+        let _ = writeln!(s, "locate_spaces_ticks={}", self.locate_spaces_ticks);
         s
     }
 }

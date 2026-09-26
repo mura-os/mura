@@ -12,24 +12,22 @@ mod state;
 mod xr;
 
 use std::os::unix::net::UnixListener;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
-use smithay::backend::renderer::utils::{with_renderer_surface_state, CommitCounter, RendererSurfaceStateUserData};
+use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::signals::{Signal, Signals};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{channel, EventLoop, Interest, Mode as CMode, PostAction};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::{Display, Resource};
+use smithay::reexports::wayland_server::Display;
 use smithay::wayland::compositor::{with_surface_tree_downward, TraversalAction};
 use smithay::desktop::PopupManager;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use render::PlaneDraw;
-use scene::M_PER_PX;
-use state::{now_ns, spawn_client, DebugPanels, PanelSwapchain, TexRef, Zxr};
+use scene::{MemberId, M_PER_PX};
+use state::{now_ns, spawn_client, DebugPanels, PanelSwapchain, TexRef, Zxr, PANEL_SHRINK_TICKS};
 use xr::math;
 use xr::{FrameTick, QuadLayer, XrCore};
 
@@ -224,20 +222,47 @@ fn run() -> Result<(), String> {
     res.map_err(|e| e.to_string())
 }
 
-/// One entry in this frame's draw list: a surface placed on a plane.
-/// One mapped plane's surface tree for this tick (spec §7 rev 3).
-struct PlaneTree {
-    root_id: smithay::reexports::wayland_server::backend::ObjectId,
-    model: math::Mat4,
-    yaw: f32,
+/// One member's surface tree, walked this tick because its panel is dirty (or it overflowed
+/// into the projection pass): textures brought current and held for this slot (spec §5a: only
+/// these members hold client buffers).
+struct MemberTree {
+    member: MemberId,
     geo: Rectangle<i32, Logical>,
     /// (texture, location relative to the toplevel origin, logical size), tree order
     items: Vec<(TexRef, Point<i32, Logical>, Size<i32, Logical>)>,
-    /// hash of every surface's commit count, location and size — the panel is dirty when it changes
-    signature: u64,
     /// geometry ∪ every surface rect, relative to the toplevel origin
     bounds: Rectangle<i32, Logical>,
-    dist2: f32,
+}
+
+/// Walk one member's surface tree (toplevel + subsurfaces + popups), bringing textures current.
+fn walk_member(st: &mut Zxr, id: MemberId, frame: u64) -> Option<MemberTree> {
+    let (window, geo) = {
+        let m = st.scene.get(id)?;
+        (m.m.window.clone(), m.m.window.geometry())
+    };
+    let root = window.toplevel().map(|t| t.wl_surface().clone())?;
+    let mut surfaces: Vec<(WlSurface, Point<i32, Logical>, Size<i32, Logical>)> = Vec::new();
+    collect_tree(&root, (0, 0).into(), &mut surfaces);
+    for (popup, offset) in PopupManager::popups_for_surface(&root) {
+        let loc = geo.loc + offset - popup.geometry().loc;
+        collect_tree(popup.wl_surface(), loc, &mut surfaces);
+    }
+    let mut bounds = geo;
+    let mut items = Vec::with_capacity(surfaces.len());
+    for (surface, loc, size) in surfaces {
+        let Some(tex) = st.update_surface_texture(&surface, frame) else { continue };
+        bounds = bounds.merge(Rectangle::new(loc, size));
+        items.push((tex, loc, size));
+    }
+    Some(MemberTree { member: id, geo, items, bounds })
+}
+
+/// The head pose the scene's `Views` frame takes: the midpoint of the two eyes, view 0's
+/// orientation (spec §5a — no `xrLocateSpace` for VIEW).
+fn head_pose(views: &[openxr::View]) -> openxr::Posef {
+    let a = views[0].pose;
+    let b = views.get(1).map(|v| v.pose).unwrap_or(a);
+    openxr::Posef { orientation: a.orientation, position: openxr::Vector3f { x: (a.position.x + b.position.x) * 0.5, y: (a.position.y + b.position.y) * 0.5, z: (a.position.z + b.position.z) * 0.5 } }
 }
 
 /// Spec §7, once per tick.
@@ -260,9 +285,27 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         return finish_frame(st);
     }
 
-    // 1. views for the predicted display time; the head pose drives the gaze pointer
+    // 1. views for the predicted display time → the head frame; the head ray drives the gaze
+    //    pointer. Frames the views do not give are located in one call, only when they exist.
     let views = st.xr.locate_views(time)?;
-    let head = views[0].pose;
+    let head = head_pose(&views);
+    let head_id = st.scene.head;
+    st.scene.set_frame_pose(head_id, head, true);
+    {
+        let ids: Vec<scene::FrameId> = st.scene.xr_frames().map(|(id, _)| id).collect();
+        if !ids.is_empty() {
+            let mut located: Vec<(openxr::Posef, bool)> = Vec::with_capacity(ids.len());
+            {
+                let Zxr { scene, xr, .. } = &mut *st;
+                let spaces: Vec<&openxr::Space> = scene.xr_frames().map(|(_, s)| s).collect();
+                xr.locate_spaces(&spaces, time, &mut located)?;
+            }
+            for (id, (pose, valid)) in ids.iter().zip(located) {
+                st.scene.set_frame_pose(*id, pose, valid);
+            }
+            st.journal.locate_spaces_ticks += 1;
+        }
+    }
     st.update_gaze_pointer(head);
 
     // 2. this frame's slot: wait for its previous submission, release what it sampled
@@ -272,85 +315,125 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     let gpu_ns = if st.journal.last_tick_submitted { st.renderer.read_gpu_time() } else { None };
     st.release_held(slot, tick.frame_id);
 
-    // 3. every mapped plane's surface tree (toplevel + subsurfaces + popups), textures brought
-    //    current, held for this slot; the tree's commit signature and its bounds decide whether
-    //    the plane's panel needs a pass (spec §6.2 rev 3: one pass per commit, never per frame).
+    // quiet mode (native-openxr-apps.md §4; spec §7 rev 3.2): the frame-loop round trips and
+    // nothing else — no compose, no frustum, no sort, no passes, zero layers.
+    if st.quiet {
+        st.journal.quiet_frames += 1;
+        st.journal.last_tick_submitted = false;
+        st.xr.end_frame(time, None)?;
+        let now = Duration::from_millis(st.now_ms() as u64);
+        let output = st.output.clone();
+        let Zxr { scene, journal, .. } = &mut *st;
+        for (_, m) in scene.iter_mut() {
+            if m.m.mapped() && tick.frame_id.saturating_sub(m.m.last_frame_callback) >= FALLBACK_TICKS {
+                m.m.window.send_frame(&output, now, Some(Duration::ZERO), |_, _| Some(output.clone()));
+                m.m.last_frame_callback = tick.frame_id;
+                journal.frame_callbacks += 1;
+                journal.frame_callbacks_occluded += 1;
+            }
+        }
+        let wake_to_end = now_ns().saturating_sub(tick.woke_at_ns);
+        st.journal.record_frame(true, gpu_ns, wake_to_end, wake_to_end > tick.predicted_display_period.as_nanos().max(1) as u64);
+        st.xr.calls.wait_frame.add(tick.wait_ns);
+        st.journal.calls = st.xr.calls.clone();
+        return finish_frame(st);
+    }
+
+    // 3. the flatten (spec §5a): every mapped 2D member composed once; the quad budget by band
+    //    priority; overflow to the projection pass. The scratch is taken out so the list can be
+    //    read while members are mutated below, and put back at the end.
     let head_pos = [head.position.x, head.position.y, head.position.z];
-    let mut trees: Vec<PlaneTree> = Vec::new();
-    // quiet mode (native-openxr-apps.md §4): nothing is presented, so no tree walk, no texture
-    // update, no held buffers, no panel or projection pass — the 2D compositors' unredirect shape.
-    let plane_range = if st.quiet { 0..0 } else { 0..st.scene.planes.len() };
-    for pi in plane_range {
-        let (window, model, pos, yaw, geo) = {
-            let p = &st.scene.planes[pi];
-            if p.mapped_at_frame == 0 {
-                continue;
-            }
-            (p.window.clone(), p.model(), p.pos, p.yaw, p.window.geometry())
-        };
-        let Some(root) = window.toplevel().map(|t| t.wl_surface().clone()) else { continue };
-        let mut surfaces: Vec<(WlSurface, Point<i32, Logical>, Size<i32, Logical>)> = Vec::new();
-        collect_tree(&root, (0, 0).into(), &mut surfaces);
-        for (popup, offset) in PopupManager::popups_for_surface(&root) {
-            let loc = geo.loc + offset - popup.geometry().loc;
-            collect_tree(popup.wl_surface(), loc, &mut surfaces);
-        }
-        let mut hasher = DefaultHasher::new();
-        let mut bounds = geo;
-        let mut items = Vec::with_capacity(surfaces.len());
-        for (surface, loc, size) in surfaces {
-            let Some(tex) = st.update_surface_texture(&surface, tick.frame_id) else { continue };
-            let count = with_renderer_surface_state(&surface, |s| s.current_commit().distance(Some(CommitCounter::default())).unwrap_or(0)).unwrap_or(0);
-            (surface.id().protocol_id(), count, loc.x, loc.y, size.w, size.h).hash(&mut hasher);
-            bounds = bounds.merge(Rectangle::new(loc, size));
-            items.push((tex, loc, size));
-        }
-        let d = [pos[0] - head_pos[0], pos[1] - head_pos[1], pos[2] - head_pos[2]];
-        trees.push(PlaneTree { root_id: root.id(), model, yaw, geo, items, signature: hasher.finish(), bounds, dist2: d[0] * d[0] + d[1] * d[1] + d[2] * d[2] });
-    }
-
-    // 4. the quad budget (spec §7 rev 3): the nearest planes are quad layers up to the runtime's
-    //    cap minus one; the rest overflow into the projection layer, which then exists.
     let budget = if st.debug_panels == DebugPanels::Projection { 0 } else { st.quad_budget() };
-    let dist2: Vec<f32> = trees.iter().map(|t| t.dist2).collect();
-    let (quad_idx, overflow_idx) = scene::select_quads(&dist2, budget);
-    let depth = st.depth_content_present(!overflow_idx.is_empty());
+    let mut submit = std::mem::take(&mut st.scene.submit);
+    st.scene.flatten_into(&mut submit, head_pos, budget, |p| p.mapped());
+    let depth = st.depth_content_present(!submit.overflow.is_empty());
+    st.journal.members_composed += (submit.quads.len() + submit.overflow.len()) as u64;
+    st.journal.quads_submitted += submit.quads.len() as u64;
+    st.journal.overflow += submit.overflow.len() as u64;
 
-    // 4a. panel swapchains: create/resize to the tree bounds; a pass only when the signature changed
-    let mut dirty: Vec<usize> = Vec::new();
-    for &ti in &quad_idx {
-        let t = &trees[ti];
-        let (w, h) = (t.bounds.size.w.max(1) as u32, t.bounds.size.h.max(1) as u32);
-        let need_new = st.panel_swapchains.get(&t.root_id).map(|ps| ps.sc.extent.width != w || ps.sc.extent.height != h).unwrap_or(true);
-        if need_new {
-            if let Some(old) = st.panel_swapchains.remove(&t.root_id) {
-                st.renderer.destroy_target(old.target);
+    // 4. dirty members only: walk the tree, size the panel (grow-only, lazy shrink), record a
+    //    pass. A member whose tree did not commit is not touched and holds no buffer. Overflow
+    //    members are walked every tick they overflow — they are drawn per tick.
+    let mut dirty: Vec<MemberTree> = Vec::new();
+    for q in &submit.quads {
+        let due = {
+            let Some(m) = st.scene.get_mut(q.member) else { continue };
+            // a lazy shrink that came due forces one pass so the smaller image gets content
+            if let Some(p) = &m.m.panel {
+                if p.shrink_since.map(|s| tick.frame_id.saturating_sub(s) >= PANEL_SHRINK_TICKS).unwrap_or(false) {
+                    m.m.dirty = true;
+                }
             }
-            let sc = st.xr.create_panel_swapchain(w, h)?;
-            let target = st.renderer.make_panel_target(sc.extent, st.xr.color_format, &sc.images)?;
-            st.panel_swapchains.insert(t.root_id.clone(), PanelSwapchain { sc, target, signature: None, bounds: t.bounds, passes: 0 });
+            m.m.dirty || m.m.panel.as_ref().map(|p| !p.has_image).unwrap_or(true)
+        };
+        if !due {
+            continue;
         }
-        let ps = st.panel_swapchains.get_mut(&t.root_id).unwrap();
-        ps.bounds = t.bounds;
-        if ps.signature != Some(t.signature) {
-            dirty.push(ti);
+        let Some(tree) = walk_member(st, q.member, tick.frame_id) else { continue };
+        let (w, h) = (tree.bounds.size.w.max(1) as u32, tree.bounds.size.h.max(1) as u32);
+        // panel swapchain lifecycle (spec §5a)
+        let old = st.scene.get_mut(q.member).and_then(|m| m.m.panel.take());
+        let panel = match old {
+            None => {
+                let sc = st.xr.create_panel_swapchain(w, h)?;
+                let target = st.renderer.make_panel_target(sc.extent, st.xr.color_format, &sc.images)?;
+                st.journal.panel_swapchains_created += 1;
+                PanelSwapchain { sc, target, has_image: false, bounds: tree.bounds, shrink_since: None, passes: 0 }
+            }
+            Some(mut ps) => {
+                let (ew, eh) = (ps.sc.extent.width, ps.sc.extent.height);
+                if w > ew || h > eh {
+                    // grow: a new image at the new bounds (the old one dies after its fences)
+                    st.retire_panel(ps);
+                    let sc = st.xr.create_panel_swapchain(w, h)?;
+                    let target = st.renderer.make_panel_target(sc.extent, st.xr.color_format, &sc.images)?;
+                    st.journal.panel_swapchains_created += 1;
+                    st.journal.panel_swapchains_grown += 1;
+                    PanelSwapchain { sc, target, has_image: false, bounds: tree.bounds, shrink_since: None, passes: 0 }
+                } else if w < ew || h < eh {
+                    match ps.shrink_since {
+                        Some(since) if tick.frame_id.saturating_sub(since) >= PANEL_SHRINK_TICKS => {
+                            st.retire_panel(ps);
+                            let sc = st.xr.create_panel_swapchain(w, h)?;
+                            let target = st.renderer.make_panel_target(sc.extent, st.xr.color_format, &sc.images)?;
+                            st.journal.panel_swapchains_created += 1;
+                            st.journal.panel_swapchains_shrunk += 1;
+                            PanelSwapchain { sc, target, has_image: false, bounds: tree.bounds, shrink_since: None, passes: 0 }
+                        }
+                        Some(_) => {
+                            ps.bounds = tree.bounds;
+                            ps
+                        }
+                        None => {
+                            ps.shrink_since = Some(tick.frame_id);
+                            ps.bounds = tree.bounds;
+                            ps
+                        }
+                    }
+                } else {
+                    ps.shrink_since = None;
+                    ps.bounds = tree.bounds;
+                    ps
+                }
+            }
+        };
+        if let Some(m) = st.scene.get_mut(q.member) {
+            m.m.panel = Some(panel);
+        }
+        dirty.push(tree);
+    }
+    let mut overflow_trees: Vec<MemberTree> = Vec::with_capacity(submit.overflow.len());
+    for q in &submit.overflow {
+        if let Some(t) = walk_member(st, q.member, tick.frame_id) {
+            overflow_trees.push(t);
         }
     }
-    {
-        let live: std::collections::HashSet<_> = quad_idx.iter().map(|&i| trees[i].root_id.clone()).collect();
-        let Zxr { panel_swapchains, renderer, .. } = &mut *st;
-        let gone: Vec<_> = panel_swapchains.keys().filter(|k| !live.contains(*k)).cloned().collect();
-        for k in gone {
-            if let Some(ps) = panel_swapchains.remove(&k) {
-                renderer.destroy_target(ps.target);
-            }
-        }
-    }
+    st.journal.members_dirty += dirty.len() as u64;
 
-    // 4b. GPU work — only if there is any: dirty panel passes and/or the projection pass
-    let submit = !dirty.is_empty() || depth;
-    if submit {
-        let Zxr { renderer, dmabuf_textures, surface_tex, journal, panel_swapchains, xr, .. } = &mut *st;
+    // 5. GPU work — only if there is any: dirty panel passes and/or the projection pass
+    let submit_gpu = !dirty.is_empty() || depth;
+    if submit_gpu {
+        let Zxr { renderer, dmabuf_textures, surface_tex, journal, scene, xr, .. } = &mut *st;
         let resolve = |r: &TexRef| -> Option<&render::Texture> {
             match r {
                 TexRef::Dmabuf(bid) => dmabuf_textures.get(bid).map(|(t, _)| t),
@@ -359,8 +442,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         };
         // foreign-queue barriers for every dmabuf sampled this tick (panels + overflow)
         let mut foreign: Vec<ash::vk::Image> = Vec::new();
-        for &ti in dirty.iter().chain(overflow_idx.iter()) {
-            for (tex, _, _) in &trees[ti].items {
+        for t in dirty.iter().chain(overflow_trees.iter()) {
+            for (tex, _, _) in &t.items {
                 if let Some(t) = resolve(tex) {
                     if t.dmabuf && !foreign.contains(&t.image) {
                         foreign.push(t.image);
@@ -369,12 +452,13 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
             }
         }
         let cmd = renderer.begin_frame(slot, &foreign)?;
-        // panel passes: orthographic, pixels → NDC (y down, as the framebuffer), textures flipped
-        for &ti in &dirty {
-            let t = &trees[ti];
-            let ps = panel_swapchains.get_mut(&t.root_id).unwrap();
+        // panel passes: orthographic into the top-left `bounds` of the (possibly larger) image,
+        // pixels → NDC (y down, as the framebuffer), textures flipped
+        for t in &dirty {
+            let Some(ps) = scene.get_mut(t.member).and_then(|m| m.m.panel.as_mut()) else { continue };
             let idx = xr.acquire_panel_image(&mut ps.sc)?;
-            let (w, h) = (ps.sc.extent.width as f32, ps.sc.extent.height as f32);
+            journal.panel_acquires += 1;
+            let (w, h) = (t.bounds.size.w.max(1) as f32, t.bounds.size.h.max(1) as f32);
             let ortho = math::ortho_px(w, h);
             let mut planes: Vec<PlaneDraw<'_>> = Vec::with_capacity(t.items.len());
             for (i, (tex, loc, size)) in t.items.iter().enumerate() {
@@ -386,21 +470,21 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 let cy = (loc.y - t.bounds.loc.y) as f32 + size.h as f32 * 0.5;
                 planes.push(PlaneDraw { model: math::model([cx, cy, -(i as f32) * 0.001], 0.0), half_size: [size.w as f32 * 0.5, size.h as f32 * 0.5], texture, flip_v: true });
             }
-            renderer.record_pass(cmd, &ps.target, idx, &ortho, &planes, [0.0, 0.0, 0.0, 0.0]);
-            ps.signature = Some(t.signature);
+            renderer.record_pass_in(cmd, &ps.target, idx, ash::vk::Extent2D { width: w as u32, height: h as u32 }, &ortho, &planes, [0.0, 0.0, 0.0, 0.0]);
+            ps.has_image = true;
             ps.passes += 1;
             renderer.panel_passes += 1;
             renderer.panel_bytes += (w * h) as u64 * 4 * 2;
         }
-        // the projection pass: overflow planes (and, from M2, volumes / environment / cutout)
+        // the projection pass: overflow members (and, from M2, volumes / environment / cutout)
         if depth {
             let projection_indices = xr.acquire_images()?;
             let flip = math::flip_y();
             for (vi, v) in views.iter().enumerate() {
                 let view_proj = math::mul(&math::mul(&flip, &math::projection(v.fov, 0.05, 100.0)), &math::view(v.pose));
                 let mut planes: Vec<PlaneDraw<'_>> = Vec::new();
-                for &ti in &overflow_idx {
-                    let t = &trees[ti];
+                for (q, t) in submit.overflow.iter().zip(overflow_trees.iter()) {
+                    let world = scene::model(q.world);
                     let centre = [t.geo.loc.x as f32 + t.geo.size.w as f32 * 0.5, t.geo.loc.y as f32 + t.geo.size.h as f32 * 0.5];
                     for (i, (tex, loc, size)) in t.items.iter().enumerate() {
                         let Some(texture) = resolve(tex) else {
@@ -410,83 +494,88 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                         let cx = (loc.x as f32 + size.w as f32 * 0.5 - centre[0]) * M_PER_PX;
                         let cy = -(loc.y as f32 + size.h as f32 * 0.5 - centre[1]) * M_PER_PX;
                         let local = math::model([cx, cy, i as f32 * 0.0005], 0.0);
-                        planes.push(PlaneDraw { model: math::mul(&t.model, &local), half_size: [size.w as f32 * M_PER_PX * 0.5, size.h as f32 * M_PER_PX * 0.5], texture, flip_v: false });
+                        planes.push(PlaneDraw { model: math::mul(&world, &local), half_size: [size.w as f32 * M_PER_PX * 0.5, size.h as f32 * M_PER_PX * 0.5], texture, flip_v: false });
                     }
                 }
-                let clear = if quad_idx.is_empty() { [0.05, 0.05, 0.08, 1.0] } else { [0.0, 0.0, 0.0, 0.0] };
+                let clear = if submit.quads.is_empty() { [0.05, 0.05, 0.08, 1.0] } else { [0.0, 0.0, 0.0, 0.0] };
                 renderer.record_pass(cmd, renderer.view_target(vi), projection_indices[vi], &view_proj, &planes, clear);
             }
         }
         renderer.end_frame(slot, &foreign)?;
         // releases only after the work is queued (the runtime waits on the queue, not the CPU)
-        for &ti in &dirty {
-            let ps = panel_swapchains.get_mut(&trees[ti].root_id).unwrap();
-            xr.release_panel_image(&mut ps.sc)?;
+        for t in &dirty {
+            if let Some(ps) = scene.get_mut(t.member).and_then(|m| m.m.panel.as_mut()) {
+                xr.release_panel_image(&mut ps.sc)?;
+                journal.panel_releases += 1;
+            }
+            if let Some(m) = scene.get_mut(t.member) {
+                m.m.dirty = false;
+            }
         }
         if depth {
             xr.release_images()?;
         }
     }
-    st.journal.last_tick_submitted = submit;
-    if st.quiet {
-        st.journal.quiet_frames += 1;
-    } else if depth {
+    st.journal.last_tick_submitted = submit_gpu;
+    if depth {
         st.journal.projection_layer_frames += 1;
     } else {
         st.journal.panels_only_frames += 1;
     }
 
-    // 4c. xrEndFrame: the projection layer (if any) first, then the quads nearest-last within
-    //     the band (painter's order, `rendering.adoc:1143-1147`)
+    // 6. xrEndFrame: the projection layer (if any) first, then the quads in the flatten's order
+    //    (band ascending, nearest last — painter's order, `rendering.adoc:1143-1147`)
     {
-        let Zxr { xr, panel_swapchains, .. } = &mut *st;
-        let mut quads: Vec<QuadLayer<'_>> = Vec::with_capacity(quad_idx.len());
-        for &ti in quad_idx.iter().rev() {
-            let t = &trees[ti];
-            let Some(ps) = panel_swapchains.get(&t.root_id) else { continue };
-            if ps.signature.is_none() {
+        let Zxr { xr, scene, .. } = &mut *st;
+        let mut quads: Vec<QuadLayer<'_>> = Vec::with_capacity(submit.quads.len());
+        for q in &submit.quads {
+            let Some(m) = scene.get(q.member) else { continue };
+            let Some(ps) = m.m.panel.as_ref() else { continue };
+            if !ps.has_image {
                 continue;
             }
             // the quad is centred on the panel bounds, offset from the plane's geometry centre
-            let dx = ((ps.bounds.loc.x as f32 + ps.bounds.size.w as f32 * 0.5) - (t.geo.loc.x as f32 + t.geo.size.w as f32 * 0.5)) * M_PER_PX;
-            let dy = -((ps.bounds.loc.y as f32 + ps.bounds.size.h as f32 * 0.5) - (t.geo.loc.y as f32 + t.geo.size.h as f32 * 0.5)) * M_PER_PX;
-            let p = math::transform_point(&t.model, [dx, dy, 0.0]);
-            let (s, c) = (t.yaw * 0.5).sin_cos();
+            let geo = m.m.window.geometry();
+            let dx = ((ps.bounds.loc.x as f32 + ps.bounds.size.w as f32 * 0.5) - (geo.loc.x as f32 + geo.size.w as f32 * 0.5)) * M_PER_PX;
+            let dy = -((ps.bounds.loc.y as f32 + ps.bounds.size.h as f32 * 0.5) - (geo.loc.y as f32 + geo.size.h as f32 * 0.5)) * M_PER_PX;
+            let p = math::pose_apply(q.world, [dx, dy, 0.0]);
             quads.push(QuadLayer {
                 swapchain: &ps.sc,
-                pose: openxr::Posef { orientation: openxr::Quaternionf { x: 0.0, y: s, z: 0.0, w: c }, position: openxr::Vector3f { x: p[0], y: p[1], z: p[2] } },
+                pose: openxr::Posef { orientation: q.world.orientation, position: openxr::Vector3f { x: p[0], y: p[1], z: p[2] } },
                 size: [ps.bounds.size.w as f32 * M_PER_PX, ps.bounds.size.h as f32 * M_PER_PX],
+                image_extent: [ps.bounds.size.w.max(1) as u32, ps.bounds.size.h.max(1) as u32],
             });
         }
         xr.end_frame_with_quads(time, if depth { Some(&views) } else { None }, &quads)?;
     }
 
-    // 5. frame callbacks: once per refresh, after xrEndFrame (§6.6)
+    // 7. frame callbacks: once per refresh, after xrEndFrame (§6.6). Visibility-gated
+    //    (research/65 §4.2; niri `niri.rs:5178-5208`, KWin `item.cpp:739-751`, mutter
+    //    `meta-wayland.c:182-219` converge): a member in either view's frustum gets its callback
+    //    every tick; one out of view gets it on a fallback cadence (niri: 995 ms) so a client
+    //    waiting on a callback never stalls, but stops driving the GPU at display rate.
     let now = Duration::from_millis(st.now_ms() as u64);
     let output = st.output.clone();
-    // Visibility-gated (research/65 §4.2; niri `niri.rs:5178-5208`, KWin `item.cpp:739-751`,
-    // mutter `meta-wayland.c:182-219` converge): a plane in either view's frustum gets its callback
-    // every tick; a plane out of view gets one on a fallback cadence (niri: 995 ms) so a client
-    // waiting on a callback never stalls, but stops driving the GPU at display rate.
-    const FALLBACK_TICKS: u64 = 60;
-    let quiet = st.quiet;
-    let journal = &mut st.journal;
-    for p in &mut st.scene.planes {
-        if p.mapped_at_frame != 0 {
-            let visible = !quiet && views.iter().any(|v| plane_in_view(v, &p.model(), p.half_size()));
-            let due = tick.frame_id.saturating_sub(p.last_frame_callback) >= FALLBACK_TICKS;
+    {
+        let Zxr { scene, journal, .. } = &mut *st;
+        for q in submit.quads.iter().chain(submit.overflow.iter()) {
+            let Some(m) = scene.get_mut(q.member) else { continue };
+            let model = scene::model(q.world);
+            let visible = views.iter().any(|v| plane_in_view(v, &model, [q.size[0] * 0.5, q.size[1] * 0.5]));
+            let due = tick.frame_id.saturating_sub(m.m.last_frame_callback) >= FALLBACK_TICKS;
             if visible {
                 journal.frame_callbacks_visible += 1;
             } else {
                 journal.frame_callbacks_occluded += 1;
             }
             if visible || due {
-                p.window.send_frame(&output, now, Some(Duration::ZERO), |_, _| Some(output.clone()));
-                p.last_frame_callback = tick.frame_id;
+                m.m.window.send_frame(&output, now, Some(Duration::ZERO), |_, _| Some(output.clone()));
+                m.m.last_frame_callback = tick.frame_id;
                 journal.frame_callbacks += 1;
             }
         }
     }
+    st.scene.submit = submit;
 
     let wake_to_end = now_ns().saturating_sub(tick.woke_at_ns);
     let period = tick.predicted_display_period.as_nanos().max(1) as u64;
@@ -498,9 +587,12 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     st.journal.attachment_bytes_est = if depth { st.renderer.attachment_bytes_per_frame() } else { 0 };
     st.journal.panel_passes = st.renderer.panel_passes;
     st.journal.panel_bytes = st.renderer.panel_bytes;
-    st.journal.panel_swapchains = st.panel_swapchains.len() as u64;
+    st.journal.panel_swapchains = st.scene.iter().filter(|(_, m)| m.m.panel.is_some()).count() as u64;
     finish_frame(st)
 }
+
+/// Fallback frame-callback cadence for members out of view (niri: 995 ms).
+const FALLBACK_TICKS: u64 = 60;
 
 fn request_realtime() {
     // SAFETY: plain sched_setscheduler on the calling thread.
@@ -538,6 +630,9 @@ fn plane_in_view(view: &openxr::View, model: &math::Mat4, half: [f32; 2]) -> boo
 fn finish_frame(st: &mut Zxr) -> Result<(), String> {
     if st.frame_id % 60 == 0 {
         st.gc_textures(st.frame_id);
+    }
+    if !st.retired_panels.is_empty() {
+        st.flush_retired_panels(st.frame_id);
     }
     if let Some(limit) = st.frames_limit {
         if st.journal.frames >= limit {
@@ -577,14 +672,29 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             st.scene.focus_next();
             let f = st.scene.focused;
             st.focus_window(f);
-            format!("focused {:?}", f)
+            format!("focused {:?}", f.map(|m| m.0.index()))
         }
         List => {
             let mut s = String::new();
-            for (i, p) in st.scene.planes.iter().enumerate() {
-                let title = p.window.toplevel().map(|t| smithay::wayland::compositor::with_states(t.wl_surface(), |s| s.data_map.get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>().unwrap().lock().unwrap().title.clone().unwrap_or_default())).unwrap_or_default();
-                let g = p.window.geometry();
-                s.push_str(&format!("{i}{} {}x{} pos=({:.2},{:.2},{:.2}) yaw={:.2} mapped={} {title}\n", if Some(i) == st.scene.focused { "*" } else { " " }, g.size.w, g.size.h, p.pos[0], p.pos[1], p.pos[2], p.yaw, p.mapped_at_frame != 0));
+            for (id, m) in st.scene.iter() {
+                let title = m.m.window.toplevel().map(|t| smithay::wayland::compositor::with_states(t.wl_surface(), |s| s.data_map.get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>().unwrap().lock().unwrap().title.clone().unwrap_or_default())).unwrap_or_default();
+                let g = m.m.window.geometry();
+                let w = st.scene.world_pose(id).unwrap_or(m.local);
+                let band = st.scene.band(id).unwrap_or(0);
+                let panel = m.m.panel.as_ref().map(|p| format!("{}x{}", p.sc.extent.width, p.sc.extent.height)).unwrap_or_else(|| "-".into());
+                s.push_str(&format!(
+                    "{}{} band={band} place={} {}x{} pos=({:.2},{:.2},{:.2}) mapped={} dirty={} panel={panel} {title}\n",
+                    id.0.index(),
+                    if Some(id) == st.scene.focused { "*" } else { " " },
+                    m.place.0.index(),
+                    g.size.w,
+                    g.size.h,
+                    w.position.x,
+                    w.position.y,
+                    w.position.z,
+                    m.m.mapped(),
+                    m.m.dirty
+                ));
             }
             s.trim_end().to_string()
         }
@@ -597,14 +707,14 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             st.loop_signal.stop();
             "bye".into()
         }
-        Close => match st.scene.focused_window().and_then(|w| w.toplevel().cloned()) {
+        Close => match st.scene.focused().and_then(|m| m.m.window.toplevel().cloned()) {
             Some(t) => {
                 t.send_close();
                 "closed".into()
             }
             None => "no focus".into(),
         },
-        Resize(w, h) => match st.scene.focused_window().and_then(|w| w.toplevel().cloned()) {
+        Resize(w, h) => match st.scene.focused().and_then(|m| m.m.window.toplevel().cloned()) {
             Some(t) => {
                 t.with_pending_state(|s| s.size = Some((w, h).into()));
                 t.send_pending_configure();
@@ -612,12 +722,14 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             }
             None => "no focus".into(),
         },
-        Move(dx, dy, dz) => match st.scene.focused.and_then(|i| st.scene.planes.get_mut(i)) {
-            Some(p) => {
-                p.pos[0] += dx;
-                p.pos[1] += dy;
-                p.pos[2] += dz;
-                format!("pos=({:.2},{:.2},{:.2})", p.pos[0], p.pos[1], p.pos[2])
+        // `set_local` through the mutation API (spec §5a): the delta is applied in the place's frame
+        Move(dx, dy, dz) => match st.scene.focused.and_then(|id| st.scene.get(id).map(|m| (id, m.local))) {
+            Some((id, mut local)) => {
+                local.position.x += dx;
+                local.position.y += dy;
+                local.position.z += dz;
+                st.scene.set_local(id, local);
+                format!("pos=({:.2},{:.2},{:.2})", local.position.x, local.position.y, local.position.z)
             }
             None => "no focus".into(),
         },

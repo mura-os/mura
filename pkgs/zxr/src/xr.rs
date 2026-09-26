@@ -77,12 +77,15 @@ pub struct Swapchain {
     pub extent: vk::Extent2D,
 }
 
-/// One panel handed to the runtime as an `XrCompositionLayerQuad` (Phase 1b prototype).
+/// One panel handed to the runtime as an `XrCompositionLayerQuad` (spec §4 rev 3).
 pub struct QuadLayer<'a> {
     pub swapchain: &'a Swapchain,
     pub pose: xr::Posef,
     /// metres
     pub size: [f32; 2],
+    /// the part of the image the panel occupies (grow-only swapchains, spec §5a): top-left
+    /// `image_extent` pixels
+    pub image_extent: [u32; 2],
 }
 
 fn monotonic_ns() -> u64 {
@@ -107,6 +110,8 @@ impl XrCore {
         }
         let mut exts = xr::ExtensionSet::default();
         exts.khr_vulkan_enable2 = true;
+        // one round trip for every frame the views do not give (spec §5a); Monado always has it
+        exts.khr_locate_spaces = available.khr_locate_spaces;
         if overlay.is_some() {
             if !available.extx_overlay {
                 return Err("runtime lacks XR_EXTX_overlay (needed for --overlay)".into());
@@ -340,6 +345,31 @@ impl XrCore {
         Ok(views)
     }
 
+    /// Locate every space in one round trip (`xrLocateSpacesKHR`; Monado batches the array into
+    /// one IPC exchange, `ipc_client_space_overseer.c:161-195`). Called only when the scene has a
+    /// frame the views do not give (spec §5a). Returns `(pose, valid)` per space, in order;
+    /// `valid` = position and orientation both valid.
+    pub fn locate_spaces(&mut self, spaces: &[&xr::Space], time: xr::Time, out: &mut Vec<(xr::Posef, bool)>) -> Result<(), String> {
+        out.clear();
+        if spaces.is_empty() {
+            return Ok(());
+        }
+        let fp = self.instance.exts().khr_locate_spaces.as_ref().ok_or("runtime lacks XR_KHR_locate_spaces")?;
+        let raw: Vec<xr::sys::Space> = spaces.iter().map(|s| s.as_raw()).collect();
+        let mut data = vec![xr::sys::SpaceLocationData::default(); raw.len()];
+        let info = xr::sys::SpacesLocateInfo { ty: xr::sys::SpacesLocateInfo::TYPE, next: std::ptr::null(), base_space: self.space.as_raw(), time, space_count: raw.len() as u32, spaces: raw.as_ptr() };
+        let mut locations = xr::sys::SpaceLocations { ty: xr::sys::SpaceLocations::TYPE, next: std::ptr::null_mut(), location_count: data.len() as u32, locations: data.as_mut_ptr() };
+        let session = self.session.as_raw();
+        // SAFETY: the arrays outlive the call; the runtime writes `location_count` entries.
+        let r = timed(&mut self.calls.locate_spaces, || unsafe { (fp.locate_spaces)(session, &info, &mut locations) });
+        if r.into_raw() < 0 {
+            return Err(format!("xrLocateSpacesKHR: {r:?}"));
+        }
+        let both = xr::SpaceLocationFlags::POSITION_VALID | xr::SpaceLocationFlags::ORIENTATION_VALID;
+        out.extend(data.iter().map(|d| (d.pose, d.location_flags.contains(both))));
+        Ok(())
+    }
+
     /// Acquire + wait one image per view; returns the image indices.
     pub fn acquire_images(&mut self) -> Result<Vec<u32>, String> {
         let mut out = Vec::with_capacity(self.swapchains.len());
@@ -418,7 +448,7 @@ impl XrCore {
                     .layer_flags(xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA)
                     .space(&self.space)
                     .eye_visibility(xr::EyeVisibility::BOTH)
-                    .sub_image(xr::SwapchainSubImage::new().swapchain(&q.swapchain.handle).image_array_index(0).image_rect(xr::Rect2Di { offset: xr::Offset2Di { x: 0, y: 0 }, extent: xr::Extent2Di { width: q.swapchain.extent.width as i32, height: q.swapchain.extent.height as i32 } }))
+                    .sub_image(xr::SwapchainSubImage::new().swapchain(&q.swapchain.handle).image_array_index(0).image_rect(xr::Rect2Di { offset: xr::Offset2Di { x: 0, y: 0 }, extent: xr::Extent2Di { width: q.image_extent[0].min(q.swapchain.extent.width) as i32, height: q.image_extent[1].min(q.swapchain.extent.height) as i32 } }))
                     .pose(q.pose)
                     .size(xr::Extent2Df { width: q.size[0], height: q.size[1] })
             })
@@ -575,6 +605,67 @@ pub mod math {
             m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
             m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
             m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14],
+        ]
+    }
+
+    // ---- rigid poses (spec §5a: poses, not matrices, are the stored form) ----
+
+    pub fn pose_identity() -> xr::Posef {
+        xr::Posef { orientation: xr::Quaternionf { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }, position: xr::Vector3f { x: 0.0, y: 0.0, z: 0.0 } }
+    }
+
+    /// A pose from a position and a yaw (radians) about +Y — the fan's shape.
+    pub fn pose_yaw(pos: [f32; 3], yaw: f32) -> xr::Posef {
+        let (s, c) = (yaw * 0.5).sin_cos();
+        xr::Posef { orientation: xr::Quaternionf { x: 0.0, y: s, z: 0.0, w: c }, position: xr::Vector3f { x: pos[0], y: pos[1], z: pos[2] } }
+    }
+
+    /// Hamilton product `a ⊗ b` (apply `b`, then `a`).
+    pub fn quat_mul(a: xr::Quaternionf, b: xr::Quaternionf) -> xr::Quaternionf {
+        xr::Quaternionf {
+            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+        }
+    }
+
+    pub fn quat_conj(q: xr::Quaternionf) -> xr::Quaternionf {
+        xr::Quaternionf { x: -q.x, y: -q.y, z: -q.z, w: q.w }
+    }
+
+    /// Compose rigid poses: `a ∘ b` maps a point in `b`'s frame into `a`'s parent frame
+    /// (`frame.pose ∘ place.local ∘ member.local` is the member's world pose).
+    pub fn pose_mul(a: xr::Posef, b: xr::Posef) -> xr::Posef {
+        let p = rotate(a.orientation, [b.position.x, b.position.y, b.position.z]);
+        xr::Posef {
+            orientation: quat_mul(a.orientation, b.orientation),
+            position: xr::Vector3f { x: a.position.x + p[0], y: a.position.y + p[1], z: a.position.z + p[2] },
+        }
+    }
+
+    /// The inverse rigid pose (a unit quaternion's inverse is its conjugate).
+    pub fn pose_inverse(p: xr::Posef) -> xr::Posef {
+        let q = quat_conj(p.orientation);
+        let t = rotate(q, [-p.position.x, -p.position.y, -p.position.z]);
+        xr::Posef { orientation: q, position: xr::Vector3f { x: t[0], y: t[1], z: t[2] } }
+    }
+
+    /// Map a point through a pose (rotate, then translate).
+    pub fn pose_apply(p: xr::Posef, v: [f32; 3]) -> [f32; 3] {
+        let r = rotate(p.orientation, v);
+        [r[0] + p.position.x, r[1] + p.position.y, r[2] + p.position.z]
+    }
+
+    /// A pose as a column-major model matrix — built only where a pass needs one.
+    pub fn pose_to_mat(p: xr::Posef) -> Mat4 {
+        let q = p.orientation;
+        let (x, y, z, w) = (q.x, q.y, q.z, q.w);
+        [
+            1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y + z * w), 2.0 * (x * z - y * w), 0.0,
+            2.0 * (x * y - z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z + x * w), 0.0,
+            2.0 * (x * z + y * w), 2.0 * (y * z - x * w), 1.0 - 2.0 * (x * x + y * y), 0.0,
+            p.position.x, p.position.y, p.position.z, 1.0,
         ]
     }
 

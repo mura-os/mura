@@ -1,168 +1,546 @@
-//! The scene (specs/zxr-core.md §3 `scene`, §4–§5): planes for the 2D tier in one world frame,
-//! their stacking by depth, focus, and the ray→plane→surface hit test the input module uses.
-//! R0 places new toplevels fanned in front of the viewer (motorcar's `WindowManager` shape,
-//! `windowmanager.cpp:147-159`); the places model's frames arrive at M1.
+//! The scene (specs/zxr-core.md §3 `scene`, §4, §5, §5a): three typed arenas — `frames`
+//! (spaces the runtime locates), `places` (a frame, a band, a local pose), `members` (a place, a
+//! local pose, a shape, the frontend's payload) — with generational handles; poses, not
+//! matrices; a per-tick *layer list* (one quad per mapped 2D member, ordered band ascending then
+//! nearest-last; overflow into the projection pass) rather than a draw list; the mutation API
+//! that is the policy boundary; and the ray → plane hit test the `input` module runs over.
+//!
+//! This module names no Wayland or Vulkan type: the member payload `M` is the frontend's.
+//! Placement is R0's fan (motorcar's `WindowManager` shape, `windowmanager.cpp:147-159`) written
+//! through `add` until M1's `free` engine.
+
+// The mutation API and the frame/place vocabulary are the policy boundary (spec §5a); M1's
+// `policy` and `input` consume what R0's fan and gaze pointer do not yet.
+#![allow(dead_code)]
 
 use crate::xr::math::{self, Mat4};
 use openxr as xr;
-use smithay::desktop::{Window, WindowSurfaceType};
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point};
 
 /// Metres per logical pixel: 1000 px ≈ 1.2 m at the default distance (a comfortable panel).
 pub const M_PER_PX: f32 = 0.0012;
 pub const PLANE_DISTANCE: f32 = -1.5;
 
-pub struct Plane {
-    pub window: Window,
-    pub pos: [f32; 3],
-    pub yaw: f32,
-    pub mapped_at_frame: u64,
-    /// the last tick this plane received `wl_surface.frame` (research/65 §4.2: visibility-gated
-    /// callbacks with a fallback so an out-of-view client never stalls)
-    pub last_frame_callback: u64,
+// ---------------------------------------------------------------------------------------------
+// Arena
+// ---------------------------------------------------------------------------------------------
+
+/// A slot index plus the generation it was allotted in; a stale handle never aliases a reused slot.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Handle {
+    idx: u32,
+    gen: u32,
 }
 
-impl Plane {
-    pub fn model(&self) -> Mat4 {
-        math::model(self.pos, self.yaw)
+impl Handle {
+    pub fn index(self) -> usize {
+        self.idx as usize
     }
-    /// Half extents in metres from the window's current geometry.
+}
+
+struct Slot<T> {
+    gen: u32,
+    val: Option<T>,
+}
+
+/// A generational arena: O(1) insert/remove/lookup, stable handles, slots reused.
+pub struct Arena<T> {
+    slots: Vec<Slot<T>>,
+    free: Vec<u32>,
+    len: usize,
+}
+
+impl<T> Default for Arena<T> {
+    fn default() -> Self {
+        Arena { slots: Vec::new(), free: Vec::new(), len: 0 }
+    }
+}
+
+impl<T> Arena<T> {
+    pub fn insert(&mut self, val: T) -> Handle {
+        self.len += 1;
+        if let Some(idx) = self.free.pop() {
+            let s = &mut self.slots[idx as usize];
+            s.gen = s.gen.wrapping_add(1);
+            s.val = Some(val);
+            return Handle { idx, gen: s.gen };
+        }
+        self.slots.push(Slot { gen: 0, val: Some(val) });
+        Handle { idx: (self.slots.len() - 1) as u32, gen: 0 }
+    }
+
+    pub fn remove(&mut self, h: Handle) -> Option<T> {
+        let s = self.slots.get_mut(h.idx as usize)?;
+        if s.gen != h.gen || s.val.is_none() {
+            return None;
+        }
+        self.len -= 1;
+        self.free.push(h.idx);
+        s.val.take()
+    }
+
+    pub fn get(&self, h: Handle) -> Option<&T> {
+        let s = self.slots.get(h.idx as usize)?;
+        if s.gen == h.gen { s.val.as_ref() } else { None }
+    }
+
+    pub fn get_mut(&mut self, h: Handle) -> Option<&mut T> {
+        let s = self.slots.get_mut(h.idx as usize)?;
+        if s.gen == h.gen { s.val.as_mut() } else { None }
+    }
+
+    pub fn contains(&self, h: Handle) -> bool {
+        self.get(h).is_some()
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Handle, &T)> {
+        self.slots.iter().enumerate().filter_map(|(i, s)| s.val.as_ref().map(|v| (Handle { idx: i as u32, gen: s.gen }, v)))
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Handle, &mut T)> {
+        self.slots.iter_mut().enumerate().filter_map(|(i, s)| {
+            let gen = s.gen;
+            s.val.as_mut().map(|v| (Handle { idx: i as u32, gen }, v))
+        })
+    }
+
+    /// Handles of every live slot (allocation-free callers keep and reuse the vector).
+    pub fn handles_into(&self, out: &mut Vec<Handle>) {
+        out.clear();
+        out.extend(self.iter().map(|(h, _)| h));
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Frames, places, members
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct FrameId(pub Handle);
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct PlaceId(pub Handle);
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct MemberId(pub Handle);
+
+/// Where a frame's pose comes from each tick.
+pub enum Space {
+    /// the session's base space (LOCAL): the identity
+    Base,
+    /// the head: the midpoint of the two `xrLocateViews` poses the tick already has
+    Views,
+    /// a runtime space located by the batched `xrLocateSpacesKHR` (hands, STAGE, anchors — M1)
+    Xr(xr::Space),
+    /// a pose pushed by a Mura service (mapping-service anchors before the EXT family)
+    Service,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FrameKind {
+    World,
+    Head,
+    LeftHand,
+    RightHand,
+    Anchor,
+    Docked,
+    Peer,
+}
+
+pub struct Frame {
+    pub space: Space,
+    pub kind: FrameKind,
+    /// in LOCAL
+    pub pose: xr::Posef,
+    pub valid: bool,
+}
+
+pub struct Place {
+    pub frame: FrameId,
+    pub local: xr::Posef,
+    /// composition band, spec §4 (1 environment … 6 foreground); 2D windows are band 3
+    pub band: u8,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Shape {
+    /// a 2D plane; extents in metres
+    Plane { size: [f32; 2] },
+    /// a 3D client's volume (M2); half extents in metres
+    Volume { half: [f32; 3] },
+}
+
+/// xrdesktop's vocabulary (`xrd-window.h`): what policy may do with a member.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct Flags(pub u8);
+
+impl Flags {
+    pub const DRAGGABLE: Flags = Flags(1);
+    pub const MANAGED: Flags = Flags(2);
+    pub const HOVERABLE: Flags = Flags(4);
+    pub const PINNED: Flags = Flags(8);
+    pub const WINDOW: Flags = Flags(1 | 2 | 4);
+
+    pub fn contains(self, f: Flags) -> bool {
+        self.0 & f.0 == f.0
+    }
+}
+
+pub struct Member<M> {
+    pub place: PlaceId,
+    pub local: xr::Posef,
+    pub shape: Shape,
+    pub flags: Flags,
+    pub m: M,
+}
+
+impl<M> Member<M> {
     pub fn half_size(&self) -> [f32; 2] {
-        let g = self.window.geometry().size;
-        [g.w.max(1) as f32 * M_PER_PX * 0.5, g.h.max(1) as f32 * M_PER_PX * 0.5]
-    }
-    /// A point on the plane (metres, plane-local, y up) → logical surface coordinates.
-    pub fn local_to_logical(&self, local: [f32; 2]) -> Point<f64, Logical> {
-        let g = self.window.geometry();
-        let [hw, hh] = self.half_size();
-        let x = (local[0] / (2.0 * hw) + 0.5) as f64 * g.size.w as f64 + g.loc.x as f64;
-        let y = (0.5 - local[1] / (2.0 * hh)) as f64 * g.size.h as f64 + g.loc.y as f64;
-        Point::from((x, y))
+        match self.shape {
+            Shape::Plane { size } => [size[0] * 0.5, size[1] * 0.5],
+            Shape::Volume { half } => [half[0], half[1]],
+        }
     }
 }
 
-/// The quad budget (spec §7 rev 3): given each plane's squared distance to the head and the
-/// runtime's layer cap minus one, the nearest `budget` planes become quad layers (legibility
-/// matters most where the user looks) and the rest overflow into the projection layer. Returns
-/// (quad indices nearest-first, overflow indices).
-pub fn select_quads(dist2: &[f32], budget: usize) -> (Vec<usize>, Vec<usize>) {
-    let mut order: Vec<usize> = (0..dist2.len()).collect();
-    order.sort_by(|a, b| dist2[*a].total_cmp(&dist2[*b]).then(a.cmp(b)));
-    let overflow = order.split_off(budget.min(order.len()));
-    (order, overflow)
+// ---------------------------------------------------------------------------------------------
+// The per-tick layer list
+// ---------------------------------------------------------------------------------------------
+
+/// One quad layer to submit: a mapped 2D member with its world pose this tick.
+#[derive(Clone, Copy, Debug)]
+pub struct QuadEntry {
+    pub member: MemberId,
+    pub band: u8,
+    pub world: xr::Posef,
+    pub size: [f32; 2],
+    pub dist2: f32,
 }
 
-#[cfg(test)]
-mod quad_budget_tests {
-    use super::select_quads;
-
-    #[test]
-    fn nearest_first_within_budget() {
-        let (q, o) = select_quads(&[9.0, 1.0, 4.0], 2);
-        assert_eq!(q, vec![1, 2]);
-        assert_eq!(o, vec![0]);
-    }
-
-    #[test]
-    fn everything_fits() {
-        let (q, o) = select_quads(&[2.0, 1.0], 128);
-        assert_eq!(q, vec![1, 0]);
-        assert!(o.is_empty());
-    }
-
-    #[test]
-    fn zero_budget_overflows_all() {
-        let (q, o) = select_quads(&[1.0, 2.0], 0);
-        assert!(q.is_empty());
-        assert_eq!(o, vec![0, 1]);
-    }
-
-    #[test]
-    fn ties_are_stable() {
-        let (q, _) = select_quads(&[1.0, 1.0, 1.0], 2);
-        assert_eq!(q, vec![0, 1]);
-    }
-}
-
+/// The flatten's output, reused every tick (no allocation in steady state).
 #[derive(Default)]
-pub struct Scene {
-    pub planes: Vec<Plane>,
-    pub focused: Option<usize>,
-    spawned: usize,
+pub struct Submit {
+    /// quads in submission order: band ascending, nearest last within a band
+    pub quads: Vec<QuadEntry>,
+    /// members past the quad budget, drawn in the projection pass this tick
+    pub overflow: Vec<QuadEntry>,
+    scratch: Vec<QuadEntry>,
 }
 
-impl Scene {
-    pub fn add(&mut self, window: Window, frame: u64) -> usize {
-        // fan: 0 centre, then alternating right/left with a small yaw toward the viewer
+impl Submit {
+    pub fn clear(&mut self) {
+        self.quads.clear();
+        self.overflow.clear();
+        self.scratch.clear();
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Scene
+// ---------------------------------------------------------------------------------------------
+
+pub struct Scene<M> {
+    pub frames: Arena<Frame>,
+    pub places: Arena<Place>,
+    pub members: Arena<Member<M>>,
+    pub focused: Option<MemberId>,
+    /// the two frames every session has (spec §5: "M1 ships one world frame and one head frame")
+    pub world: FrameId,
+    pub head: FrameId,
+    /// the window tier's place until M1's engines: on the world frame, band 3
+    pub default_place: PlaceId,
+    pub submit: Submit,
+    spawned: usize,
+    handles: Vec<Handle>,
+}
+
+impl<M> Default for Scene<M> {
+    fn default() -> Self {
+        Scene::new()
+    }
+}
+
+impl<M> Scene<M> {
+    pub fn new() -> Self {
+        let mut frames = Arena::default();
+        let world = FrameId(frames.insert(Frame { space: Space::Base, kind: FrameKind::World, pose: math::pose_identity(), valid: true }));
+        let head = FrameId(frames.insert(Frame { space: Space::Views, kind: FrameKind::Head, pose: math::pose_identity(), valid: false }));
+        let mut places = Arena::default();
+        let default_place = PlaceId(places.insert(Place { frame: world, local: math::pose_identity(), band: 3 }));
+        Scene { frames, places, members: Arena::default(), focused: None, world, head, default_place, submit: Submit::default(), spawned: 0, handles: Vec::new() }
+    }
+
+    // ---- frames ----
+
+    pub fn add_frame(&mut self, space: Space, kind: FrameKind) -> FrameId {
+        FrameId(self.frames.insert(Frame { space, kind, pose: math::pose_identity(), valid: false }))
+    }
+
+    /// Write a located pose (the head from the views each tick; `Xr`/`Service` frames from
+    /// their sources).
+    pub fn set_frame_pose(&mut self, f: FrameId, pose: xr::Posef, valid: bool) {
+        if let Some(fr) = self.frames.get_mut(f.0) {
+            fr.pose = pose;
+            fr.valid = valid;
+        }
+    }
+
+    /// The frames the views do not give — the batched locate exists only when this is non-empty
+    /// (spec §5a).
+    pub fn xr_frames(&self) -> impl Iterator<Item = (FrameId, &xr::Space)> {
+        self.frames.iter().filter_map(|(h, f)| match &f.space {
+            Space::Xr(s) => Some((FrameId(h), s)),
+            _ => None,
+        })
+    }
+
+    // ---- places ----
+
+    pub fn add_place(&mut self, frame: FrameId, local: xr::Posef, band: u8) -> PlaceId {
+        PlaceId(self.places.insert(Place { frame, local, band }))
+    }
+
+    /// `pin` / `grab-all` / `assign-to-frame`: one index write.
+    pub fn reparent_place(&mut self, p: PlaceId, frame: FrameId) -> bool {
+        if !self.frames.contains(frame.0) {
+            return false;
+        }
+        match self.places.get_mut(p.0) {
+            Some(pl) => {
+                pl.frame = frame;
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn place_world(&self, p: PlaceId) -> Option<xr::Posef> {
+        let pl = self.places.get(p.0)?;
+        let fr = self.frames.get(pl.frame.0)?;
+        Some(math::pose_mul(fr.pose, pl.local))
+    }
+
+    // ---- members: the mutation API (the policy boundary) ----
+
+    pub fn add(&mut self, place: PlaceId, local: xr::Posef, shape: Shape, flags: Flags, m: M) -> Option<MemberId> {
+        if !self.places.contains(place.0) {
+            return None;
+        }
+        let id = MemberId(self.members.insert(Member { place, local, shape, flags, m }));
+        self.focused = Some(id);
+        Some(id)
+    }
+
+    /// The stand-in placement (R0's fan): slot 0 centre, then alternating right/left with a
+    /// small yaw toward the viewer, in the default place.
+    pub fn add_fanned(&mut self, shape: Shape, flags: Flags, m: M) -> MemberId {
         let n = self.spawned as i32;
         let slot = (n + 1) / 2 * if n % 2 == 1 { 1 } else { -1 };
-        let x = slot as f32 * 0.9;
-        let yaw = -(slot as f32) * 0.35;
         self.spawned += 1;
-        self.planes.push(Plane { window, pos: [x, 0.0, PLANE_DISTANCE], yaw, mapped_at_frame: frame, last_frame_callback: 0 });
-        let idx = self.planes.len() - 1;
-        self.focused = Some(idx);
-        idx
+        let local = math::pose_yaw([slot as f32 * 0.9, 0.0, PLANE_DISTANCE], -(slot as f32) * 0.35);
+        let place = self.default_place;
+        self.add(place, local, shape, flags, m).expect("default place is live")
     }
 
-    pub fn remove(&mut self, surface: &WlSurface) -> Option<Plane> {
-        let idx = self.planes.iter().position(|p| p.window.toplevel().map(|t| t.wl_surface() == surface).unwrap_or(false))?;
-        let p = self.planes.remove(idx);
-        self.focused = match self.focused {
-            Some(f) if f == idx => self.planes.len().checked_sub(1),
-            Some(f) if f > idx => Some(f - 1),
-            other => other,
-        };
-        Some(p)
+    pub fn remove(&mut self, id: MemberId) -> Option<Member<M>> {
+        let m = self.members.remove(id.0)?;
+        if self.focused == Some(id) {
+            self.focused = self.members.iter().last().map(|(h, _)| MemberId(h));
+        }
+        Some(m)
     }
 
-    pub fn find(&self, surface: &WlSurface) -> Option<usize> {
-        self.planes.iter().position(|p| p.window.toplevel().map(|t| t.wl_surface() == surface).unwrap_or(false))
+    pub fn reparent(&mut self, id: MemberId, place: PlaceId) -> bool {
+        if !self.places.contains(place.0) {
+            return false;
+        }
+        match self.members.get_mut(id.0) {
+            Some(m) => {
+                m.place = place;
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn set_local(&mut self, id: MemberId, local: xr::Posef) -> bool {
+        match self.members.get_mut(id.0) {
+            Some(m) => {
+                m.local = local;
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn set_shape(&mut self, id: MemberId, shape: Shape) -> bool {
+        match self.members.get_mut(id.0) {
+            Some(m) => {
+                m.shape = shape;
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn set_flags(&mut self, id: MemberId, flags: Flags) -> bool {
+        match self.members.get_mut(id.0) {
+            Some(m) => {
+                m.flags = flags;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Focus a live member, or nothing.
+    pub fn focus(&mut self, id: Option<MemberId>) -> bool {
+        match id {
+            Some(id) if !self.members.contains(id.0) => false,
+            other => {
+                self.focused = other;
+                true
+            }
+        }
     }
 
     pub fn focus_next(&mut self) {
-        if self.planes.is_empty() {
-            self.focused = None;
-        } else {
-            self.focused = Some(self.focused.map(|f| (f + 1) % self.planes.len()).unwrap_or(0));
+        self.handles.clear();
+        self.members.handles_into(&mut self.handles);
+        let next = match (self.handles.is_empty(), self.focused) {
+            (true, _) => None,
+            (false, Some(MemberId(h))) => {
+                let i = self.handles.iter().position(|x| *x == h).map(|i| (i + 1) % self.handles.len()).unwrap_or(0);
+                Some(MemberId(self.handles[i]))
+            }
+            (false, None) => Some(MemberId(self.handles[0])),
+        };
+        self.focused = next;
+    }
+
+    // ---- reads ----
+
+    pub fn get(&self, id: MemberId) -> Option<&Member<M>> {
+        self.members.get(id.0)
+    }
+
+    pub fn get_mut(&mut self, id: MemberId) -> Option<&mut Member<M>> {
+        self.members.get_mut(id.0)
+    }
+
+    pub fn focused(&self) -> Option<&Member<M>> {
+        self.focused.and_then(|id| self.members.get(id.0))
+    }
+
+    pub fn focused_mut(&mut self) -> Option<&mut Member<M>> {
+        let id = self.focused?;
+        self.members.get_mut(id.0)
+    }
+
+    /// The first member whose payload satisfies `pred` (the frontend's surface → member lookup;
+    /// linear over N ≈ 50).
+    pub fn find(&self, pred: impl Fn(&M) -> bool) -> Option<MemberId> {
+        self.members.iter().find(|(_, m)| pred(&m.m)).map(|(h, _)| MemberId(h))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (MemberId, &Member<M>)> {
+        self.members.iter().map(|(h, m)| (MemberId(h), m))
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (MemberId, &mut Member<M>)> {
+        self.members.iter_mut().map(|(h, m)| (MemberId(h), m))
+    }
+
+    /// `frame.pose ∘ place.local ∘ member.local`.
+    pub fn world_pose(&self, id: MemberId) -> Option<xr::Posef> {
+        let m = self.members.get(id.0)?;
+        Some(math::pose_mul(self.place_world(m.place)?, m.local))
+    }
+
+    /// The band of a member's place.
+    pub fn band(&self, id: MemberId) -> Option<u8> {
+        let m = self.members.get(id.0)?;
+        Some(self.places.get(m.place.0)?.band)
+    }
+
+    // ---- the flatten ----
+
+    /// Build this tick's layer list from the mapped 2D members (`mapped(&M)` decides). The quad
+    /// budget is allotted by band priority — band 5 first, then 4, 3, 2, nearest-first within a
+    /// band — and quads are ordered band ascending, nearest last (spec §5a). Members past the
+    /// budget go to `overflow` for the projection pass.
+    pub fn flatten(&mut self, head: [f32; 3], budget: usize, mapped: impl Fn(&M) -> bool) -> &Submit {
+        let mut submit = std::mem::take(&mut self.submit);
+        self.flatten_into(&mut submit, head, budget, mapped);
+        self.submit = submit;
+        &self.submit
+    }
+
+    /// `flatten` into a caller-owned scratch (the tick takes `self.submit` out, flattens, and
+    /// puts it back, so the list can be read while the scene is mutated).
+    pub fn flatten_into(&self, submit: &mut Submit, head: [f32; 3], budget: usize, mapped: impl Fn(&M) -> bool) {
+        let Scene { frames, places, members, .. } = self;
+        submit.clear();
+        for (h, m) in members.iter() {
+            if !mapped(&m.m) {
+                continue;
+            }
+            let Shape::Plane { size } = m.shape else { continue };
+            let Some(pl) = places.get(m.place.0) else { continue };
+            let Some(fr) = frames.get(pl.frame.0) else { continue };
+            if !(2..=5).contains(&pl.band) {
+                continue;
+            }
+            let world = math::pose_mul(math::pose_mul(fr.pose, pl.local), m.local);
+            let d = [world.position.x - head[0], world.position.y - head[1], world.position.z - head[2]];
+            submit.scratch.push(QuadEntry { member: MemberId(h), band: pl.band, world, size, dist2: d[0] * d[0] + d[1] * d[1] + d[2] * d[2] });
         }
+        // band descending, nearest first: the allotment order
+        submit.scratch.sort_by(|a, b| b.band.cmp(&a.band).then(a.dist2.total_cmp(&b.dist2)).then(a.member.0.idx.cmp(&b.member.0.idx)));
+        for (i, q) in submit.scratch.iter().enumerate() {
+            if i < budget {
+                submit.quads.push(*q);
+            } else {
+                submit.overflow.push(*q);
+            }
+        }
+        // submission order: band ascending, nearest last
+        submit.quads.sort_by(|a, b| a.band.cmp(&b.band).then(b.dist2.total_cmp(&a.dist2)).then(a.member.0.idx.cmp(&b.member.0.idx)));
     }
 
-    pub fn focused_window(&self) -> Option<&Window> {
-        self.focused.and_then(|i| self.planes.get(i)).map(|p| &p.window)
-    }
+    // ---- the hit test ----
 
-    /// Cast the head ray (pose → −Z) against every plane; nearest hit wins. Returns the plane,
-    /// the surface under the hit and the surface-local point.
-    pub fn hit(&self, pose: xr::Posef) -> Option<(usize, WlSurface, Point<f64, Logical>)> {
-        let origin = [pose.position.x, pose.position.y, pose.position.z];
-        let dir = math::rotate(pose.orientation, [0.0, 0.0, -1.0]);
-        let mut best: Option<(f32, usize, [f32; 2])> = None;
-        for (i, p) in self.planes.iter().enumerate() {
-            if let Some((t, local)) = ray_plane(origin, dir, p.pos, p.yaw, p.half_size()) {
+    /// Cast a world-space ray against every mapped plane; nearest hit wins. Returns the member,
+    /// the plane-local point (metres, y up) and the distance. `mapped(&M)` filters.
+    pub fn hit(&self, origin: [f32; 3], dir: [f32; 3], mapped: impl Fn(&M) -> bool) -> Option<(MemberId, [f32; 2], f32)> {
+        let mut best: Option<(f32, MemberId, [f32; 2])> = None;
+        for (h, m) in self.members.iter() {
+            if !mapped(&m.m) {
+                continue;
+            }
+            let Shape::Plane { size } = m.shape else { continue };
+            let Some(world) = self.place_world(m.place).map(|pw| math::pose_mul(pw, m.local)) else { continue };
+            if let Some((t, local)) = ray_plane(origin, dir, world, [size[0] * 0.5, size[1] * 0.5]) {
                 if best.map(|b| t < b.0).unwrap_or(true) {
-                    best = Some((t, i, local));
+                    best = Some((t, MemberId(h), local));
                 }
             }
         }
-        let (_, i, local) = best?;
-        let p = &self.planes[i];
-        let logical = p.local_to_logical(local);
-        let (surface, loc) = p.window.surface_under(logical, WindowSurfaceType::ALL)?;
-        Some((i, surface, logical - loc.to_f64()))
+        best.map(|(t, id, local)| (id, local, t))
     }
 }
 
-/// Ray (origin, unit-ish direction) against a plane at `pos` yawed about Y by `yaw`, extents
-/// `half` — returns the distance and the plane-local hit point, or None if missed / behind.
-pub fn ray_plane(origin: [f32; 3], dir: [f32; 3], pos: [f32; 3], yaw: f32, half: [f32; 2]) -> Option<(f32, [f32; 2])> {
-    // into plane space: translate by -pos, rotate by -yaw about Y
-    let o = [origin[0] - pos[0], origin[1] - pos[1], origin[2] - pos[2]];
-    let (s, c) = (-yaw).sin_cos();
-    let rot = |v: [f32; 3]| [c * v[0] - s * v[2], v[1], s * v[0] + c * v[2]];
-    let o = rot(o);
-    let d = rot(dir);
+/// Ray (origin, direction) against the plane `z = 0` of `pose`, extents `half` — returns the
+/// distance along the ray and the plane-local hit point, or None if missed / behind.
+pub fn ray_plane(origin: [f32; 3], dir: [f32; 3], pose: xr::Posef, half: [f32; 2]) -> Option<(f32, [f32; 2])> {
+    let inv = math::pose_inverse(pose);
+    let o = math::pose_apply(inv, origin);
+    let d = math::rotate(inv.orientation, dir);
     if d[2].abs() < 1e-5 {
         return None;
     }
@@ -179,21 +557,57 @@ pub fn ray_plane(origin: [f32; 3], dir: [f32; 3], pos: [f32; 3], yaw: f32, half:
     }
 }
 
+/// A plane-local point (metres, y up) → logical surface coordinates of a `w × h` geometry with
+/// origin `(gx, gy)`, for a plane of extents `size` metres.
+pub fn local_to_logical(local: [f32; 2], size: [f32; 2], geo: (i32, i32, i32, i32)) -> (f64, f64) {
+    let (gx, gy, w, h) = geo;
+    let x = (local[0] / size[0] + 0.5) as f64 * w as f64 + gx as f64;
+    let y = (0.5 - local[1] / size[1]) as f64 * h as f64 + gy as f64;
+    (x, y)
+}
+
+/// A plane's model matrix for a pass.
+pub fn model(pose: xr::Posef) -> Mat4 {
+    math::pose_to_mat(pose)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tests: no runtime, a unit payload
+// ---------------------------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn plane(w: f32, h: f32) -> Shape {
+        Shape::Plane { size: [w, h] }
+    }
+
+    #[test]
+    fn arena_handles_do_not_alias_reused_slots() {
+        let mut a: Arena<u32> = Arena::default();
+        let h1 = a.insert(1);
+        assert_eq!(a.remove(h1), Some(1));
+        let h2 = a.insert(2);
+        assert_eq!(h1.index(), h2.index());
+        assert_ne!(h1, h2);
+        assert_eq!(a.get(h1), None);
+        assert_eq!(a.get(h2), Some(&2));
+        assert_eq!(a.remove(h1), None);
+        assert_eq!(a.len(), 1);
+    }
+
     #[test]
     fn ray_hits_centre_of_facing_plane() {
-        let (t, local) = ray_plane([0.0; 3], [0.0, 0.0, -1.0], [0.0, 0.0, PLANE_DISTANCE], 0.0, [0.5, 0.3]).unwrap();
+        let (t, local) = ray_plane([0.0; 3], [0.0, 0.0, -1.0], math::pose_yaw([0.0, 0.0, PLANE_DISTANCE], 0.0), [0.5, 0.3]).unwrap();
         assert!((t - 1.5).abs() < 1e-5);
         assert!(local[0].abs() < 1e-5 && local[1].abs() < 1e-5);
     }
 
     #[test]
     fn ray_misses_outside_extents_and_behind() {
-        assert!(ray_plane([0.0; 3], [0.0, 0.0, -1.0], [1.0, 0.0, PLANE_DISTANCE], 0.0, [0.5, 0.3]).is_none());
-        assert!(ray_plane([0.0; 3], [0.0, 0.0, 1.0], [0.0, 0.0, PLANE_DISTANCE], 0.0, [0.5, 0.3]).is_none());
+        assert!(ray_plane([0.0; 3], [0.0, 0.0, -1.0], math::pose_yaw([1.0, 0.0, PLANE_DISTANCE], 0.0), [0.5, 0.3]).is_none());
+        assert!(ray_plane([0.0; 3], [0.0, 0.0, 1.0], math::pose_yaw([0.0, 0.0, PLANE_DISTANCE], 0.0), [0.5, 0.3]).is_none());
     }
 
     #[test]
@@ -201,18 +615,201 @@ mod tests {
         // plane at x = 0.9, yawed −0.35 rad toward the viewer (the fan's second slot): a ray aimed
         // at its centre hits at local (0, 0)
         let pos = [0.9, 0.0, PLANE_DISTANCE];
-        let dir = {
-            let l = (pos[0] * pos[0] + pos[2] * pos[2]).sqrt();
-            [pos[0] / l, 0.0, pos[2] / l]
-        };
-        let (_, local) = ray_plane([0.0; 3], dir, pos, -0.35, [0.5, 0.3]).unwrap();
+        let l = (pos[0] * pos[0] + pos[2] * pos[2]).sqrt();
+        let dir = [pos[0] / l, 0.0, pos[2] / l];
+        let (_, local) = ray_plane([0.0; 3], dir, math::pose_yaw(pos, -0.35), [0.5, 0.3]).unwrap();
         assert!(local[0].abs() < 1e-4 && local[1].abs() < 1e-4);
     }
 
     #[test]
+    fn pose_composition_matches_matrix_composition() {
+        let a = math::pose_yaw([1.0, 2.0, 3.0], 0.7);
+        let b = math::pose_yaw([-0.5, 0.25, 1.0], -1.3);
+        let ab = math::pose_mul(a, b);
+        let via_pose = math::pose_apply(ab, [0.3, -0.2, 0.9]);
+        let via_mat = math::transform_point(&math::mul(&math::pose_to_mat(a), &math::pose_to_mat(b)), [0.3, -0.2, 0.9]);
+        for i in 0..3 {
+            assert!((via_pose[i] - via_mat[i]).abs() < 1e-4, "{via_pose:?} vs {via_mat:?}");
+        }
+        let round = math::pose_apply(math::pose_inverse(ab), via_pose);
+        for (r, e) in round.iter().zip([0.3, -0.2, 0.9]) {
+            assert!((r - e).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn world_pose_composes_frame_place_member() {
+        let mut s: Scene<()> = Scene::new();
+        let frame = s.add_frame(Space::Service, FrameKind::Anchor);
+        s.set_frame_pose(frame, math::pose_yaw([10.0, 0.0, 0.0], 0.0), true);
+        let place = s.add_place(frame, math::pose_yaw([0.0, 1.0, 0.0], 0.0), 3);
+        let id = s.add(place, math::pose_yaw([0.0, 0.0, -1.0], 0.0), plane(1.0, 1.0), Flags::WINDOW, ()).unwrap();
+        let w = s.world_pose(id).unwrap();
+        assert!((w.position.x - 10.0).abs() < 1e-6 && (w.position.y - 1.0).abs() < 1e-6 && (w.position.z + 1.0).abs() < 1e-6);
+        // reparenting the place to the world frame moves the member with it: one index write
+        assert!(s.reparent_place(place, s.world));
+        let w = s.world_pose(id).unwrap();
+        assert!(w.position.x.abs() < 1e-6);
+    }
+
+    #[test]
     fn fan_alternates_sides() {
-        // the placement rule as data: slot n → x = ±0.9·ceil(n/2), yaw toward the viewer
-        let slots: Vec<i32> = (0..5).map(|n: i32| (n + 1) / 2 * if n % 2 == 1 { 1 } else { -1 }).collect();
-        assert_eq!(slots, vec![0, 1, -1, 2, -2]);
+        let mut s: Scene<u8> = Scene::new();
+        let ids: Vec<MemberId> = (0..5u8).map(|i| s.add_fanned(plane(1.0, 1.0), Flags::WINDOW, i)).collect();
+        let xs: Vec<i32> = ids.iter().map(|id| (s.world_pose(*id).unwrap().position.x / 0.9).round() as i32).collect();
+        assert_eq!(xs, vec![0, 1, -1, 2, -2]);
+    }
+
+    #[test]
+    fn hit_picks_nearest_mapped_plane() {
+        let mut s: Scene<bool> = Scene::new();
+        let far = s.add(s.default_place, math::pose_yaw([0.0, 0.0, -3.0], 0.0), plane(2.0, 2.0), Flags::WINDOW, true).unwrap();
+        let near = s.add(s.default_place, math::pose_yaw([0.0, 0.0, -1.0], 0.0), plane(0.5, 0.5), Flags::WINDOW, true).unwrap();
+        let unmapped = s.add(s.default_place, math::pose_yaw([0.0, 0.0, -0.5], 0.0), plane(0.5, 0.5), Flags::WINDOW, false).unwrap();
+        let (id, _, t) = s.hit([0.0; 3], [0.0, 0.0, -1.0], |m| *m).unwrap();
+        assert_eq!(id, near);
+        assert!((t - 1.0).abs() < 1e-5);
+        assert_ne!(id, unmapped);
+        assert_ne!(id, far);
+    }
+
+    #[test]
+    fn quads_are_band_ascending_nearest_last_and_budget_is_by_band_priority() {
+        let mut s: Scene<()> = Scene::new();
+        let overlay = s.add_place(s.head, math::pose_identity(), 5);
+        let far_window = s.add(s.default_place, math::pose_yaw([0.0, 0.0, -5.0], 0.0), plane(1.0, 1.0), Flags::WINDOW, ()).unwrap();
+        let near_window = s.add(s.default_place, math::pose_yaw([0.0, 0.0, -1.0], 0.0), plane(1.0, 1.0), Flags::WINDOW, ()).unwrap();
+        let osd = s.add(overlay, math::pose_yaw([0.0, 0.0, -9.0], 0.0), plane(0.2, 0.1), Flags::default(), ()).unwrap();
+        // unlimited: band 3 (far then near), then band 5
+        let sub = s.flatten([0.0; 3], 128, |_| true);
+        let order: Vec<MemberId> = sub.quads.iter().map(|q| q.member).collect();
+        assert_eq!(order, vec![far_window, near_window, osd]);
+        assert!(sub.overflow.is_empty());
+        // budget 2: the overlay plane (band 5) is kept even though it is the farthest; the
+        // far window overflows
+        let sub = s.flatten([0.0; 3], 2, |_| true);
+        let order: Vec<MemberId> = sub.quads.iter().map(|q| q.member).collect();
+        assert_eq!(order, vec![near_window, osd]);
+        assert_eq!(sub.overflow.iter().map(|q| q.member).collect::<Vec<_>>(), vec![far_window]);
+        // budget 0: everything overflows
+        let sub = s.flatten([0.0; 3], 0, |_| true);
+        assert!(sub.quads.is_empty());
+        assert_eq!(sub.overflow.len(), 3);
+    }
+
+    #[test]
+    fn focus_follows_add_and_survives_remove() {
+        let mut s: Scene<()> = Scene::new();
+        let a = s.add_fanned(plane(1.0, 1.0), Flags::WINDOW, ());
+        let b = s.add_fanned(plane(1.0, 1.0), Flags::WINDOW, ());
+        assert_eq!(s.focused, Some(b));
+        s.focus_next();
+        assert_eq!(s.focused, Some(a));
+        s.remove(a);
+        assert_eq!(s.focused, Some(b));
+        s.remove(b);
+        assert_eq!(s.focused, None);
+        assert!(!s.focus(Some(a)));
+        assert!(s.focus(None));
+    }
+
+    /// The arena invariants (spec §5a), checked after every operation of a seeded random sweep:
+    /// every live member names a live place, every live place a live frame, no stale handle
+    /// resolves, focus names a live member or nothing, and the flatten sees exactly the mapped
+    /// members of bands 2–5.
+    fn verify_invariants(s: &mut Scene<bool>, stale: &[MemberId]) {
+        for (_, m) in s.members.iter() {
+            let pl = s.places.get(m.place.0).expect("live member → live place");
+            s.frames.get(pl.frame.0).expect("live place → live frame");
+        }
+        for (_, pl) in s.places.iter() {
+            assert!(s.frames.contains(pl.frame.0));
+        }
+        for id in stale {
+            assert!(s.get(*id).is_none(), "stale handle resolved");
+        }
+        if let Some(f) = s.focused {
+            assert!(s.members.contains(f.0), "focus names a dead member");
+        }
+        let expected = s.iter().filter(|(_, m)| m.m && matches!(m.shape, Shape::Plane { .. }) && s.places.get(m.place.0).map(|p| (2..=5).contains(&p.band)).unwrap_or(false)).count();
+        let sub = s.flatten([0.0; 3], 4, |m| *m);
+        assert_eq!(sub.quads.len() + sub.overflow.len(), expected);
+        assert!(sub.quads.len() <= 4);
+        for w in sub.quads.windows(2) {
+            assert!(w[0].band <= w[1].band, "quads not band-ascending");
+            if w[0].band == w[1].band {
+                assert!(w[0].dist2 >= w[1].dist2, "quads not nearest-last within a band");
+            }
+        }
+    }
+
+    #[test]
+    fn property_sweep_of_the_verbs_holds_the_invariants() {
+        // a seeded LCG: dependency-free, reproducible
+        let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut rnd = move |n: u64| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (seed >> 33) % n.max(1)
+        };
+        let mut s: Scene<bool> = Scene::new();
+        let mut live: Vec<MemberId> = Vec::new();
+        let mut stale: Vec<MemberId> = Vec::new();
+        let mut places = vec![s.default_place];
+        let mut frames = vec![s.world, s.head];
+        for step in 0..4000 {
+            match rnd(10) {
+                0 | 1 | 2 => {
+                    let place = places[rnd(places.len() as u64) as usize];
+                    let mapped = rnd(4) != 0;
+                    let pose = math::pose_yaw([rnd(7) as f32 - 3.0, rnd(3) as f32 - 1.0, -(rnd(5) as f32) - 0.5], rnd(6) as f32 * 0.5);
+                    if let Some(id) = s.add(place, pose, plane(0.5 + rnd(3) as f32 * 0.25, 0.5), Flags::WINDOW, mapped) {
+                        live.push(id);
+                    }
+                }
+                3 => {
+                    if !live.is_empty() {
+                        let id = live.swap_remove(rnd(live.len() as u64) as usize);
+                        assert!(s.remove(id).is_some());
+                        stale.push(id);
+                    }
+                }
+                4 => {
+                    if !live.is_empty() {
+                        let id = live[rnd(live.len() as u64) as usize];
+                        let place = places[rnd(places.len() as u64) as usize];
+                        assert!(s.reparent(id, place));
+                    }
+                }
+                5 => {
+                    if !live.is_empty() {
+                        let id = live[rnd(live.len() as u64) as usize];
+                        assert!(s.set_local(id, math::pose_yaw([0.0, 0.0, -(rnd(9) as f32) - 0.5], 0.0)));
+                    }
+                }
+                6 => {
+                    let f = frames[rnd(frames.len() as u64) as usize];
+                    places.push(s.add_place(f, math::pose_identity(), 2 + rnd(4) as u8));
+                }
+                7 => {
+                    let f = s.add_frame(Space::Service, FrameKind::Anchor);
+                    s.set_frame_pose(f, math::pose_yaw([rnd(5) as f32, 0.0, 0.0], 0.0), true);
+                    frames.push(f);
+                }
+                8 => {
+                    let p = places[rnd(places.len() as u64) as usize];
+                    let f = frames[rnd(frames.len() as u64) as usize];
+                    assert!(s.reparent_place(p, f));
+                }
+                _ => {
+                    if rnd(2) == 0 {
+                        s.focus_next();
+                    } else if let Some(id) = stale.last() {
+                        assert!(!s.focus(Some(*id)), "step {step}: focusing a removed member succeeded");
+                    }
+                }
+            }
+            verify_invariants(&mut s, &stale);
+        }
+        assert!(!stale.is_empty() && !live.is_empty());
     }
 }

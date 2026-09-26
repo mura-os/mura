@@ -460,3 +460,35 @@ costs); the arena is a dependency choice, budget-neutral.
 - **Overlay-class members** (places-model §4.3) are encoded as members of a place parented to
   VIEW rather than as an exemption from "one place per window". If the owner wants the exemption
   to be structural, the single `place` field is the one spot the shape bends.
+
+## 8. Implemented and measured (host, 2026-09-26)
+
+The arenas replaced R0's flat plane list in `pkgs/zxr/src/scene.rs` (spec §5a normative, rev 3.3)
+on the dev workstation: Monado simulated HMD rotating, 60 Hz, RADV, isolated `XDG_RUNTIME_DIR`;
+"before" is master `0a3582a` (the flat list with per-tick tree walk, texture update, buffer hold
+and commit-signature hash for every surface), "after" is the same tree with the arenas. Every
+number is **measured (host)** from `/proc/<pid>/stat` over 10 s and the frame journal; the
+milliseconds do not transfer to the device, the structure (counts) does.
+
+| case | before | after | what changed |
+|---|---|---|---|
+| 16 static `foot`, idle — the case the tick's O(surfaces) work shows in | zxr **32–34 ms/s** CPU; `buffers_released` 152 271 in 1064 frames (≈ 9 `Buffer` clones per client per tick — foot's CSD subsurfaces); 33 panel passes | zxr **19 ms/s** (−42 %); `buffers_released` **333** (one per surface per *pass*); 37 passes; `members_composed` 16/tick, `members_dirty` 37 total; 0 dirty fallbacks | non-dirty members are not walked and hold nothing (§5a) |
+| 3 static `foot` | 15 ms/s | 12 ms/s | same, smaller N |
+| 1 static `foot` | 12 ms/s | 10 ms/s | — |
+| `vkcube` MAILBOX on RADV + foot (gate 2 on the arenas) | 298 ms/s at 13.4 k commits/s; 4 imports, 0 copies, 148 755 syncobj acquires, retention max 2 mean 2.0, 0 missed | 310 ms/s at 13.5 k commits/s; 4 imports, 0 copies, 147 899 syncobj acquires, retention max 2 mean 2.0, 0 missed; one panel pass per tick (662 in 662 ticks) | unchanged — the per-commit protocol cost is the floor (research/65 §1); the dirty flag collapses 225 commits/tick into one pass |
+| gate 3 churn: `resize 900 600`, `kill -9` vkcube mid-commit with dmabufs in flight, gtk3-demo menu open then `kill -9` with the popup mapped | pass | pass — `stale_texture_draws` 0, `fences_outstanding` 0, compositor alive, 0 missed | panel targets of removed members die two ticks later (`retired_panels`), never under an in-flight pass |
+| gtk3-demo menu open/close ×5 | 2 swapchain recreations + 2 full passes per open+close (exact-bounds rule; research/67) | **1 grow** on the first open, **0 destroys** across the five cycles, one pass per open and per close into the top-left sub-rect; the lazy shrink fires once, 1 s after the last close (`panel_swapchains_shrunk` 1) | grow-only with lazy shrink (§5a) |
+| quiet mode (`quiet on`, 2 foot) | — | 301 quiet ticks: `members_composed` 0, no passes, zero layers, 10 ms/s | the short-circuit precedes the flatten |
+| validation layer, best-practices Arm/IMG/AMD, ~700 frames with the menu cycling | 0 errors; the research/65 §0.2 warning set | **0 errors**; the same warning classes and nothing new (sub-rect passes, grow-only images) | — |
+| `cargo test` | 10 | 13 — arena aliasing, pose ∘ matrix equivalence, frame→place→member composition and reparent, fan, nearest-mapped hit, band-priority budget and band-asc/nearest-last order, focus across remove, and a 4 000-step seeded sweep of the verbs against the arena invariants | — |
+
+What the 19 ms/s that remains is: ≈ 35 state-loop wake-ups per tick with 16 clients (the
+runtime's round trips plus the clients' frame-callback traffic), not scene work — the flatten's
+16 pose compositions, frustum tests and one sort are below the journal's resolution. The
+`xrLocateSpacesKHR` path is wired and tested for the raw call but **never taken** at this rung
+(`locate_spaces_ticks` 0): the only frames are LOCAL and the view midpoint.
+
+Housekeeping found on the way: the vulkan-tools `vkcube` used by the frame-path pass's vkcube rows (research/65 §2.3, research/67)
+(`0gic378…-1.4.328.0`) is linked against an older glibc than the system Mesa and can only load
+`llvmpipe`, so those runs exercised the **shm** path (Mesa's software WSI) rather than dmabuf; the
+system's `vulkan-tools-1.4.357.0` sees RADV and is what the gate-2 row above used.

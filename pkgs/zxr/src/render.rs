@@ -495,14 +495,21 @@ impl Renderer {
     /// `view_proj · model`. Used for each projection view (perspective) and for each dirty panel
     /// (orthographic in pixels, spec §7 rev 3).
     pub fn record_pass(&self, cmd: vk::CommandBuffer, target: &ViewTarget, image_index: u32, view_proj: &Mat4, planes: &[PlaneDraw<'_>], clear: [f32; 4]) {
+        self.record_pass_in(cmd, target, image_index, target.extent, view_proj, planes, clear)
+    }
+
+    /// A pass into the top-left `area` of the target only (grow-only panel swapchains, spec §5a:
+    /// the image may be larger than the panel; render area, viewport and scissor are the panel's).
+    pub fn record_pass_in(&self, cmd: vk::CommandBuffer, target: &ViewTarget, image_index: u32, area: vk::Extent2D, view_proj: &Mat4, planes: &[PlaneDraw<'_>], clear: [f32; 4]) {
+        let area = vk::Extent2D { width: area.width.min(target.extent.width).max(1), height: area.height.min(target.extent.height).max(1) };
         unsafe {
             let d = &self.device;
             let fb = target.framebuffers[image_index as usize];
             let clears = [vk::ClearValue { color: vk::ClearColorValue { float32: clear } }, vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
-            d.cmd_begin_render_pass(cmd, &vk::RenderPassBeginInfo::default().render_pass(self.render_pass).framebuffer(fb).render_area(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: target.extent }).clear_values(&clears), vk::SubpassContents::INLINE);
+            d.cmd_begin_render_pass(cmd, &vk::RenderPassBeginInfo::default().render_pass(self.render_pass).framebuffer(fb).render_area(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: area }).clear_values(&clears), vk::SubpassContents::INLINE);
             d.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
-            d.cmd_set_viewport(cmd, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: target.extent.width as f32, height: target.extent.height as f32, min_depth: 0.0, max_depth: 1.0 }]);
-            d.cmd_set_scissor(cmd, 0, &[vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: target.extent }]);
+            d.cmd_set_viewport(cmd, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: area.width as f32, height: area.height as f32, min_depth: 0.0, max_depth: 1.0 }]);
+            d.cmd_set_scissor(cmd, 0, &[vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: area }]);
             for p in planes {
                 let mvp = crate::xr::math::mul(view_proj, &p.model);
                 let pc = PushConstants { mvp, half_size: p.half_size, uv_flip: [0.0, if p.flip_v { 1.0 } else { 0.0 }] };
