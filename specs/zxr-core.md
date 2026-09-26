@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 2 (2026-09-26). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 2.1 (2026-09-26; rev 2 + research/65 additions: §6.6 visibility-gated frame callbacks, §6.7 the round-trip census, §14 the composition fork and the frame-path determinations). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -216,6 +216,18 @@ which an XR projection layer re-rendered every frame does not do.
 6. **Frame callbacks**: sent right after `xrEndFrame`, at most one per refresh per surface
    (niri's throttle), with the *next* frame's predicted display time as the target (motorcar's
    policy, Monado's expectation; research/59 §2). The compositor never waits for a client.
+   **Rev 2.1 (research/65 §4.2, converging on niri `niri.rs:5178-5208`, KWin
+   `item.cpp:739-751`, mutter `meta-wayland.c:182-219`): visibility-gated** — a plane with any
+   corner inside either view's frustum is notified every tick; a plane out of view is notified
+   on a fallback cadence (one per ~60 ticks; niri's is 995 ms) so a client blocked on its
+   callback never stalls but stops rendering at display rate while unseen.
+7. **The runtime's round trips are the loop's wake-ups** (research/65 §1): a tick costs 13
+   Monado RPCs (11 on the state loop — `xrLocateViews` is two, each Vulkan acquire is two plus a
+   queue submit, `xrWaitSwapchainImage` is none), and the loop wakes ~20 times per frame in step
+   with them. Everything the API batches is batched: spaces through `xrLocateSpaces` (one RPC
+   for all frames; Monado `ipc_client_space_overseer.c:161-213`; openxrs 0.22 has no wrapper —
+   the raw call at M1), hands one RPC each. The in-process runtime topology was examined and
+   not taken (research/65 §1.4).
 
 ## 7. The frame (research/59 §2–§3)
 
@@ -354,3 +366,16 @@ The bounded `zxr_window_management` protocol's invariant set (ADR 0012 amendment
 `protocols/zxr-window-management-v1.xml` from research/64 §11; the `limits` event carries the
 compositor-kept set; focus hint, exclusive grant and disconnect behaviour await the owner's
 rulings on window-workspace-management.md §13 Q4–Q5.
+**The composition fork** ([research/65 §2.4](../docs/research/65-embedded-frame-path-efficiency.md)):
+whether 2D windows reach the display through this spec's projection pass (§7; motorcar,
+kwin-vr, Simula, StardustXR) or as runtime quad/cylinder layers (wayvr; the OpenXR spec's
+recommendation for UI, `rendering.adoc:1223-1230`), or a hybrid — host A/B: quads halve zxr's
+CPU and wake-ups and remove its GPU pass for static UI under head motion at the price of a blit
+per commit, painter's order only between windows, and a foreground cutout that cannot cover
+windows — decider: the owner; §7 and research/59 §2 amend after the ruling. Until then §7 stands
+and the `--panels` flag is measurement scaffolding. Also from research/65, recorded as
+determinations for the next revision that touches them: depth as a transient, lazily-allocated
+attachment (§7); the compositor's scheduling request through the unit (minimum RT priority,
+`RESET_ON_FORK`; §9); no depth-layer submission while the runtime does not read it (§7);
+multiview for the projection pass once it carries 3D content (M2); display refresh rate as a
+user setting (settings-schema).

@@ -615,6 +615,14 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   these evidence docs do not add rungs or reorder this path.
 - **Docked mode, sharing bridges, avatar, mapping**: each behind its own recorded gate
   (ADR 0015; spatial-sharing; S-1/R-1; M0), joined to this path only after G3.
+- **First-hardware verification of the frame path** ([research/65](../research/65-embedded-frame-path-efficiency.md)
+  §5 — everything labelled *hardware-deferred*): the Monado IPC round-trip time on the device
+  and whether `monado-service` contends for the compositor's cores; tile-GPU time per pass for
+  the projection and quad panel paths and Monado's squasher at panel resolution; the panel
+  blit's cost per commit; RSS with the device's single ICD; wake-ups and CPU under the device's
+  power management; big-core affinity for the state loop and wait thread. Runs on the first
+  device that boots the compositor; until then the host numbers in
+  [budgets.md §5](budgets.md) stand with their labels.
 
 ### 5.2 Satellite registers (gate detail lives there; order authority lives here)
 

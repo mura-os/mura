@@ -88,8 +88,18 @@ per the standing rule when hardware lands. The table is deliberately coarse — 
   ([31 §5](../research/31-kwin-vr.md)).
 - Depth/hand/ET model costs: per-model characterizations in docs 14/15/28; XR2-class splat
   rendering feasibility in doc 27.
+- zxr R0 on the dev host (RADV, simulated HMD, 896×1007 per view; research/61, research/65 —
+  **host-measured, not device numbers; the structure transfers, the times do not**): 13 runtime
+  RPCs per frame (11 on the state loop), ~20 loop wake-ups per frame; loop time inside runtime
+  calls 0.2–0.3 ms/frame; our GPU pass 44–109 µs; 2 passes and 7.2 MB of attachment stores per
+  frame (analytic); RSS anon 7.5 MB + binary 2.7 MB + one ICD 4.8 MB. With panels as runtime
+  quad layers: 5 RPCs, ~10 wake-ups, 0 GPU for static UI under head motion, Monado's cost flat
+  (research/65 §2.3). **Analytic device band:** 11 RPCs × 20–60 µs aarch64 socket RTT =
+  0.2–0.7 ms of a 90 Hz frame; at 2 × 1832×1920 the projection path stores 28 MB and Monado
+  reads 28 MB per frame, 5 GB/s at 90 Hz; a panel blit costs 2 × its bytes per commit.
 - What we lack (open): per-device power rails, sustained-clock tables, camera-pipeline
-  bandwidth, real zxr numbers (gated on the compositor base spike, out of scope here).
+  bandwidth; the zxr numbers above on a tiler GPU and an aarch64 socket (the first-hardware
+  verification list, [implementation-path.md §5.1](implementation-path.md)).
 
 ## 6. Cross-references
 
