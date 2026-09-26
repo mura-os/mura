@@ -11,7 +11,7 @@ libc = "0.2"
 # The Wayland frontend and helpers; renderer-free (research/39 §1.1). Pinned to the rev niri pins
 # (references/smithay) with an explicit feature list: no GL/pixman renderers, no winit, no
 # in-process Xwayland (satellite — ADR 0006 amendment 2026-09-26).
-smithay = { git = "https://github.com/Smithay/smithay.git", rev = "79bbed5e1199090d787115614847a79c76607181", default-features = false, features = ["wayland_frontend", "backend_drm", "backend_vulkan", "desktop", "backend_libinput", "backend_session_libseat", "backend_libei"] }
+smithay = { git = "https://github.com/Smithay/smithay.git", rev = "79bbed5e1199090d787115614847a79c76607181", default-features = false, features = ["wayland_frontend", "backend_drm", "backend_vulkan", "desktop", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_libei"] }
 # smithay's calloop, plus the signals source (SIGUSR1 journal dump, SIGINT/SIGTERM).
 calloop = { version = "0.14", features = ["signals"] }
 # The runtime boundary (research/39 §1.9): XR_KHR_vulkan_enable2 end to end; the loader is
