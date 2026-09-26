@@ -686,6 +686,12 @@ impl Zxr {
     /// the ray and the surface-local point.
     pub fn hit_surface(&self, origin: [f32; 3], dir: [f32; 3]) -> Option<(MemberId, WlSurface, smithay::utils::Point<f64, smithay::utils::Logical>)> {
         let (id, local, _) = self.scene.hit(origin, dir, |p| p.mapped())?;
+        self.hit_surface_at(id, local)
+    }
+
+    /// The surface under a plane-local point of a member (the second half of the hit test:
+    /// smithay's surface tree). Used by the input transports over the Hit stage's `input::Hit`.
+    pub fn hit_surface_at(&self, id: MemberId, local: [f32; 2]) -> Option<(MemberId, WlSurface, smithay::utils::Point<f64, smithay::utils::Logical>)> {
         let m = self.scene.get(id)?;
         let Shape::Plane { size } = m.shape else { return None };
         let g = m.m.window.geometry();

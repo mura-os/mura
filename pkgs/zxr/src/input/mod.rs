@@ -419,9 +419,35 @@ pub enum Mode {
     Locked,
 }
 
+/// The tier arbiter's output (spatial-input §3): which kind targets now and with which class.
+/// Written by the Tier stage, read by everything after it.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Selection {
+    pub targeting: SourceKind,
+    pub class: Class,
+    /// when this selection began (a tier change is an event)
+    pub since_ns: u64,
+}
+
+/// One hit of a targeting ray this tick (spec §5a hit test): written by the Hit stage for the
+/// sample's kind, read by the transport stages. Plane-local metres, y up; `distance` along the
+/// ray. The surface under the point is resolved by the transport through `Zxr::hit_surface_at`.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Hit {
+    pub kind: SourceKind,
+    pub member: crate::scene::MemberId,
+    pub local: [f32; 2],
+    pub distance: f32,
+    pub time_ns: u64,
+}
+
 /// The `input` module's state on `Zxr`.
 pub struct Input {
     pub chain: Chain,
+    /// the tier arbiter's current selection (`None` until the Tier stage has run once)
+    pub tier: Option<Selection>,
+    /// this tick's hits, one per targeting sample that hit a plane; cleared at every tick
+    pub hits: Vec<Hit>,
     /// greeter / lock / normal — set by `--greeter`, the lock machine, the control socket
     pub mode: Mode,
     /// XR sources suspended (doff, docked): the mode stage sets it from `present`; peripherals
@@ -442,7 +468,7 @@ pub struct Input {
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, injector: Injector::default() }
+        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, injector: Injector::default() }
     }
 }
 
@@ -466,6 +492,7 @@ impl Input {
 /// through the chain, then runs every stage's `tick` hook.
 pub fn tick(st: &mut Zxr, head: xr::Posef, time: xr::Time, now_ns: u64) {
     st.input.head = Some(head);
+    st.input.hits.clear();
     // the floor: the head ray is always a sample (research/42), per tick
     let mut head_sample = Sample::new(SourceKind::Head, now_ns).with_pose(head);
     head_sample.xr_time = Some(time);
