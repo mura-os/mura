@@ -242,12 +242,31 @@ shape; a transparent placeholder layer is forbidden.
 **Implemented on the branch (the 2D compositors' unredirect behaviour):** in quiet mode zxr
 walks no surface trees, updates no textures, holds no client buffers (smithay releases at
 replacement), runs no panel or projection pass, and frame callbacks fall to the ~1 s fallback
-cadence. **Measured (host):** vkcube in MAILBOX (≈ 1.9 k commits/s) beside xrgears — zxr
-**117–137 ms/s → 55 ms/s** when quiet; panel passes 0; wake-ups unchanged at ≈ 3.1 k/s because
-each commit is still a protocol dispatch (the per-commit acquire cost of research/61, ≈ 21 µs).
-What remains is the protocol's: a client that ignores frame callbacks keeps committing at its
-own rate, and no compositor can stop it short of not reading its socket. **Position:** the
-implemented rule is the whole of what zxr can do; the residual is the client's.
+cadence. **Measured (host), three client shapes beside xrgears, 15 s per state, quiet off → on
+→ off:**
+
+| client | not quiet | quiet | note |
+|---|---|---|---|
+| vkcube MAILBOX on **llvmpipe → wl_shm** (≈ 1.9 k commits/s; the original row) | 117–137 ms/s | 55 ms/s | the CPU-rendering client was its own throttle; quiet skipped the shm upload per commit |
+| vkcube **FIFO on RADV → dmabuf** (respects frame callbacks) | 20 ms/s at 60 commits/s, 1.4 k wake/s | **6 ms/s** at 1 commit/s, 0.9 k wake/s | the rule as designed: the fallback callback cadence throttles the client to ≈ 1 Hz |
+| vkcube **MAILBOX on RADV → dmabuf** (ignores frame callbacks) | 290 ms/s at 13.5 k commits/s, 28 k wake/s | **488 ms/s** at 25.4 k commits/s, 39 k wake/s | **sign flips**: releasing every buffer at replacement hands the client a free swapchain image on every commit, so its rate doubles; each commit is still a dispatch + dmabuf import (≈ 19 µs, research/61's figure) |
+
+The first row was mislabelled until research/62 §8 caught it: the `vulkan-tools-1.4.328.0`
+vkcube from the dev shell is linked against glibc 2.40 and cannot load the mesa 26.1.8 ICDs
+(`GLIBC_ABI_GNU2_TLS` not found for `libvulkan_radeon.so`; verified from the loader's errors and
+the bench log's "Selected GPU 0: llvmpipe"); the two dmabuf rows use the system's 1.4.357.0.
+
+What the rule does for a frame-callback-respecting client is what the 2D compositors' unredirect
+does: the client idles at the callback cadence and zxr's cost collapses (20 → 6 ms/s). For a
+client that ignores frame callbacks the residual is the protocol's — a dispatch per commit that
+no compositor can avoid short of not reading the socket — **and the implemented release-at-
+replacement makes it worse**, because the only back-pressure such a client feels is a withheld
+`wl_buffer.release`. **Position (revised):** the rule stands for the planes it was written for;
+the buffer-hold policy while quiet is a rule 7 question, not a patch — what mutter, KWin,
+weston, gamescope and smithay's own defaults do with the buffers of a surface they are not
+presenting (hold the latest, release on replacement, or release immediately), and *why*, has to
+be read before zxr's shape is chosen. It is recorded as an open item in §9; the FIFO row is the
+one that describes a real game or toolkit, the MAILBOX row is the adversarial bound.
 
 ## 7. Issue 6 — the summoned shell's footprint
 
@@ -288,7 +307,9 @@ the affordance — a handful, never the desktop; layer 5 surfaces that are not v
 ## 8. Findings by label
 
 **Measured (host):** §2.1 table; quiet loop 8 ms/s zxr + 5 ms/s Monado; summon-by-recreation
-45–60 ms; zero layers keeps the fast path; quiet mode halves zxr's CPU under a committing client.
+45–60 ms; zero layers keeps the fast path; quiet mode under a committing client: 20 → 6 ms/s for
+a frame-callback-respecting dmabuf client, 290 → 488 ms/s for a MAILBOX dmabuf client that ignores
+them (§6; the earlier 117–137 → 55 row was an llvmpipe/shm client).
 **Analytic:** the tiler scratch round trip (28 + 28 MB per frame at XR2-class); Quest's
 published per-layer figures as the device-side proxy.
 **Hardware-deferred:** the squasher's cost on a tiler; session recreation time on device; the
@@ -299,7 +320,10 @@ cutout stand-in's cost at panel resolution.
 Determinations: zero layers while quiet, placeholder forbidden (§5); no fast-path-with-overlays
 patch or ask (§2.2); the quiet loop kept, recreation recorded as the alternative (§4); the
 quiet-mode client rule as implemented (§6); the summoned footprint rule (§7); the cutout
-lifetime rule (§3); `libmonado` polled at 1 Hz + on events (§7.3). **Owner item, recorded and
+lifetime rule (§3); `libmonado` polled at 1 Hz + on events (§7.3). **Open (rule 7 loop owed,
+no patch):** the buffer-hold policy while quiet — release-at-replacement doubles a
+frame-callback-ignoring dmabuf client's commit rate (§6); the comparables' policies for a
+non-presented surface's buffers, with their reasons, decide zxr's. **Owner item, recorded and
 held** (rule 8; options and costs tabled in §3): the cutout default over games — the owner
 ruled on 2026-09-26 that it is decided on the first device with the real matte pipeline over a
 real game, not on the host stand-ins; the deferral lives in implementation-path §5.1.

@@ -366,9 +366,14 @@ client buffers, no panel or projection pass; planes receive only the fallback fr
 Zero layers is a discarded frame on Monado (`oxr_session_frame_end.c:1840-1852`, !2769), the
 game keeps its single-layer fast path, and a transparent placeholder layer is forbidden (it
 would put the game in the squasher every frame). Measured (host): ≈ 8 ms/s zxr CPU, 5 RPCs and
-≈ 10 wake-ups per tick, 0 GPU; a MAILBOX client committing at 1.9 k/s costs 55 ms/s instead of
-117–137 because only protocol dispatch remains. The flag is `Zxr::quiet`, set by the primary-
-client observer (M1) and by the control socket's `quiet on|off` for measurement.
+≈ 10 wake-ups per tick, 0 GPU; a frame-callback-respecting dmabuf client drops zxr from 20 to
+6 ms/s (it idles at the ≈ 1 Hz fallback cadence). A client that ignores frame callbacks is bounded
+only by protocol dispatch, and **the buffer-hold policy while quiet is open** (research/67 §6, §9):
+release-at-replacement doubled such a client's commit rate on the host (290 → 488 ms/s), so the
+policy — hold the latest buffer, release on replacement, or release at once — is chosen from
+the 2D compositors' handling of non-presented surfaces with their reasons, not from this
+measurement alone. The flag is `Zxr::quiet`, set by the primary-client observer (M1) and by the
+control socket's `quiet on|off` for measurement.
 
 **Rev 3.2 — the overlay session.** zxr's session is created with `XrSessionCreateInfoOverlayEXTX`
 chained under the graphics binding (`--overlay PLACEMENT`; openxrs has no builder, the struct is

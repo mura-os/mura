@@ -221,6 +221,14 @@ slot fence, no CPU wait; `--debug-panels projection` is the forced-projection co
 | auto, vkcube (mailbox) | 109 | 15 (the panel pass) | 8.05 (+ panel acquire/release per committed frame) | 213 | 25 | 8 | 839 / 0 | 837 = displayed commits |
 | forced projection, vkcube | 112 | 28 | 11.05 | 243 | 23 | 8 | 0 / 838 | — |
 
+**Label correction (2026-09-26, found by research/62 §8):** every `vkcube` row in both tables
+ran the dev shell's `vulkan-tools-1.4.328.0`, which is linked against glibc 2.40 and cannot load
+the mesa 26.1.8 ICDs (`GLIBC_ABI_GNU2_TLS` not found for `libvulkan_radeon.so`); it fell to
+`llvmpipe`, whose Wayland WSI presents through **`wl_shm`**. The rows therefore exercise the shm
+upload path, not dmabuf import, and their commit rate is that of a CPU-rendering client. The
+projection-vs-quad A/B within each table is unaffected (same client both sides); the dmabuf
+figures for a RADV `vkcube` are in research/62 §8 (gate 2 on the arenas) and research/67 §6.
+
 gtk3-demo menus (`--run menus`, F10): the popup grows the panel bounds → swapchain recreated and
 one pass (+2), closing shrinks it (+1); `popups=1`, `stale_texture_draws=0`. Validation layer
 on the panel path: 0 errors; the `RenderPass-redundant-store` warnings of §0.2 are gone
