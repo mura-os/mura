@@ -284,6 +284,11 @@ repos=(
   'flatland|https://github.com/StardustXR/flatland.git|'
   'hyprland|https://github.com/hyprwm/Hyprland.git|'
   'paperwm|https://github.com/paperwm/PaperWM.git|'
+  # --- native OpenXR applications beside zxr (docs/research/66) ---
+  # xrizer = the Rust OpenVR-on-OpenXR layer Envision launches SteamVR titles through;
+  # opencomposite = the older C++ implementation xrizer's README defers to as the mature one.
+  'xrizer|https://github.com/Supreeeme/xrizer.git|'
+  'opencomposite|https://gitlab.com/znixian/OpenOVR.git|'
 )
 
 mkdir -p .logs

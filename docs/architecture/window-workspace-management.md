@@ -323,12 +323,14 @@ in-process default). The `ownership` of each is declarative by default (settings
   (§4).
 - **Q5-disconnect — ruled (2026-09-26): Hyprland's shape.** The compositor continues with its
   built-ins; placements untouched; a reconnecting manager takes over (§11).
-- **Q4-exit — how the wearer leaves an exclusive scene and brings the shell back.** Not a
-  gesture by assumption; a reserved system input per device tier (OpenXR's `/input/system/click`
-  is reserved from applications for this; every platform binds one physical control to
-  shell/recenter/passthrough by press length). Needs its own short research pass; research/64
-  §16 holds the platform facts gathered so far. Decider: the owner, jointly with the input
-  workstream.
+- **Q4-exit — how the wearer leaves an exclusive scene and brings the shell back.** Researched
+  ([research/66](../research/66-native-openxr-apps-and-the-system-input.md)) and specified as
+  the **reserved system input** of [native-openxr-apps.md §6](native-openxr-apps.md): one
+  physical control per tier the application never receives; short press summons the shell (the
+  Alt+Tab/Super analogue), quit is a shell menu item plus a force chord (nobody quits with a
+  press). The same rule covers both exclusivity mechanisms (native-openxr-apps.md §8). Its
+  remaining forks — the press-length map, hands-only tiers, HMD-body vs controller — are
+  native-openxr-apps.md §10 Q-B/Q-C/Q-E, the owner's with the input workstream.
 - **Q5-focus — ruled (2026-09-26): a manager requests focus only on the back of a user
   interaction.** "A window manager should not be able to break the user's experience of focus."
   The manager receives every commit's serial (`interaction`) and may `focus(window, serial)`;

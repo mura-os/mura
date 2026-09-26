@@ -25,7 +25,10 @@ time recorded. R0 measures against this fence and rev 2 tightens it.
 
 ## 1. What zxr is
 
-One OpenXR client of Monado, one Wayland compositor. It serves `xdg-shell` to 2D clients and,
+One OpenXR client of Monado — the session that is always present, an overlay session so that
+native OpenXR applications may be Monado's *main* session beside it
+([native-openxr-apps.md](../docs/architecture/native-openxr-apps.md), draft) — and one Wayland
+compositor. It serves `xdg-shell` to 2D clients and,
 from M2, `zxr-shell-v2` to 3D clients; it composites every client itself — planes for the 2D
 tier, colour+depth for the 3D tier — into one scene with one depth buffer, and submits **one
 stereo projection layer** per frame. It never receives client geometry and never re-renders
@@ -358,6 +361,16 @@ acknowledges `start_session`. `zxr` (session): binds the socket, publishes `WAYL
 (and `DISPLAY` once satellite is up), `sd_notify(READY=1)`; `Restart=on-failure` +
 `RestartMode=direct` in the same logind session (D4); clients die with the compositor (every
 comparable; research/59 §11) and the wrapper returns to the greeter.
+
+**Quiet mode (DRAFT, 2026-09-26 — [native-openxr-apps.md §4–§6](../docs/architecture/native-openxr-apps.md)):**
+while a native OpenXR application is Monado's primary, zxr submits no layers and runs no GPU
+pass (the fullscreen-game unredirect analogue), resuming only for overlay-class surfaces
+(layer-shell `overlay`, the lock/greeter scene, the foreground cutout) and for what the wearer
+summons with the **reserved system input** — the one control per tier no application receives
+(`hmdButtons.systemRole` through libinput; the controller's `system/click`). Summoning draws
+layers 4–6 over the game and demotes it to VISIBLE (`io_blocks` on the primary until Monado has
+a focus switch); dismissing restores it. Launch/primary/quit and the press-length map are the
+design's; five items are open there.
 
 **Signals and teardown (rev 2, research/61 §6.2–6.3).** The signals the loop handles
 (`SIGTERM`, `SIGINT`, `SIGUSR1`) are blocked with `pthread_sigmask` **before any thread exists**

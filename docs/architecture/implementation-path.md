@@ -577,10 +577,22 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   (`protocols/zxr-window-management-v1.xml`, draft rev 0). Order: M1 implements the in-process
   floor — placement, the `free` engine with angular-slot spawn/tidy, lifecycle, rigid attachment
   and opt-in lazy-follow — over spec §5a's mutation API; the seam is served once M1 has windows
-  worth managing (ADR 0012 amendment) and the two remaining items (focus on the seam; the
-  exclusive-scene exit input) are ruled; the shipped default external managers (`arc`, then
-  `dock`/`band` as the shell clients need them; emphasis) follow the seam; adaptive engines
-  only as external managers.
+  worth managing (ADR 0012 amendment) and the exclusive-scene exit input is ruled (focus on
+  the seam is ruled — interaction-backed requests); the shipped default external managers
+  (`arc`, then `dock`/`band` as the shell clients need them; emphasis) follow the seam;
+  adaptive engines only as external managers. The `wm.*` keys of
+  [window-workspace-management.md §12](window-workspace-management.md) enter `lib/settings`
+  (the D7 compiler, `ownership = declarative`) with M1's `policy` module, seeded from the
+  contract's placement defaults ([device-contract.md](device-contract.md), the panel/placement
+  subsection) — no settings code before the module that reads them.
+- **Native OpenXR applications** — [native-openxr-apps.md](native-openxr-apps.md) (draft)
+  specifies zxr as an overlay session, quiet mode, launch/primary/quit over `libmonado`, and the
+  reserved system input. Order: the overlay-session change and the zero-layer bring-up test
+  (WayVR's "Monado freaks out" caveat) go into R0's gate 3 slot or the first M1 rung, since they
+  change zxr's session creation; quiet mode and the reserved input's libinput path land with
+  M1's `policy`/`input`; the launcher's native-app activation and the per-app scope with the
+  launcher client; the controller system-click reservation and `set_focused_client` are Monado
+  upstream items on ADR 0013's list, with `io_blocks` as the interim.
 - **The input model** — [spatial-input.md](spatial-input.md) (draft rev 0) specifies the tier
   rule, the two transports, focus/activation, cursors, peripherals and text entry. Order: R0 keeps
   the head-ray stand-in; M1 implements the seat with pointer + keyboard + touch, the tier rule for

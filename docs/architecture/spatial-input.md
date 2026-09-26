@@ -74,7 +74,21 @@ flowchart LR
 | peripherals | libinput on the seat (BlueZ HID → evdev; no Bluetooth-specific path — `libinput/src/udev-seat.c:82-99`) | pointer deltas, buttons, wheel/finger scroll, keys, touchpad gestures | when present; hot-plug through udev |
 
 All XR sources arrive through the one OpenXR session zxr holds; the runtime gives zxr input only
-while the session is `FOCUSED` (`input.adoc:839-843`), which zxr always is (it is the session).
+while the session is `FOCUSED` (`input.adoc:839-843`), which zxr always is — as the only session,
+and as an overlay session beside a native OpenXR application (Monado keeps overlay sessions
+focused, `ipc_server_process.c:562-567`; [native-openxr-apps.md §2, §5](native-openxr-apps.md)).
+
+**The reserved system input (added 2026-09-26; research/66 §12 verdict 4).** One control per
+device tier — the contract's `hmdButtons.systemRole` and the controller's `/input/system/click`
+— is consumed by zxr before any client and **never delivered to any client**, native or Wayland:
+it is the compositor's non-maskable chord (mutter's `restore-shortcuts`, niri's hardcoded binds —
+"the user has no way to unlock the compositor… 'jailing' the user"), OpenXR's `system` semantics
+("may not be available to applications"), and every platform's rule. Short press summons the
+shell, long press recenters (research/36 §8); the exact map, the hands-only tiers and the case of
+both an HMD-body and a controller control are open to the owner
+([native-openxr-apps.md §10](native-openxr-apps.md) Q-B, Q-C, Q-E). On Monado today a
+controller system click also reaches the focused app — the runtime-side reservation is an
+upstream item (research/66 §14); HMD-body buttons reach zxr alone through libinput (contract A2).
 
 ## 3. The tier rule (ruled)
 

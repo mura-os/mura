@@ -187,5 +187,7 @@
   "godot-xr-tools": {"url": "https://github.com/GodotVR/godot-xr-tools.git", "commit": "2d8db860d1adbee97c0968c4b07afe9348263926", "ref": "master", "cloned": "2026-09-26T11:35:48Z"},
   "flatland": {"url": "https://github.com/StardustXR/flatland.git", "commit": "2a652b688b45e3e2e8eb5cc51014e9a7c874ec2b", "ref": "main", "cloned": "2026-09-26T11:41:32Z"},
   "hyprland": {"url": "https://github.com/hyprwm/Hyprland.git", "commit": "c6f11721168908e3608b2517e84df62c9c35064f", "ref": "main", "cloned": "2026-09-26T11:41:32Z"},
-  "paperwm": {"url": "https://github.com/paperwm/PaperWM.git", "commit": "8bf6dd264f60d6c0c402b63df7b424b888959a48", "ref": "release", "cloned": "2026-09-26T11:41:32Z"}
+  "paperwm": {"url": "https://github.com/paperwm/PaperWM.git", "commit": "8bf6dd264f60d6c0c402b63df7b424b888959a48", "ref": "release", "cloned": "2026-09-26T11:41:32Z"},
+  "xrizer": {"url": "https://github.com/Supreeeme/xrizer.git", "commit": "0989a7fac2d1efb7ea82f5fe1a8ed30c3eeb9596", "ref": "main", "cloned": "2026-09-26T13:28:39Z"},
+  "opencomposite": {"url": "https://gitlab.com/znixian/OpenOVR.git", "commit": "cff07db75c4823afe93ed7027b03d5f7bc86f164", "ref": "openxr", "cloned": "2026-09-26T13:28:39Z"}
 }

@@ -83,6 +83,21 @@ Also required, outside KWin: the consumer-authorization handshake (how the pre-a
 reaches the consumer — a small KDE D-Bus service or portal interface) is **new public KDE API**
 that needs its own design and review; it is called out here so nobody discovers it inside MR 3.
 
+**X11 windows among the delegated ones (added 2026-09-26, from
+[research/59 §9a](../../research/59-xr-compositor-architecture-from-comparables.md)).** A
+delegated `X11Window` stays in KWin's Xwayland at a fake 2D position while zxr presents it in
+space; the X11 pain is therefore the *producer's*, whichever Xwayland zxr itself uses. kwin-vr
+is the single-process proof and its only X11-specific code is exactly this: on detaching a
+window it 2D-moves it to the output origin — "Wayland apps do not need this, since they know
+nothing about the screen geometry. X11 apps need this for better placement of menus and other
+popups" (`kwin-vr/src/plugins/vr/qml/VrWindowManipulation.qml:220-222`) — and it carries two
+Xwayland patches "needed for X11 apps in VR" (`kwin-vr-patches/README.md:15-22`): `XYToWindow`
+returning the Wayland-focused window rather than a root-coordinate hit test (xserver!2118,
+open) and removing the clamp of pointer coordinates to the root bounds (xserver!2119, open).
+For this brief: MR 9's detach epilogue applies the origin move to `X11Window`s; MR 7's input
+half depends on the two xserver MRs for correct X11 pointer delivery into detached windows
+until they land — recorded as an external dependency of the series, not as KWin work.
+
 ## 4. Privilege model
 
 Two in-tree options, strongest first: (a) the **dedicated-connection pattern** —

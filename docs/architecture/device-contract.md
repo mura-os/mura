@@ -214,6 +214,32 @@ The joined camera/readback/actuator paths and their runtime/motor-safety gates a
 [research/52](../research/52-eye-camera-ipd-actuator-native-linux-audit.md). A fitted motor and a
 working gaze backend do not prove native actuation.
 
+### `mura.hardware.panel.*` and the window manager's placement defaults (added 2026-09-26)
+
+The window manager ([window-workspace-management.md §3, §12](window-workspace-management.md))
+reads its spawn distance, elevation, pixel density and size bounds from the contract, never from
+code; the contract does not yet carry them. What the manager needs, and what it needs them
+*from*: a plane's apparent size is angular (spec §5a, verdict 3 of research/64), so a density in
+px/cm at the spawn distance is only meaningful against the panel's pixels per degree — which
+`panel.width/height` alone do not give. **Fields to declare** (not yet in `lib/contract`; the
+author picks values from the evidence beside each, and every present value is a stand-in):
+
+- `panel.fovDegrees` (per eye, horizontal × vertical) — derives pixels per degree; without it
+  `wm.density` cannot be checked against legibility.
+- `placement.distanceMeters` — comparables: WiVRn 0.5, Horizon 1.0 (45 cm for direct-hand
+  apps, 70 cm mixed), Breezy 1.05, kwin-vr 1.0, Android XR 1.75, visionOS ≈ 2.0 (research/64 §2);
+  R0 stand-in 1.5.
+- `placement.elevationDegrees` (below the eye line) — Android XR 5°, Microsoft's resting gaze
+  10–20°, Apple "slightly below" (no number); R0 stand-in 0.
+- `placement.densityPxPerCm` — kwin-vr 20 and WayVR 20 (`1/2000` m/px), Flatland 30, motorcar
+  8, HoloLens a fixed 1280×720 slate; R0 stand-in 8.3 — to retire at M1.
+- `placement.sizePx.{min,max,default}` — Horizon 384×500 / 1440×1000 / 1024×640 dp; Android XR
+  385×595 / 2560×1800 / 1024×720 dp; visionOS default 1280×720 pt, no published maximum.
+
+Where the fields live (`mura.hardware.panel` for the fact, a `mura.ux.placement` group for the
+defaults the settings schema seeds — settings-schema.md's `ownership = declarative`) is the
+contract author's call and is flagged as such; the numbers are never chosen here.
+
 ### `mura.hardware.input.*` — the input floor (research/42, ADR 0017 rev 2.1)
 
 What the headset can accept as input **before anything is configured** — the floor every
@@ -234,6 +260,15 @@ buttons, dwell where a button is unusable. Declared facts:
 - `backRole` (nullable) — "back/cancel" at the floor (default `volumeDown`; null = scenes expose
   an on-scene cancel); **asserted** when set. Recenter is a long press of select by convention.
   Per-target conventions and codes: [research/42 §4.3a](../research/42-input-bootstrap.md).
+- `systemRole` (nullable; added 2026-09-26, draft) — which `hmdButtons` role is the **reserved
+  system control** ([native-openxr-apps.md §6](native-openxr-apps.md)): the button that summons
+  the shell over a running native OpenXR application, recenters on a long press, and is never
+  delivered to any application. It may name the same role as `selectRole` (the Steam Frame's Aux
+  `KEY_SELECT`; the Galaxy XR's top button `KEY_POWER`) — at the input floor nothing is running
+  to escape from, and press duration disambiguates in a session; **asserted** to name an
+  existing button when set. Null on targets with no HMD-body candidate (Quest-class: power and
+  volume only), where the controller system click and the hands-only rule of research/66 §13
+  Q-C apply. Not yet in `lib/contract` — lands with the M1 policy that reads it.
 - `controllers` ∈ `none | imu-3dof | optical-6dof` — the controller class available before
   cameras are up (`optical-6dof` counts as `imu-3dof` pre-login).
 - `bluetooth` — adapter present; gates the pre-login pairing agent and the `pairing/` state

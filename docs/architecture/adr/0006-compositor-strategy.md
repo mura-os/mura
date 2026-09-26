@@ -305,3 +305,29 @@ evidence for or against. Results, recorded here so the program spec
   `xrt_limits.h:80-89`) bounds the panel count — the nearest panels get layers, the rest fall
   into the projection layer for that frame.
 - Spec: [specs/zxr-core.md](../../../specs/zxr-core.md) rev 3 §4, §6.2, §7, §12, §14.
+
+## Amendment 3 (2026-09-26) — native OpenXR applications beside zxr (DRAFT pending the owner's rulings)
+
+From [research/66](../../research/66-native-openxr-apps-and-the-system-input.md) and
+[native-openxr-apps.md](../native-openxr-apps.md), under the owner's framing that zxr is a
+desktop environment's compositor and a native OpenXR application is what a fullscreen game is to
+GNOME/KDE:
+
+- **zxr's OpenXR session is an `XR_EXTX_overlay` session** so that a native application may be
+  Monado's main session beside it — the shape of WayVR, kwin-vr, xrdesktop and Valve's Steam
+  Frame shell (Steam's UI as the SteamVR dashboard overlay). "One OpenXR client of Monado" in
+  this ADR and spec §1 is qualified accordingly: one *always-present* client. Open to the owner
+  (Q-A) whether this or a role-switching main session — the latter has no comparable.
+- **Quiet mode**: while a native application is primary zxr submits no layers (the unredirect
+  analogue, with mutter's stated reason: "reduces the overhead for apps like games") and resumes
+  for overlay-class surfaces and what the wearer summons. **The game is VISIBLE, not FOCUSED,
+  while the shell is up** (the spec's and every platform's rule; Monado `io_blocks` until a
+  focus switch exists upstream).
+- **The reserved system input** — one control per tier no application receives — is the
+  compositor's non-maskable chord; it summons the shell; long press recenters; quit is a shell
+  menu item plus a force chord. Owner's remaining forks: the press map, hands-only tiers,
+  HMD-body vs controller.
+- **Launch/close**: spawn as a systemd scope with the runtime environment; set primary over
+  `libmonado`; `request_exit` then kill the scope. zxr's death does not take the game with it.
+- **Upstream (Monado)**: reservation of `/input/system/click` for a system client; a real
+  `set_focused_client`. Recorded on ADR 0013's upstream list shape.
