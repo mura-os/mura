@@ -266,6 +266,111 @@ desktop wants and zxr does not (X11 windows are ordinary planes). **Verdict: det
 recorded as the fallback if satellite's constraints bite** — this closes research/39's "R0
 output" by evidence rather than by the spike.
 
+### 9a. Addendum 2026-09-26 — X11 under the virtual-desktop modes, and what satellite actually is
+
+The owner asked, before treating §9 as settled: the on-device "virtual desktop" of KDE or GNOME
+([foreign-session-integration.md §2](../architecture/foreign-session-integration.md)) and the
+drag-in/drag-out of its windows (§3.7, kwin-vr's signature interaction) — does any of that run
+under X11, and does the satellite choice make it worse? Sources read for this: the pinned
+`xwayland-satellite` (added to `references/`, 0.8.3), KWin's nested Wayland backend, mutter's
+current nesting story, kwin-vr's VR plugin and its two Xwayland patches, gamescope.
+
+**Where X11 lives in each integration mode.**
+
+| mode (foreign-session §2) | who runs the X server | who is the X11 WM | what zxr sees |
+|---|---|---|---|
+| native client | satellite's rootless Xwayland | **satellite** (in-process `X11Wm` would be zxr) | `xdg_toplevel`s / `xdg_popup`s |
+| nested compositor as one plane | the nested DE's own Xwayland (`kwin_wayland --xwayland`, `main_wayland.cpp:339-340`, optional and independent of the nested backend) | the nested DE | one `xdg_toplevel` per nested output — pixels |
+| per-toplevel delegated session | the producer's Xwayland | the producer (KWin's XWM) | an exported node; X11-ness invisible to zxr |
+
+So the virtual desktop never runs "under X11": **nested KWin is a Wayland client.** Its
+`backends/wayland/` backend creates one `xdg_toplevel` per output (`wayland_output.cpp:121-124`,
+`--output-count`, `main_wayland.cpp:372-374`) and requires of the host `wl_compositor`,
+`wl_subcompositor`, `xdg_wm_base`, `wp_single_pixel_buffer_manager_v1`, `wp_viewporter`,
+`wl_seat`, `zwp_pointer_constraints_v1`, `wp_presentation_time` (`wayland_display.cpp:240-271`),
+binding dmabuf v4+, relative-pointer, fractional-scale, decoration, tearing-control and
+colour-management when present (`:378-434`); no layer-shell. Every required global is in zxr's
+R0 set (spec §10) except pointer-constraints, which is M1's. Its X11 apps are KWin's Xwayland's
+clients, managed by KWin's XWM; zxr's Xwayland choice does not touch them.
+
+**Finding 1 — mutter has no nested-Wayland-client mode any more.** The X11 backend was dropped
+(`mutter/NEWS:308` "Drop the X11 backend"); `--nested` is gone from the option table
+(`meta-context-main.c:341-404`; stale in `doc/debugging.md:23`). The documented nested path is
+`mutter --wayland --devkit` (`doc/building-and-running.md:77-86`): a **headless native backend**
+(`meta-context-main.c:240-269`) viewed by `mutter-devkit`, which consumes the session over the
+Remote Desktop + Screen Cast D-Bus/PipeWire interfaces (`mdk/mdk-session.c`, `mdk/mdk-stream.c`).
+Consequence for foreign-session-integration's mode 3: "a GNOME session as one plane" is not
+gamescope's/KWin's shape (nested compositor as an xdg client); it is headless mutter plus a
+PipeWire *viewer* client with input over `org.gnome.Mutter.RemoteDesktop` — capture semantics
+for the picture, remote-desktop semantics for input, exactly the pairing research/32 §2 says is
+not delegation. Mode 3 remains zero-new-protocol for GNOME, but the client zxr hosts is a
+viewer (mutter-devkit's shape), not mutter itself. **Decider:** the owner, in
+foreign-session-integration.md (the taxonomy row for mode 3 should split by producer).
+
+**Finding 2 — the X11 pain of "windows out of the desktop" lives in the producer, whichever
+Xwayland zxr picks.** kwin-vr is the single-process proof of §3.7, and its X11 handling is
+instructive because it is the *only* X11-specific code in the whole VR plugin: on detaching a
+window to VR it 2D-moves the window to its output's origin — "Wayland apps do not need this,
+since they know nothing about the screen geometry. X11 apps need this for better placement of
+menus and other popups" (`kwin-vr/src/plugins/vr/qml/VrWindowManipulation.qml:220-222`,
+`kwinvrhelpers.cpp:119-123`) — and it carries two Xwayland patches "needed for X11 apps in VR"
+(`kwin-vr-patches/README.md:15-22`): `XYToWindow` returning the Wayland-focused window instead
+of a root-coordinate hit test ("X11 Enter/Leave/Motion events are delivered to another window at
+provided coordinates (the other window might be above the focused window)"; xserver!2118, still
+open) and removing the clamp of pointer coordinates to the root bounds (a window at −50,−50
+receiving 10,10 local gets clamped to 0,0 → 50,50 local; xserver!2119, still open). Both exist
+because an X11 window in 3D still lives at some fake 2D root position where other windows overlap
+it. Under mode 4 that is the **producer's** problem verbatim: a delegated X11 toplevel stays in
+KWin's Xwayland at a fake 2D position while zxr forwards input per node (§3.5); KWin translates
+into root coordinates; the two xserver bugs bite unless the MRs land or the producer carries them.
+Nothing zxr does about *its own* Xwayland changes this. **Record:** producer brief for KWin — the
+origin move and the two xserver MRs are part of the X11 story of delegated windows.
+
+**What satellite is, from its source (not its README).** Fatal binds: `xdg_wm_base` 2–6,
+`wl_compositor` 4–6, `wl_subcompositor`, `wl_shm`, `wp_viewporter` (`src/server/mod.rs:511-535`;
+"Could not bind …" panics); warns and degrades without fractional-scale (blurry), activation
+("windows might not receive focus"), data-device ("Clipboard will not work"), primary selection
+(`mod.rs:537-554`, `selection.rs:29-38`). Re-exported to Xwayland when the host has them:
+`wl_seat`, `wl_output`, `xdg_output`, dmabuf, relative-pointer, pointer-constraints, tablet,
+`wp_linux_drm_syncobj` (`mod.rs:379-391`) — so X11 games' pointer lock and relative motion pass
+straight through (`dispatch.rs:528-537`, `959-991`). Mapping: role by heuristics
+(override-redirect, Motif, `_NET_WM_WINDOW_TYPE` menu/tooltip/dnd/combo → popup; `normal` →
+toplevel; `xstate/mod.rs:1156-1222`); popups get an `xdg_positioner` from the X11 offset
+relative to the parent, anchor top-left, gravity bottom-right, slide-X/Y (`mod.rs:1623-1640`),
+parent = last hovered or last focused toplevel (`:1416-1417`); transients → `set_parent`
+(`:1555-1573`). **Every toplevel is placed at 0,0 of its output and the hovered window is raised
+to the top of the X stack** (`ARCHITECTURE.md:47-49`, `event.rs:659`, `xstate/mod.rs:1498-1504`)
+— satellite's answer to the same overlapping-fake-root problem kwin-vr patched the X server for.
+Mapped toplevels' `ConfigureRequest` x/y are ignored (`can_change_position`, `mod.rs:1068-1079`);
+the author names apps that create windows at specific coordinates as "the biggest issue"
+(`ARCHITECTURE.md:55-56`). The X screen is sized from the host `wl_output` **mode**, overriding
+`xdg_output`'s logical size (`event.rs:1393-1404`, reason at `ARCHITECTURE.md:76-77`) — zxr's
+virtual output defines the X root. Not implemented: minimize/maximize (`event.rs:414-415` TODO),
+`StackMode` in configure requests, X11↔Wayland drag-and-drop (all DnD handlers empty,
+`clientside.rs:451-527`), `XWarpPointer`. Implemented: clipboard and primary selection both ways
+(`selection.rs:74-146`, `xstate/selection.rs:903-924`).
+
+**Transfer, restated with the new evidence.** (1) The virtual-desktop design is orthogonal to
+the choice: nested DEs are Wayland clients; delegated windows are exported by the producer; only
+X11 apps launched *directly against zxr* go through zxr's Xwayland path. (2) For those, satellite
+gives: menus and tooltips as anchored popups, transients parented, pointer lock/relative motion,
+clipboard; it withholds: absolute positioning (meaningless in XR), minimize/maximize (zxr's
+policy owns those anyway), X11↔Wayland DnD (cross-plane DnD is spec §14's open item regardless).
+(3) In-process `X11Wm` would let zxr own X11 stacking and geometry — the thing cosmic needs for a
+2D desktop and zxr does not — at the price §9 already states; whether smithay's `X11Wm` does
+X11↔Wayland DnD was not verified here and is the one capability question left if the fallback is
+ever needed. (4) The owner's stated posture — Wayland first, no backwards-compatibility burden —
+is niri's stated posture (`FAQ.md:68-79`), and it is what makes satellite the right *shape*, not
+merely the cheaper one: the X11 window manager is somebody else's program.
+
+**Verdict: the §9 determination stands (satellite; `X11Wm` the fallback), and is now grounded
+against the virtual-desktop case rather than beside it.** Two items leave this section for
+their deciders: mode 3 for GNOME is a viewer client of headless mutter, not a nested mutter
+(foreign-session-integration.md, owner); delegated X11 windows carry the producer's X11 issues
+and the two open xserver MRs (the KWin producer brief). One R0 obligation follows for gate 4:
+zxr must keep advertising `wl_output` modes and `wl_subcompositor`/`wp_viewporter` — satellite
+dies without them.
+
 ## 10. The restricted (greeter/lock) mode in the same binary
 
 **Lineage.** None. **Comparables.** gnome-shell: one binary, `--mode=gdm` selects a `SessionMode`

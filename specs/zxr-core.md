@@ -112,6 +112,72 @@ head frame and a fixed layout; the pager and place transitions are shell clients
 runtime owns recentering (LOCAL's origin); the compositor owns currency and which frame a plane
 attaches to.
 
+### 5a. The scene data model (DRAFT, 2026-09-26 — from research/62; enters rev 2 as normative)
+
+**Status: work in progress.** Derived in [research/62](../docs/research/62-scene-data-model-from-comparables.md)
+from fourteen comparables (§6 verdicts) and the embedded/runtime-proximity analysis of §7; the
+owner has seen the shape and asked for it to be recorded as draft. Stand-ins are marked.
+
+**The hierarchy is fixed-depth, not a general tree.** The places model fixes it: layer → frame →
+place → window (→ transient children). Places do not nest; a window has one place (ADR 0016
+answer 1); 3D clients render their own interiors. The frames are not a tree among themselves
+either: every frame the model names (LOCAL/STAGE, VIEW, hands, map anchors, docked output, peer)
+is a space the runtime locates *directly against the session's base space*. So `scene` is
+**three typed arenas with generational handles**, not a node graph:
+
+```
+frames:  Vec<Frame>  { space: Xr(xr::Space) | Service(anchor)  // Service = M1 anchors before the EXT family (spatial-mapping §11)
+                       kind, pose: Posef /* in LOCAL */, valid: bool }
+places:  Vec<Place>  { frame: FrameId, local: Posef, layer: u8, layout, entry, pin: Option<AnchorUuid + name> }
+members: Vec<Member<M>> { place: PlaceId, local: Posef, shape: Plane{size} | Volume{half_size, clip}, flags, m: M }
+draw:    [Vec<DrawItem>; LAYERS]   // per-tick scratch, reused; DrawItem { world: Mat4, half_size, tex, z_view }
+```
+
+- **Poses, not matrices**, as the stored form: the runtime speaks `XrPosef` (28 B); rigid
+  composition is a quaternion multiply and a rotate; matrices are built once per draw item per
+  view.
+- **Frames are located in one call**: `xrLocateSpaces` (Monado: one IPC exchange for all spaces,
+  `ipc_client_space_overseer.c:161-195`, vs one per `xrLocateSpace`, `:135-157`). Until the
+  `XR_EXT_spatial_entity` family exists in Monado (spatial-mapping §11 M4), M1 anchors arrive from
+  the mapping service as poses in LOCAL — the `Service` arm; one extra query per tick.
+- **Layers are the ordered buckets** (§4), not a sort key on nodes; within a bucket draw items
+  are sorted back-to-front by view-space z (planes alpha-blend — CSD shadows — so painter's order
+  within a layer is required). The environment and foreground buckets hold the perception
+  service's per-eye images/mattes and are never traversed (research/62 §3.5).
+- **Transient children are not stored**: smithay's surface tree and `PopupManager` already hold
+  popups/subsurfaces with offsets; the flatten walks them and applies the z-gap (stand-in:
+  0.5 mm; motorcar used 0.05 m; no comparable derives the value — fixed by the M1 depth budget).
+- **Reparent verbs are index writes**: `pin` = `place.frame = anchor`; `summon` = a presentation
+  pose on the place; `grab-all` = `place.frame = head`; `assign-to-frame` likewise. "One place per
+  window" and "one frame per place" are type-level facts (a single field), not checked
+  invariants. Overlay-class members (places-model §4.3) are members of a place parented to VIEW.
+- **The policy boundary is the mutation API**: `add / remove / reparent / set_local / set_flags /
+  focus` over the arenas — in-process `policy` calls it now; the bounded `zxr_window_management`
+  protocol (ADR 0012 amendment) exposes the same verbs later. Flags carry xrdesktop's vocabulary
+  (`draggable | managed | hoverable | pinned`).
+- **Generic over the member and tested without a runtime**: `Member<M>` where `M` is the smithay
+  `Window` in production and a test struct in tests; a property sweep of the verbs checks the
+  places-model invariants (C1–C7) after each operation (niri's `Op` + `verify_invariants`
+  shape). Rendering is *not* in the member trait.
+- **One mutation phase per tick**: protocol handlers and policy mutate before `xrLocateViews`;
+  nothing mutates between the flatten and `xrEndFrame` (motorcar's `handleFrameBegin` rule).
+- **Hit test**: the member pass with a ray — nearest plane wins, then smithay's 2D hit within
+  the plane; events bubble to the parent when the child declines (zen's contract).
+
+**Ownership of pinning** (spatial-mapping §3–§4, ADR 0009, ADR 0016): the runtime and the
+mapping service own *where an anchor is* (`T_local_map`, keyframe-relative anchors, the
+correction policy, the encrypted anchor store, reloc); zxr owns *what is attached to it* (a place
+whose `frame` is the anchor; the stability contract when the anchor is `PAUSED`/`STOPPED` —
+`frames[i].valid = false` — is `policy`'s); the session state layer owns *which named place is on
+which anchor UUID with which members and layout* (places-model §7 restore). Two stores, joined
+by the anchor UUID. zxr never computes a correction; it draws where the located pose says.
+
+**Budget** (invariant 9): ≈10 KB of scene state at session scale (10 frames, 20 places, 50
+members); per tick one batched locate, ~70 pose compositions, ≤ 50-element sorts, no allocation;
+below measurement noise against the GPU pass (§12). The 2D desktops' second structure (KWin
+`Item`, mutter `MetaWindowActor`) is not adopted because it serves damage-driven partial repaint,
+which an XR projection layer re-rendered every frame does not do.
+
 ## 6. The buffer and sync path (research/59 §4–§5)
 
 1. **Advertise**: the dmabuf feedback table is computed from the runtime-created device's

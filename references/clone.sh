@@ -267,6 +267,9 @@ repos=(
   'phosh|https://gitlab.gnome.org/World/Phosh/phosh.git|'
   'xdg-desktop-portal-gnome|https://gitlab.gnome.org/GNOME/xdg-desktop-portal-gnome.git|'
   'xdg-desktop-portal-kde|https://invent.kde.org/plasma/xdg-desktop-portal-kde.git|'
+  # xwayland-satellite = the out-of-process X11 WM niri and wayvr use (research/59 §9): what it
+  # requires of the compositor, what it maps, and where it stops.
+  'xwayland-satellite|https://github.com/Supreeeme/xwayland-satellite.git|'
 )
 
 mkdir -p .logs
