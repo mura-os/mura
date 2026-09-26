@@ -220,7 +220,7 @@ impl Renderer {
 
     unsafe fn make_target(&self, extent: vk::Extent2D, color_format: vk::Format, images: &[vk::Image]) -> Result<ViewTarget, String> {
         let d = &self.device;
-        let (depth_image, depth_memory) = self.create_image(extent.width, extent.height, vk::Format::D32_SFLOAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT, vk::ImageTiling::OPTIMAL, None)?;
+        let (depth_image, depth_memory) = self.create_image(extent.width, extent.height, vk::Format::D32_SFLOAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT, vk::ImageTiling::OPTIMAL, Some(vk::MemoryPropertyFlags::LAZILY_ALLOCATED))?; // transient: cleared and DONT_CAREd, never leaves tile memory on a tiler (research/65 §3.3)
         let depth_view = d.create_image_view(&vk::ImageViewCreateInfo::default().image(depth_image).view_type(vk::ImageViewType::TYPE_2D).format(vk::Format::D32_SFLOAT).subresource_range(vk::ImageSubresourceRange { aspect_mask: vk::ImageAspectFlags::DEPTH, base_mip_level: 0, level_count: 1, base_array_layer: 0, layer_count: 1 }), None).map_err(|e| e.to_string())?;
         let mut color_views = Vec::new();
         let mut framebuffers = Vec::new();
@@ -249,7 +249,12 @@ impl Renderer {
             .initial_layout(vk::ImageLayout::UNDEFINED);
         let image = d.create_image(&info, None).map_err(|e| e.to_string())?;
         let req = d.get_image_memory_requirements(image);
-        let ty = find_memory_type(&self.mem_props, req.memory_type_bits, mem_flags.unwrap_or(vk::MemoryPropertyFlags::DEVICE_LOCAL)).ok_or("no device-local memory type")?;
+        // lazily-allocated memory (transient attachments on tile-based GPUs) may not exist on a given
+        // device: fall back to device-local rather than fail (research/65 §3.3)
+        let want = mem_flags.unwrap_or(vk::MemoryPropertyFlags::DEVICE_LOCAL);
+        let ty = find_memory_type(&self.mem_props, req.memory_type_bits, want)
+            .or_else(|| if want.contains(vk::MemoryPropertyFlags::LAZILY_ALLOCATED) { find_memory_type(&self.mem_props, req.memory_type_bits, vk::MemoryPropertyFlags::DEVICE_LOCAL) } else { None })
+            .ok_or("no device-local memory type")?;
         let memory = d.allocate_memory(&vk::MemoryAllocateInfo::default().allocation_size(req.size).memory_type_index(ty), None).map_err(|e| e.to_string())?;
         d.bind_image_memory(image, memory, 0).map_err(|e| e.to_string())?;
         Ok((image, memory))

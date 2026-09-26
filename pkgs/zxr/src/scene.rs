@@ -18,6 +18,9 @@ pub struct Plane {
     pub pos: [f32; 3],
     pub yaw: f32,
     pub mapped_at_frame: u64,
+    /// the last tick this plane received `wl_surface.frame` (research/65 §4.2: visibility-gated
+    /// callbacks with a fallback so an out-of-view client never stalls)
+    pub last_frame_callback: u64,
 }
 
 impl Plane {
@@ -54,7 +57,7 @@ impl Scene {
         let x = slot as f32 * 0.9;
         let yaw = -(slot as f32) * 0.35;
         self.spawned += 1;
-        self.planes.push(Plane { window, pos: [x, 0.0, PLANE_DISTANCE], yaw, mapped_at_frame: frame });
+        self.planes.push(Plane { window, pos: [x, 0.0, PLANE_DISTANCE], yaw, mapped_at_frame: frame, last_frame_callback: 0 });
         let idx = self.planes.len() - 1;
         self.focused = Some(idx);
         idx

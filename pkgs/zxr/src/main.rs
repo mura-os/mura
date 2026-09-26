@@ -103,6 +103,15 @@ fn run() -> Result<(), String> {
     }
     let loader = std::env::var("ZXR_OPENXR_LOADER").ok().or_else(|| option_env!("MURA_OPENXR_LOADER").map(String::from)).unwrap_or_else(|| "libopenxr_loader.so.1".into());
 
+    // Scheduling (research/65 §4.3): the compositors converge on the *minimum* real-time
+    // priority with RESET_ON_FORK so spawned clients never inherit it (KWin `realtime.cpp:17-26`,
+    // gamescope `Process.cpp:619-636`); the runtime takes the maximum for itself. The standard
+    // mechanism is the unit (`CPUSchedulingPolicy=rr`, `CPUSchedulingPriority=1`,
+    // `CPUSchedulingResetOnFork=yes`); this is the fallback when zxr runs outside its unit, and
+    // it fails quietly without CAP_SYS_NICE or an RLIMIT_RTPRIO grant. Done before any thread
+    // exists so the wait thread inherits it.
+    request_realtime();
+
     let (mut xr, vk) = XrCore::new(&loader, "zxr")?;
     let extents: Vec<_> = xr.swapchains.iter().map(|s| s.extent).collect();
     let images: Vec<_> = xr.swapchains.iter().map(|s| s.images.clone()).collect();
@@ -375,18 +384,26 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     // 5. frame callbacks: once per refresh, after xrEndFrame (§6.6)
     let now = Duration::from_millis(st.now_ms() as u64);
     let output = st.output.clone();
-    for p in &st.scene.planes {
+    // Visibility-gated (research/65 §4.2; niri `niri.rs:5178-5208`, KWin `item.cpp:739-751`,
+    // mutter `meta-wayland.c:182-219` converge): a plane in either view's frustum gets its callback
+    // every tick; a plane out of view gets one on a fallback cadence (niri: 995 ms) so a client
+    // waiting on a callback never stalls, but stops driving the GPU at display rate.
+    const FALLBACK_TICKS: u64 = 60;
+    let journal = &mut st.journal;
+    for p in &mut st.scene.planes {
         if p.mapped_at_frame != 0 {
-            // visibility census (research/63 Phase 0): is any corner of the plane inside either
-            // view's frustum? Sent regardless at R0; Phase 3 gates on it.
             let visible = views.iter().any(|v| plane_in_view(v, &p.model(), p.half_size()));
+            let due = tick.frame_id.saturating_sub(p.last_frame_callback) >= FALLBACK_TICKS;
             if visible {
-                st.journal.frame_callbacks_visible += 1;
+                journal.frame_callbacks_visible += 1;
             } else {
-                st.journal.frame_callbacks_occluded += 1;
+                journal.frame_callbacks_occluded += 1;
             }
-            p.window.send_frame(&output, now, Some(Duration::ZERO), |_, _| Some(output.clone()));
-            st.journal.frame_callbacks += 1;
+            if visible || due {
+                p.window.send_frame(&output, now, Some(Duration::ZERO), |_, _| Some(output.clone()));
+                p.last_frame_callback = tick.frame_id;
+                journal.frame_callbacks += 1;
+            }
         }
     }
 
@@ -402,6 +419,19 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     st.journal.panel_blit_bytes = st.renderer.panel_blit_bytes;
     st.journal.panel_swapchains = st.panel_swapchains.len() as u64;
     finish_frame(st)
+}
+
+fn request_realtime() {
+    // SAFETY: plain sched_setscheduler on the calling thread.
+    unsafe {
+        let min = libc::sched_get_priority_min(libc::SCHED_RR);
+        let param = libc::sched_param { sched_priority: min };
+        if libc::sched_setscheduler(0, libc::SCHED_RR | libc::SCHED_RESET_ON_FORK, &param) == 0 {
+            tracing::info!(policy = "SCHED_RR", priority = min, "real-time scheduling granted");
+        } else {
+            tracing::info!("real-time scheduling not granted (no CAP_SYS_NICE / RLIMIT_RTPRIO); running SCHED_OTHER");
+        }
+    }
 }
 
 /// Frustum test: any of the plane's four corners in front of the view and within its fov.
