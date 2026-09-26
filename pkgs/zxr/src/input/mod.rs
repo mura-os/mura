@@ -789,3 +789,9 @@ pub mod quality;
 pub mod tier;
 pub mod actions;
 pub mod bridge;
+// lane C (spatial-input §5, §7, §8; ADR 0013 items 2, 3, 4, 6): the seat slot and its transports
+pub mod cursor;
+pub mod emphasis;
+pub mod pointer;
+pub mod seat;
+pub mod touch;

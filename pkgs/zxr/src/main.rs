@@ -154,6 +154,10 @@ fn run() -> Result<(), String> {
     st.input.chain.set(input::Slot::Tier, Box::new(input::tier::TierStage::new()));
     // the action spaces become scene frames the batched locate finds (spatial-input §2; actions.rs)
     input::actions::register_frames(&mut st);
+    // lane C: the seat stage — wl_touch / wl_pointer transports, cursors, emphasis (spatial-input
+    // §5, §7, §4); keeps the head-ray floor for `Head` samples until the Hit stage produces hits
+    let seat_stage = input::seat::SeatStage::new(&mut st);
+    st.input.chain.set(input::Slot::Seat, Box::new(seat_stage));
     tracing::info!(stages = ?st.input.chain.names(), "input chain");
     st.hold = args.hold;
     tracing::info!(debug_panels = ?st.debug_panels, "composition: quads always, projection only with depth content (ADR 0006 amendment 2)");
