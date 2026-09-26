@@ -417,8 +417,11 @@ headset). Each gate is a written result with numbers in
    `panel_passes == displayed commits` (one per plane per tick in which its tree committed, never
    per frame), retention and acquire counters as before.
    **Panels path** (rev 3): with 2D planes only, `projection_layer_frames == 0`, GPU pass count
-   0 in ticks with no commit, runtime calls per tick ≤ 6 (wait ×1 on the wait thread + begin,
-   poll, end + panel acquire/release only when a panel committed).
+   0 in ticks with no commit, runtime calls per tick ≤ 6 with static clients (wait on the wait
+   thread + begin, locateViews, poll, end) plus one panel acquire and release per committed
+   panel. **Measured (host, research/65 §2.3 as ruled):** 5.07 calls/tick static, 8.05 with a
+   client committing every frame; 0 projection frames; panel passes = displayed commits;
+   popups grow and shrink the panel bounds with `stale_texture_draws = 0`.
 3. **Window behaviour under churn.** Resize, positioner-constrained popups, focus handoff, client
    `kill -9` mid-frame, surface destruction with in-flight GPU work — no unresolved GPU waits
    (every submitted fence signals), no stale textures (a destroyed surface is not sampled), the

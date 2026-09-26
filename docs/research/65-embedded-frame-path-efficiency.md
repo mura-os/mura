@@ -209,7 +209,24 @@ must happen before the blit (pre-compose per window, or one layer per surface).
 | projection, vkcube (mailbox, ~14 k commits/s) | 119 | 3914 | 102 | 11.05 | 298 | 24 | 7 | — |
 | quad, vkcube | 118 | 3692 | 0 | 5.06 | 118 | 25 | 6 | 837 (one per displayed frame, 1.67 GB / 14 s) |
 
-Reading: with static UI and a moving head — the headset's common case — the quad path **halves
+**As ruled (2026-09-26, the production path — panel passes render the whole surface tree on the
+slot fence, no CPU wait; `--debug-panels projection` is the forced-projection control):**
+
+| run | zxr CPU ms/s | zxr GPU µs/frame | RPC/frame (loop) | loop IPC µs/frame | Monado CPU ms/s | GPU busy % | shape frames | panel passes |
+|---|---|---|---|---|---|---|---|---|
+| auto, 1 static foot | **11** | 0 | **5.07** | 120 | 22 | 8 | 839 panels-only / 0 projection | 2 |
+| forced projection, 1 foot | 23 | 95 | 11.05 | 249 | 22 | 9 | 0 / 836 | — |
+| auto, 3 static foot | **11** | 0 | 5.08 | 135 | 20 | 9 | 836 / 0 | 6 |
+| forced projection, 3 foot | 30 | 114 | 11.05 | 293 | 24 | 9 | 0 / 836 | — |
+| auto, vkcube (mailbox) | 109 | 15 (the panel pass) | 8.05 (+ panel acquire/release per committed frame) | 213 | 25 | 8 | 839 / 0 | 837 = displayed commits |
+| forced projection, vkcube | 112 | 28 | 11.05 | 243 | 23 | 8 | 0 / 838 | — |
+
+gtk3-demo menus (`--run menus`, F10): the popup grows the panel bounds → swapchain recreated and
+one pass (+2), closing shrinks it (+1); `popups=1`, `stale_texture_draws=0`. Validation layer
+on the panel path: 0 errors; the `RenderPass-redundant-store` warnings of §0.2 are gone
+(panels are stored once per commit, not cleared-and-stored per frame).
+
+Reading of the prototype rows: with static UI and a moving head — the headset's common case — the quad path **halves
 zxr's CPU and wake-ups, removes our GPU pass, and costs Monado nothing extra** (its CPU and the
 GPU-busy figure are flat or lower: the squasher replaces our pass, it does not add to it). With
 a client committing every display frame the blit appears (one per *displayed* commit — the
