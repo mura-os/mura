@@ -12,25 +12,28 @@ mod state;
 mod xr;
 
 use std::os::unix::net::UnixListener;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
-use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
+use smithay::backend::renderer::utils::{with_renderer_surface_state, CommitCounter, RendererSurfaceStateUserData};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::signals::{Signal, Signals};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{channel, EventLoop, Interest, Mode as CMode, PostAction};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, Resource};
 use smithay::wayland::compositor::{with_surface_tree_downward, TraversalAction};
 use smithay::desktop::PopupManager;
-use smithay::utils::{Logical, Point};
+use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use render::PlaneDraw;
 use scene::M_PER_PX;
-use state::{now_ns, spawn_client, PanelSwapchain, Panels, TexRef, Zxr};
+use state::{now_ns, spawn_client, DebugPanels, PanelSwapchain, TexRef, Zxr};
 use xr::math;
 use xr::{FrameTick, QuadLayer, XrCore};
 
-const USAGE: &str = "zxr [--socket NAME] [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--panels projection|quad|hybrid]\n       zxr ctl SOCKET COMMAND...";
+const USAGE: &str = "zxr [--socket NAME] [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--debug-panels projection]\n       zxr ctl SOCKET COMMAND...";
 
 struct Args {
     socket: Option<String>,
@@ -40,11 +43,11 @@ struct Args {
     journal: Option<std::path::PathBuf>,
     drm_node: Option<String>,
     xwayland: Option<String>,
-    panels: Panels,
+    debug_panels: DebugPanels,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, panels: Panels::Projection };
+    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, debug_panels: DebugPanels::Auto };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut val = || it.next().ok_or_else(|| format!("{arg} needs a value\n{USAGE}"));
@@ -56,12 +59,11 @@ fn parse_args() -> Result<Args, String> {
             "--journal" => a.journal = Some(val()?.into()),
             "--drm-node" => a.drm_node = Some(val()?),
             "--xwayland" => a.xwayland = Some(val()?),
-            "--panels" => {
-                a.panels = match val()?.as_str() {
-                    "projection" => Panels::Projection,
-                    "quad" => Panels::Quad,
-                    "hybrid" => Panels::Hybrid,
-                    other => return Err(format!("--panels: {other} (projection|quad|hybrid)")),
+            "--debug-panels" => {
+                a.debug_panels = match val()?.as_str() {
+                    "auto" => DebugPanels::Auto,
+                    "projection" => DebugPanels::Projection,
+                    other => return Err(format!("--debug-panels: {other} (auto|projection)")),
                 }
             }
             "-h" | "--help" => return Err(USAGE.into()),
@@ -123,8 +125,8 @@ fn run() -> Result<(), String> {
     let mut st = Zxr::new(display, event_loop.handle(), event_loop.get_signal(), xr, renderer, args.socket.as_deref(), args.drm_node.as_deref())?;
     st.frames_limit = args.frames;
     st.journal_path = args.journal.clone();
-    st.panels = args.panels;
-    tracing::info!(panels = ?st.panels, "panel path");
+    st.debug_panels = args.debug_panels;
+    tracing::info!(debug_panels = ?st.debug_panels, "composition: quads always, projection only with depth content (ADR 0006 amendment 2)");
     tracing::info!(socket = ?st.socket_name, "listening");
 
     // frame ticks from the wait thread
@@ -221,10 +223,19 @@ fn run() -> Result<(), String> {
 }
 
 /// One entry in this frame's draw list: a surface placed on a plane.
-struct Draw {
+/// One mapped plane's surface tree for this tick (spec §7 rev 3).
+struct PlaneTree {
+    root_id: smithay::reexports::wayland_server::backend::ObjectId,
     model: math::Mat4,
-    half_size: [f32; 2],
-    tex: TexRef,
+    yaw: f32,
+    geo: Rectangle<i32, Logical>,
+    /// (texture, location relative to the toplevel origin, logical size), tree order
+    items: Vec<(TexRef, Point<i32, Logical>, Size<i32, Logical>)>,
+    /// hash of every surface's commit count, location and size — the panel is dirty when it changes
+    signature: u64,
+    /// geometry ∪ every surface rect, relative to the toplevel origin
+    bounds: Rectangle<i32, Logical>,
+    dist2: f32,
 }
 
 /// Spec §7, once per tick.
@@ -256,129 +267,191 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     let slot = (tick.frame_id % 2) as usize;
     st.slot = slot;
     st.renderer.wait_slot(slot)?;
-    let gpu_ns = if st.panels == Panels::Quad { None } else { st.renderer.read_gpu_time() };
+    let gpu_ns = if st.journal.last_tick_submitted { st.renderer.read_gpu_time() } else { None };
     st.release_held(slot, tick.frame_id);
 
-    // 3. the draw list: every mapped plane's surface tree (+ popups), textures brought current
-    let mut draws: Vec<Draw> = Vec::new();
-    let plane_count = st.scene.planes.len();
-    for pi in 0..plane_count {
-        let (window, model, geo) = {
+    // 3. every mapped plane's surface tree (toplevel + subsurfaces + popups), textures brought
+    //    current, held for this slot; the tree's commit signature and its bounds decide whether
+    //    the plane's panel needs a pass (spec §6.2 rev 3: one pass per commit, never per frame).
+    let head_pos = [head.position.x, head.position.y, head.position.z];
+    let mut trees: Vec<PlaneTree> = Vec::new();
+    for pi in 0..st.scene.planes.len() {
+        let (window, model, pos, yaw, geo) = {
             let p = &st.scene.planes[pi];
             if p.mapped_at_frame == 0 {
                 continue;
             }
-            (p.window.clone(), p.model(), p.window.geometry())
+            (p.window.clone(), p.model(), p.pos, p.yaw, p.window.geometry())
         };
         let Some(root) = window.toplevel().map(|t| t.wl_surface().clone()) else { continue };
-        let mut surfaces: Vec<(smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, Point<i32, Logical>, smithay::utils::Size<i32, Logical>)> = Vec::new();
+        let mut surfaces: Vec<(WlSurface, Point<i32, Logical>, Size<i32, Logical>)> = Vec::new();
         collect_tree(&root, (0, 0).into(), &mut surfaces);
         for (popup, offset) in PopupManager::popups_for_surface(&root) {
             let loc = geo.loc + offset - popup.geometry().loc;
             collect_tree(popup.wl_surface(), loc, &mut surfaces);
         }
-        let centre = [geo.loc.x as f32 + geo.size.w as f32 * 0.5, geo.loc.y as f32 + geo.size.h as f32 * 0.5];
-        for (i, (surface, loc, size)) in surfaces.into_iter().enumerate() {
+        let mut hasher = DefaultHasher::new();
+        let mut bounds = geo;
+        let mut items = Vec::with_capacity(surfaces.len());
+        for (surface, loc, size) in surfaces {
             let Some(tex) = st.update_surface_texture(&surface, tick.frame_id) else { continue };
-            let cx = (loc.x as f32 + size.w as f32 * 0.5 - centre[0]) * M_PER_PX;
-            let cy = -(loc.y as f32 + size.h as f32 * 0.5 - centre[1]) * M_PER_PX;
-            // subsurfaces/popups sit a hair in front of their parent so the depth test orders them
-            let local = math::model([cx, cy, i as f32 * 0.0005], 0.0);
-            draws.push(Draw { model: math::mul(&model, &local), half_size: [size.w as f32 * M_PER_PX * 0.5, size.h as f32 * M_PER_PX * 0.5], tex });
+            let count = with_renderer_surface_state(&surface, |s| s.current_commit().distance(Some(CommitCounter::default())).unwrap_or(0)).unwrap_or(0);
+            (surface.id().protocol_id(), count, loc.x, loc.y, size.w, size.h).hash(&mut hasher);
+            bounds = bounds.merge(Rectangle::new(loc, size));
+            items.push((tex, loc, size));
         }
+        let d = [pos[0] - head_pos[0], pos[1] - head_pos[1], pos[2] - head_pos[2]];
+        trees.push(PlaneTree { root_id: root.id(), model, yaw, geo, items, signature: hasher.finish(), bounds, dist2: d[0] * d[0] + d[1] * d[1] + d[2] * d[2] });
     }
 
-    // 3b. `--panels=quad|hybrid` (research/63 Phase 1b): every mapped toplevel is a runtime quad
-    // layer. The client's root texture is blitted into a runtime-owned swapchain only when its
-    // commit changed; the runtime re-samples the quad every display frame at the current pose.
-    // Prototype limits: root surface only (no subsurfaces/popups), blit waited on the CPU.
-    let quad_planes: Vec<(smithay::reexports::wayland_server::backend::ObjectId, [f32; 3], f32, [f32; 2], smithay::utils::Size<i32, Logical>)> = if st.panels != Panels::Projection {
-        st.scene
-            .planes
-            .iter()
-            .filter(|p| p.mapped_at_frame != 0)
-            .filter_map(|p| p.window.toplevel().map(|t| (t.wl_surface().id(), p.pos, p.yaw, p.half_size(), p.window.geometry().size)))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    if st.panels != Panels::Projection {
-        let Zxr { xr, renderer, panel_swapchains, surface_tex, dmabuf_textures, .. } = &mut *st;
-        for (sid, _, _, _, size) in &quad_planes {
-            let Some(entry) = surface_tex.get(sid) else { continue };
-            let (tex, foreign) = match (&entry.dmabuf_buffer, &entry.texture) {
-                (Some(bid), _) => match dmabuf_textures.get(bid) {
-                    Some((t, _)) => (t, true),
-                    None => continue,
-                },
-                (None, Some(t)) => (t, false),
-                _ => continue,
-            };
-            let (w, h) = (size.w.max(1) as u32, size.h.max(1) as u32);
-            let need_new = panel_swapchains.get(sid).map(|ps| ps.sc.extent.width != w || ps.sc.extent.height != h).unwrap_or(true);
-            if need_new {
-                let sc = xr.create_panel_swapchain(w, h)?;
-                panel_swapchains.insert(sid.clone(), PanelSwapchain { sc, blitted_commit: None, blits: 0 });
-            }
-            let ps = panel_swapchains.get_mut(sid).unwrap();
-            if ps.blitted_commit != entry.commit {
-                let idx = ps.sc.handle.acquire_image().map_err(|e| e.to_string())?;
-                ps.sc.handle.wait_image(openxr::Duration::from_nanos(100_000_000)).map_err(|e| e.to_string())?;
-                renderer.blit_to_panel(tex, foreign, ps.sc.images[idx as usize], ps.sc.extent)?;
-                ps.sc.handle.release_image().map_err(|e| e.to_string())?;
-                ps.blitted_commit = entry.commit;
-                ps.blits += 1;
-            }
-        }
-        // drop swapchains of planes that went away
-        let live: std::collections::HashSet<_> = quad_planes.iter().map(|q| q.0.clone()).collect();
-        panel_swapchains.retain(|k, _| live.contains(k));
-    }
+    // 4. the quad budget (spec §7 rev 3): the nearest planes are quad layers up to the runtime's
+    //    cap minus one; the rest overflow into the projection layer, which then exists.
+    let budget = if st.debug_panels == DebugPanels::Projection { 0 } else { st.quad_budget() };
+    let dist2: Vec<f32> = trees.iter().map(|t| t.dist2).collect();
+    let (quad_idx, overflow_idx) = scene::select_quads(&dist2, budget);
+    let depth = st.depth_content_present(!overflow_idx.is_empty());
 
-    // 4. render both views into the acquired swapchain images (not in quad mode: no pass at all)
-    let render_projection = st.panels != Panels::Quad;
-    if render_projection {
-        let indices = st.xr.acquire_images()?;
-        let flip = math::flip_y();
-        let view_proj: Vec<math::Mat4> = views.iter().map(|v| math::mul(&math::mul(&flip, &math::projection(v.fov, 0.05, 100.0)), &math::view(v.pose))).collect();
-        {
-            let Zxr { renderer, dmabuf_textures, surface_tex, journal, panels, .. } = st;
-            let mut planes: Vec<PlaneDraw<'_>> = Vec::with_capacity(draws.len());
-            let mut transitions = Vec::new();
-            // hybrid: the panels are quad layers; the projection layer carries only depth content
-            if *panels == Panels::Projection {
-                for d in &draws {
-                    let tex = match &d.tex {
-                        TexRef::Dmabuf(bid) => dmabuf_textures.get(bid).map(|(t, _)| t),
-                        TexRef::Surface(sid) => surface_tex.get(sid).and_then(|e| e.texture.as_ref()),
-                    };
-                    let Some(tex) = tex else {
-                        journal.stale_texture_draws += 1;
-                        continue;
-                    };
-                    if tex.dmabuf {
-                        transitions.push(tex.image);
-                    }
-                    planes.push(PlaneDraw { model: d.model, half_size: d.half_size, texture: tex, flip_v: false });
-                }
+    // 4a. panel swapchains: create/resize to the tree bounds; a pass only when the signature changed
+    let mut dirty: Vec<usize> = Vec::new();
+    for &ti in &quad_idx {
+        let t = &trees[ti];
+        let (w, h) = (t.bounds.size.w.max(1) as u32, t.bounds.size.h.max(1) as u32);
+        let need_new = st.panel_swapchains.get(&t.root_id).map(|ps| ps.sc.extent.width != w || ps.sc.extent.height != h).unwrap_or(true);
+        if need_new {
+            if let Some(old) = st.panel_swapchains.remove(&t.root_id) {
+                st.renderer.destroy_target(old.target);
             }
-            let clear = if *panels == Panels::Projection { [0.05, 0.05, 0.08, 1.0] } else { [0.0, 0.0, 0.0, 0.0] };
-            renderer.render(slot, &indices, &view_proj, &mut planes, clear, &transitions)?;
+            let sc = st.xr.create_panel_swapchain(w, h)?;
+            let target = st.renderer.make_panel_target(sc.extent, st.xr.color_format, &sc.images)?;
+            st.panel_swapchains.insert(t.root_id.clone(), PanelSwapchain { sc, target, signature: None, bounds: t.bounds, passes: 0 });
         }
-        st.xr.release_images()?;
+        let ps = st.panel_swapchains.get_mut(&t.root_id).unwrap();
+        ps.bounds = t.bounds;
+        if ps.signature != Some(t.signature) {
+            dirty.push(ti);
+        }
     }
     {
+        let live: std::collections::HashSet<_> = quad_idx.iter().map(|&i| trees[i].root_id.clone()).collect();
+        let Zxr { panel_swapchains, renderer, .. } = &mut *st;
+        let gone: Vec<_> = panel_swapchains.keys().filter(|k| !live.contains(*k)).cloned().collect();
+        for k in gone {
+            if let Some(ps) = panel_swapchains.remove(&k) {
+                renderer.destroy_target(ps.target);
+            }
+        }
+    }
+
+    // 4b. GPU work — only if there is any: dirty panel passes and/or the projection pass
+    let submit = !dirty.is_empty() || depth;
+    if submit {
+        let Zxr { renderer, dmabuf_textures, surface_tex, journal, panel_swapchains, xr, .. } = &mut *st;
+        let resolve = |r: &TexRef| -> Option<&render::Texture> {
+            match r {
+                TexRef::Dmabuf(bid) => dmabuf_textures.get(bid).map(|(t, _)| t),
+                TexRef::Surface(sid) => surface_tex.get(sid).and_then(|e| e.texture.as_ref()),
+            }
+        };
+        // foreign-queue barriers for every dmabuf sampled this tick (panels + overflow)
+        let mut foreign: Vec<ash::vk::Image> = Vec::new();
+        for &ti in dirty.iter().chain(overflow_idx.iter()) {
+            for (tex, _, _) in &trees[ti].items {
+                if let Some(t) = resolve(tex) {
+                    if t.dmabuf && !foreign.contains(&t.image) {
+                        foreign.push(t.image);
+                    }
+                }
+            }
+        }
+        let cmd = renderer.begin_frame(slot, &foreign)?;
+        // panel passes: orthographic, pixels → NDC (y down, as the framebuffer), textures flipped
+        for &ti in &dirty {
+            let t = &trees[ti];
+            let ps = panel_swapchains.get_mut(&t.root_id).unwrap();
+            let idx = xr.acquire_panel_image(&mut ps.sc)?;
+            let (w, h) = (ps.sc.extent.width as f32, ps.sc.extent.height as f32);
+            let ortho = math::ortho_px(w, h);
+            let mut planes: Vec<PlaneDraw<'_>> = Vec::with_capacity(t.items.len());
+            for (i, (tex, loc, size)) in t.items.iter().enumerate() {
+                let Some(texture) = resolve(tex) else {
+                    journal.stale_texture_draws += 1;
+                    continue;
+                };
+                let cx = (loc.x - t.bounds.loc.x) as f32 + size.w as f32 * 0.5;
+                let cy = (loc.y - t.bounds.loc.y) as f32 + size.h as f32 * 0.5;
+                planes.push(PlaneDraw { model: math::model([cx, cy, -(i as f32) * 0.001], 0.0), half_size: [size.w as f32 * 0.5, size.h as f32 * 0.5], texture, flip_v: true });
+            }
+            renderer.record_pass(cmd, &ps.target, idx, &ortho, &planes, [0.0, 0.0, 0.0, 0.0]);
+            ps.signature = Some(t.signature);
+            ps.passes += 1;
+            renderer.panel_passes += 1;
+            renderer.panel_bytes += (w * h) as u64 * 4 * 2;
+        }
+        // the projection pass: overflow planes (and, from M2, volumes / environment / cutout)
+        if depth {
+            let projection_indices = xr.acquire_images()?;
+            let flip = math::flip_y();
+            for (vi, v) in views.iter().enumerate() {
+                let view_proj = math::mul(&math::mul(&flip, &math::projection(v.fov, 0.05, 100.0)), &math::view(v.pose));
+                let mut planes: Vec<PlaneDraw<'_>> = Vec::new();
+                for &ti in &overflow_idx {
+                    let t = &trees[ti];
+                    let centre = [t.geo.loc.x as f32 + t.geo.size.w as f32 * 0.5, t.geo.loc.y as f32 + t.geo.size.h as f32 * 0.5];
+                    for (i, (tex, loc, size)) in t.items.iter().enumerate() {
+                        let Some(texture) = resolve(tex) else {
+                            journal.stale_texture_draws += 1;
+                            continue;
+                        };
+                        let cx = (loc.x as f32 + size.w as f32 * 0.5 - centre[0]) * M_PER_PX;
+                        let cy = -(loc.y as f32 + size.h as f32 * 0.5 - centre[1]) * M_PER_PX;
+                        let local = math::model([cx, cy, i as f32 * 0.0005], 0.0);
+                        planes.push(PlaneDraw { model: math::mul(&t.model, &local), half_size: [size.w as f32 * M_PER_PX * 0.5, size.h as f32 * M_PER_PX * 0.5], texture, flip_v: false });
+                    }
+                }
+                let clear = if quad_idx.is_empty() { [0.05, 0.05, 0.08, 1.0] } else { [0.0, 0.0, 0.0, 0.0] };
+                renderer.record_pass(cmd, renderer.view_target(vi), projection_indices[vi], &view_proj, &planes, clear);
+            }
+        }
+        renderer.end_frame(slot, &foreign)?;
+        // releases only after the work is queued (the runtime waits on the queue, not the CPU)
+        for &ti in &dirty {
+            let ps = panel_swapchains.get_mut(&trees[ti].root_id).unwrap();
+            xr.release_panel_image(&mut ps.sc)?;
+        }
+        if depth {
+            xr.release_images()?;
+        }
+    }
+    st.journal.last_tick_submitted = submit;
+    if depth {
+        st.journal.projection_layer_frames += 1;
+    } else {
+        st.journal.panels_only_frames += 1;
+    }
+
+    // 4c. xrEndFrame: the projection layer (if any) first, then the quads nearest-last within
+    //     the band (painter's order, `rendering.adoc:1143-1147`)
+    {
         let Zxr { xr, panel_swapchains, .. } = &mut *st;
-        let quads: Vec<QuadLayer<'_>> = quad_planes
-            .iter()
-            .filter_map(|(sid, pos, yaw, half, _)| {
-                let ps = panel_swapchains.get(sid)?;
-                ps.blitted_commit?;
-                let (s, c) = (yaw * 0.5).sin_cos();
-                Some(QuadLayer { swapchain: &ps.sc, pose: openxr::Posef { orientation: openxr::Quaternionf { x: 0.0, y: s, z: 0.0, w: c }, position: openxr::Vector3f { x: pos[0], y: pos[1], z: pos[2] } }, size: [half[0] * 2.0, half[1] * 2.0] })
-            })
-            .collect();
-        xr.end_frame_with_quads(time, if render_projection { Some(&views) } else { None }, &quads)?;
+        let mut quads: Vec<QuadLayer<'_>> = Vec::with_capacity(quad_idx.len());
+        for &ti in quad_idx.iter().rev() {
+            let t = &trees[ti];
+            let Some(ps) = panel_swapchains.get(&t.root_id) else { continue };
+            if ps.signature.is_none() {
+                continue;
+            }
+            // the quad is centred on the panel bounds, offset from the plane's geometry centre
+            let dx = ((ps.bounds.loc.x as f32 + ps.bounds.size.w as f32 * 0.5) - (t.geo.loc.x as f32 + t.geo.size.w as f32 * 0.5)) * M_PER_PX;
+            let dy = -((ps.bounds.loc.y as f32 + ps.bounds.size.h as f32 * 0.5) - (t.geo.loc.y as f32 + t.geo.size.h as f32 * 0.5)) * M_PER_PX;
+            let p = math::transform_point(&t.model, [dx, dy, 0.0]);
+            let (s, c) = (t.yaw * 0.5).sin_cos();
+            quads.push(QuadLayer {
+                swapchain: &ps.sc,
+                pose: openxr::Posef { orientation: openxr::Quaternionf { x: 0.0, y: s, z: 0.0, w: c }, position: openxr::Vector3f { x: p[0], y: p[1], z: p[2] } },
+                size: [ps.bounds.size.w as f32 * M_PER_PX, ps.bounds.size.h as f32 * M_PER_PX],
+            });
+        }
+        xr.end_frame_with_quads(time, if depth { Some(&views) } else { None }, &quads)?;
     }
 
     // 5. frame callbacks: once per refresh, after xrEndFrame (§6.6)
@@ -414,9 +487,9 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     st.xr.calls.wait_frame.add(tick.wait_ns);
     st.journal.calls = st.xr.calls.clone();
     st.journal.passes_per_frame = st.renderer.passes_per_frame();
-    st.journal.attachment_bytes_est = if st.panels == Panels::Quad { 0 } else { st.renderer.attachment_bytes_per_frame() };
-    st.journal.panel_blits = st.renderer.panel_blits;
-    st.journal.panel_blit_bytes = st.renderer.panel_blit_bytes;
+    st.journal.attachment_bytes_est = if depth { st.renderer.attachment_bytes_per_frame() } else { 0 };
+    st.journal.panel_passes = st.renderer.panel_passes;
+    st.journal.panel_bytes = st.renderer.panel_bytes;
     st.journal.panel_swapchains = st.panel_swapchains.len() as u64;
     finish_frame(st)
 }

@@ -120,27 +120,38 @@ pub struct Zxr {
     pub pointer_focus: Option<WlSurface>,
     pub last_head_pose: Option<openxr::Posef>,
     /// research/63 Phase 1b: how panels reach the runtime (projection pass / quad layers / both)
-    pub panels: Panels,
-    /// `--panels=quad|hybrid`: one runtime swapchain per mapped toplevel, keyed by its surface
+    /// `--debug-panels`: force every plane into the projection layer (the R0 path) for measurement
+    pub debug_panels: DebugPanels,
+    /// one runtime swapchain per 2D plane (spec §4 rev 3), keyed by the toplevel surface
     pub panel_swapchains: HashMap<ObjectId, PanelSwapchain>,
+    /// depth-content hooks (spec §7 rev 3): counts of what needs zxr's projection layer. All zero
+    /// until M2 (volumes) and the passthrough rung (environment, cutout sources).
+    pub volumes_mapped: u32,
+    pub environment_source: bool,
+    pub cutout_source: bool,
+    /// the runtime's `XrSystemGraphicsProperties::maxLayerCount`
+    pub max_layer_count: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Panels {
-    /// planes rendered into our projection layer (today; motorcar, kwin-vr, Simula, StardustXR)
+pub enum DebugPanels {
+    /// the rule: quads always, projection only with depth content
     #[default]
+    Auto,
+    /// measurement override: every plane drawn in the projection layer, no quads
     Projection,
-    /// every toplevel a runtime quad layer, no projection pass (wayvr/wlx-overlay-s)
-    Quad,
-    /// quad layers for toplevels plus an (empty at R0) projection layer for depth content
-    Hybrid,
 }
 
+/// A 2D plane's runtime-owned panel swapchain and the render target over its images.
 pub struct PanelSwapchain {
     pub sc: crate::xr::Swapchain,
-    /// the commit the swapchain's current image holds; a blit happens only when it changes
-    pub blitted_commit: Option<CommitCounter>,
-    pub blits: u64,
+    pub target: crate::render::ViewTarget,
+    /// the surface tree's commit signature the current image holds; a pass happens only when
+    /// it changes (spec §6.2 rev 3: one pass per commit, never per frame)
+    pub signature: Option<u64>,
+    /// panel bounds in logical px relative to the toplevel geometry origin (geometry union popups)
+    pub bounds: smithay::utils::Rectangle<i32, smithay::utils::Logical>,
+    pub passes: u64,
 }
 
 impl Zxr {
@@ -275,8 +286,12 @@ impl Zxr {
             satellite_pid: None,
             pointer_focus: None,
             last_head_pose: None,
-            panels: Panels::default(),
+            debug_panels: DebugPanels::default(),
             panel_swapchains: HashMap::new(),
+            volumes_mapped: 0,
+            environment_source: false,
+            cutout_source: false,
+            max_layer_count: 16,
         })
     }
 
@@ -297,6 +312,18 @@ impl Zxr {
             (Some(pid), Some(client)) => client.get_credentials(&self.dh).map(|c| c.pid as u32 == pid).unwrap_or(false),
             _ => false,
         }
+    }
+
+    /// Spec ?7 rev 3: does this tick need zxr's projection layer? A mapped 3D volume, an
+    /// environment or cutout source, panel overflow past the layer cap ? or the debug override.
+    pub fn depth_content_present(&self, overflow: bool) -> bool {
+        self.debug_panels == DebugPanels::Projection || overflow || self.volumes_mapped > 0 || self.environment_source || self.cutout_source
+    }
+
+    /// How many planes may be quad layers this tick: the cap minus one reserved for the projection
+    /// layer (spec ?7 rev 3); the rest are drawn in the projection layer.
+    pub fn quad_budget(&self) -> usize {
+        self.max_layer_count.saturating_sub(1).max(1) as usize
     }
 
     pub fn window_for_root(&self, root: &WlSurface) -> Option<&Window> {

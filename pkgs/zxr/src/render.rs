@@ -42,8 +42,8 @@ pub struct PlaneDraw<'a> {
     pub flip_v: bool,
 }
 
-struct ViewTarget {
-    extent: vk::Extent2D,
+pub struct ViewTarget {
+    pub extent: vk::Extent2D,
     depth_image: vk::Image,
     depth_memory: vk::DeviceMemory,
     depth_view: vk::ImageView,
@@ -76,11 +76,11 @@ pub struct Renderer {
     query_pool: vk::QueryPool,
     timestamp_period_ns: f64,
     pub gpu_ns_last: u64,
-    /// `--panels=quad`: blits into panel swapchains and their analytic bytes (read + write)
-    pub panel_blits: u64,
+    /// spec §6.2 rev 3: panel passes (the designed GPU copy) and their analytic bytes
+    pub panel_passes: u64,
     /// timestamps may be read only after the first submission wrote them (validation 09401)
     pub query_written: bool,
-    pub panel_blit_bytes: u64,
+    pub panel_bytes: u64,
     ext_mem_fd: ash::khr::external_memory_fd::Device,
     ext_fence_fd: ash::khr::external_fence_fd::Device,
 }
@@ -199,9 +199,9 @@ impl Renderer {
                 query_pool,
                 timestamp_period_ns: props.limits.timestamp_period as f64,
                 gpu_ns_last: 0,
-                panel_blits: 0,
+                panel_passes: 0,
                 query_written: false,
-                panel_blit_bytes: 0,
+                panel_bytes: 0,
                 ext_mem_fd: ash::khr::external_memory_fd::Device::new(&core.instance, d),
                 ext_fence_fd: ash::khr::external_fence_fd::Device::new(&core.instance, d),
             };
@@ -431,11 +431,36 @@ impl Renderer {
         }
     }
 
-    /// Record and submit the scene pass for every view into the acquired swapchain images.
-    /// `planes` are drawn for each view with that view's view-projection; dmabuf textures whose
-    /// layout is still UNDEFINED get a one-time barrier to SHADER_READ_ONLY (the queue-family
-    /// foreign path: the client's driver wrote them).
-    pub fn render(&mut self, slot: usize, image_indices: &[u32], view_proj: &[Mat4], planes: &mut [PlaneDraw<'_>], clear: [f32; 4], transitions: &[vk::Image]) -> Result<(), String> {
+    /// A render target for a runtime-owned panel swapchain (spec §4 rev 3: one per 2D plane):
+    /// colour views + framebuffers over the runtime's images and a transient depth image.
+    pub fn make_panel_target(&self, extent: vk::Extent2D, color_format: vk::Format, images: &[vk::Image]) -> Result<ViewTarget, String> {
+        unsafe { self.make_target(extent, color_format, images) }
+    }
+
+    pub fn destroy_target(&self, t: ViewTarget) {
+        unsafe {
+            let d = &self.device;
+            for fb in &t.framebuffers {
+                d.destroy_framebuffer(*fb, None);
+            }
+            for v in &t.color_views {
+                d.destroy_image_view(*v, None);
+            }
+            d.destroy_image_view(t.depth_view, None);
+            d.destroy_image(t.depth_image, None);
+            d.free_memory(t.depth_memory, None);
+        }
+    }
+
+    pub fn view_target(&self, view: usize) -> &ViewTarget {
+        &self.targets[view]
+    }
+
+    /// Begin this tick's GPU work on slot `slot`: reset, start recording, timestamp, and the
+    /// foreign-queue **acquire** barrier for every dmabuf any pass will sample (wlroots' vulkan
+    /// renderer shape, `render/vulkan/pass.c:337-359`: the client's driver owns the image
+    /// between our frames; GENERAL is the layout a DRM-modifier image has outside Vulkan).
+    pub fn begin_frame(&mut self, slot: usize, foreign: &[vk::Image]) -> Result<vk::CommandBuffer, String> {
         unsafe {
             let d = &self.device;
             let f = &self.frames[slot];
@@ -445,12 +470,9 @@ impl Renderer {
             d.begin_command_buffer(cmd, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)).map_err(|e| e.to_string())?;
             d.cmd_reset_query_pool(cmd, self.query_pool, 0, 2);
             d.cmd_write_timestamp(cmd, vk::PipelineStageFlags::TOP_OF_PIPE, self.query_pool, 0);
-            // Foreign-queue acquire for every dmabuf drawn this frame (wlroots' vulkan renderer
-            // shape: the client's driver owns the image between our frames; GENERAL is the layout
-            // a DRM-modifier image has outside Vulkan).
-            let range = vk::ImageSubresourceRange { aspect_mask: vk::ImageAspectFlags::COLOR, base_mip_level: 0, level_count: 1, base_array_layer: 0, layer_count: 1 };
-            if !transitions.is_empty() {
-                let barriers: Vec<vk::ImageMemoryBarrier> = transitions
+            if !foreign.is_empty() {
+                let range = vk::ImageSubresourceRange { aspect_mask: vk::ImageAspectFlags::COLOR, base_mip_level: 0, level_count: 1, base_array_layer: 0, layer_count: 1 };
+                let barriers: Vec<vk::ImageMemoryBarrier> = foreign
                     .iter()
                     .map(|img| {
                         vk::ImageMemoryBarrier::default()
@@ -465,25 +487,43 @@ impl Renderer {
                     .collect();
                 d.cmd_pipeline_barrier(cmd, vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::FRAGMENT_SHADER, vk::DependencyFlags::empty(), &[], &[], &barriers);
             }
-            for (vi, target) in self.targets.iter().enumerate() {
-                let fb = target.framebuffers[image_indices[vi] as usize];
-                let clears = [vk::ClearValue { color: vk::ClearColorValue { float32: clear } }, vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
-                d.cmd_begin_render_pass(cmd, &vk::RenderPassBeginInfo::default().render_pass(self.render_pass).framebuffer(fb).render_area(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: target.extent }).clear_values(&clears), vk::SubpassContents::INLINE);
-                d.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
-                d.cmd_set_viewport(cmd, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: target.extent.width as f32, height: target.extent.height as f32, min_depth: 0.0, max_depth: 1.0 }]);
-                d.cmd_set_scissor(cmd, 0, &[vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: target.extent }]);
-                for p in planes.iter() {
-                    let mvp = crate::xr::math::mul(&view_proj[vi], &p.model);
-                    let pc = PushConstants { mvp, half_size: p.half_size, uv_flip: [0.0, if p.flip_v { 1.0 } else { 0.0 }] };
-                    let bytes = std::slice::from_raw_parts(&pc as *const _ as *const u8, std::mem::size_of::<PushConstants>());
-                    d.cmd_bind_descriptor_sets(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipeline_layout, 0, &[p.texture.desc], &[]);
-                    d.cmd_push_constants(cmd, self.pipeline_layout, vk::ShaderStageFlags::VERTEX, 0, bytes);
-                    d.cmd_draw(cmd, 6, 1, 0, 0);
-                }
-                d.cmd_end_render_pass(cmd);
+            Ok(cmd)
+        }
+    }
+
+    /// One render pass into `target`'s framebuffer `image_index`: clear, then every plane with
+    /// `view_proj · model`. Used for each projection view (perspective) and for each dirty panel
+    /// (orthographic in pixels, spec §7 rev 3).
+    pub fn record_pass(&self, cmd: vk::CommandBuffer, target: &ViewTarget, image_index: u32, view_proj: &Mat4, planes: &[PlaneDraw<'_>], clear: [f32; 4]) {
+        unsafe {
+            let d = &self.device;
+            let fb = target.framebuffers[image_index as usize];
+            let clears = [vk::ClearValue { color: vk::ClearColorValue { float32: clear } }, vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
+            d.cmd_begin_render_pass(cmd, &vk::RenderPassBeginInfo::default().render_pass(self.render_pass).framebuffer(fb).render_area(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: target.extent }).clear_values(&clears), vk::SubpassContents::INLINE);
+            d.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
+            d.cmd_set_viewport(cmd, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: target.extent.width as f32, height: target.extent.height as f32, min_depth: 0.0, max_depth: 1.0 }]);
+            d.cmd_set_scissor(cmd, 0, &[vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: target.extent }]);
+            for p in planes {
+                let mvp = crate::xr::math::mul(view_proj, &p.model);
+                let pc = PushConstants { mvp, half_size: p.half_size, uv_flip: [0.0, if p.flip_v { 1.0 } else { 0.0 }] };
+                let bytes = std::slice::from_raw_parts(&pc as *const _ as *const u8, std::mem::size_of::<PushConstants>());
+                d.cmd_bind_descriptor_sets(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipeline_layout, 0, &[p.texture.desc], &[]);
+                d.cmd_push_constants(cmd, self.pipeline_layout, vk::ShaderStageFlags::VERTEX, 0, bytes);
+                d.cmd_draw(cmd, 6, 1, 0, 0);
             }
-            if !transitions.is_empty() {
-                let barriers: Vec<vk::ImageMemoryBarrier> = transitions
+            d.cmd_end_render_pass(cmd);
+        }
+    }
+
+    /// Foreign-queue **release** barriers, closing timestamp, submit on the slot's fence.
+    pub fn end_frame(&mut self, slot: usize, foreign: &[vk::Image]) -> Result<(), String> {
+        unsafe {
+            let d = &self.device;
+            let f = &self.frames[slot];
+            let cmd = f.cmd;
+            if !foreign.is_empty() {
+                let range = vk::ImageSubresourceRange { aspect_mask: vk::ImageAspectFlags::COLOR, base_mip_level: 0, level_count: 1, base_array_layer: 0, layer_count: 1 };
+                let barriers: Vec<vk::ImageMemoryBarrier> = foreign
                     .iter()
                     .map(|img| {
                         vk::ImageMemoryBarrier::default()
@@ -505,50 +545,6 @@ impl Renderer {
             d.queue_submit(self.queue, &submit, f.fence).map_err(|e| e.to_string())?;
             self.frames[slot].in_use = true;
             self.query_written = true;
-            Ok(())
-        }
-    }
-
-    /// Copy a client texture into a runtime-owned panel swapchain image (`--panels=quad`,
-    /// research/63 Phase 1b). This is the copy the quad-layer path cannot avoid: OpenXR swapchain
-    /// images are allocated by the runtime, so a Wayland client's buffer can never *be* one.
-    /// One blit per commit, waited on the CPU (prototype; a per-panel fence is the production
-    /// shape). `foreign` marks a dmabuf texture (needs the foreign-queue acquire/release).
-    pub fn blit_to_panel(&mut self, src: &Texture, foreign: bool, dst: vk::Image, dst_extent: vk::Extent2D) -> Result<(), String> {
-        unsafe {
-            let d = &self.device;
-            let cmd = d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(self.cmd_pool).level(vk::CommandBufferLevel::PRIMARY).command_buffer_count(1)).map_err(|e| e.to_string())?[0];
-            d.begin_command_buffer(cmd, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)).map_err(|e| e.to_string())?;
-            let range = vk::ImageSubresourceRange { aspect_mask: vk::ImageAspectFlags::COLOR, base_mip_level: 0, level_count: 1, base_array_layer: 0, layer_count: 1 };
-            let (src_old, src_qf) = if foreign { (vk::ImageLayout::GENERAL, vk::QUEUE_FAMILY_FOREIGN_EXT) } else { (vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::QUEUE_FAMILY_IGNORED) };
-            let dst_qf = if foreign { self.queue_family } else { vk::QUEUE_FAMILY_IGNORED };
-            let pre = [
-                vk::ImageMemoryBarrier::default().old_layout(src_old).new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL).src_queue_family_index(src_qf).dst_queue_family_index(dst_qf).src_access_mask(vk::AccessFlags::SHADER_READ).dst_access_mask(vk::AccessFlags::TRANSFER_READ).image(src.image).subresource_range(range),
-                vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::UNDEFINED).new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL).dst_access_mask(vk::AccessFlags::TRANSFER_WRITE).image(dst).subresource_range(range),
-            ];
-            d.cmd_pipeline_barrier(cmd, vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(), &[], &[], &pre);
-            let layers = vk::ImageSubresourceLayers { aspect_mask: vk::ImageAspectFlags::COLOR, mip_level: 0, base_array_layer: 0, layer_count: 1 };
-            let region = vk::ImageBlit::default()
-                .src_subresource(layers)
-                .src_offsets([vk::Offset3D { x: 0, y: 0, z: 0 }, vk::Offset3D { x: src.width as i32, y: src.height as i32, z: 1 }])
-                .dst_subresource(layers)
-                .dst_offsets([vk::Offset3D { x: 0, y: 0, z: 0 }, vk::Offset3D { x: dst_extent.width as i32, y: dst_extent.height as i32, z: 1 }]);
-            d.cmd_blit_image(cmd, src.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, dst, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region], vk::Filter::LINEAR);
-            let post = [
-                vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL).new_layout(src_old).src_queue_family_index(dst_qf).dst_queue_family_index(src_qf).src_access_mask(vk::AccessFlags::TRANSFER_READ).dst_access_mask(vk::AccessFlags::SHADER_READ).image(src.image).subresource_range(range),
-                vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL).new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL).src_access_mask(vk::AccessFlags::TRANSFER_WRITE).dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_READ).image(dst).subresource_range(range),
-            ];
-            d.cmd_pipeline_barrier(cmd, vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, vk::DependencyFlags::empty(), &[], &[], &post);
-            d.end_command_buffer(cmd).map_err(|e| e.to_string())?;
-            let cmds = [cmd];
-            let submit = [vk::SubmitInfo::default().command_buffers(&cmds)];
-            let fence = d.create_fence(&vk::FenceCreateInfo::default(), None).map_err(|e| e.to_string())?;
-            d.queue_submit(self.queue, &submit, fence).map_err(|e| e.to_string())?;
-            d.wait_for_fences(&[fence], true, u64::MAX).map_err(|e| e.to_string())?;
-            d.destroy_fence(fence, None);
-            d.free_command_buffers(self.cmd_pool, &cmds);
-            self.panel_blits += 1;
-            self.panel_blit_bytes += src.width as u64 * src.height as u64 * 4 + dst_extent.width as u64 * dst_extent.height as u64 * 4;
             Ok(())
         }
     }

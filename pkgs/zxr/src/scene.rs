@@ -42,6 +42,49 @@ impl Plane {
     }
 }
 
+/// The quad budget (spec §7 rev 3): given each plane's squared distance to the head and the
+/// runtime's layer cap minus one, the nearest `budget` planes become quad layers (legibility
+/// matters most where the user looks) and the rest overflow into the projection layer. Returns
+/// (quad indices nearest-first, overflow indices).
+pub fn select_quads(dist2: &[f32], budget: usize) -> (Vec<usize>, Vec<usize>) {
+    let mut order: Vec<usize> = (0..dist2.len()).collect();
+    order.sort_by(|a, b| dist2[*a].total_cmp(&dist2[*b]).then(a.cmp(b)));
+    let overflow = order.split_off(budget.min(order.len()));
+    (order, overflow)
+}
+
+#[cfg(test)]
+mod quad_budget_tests {
+    use super::select_quads;
+
+    #[test]
+    fn nearest_first_within_budget() {
+        let (q, o) = select_quads(&[9.0, 1.0, 4.0], 2);
+        assert_eq!(q, vec![1, 2]);
+        assert_eq!(o, vec![0]);
+    }
+
+    #[test]
+    fn everything_fits() {
+        let (q, o) = select_quads(&[2.0, 1.0], 128);
+        assert_eq!(q, vec![1, 0]);
+        assert!(o.is_empty());
+    }
+
+    #[test]
+    fn zero_budget_overflows_all() {
+        let (q, o) = select_quads(&[1.0, 2.0], 0);
+        assert!(q.is_empty());
+        assert_eq!(o, vec![0, 1]);
+    }
+
+    #[test]
+    fn ties_are_stable() {
+        let (q, _) = select_quads(&[1.0, 1.0, 1.0], 2);
+        assert_eq!(q, vec![0, 1]);
+    }
+}
+
 #[derive(Default)]
 pub struct Scene {
     pub planes: Vec<Plane>,

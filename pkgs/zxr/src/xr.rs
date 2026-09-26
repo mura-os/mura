@@ -50,6 +50,8 @@ pub struct XrCore {
     pub swapchains: Vec<Swapchain>,
     pub color_format: vk::Format,
     pub environment_blend: xr::EnvironmentBlendMode,
+    /// `XrSystemGraphicsProperties::maxLayerCount` — bounds the quad layers (spec §7 rev 3)
+    pub max_layer_count: u32,
     pub session_running: bool,
     pub exit_requested: bool,
     /// per-call latencies (research/63 Phase 0); the loop merges them into the journal
@@ -167,6 +169,8 @@ impl XrCore {
         };
         let views = instance.enumerate_view_configuration_views(system, VIEW_TYPE).map_err(|e| e.to_string())?;
         let blend = instance.enumerate_environment_blend_modes(system, VIEW_TYPE).map_err(|e| e.to_string())?[0];
+        let max_layer_count = instance.system_properties(system).map(|p| p.graphics_properties.max_layer_count).unwrap_or(16);
+        tracing::info!(max_layer_count, "runtime layer cap");
         let formats = session.enumerate_swapchain_formats().map_err(|e| e.to_string())?;
         let want = [vk::Format::B8G8R8A8_SRGB, vk::Format::R8G8B8A8_SRGB, vk::Format::B8G8R8A8_UNORM, vk::Format::R8G8B8A8_UNORM];
         let color_format = want.iter().copied().find(|f| formats.contains(&(f.as_raw() as u32))).ok_or("no usable swapchain format")?;
@@ -231,7 +235,7 @@ impl XrCore {
         }
 
         Ok((
-            XrCore { instance, system, session, stream, space, views, swapchains, color_format, environment_blend: blend, session_running: false, exit_requested: false, calls: Default::default(), events: xr::EventDataBuffer::new(), handshake, ticks: Some(ticks) },
+            XrCore { instance, system, session, stream, space, views, swapchains, color_format, environment_blend: blend, max_layer_count, session_running: false, exit_requested: false, calls: Default::default(), events: xr::EventDataBuffer::new(), handshake, ticks: Some(ticks) },
             VkCore { entry: vk_entry, instance: vk_instance, physical, device, queue_family, queue },
         ))
     }
@@ -353,7 +357,21 @@ impl XrCore {
         Ok(Swapchain { handle, images, extent: vk::Extent2D { width, height } })
     }
 
-    /// `xrEndFrame` with an optional projection layer plus quad layers (`--panels=quad|hybrid`).
+    /// Acquire (+ wait: Monado's Vulkan path folds the wait into acquire, `oxr_swapchain_vk.c:22-57`)
+    /// one image of a panel swapchain; returns its index.
+    pub fn acquire_panel_image(&mut self, sc: &mut Swapchain) -> Result<u32, String> {
+        let calls = &mut self.calls;
+        let idx = timed(&mut calls.acquire_image, || sc.handle.acquire_image()).map_err(|e| e.to_string())?;
+        timed(&mut calls.wait_image, || sc.handle.wait_image(xr::Duration::from_nanos(100_000_000))).map_err(|e| e.to_string())?;
+        Ok(idx)
+    }
+
+    /// Release a panel image after its pass has been queued.
+    pub fn release_panel_image(&mut self, sc: &mut Swapchain) -> Result<(), String> {
+        timed(&mut self.calls.release_image, || sc.handle.release_image()).map_err(|e| e.to_string())
+    }
+
+    /// `xrEndFrame` with an optional projection layer plus quad layers (spec §7 rev 3).
     /// Quad layers are submitted in the given order (painter's order, `rendering.adoc:1143-1147`).
     pub fn end_frame_with_quads(&mut self, time: xr::Time, views: Option<&[xr::View]>, quads: &[QuadLayer<'_>]) -> Result<(), String> {
         let mut pv: Vec<xr::CompositionLayerProjectionView<xr::Vulkan>> = Vec::new();
@@ -504,6 +522,19 @@ pub mod math {
         m[12] = pos[0];
         m[13] = pos[1];
         m[14] = pos[2];
+        m
+    }
+
+    /// Orthographic pixels → Vulkan NDC for a panel pass: x ∈ [0,w] → [−1,1], y ∈ [0,h] → [−1,1]
+    /// (framebuffer y is down, so no flip; textures are drawn with `flip_v`), z ∈ [−1,0] → [0,1].
+    pub fn ortho_px(w: f32, h: f32) -> Mat4 {
+        let mut m = identity();
+        m[0] = 2.0 / w;
+        m[5] = 2.0 / h;
+        m[10] = 1.0;
+        m[12] = -1.0;
+        m[13] = -1.0;
+        m[14] = 1.0;
         m
     }
 

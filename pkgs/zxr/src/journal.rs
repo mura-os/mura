@@ -61,9 +61,14 @@ pub struct Journal {
     pub passes_per_frame: u64,
     pub frame_callbacks_visible: u64,
     pub frame_callbacks_occluded: u64,
-    pub panel_blits: u64,
-    pub panel_blit_bytes: u64,
+    pub panel_passes: u64,
+    pub panel_bytes: u64,
     pub panel_swapchains: u64,
+    /// spec §7 rev 3: which shape each tick took
+    pub projection_layer_frames: u64,
+    pub panels_only_frames: u64,
+    /// whether the previous tick submitted GPU work (the timestamps are valid only then)
+    pub last_tick_submitted: bool,
     pub frames: u64,
     pub frames_rendered: u64,
     pub missed_deadlines: u64,
@@ -165,8 +170,10 @@ impl Journal {
         let _ = writeln!(s, "frame_callbacks_visible={}", self.frame_callbacks_visible);
         let _ = writeln!(s, "frame_callbacks_occluded={}", self.frame_callbacks_occluded);
         let _ = writeln!(s, "panel_swapchains={}", self.panel_swapchains);
-        let _ = writeln!(s, "panel_blits={}", self.panel_blits);
-        let _ = writeln!(s, "panel_blit_bytes={}", self.panel_blit_bytes);
+        let _ = writeln!(s, "panel_passes={}", self.panel_passes);
+        let _ = writeln!(s, "panel_bytes={}", self.panel_bytes);
+        let _ = writeln!(s, "projection_layer_frames={}", self.projection_layer_frames);
+        let _ = writeln!(s, "panels_only_frames={}", self.panels_only_frames);
         s
     }
 }
