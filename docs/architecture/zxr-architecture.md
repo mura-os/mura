@@ -1,6 +1,8 @@
 # zxr — the program architecture, as built at R0
 
-**Status: DRAFT, rev 0.1 (2026-09-26; updated with the gate results of
+**Status: DRAFT, rev 0.2 (2026-09-26; rev 0.1 + the input module as built, from
+[research/70](../research/70-input-bring-up-results.md) — §3a measured, §5 the `input` row and
+its file table; rev 0.1 = updated with the gate results of
 [research/61](../research/61-r0-bring-up-results.md)). Everything here is subject to change.** This document
 describes the compositor *as it exists in `pkgs/zxr` at time of writing* and records the decisions behind that
 shape with their status (ruled / determined / R0 discovery / stand-in / open). It is the reader's
@@ -144,7 +146,13 @@ flowchart TD
 No input thread: the comparables that have one (mutter, KWin, Mir) added it for a UI thread
 that stalls for frames and a KMS cursor plane, neither of which zxr has; the M1 input gate
 measures libinput-event → `xrEndFrame` under a client storm and adopts a thread for the libinput
-source only if that exceeds one display period (ruled, research/68 §9.1).
+source only if that exceeds one display period (ruled, research/68 §9.1). **Built and measured
+(research/70):** the chain is `pkgs/zxr/src/input/` — `mod.rs` (types, `Chain`, `Input`,
+`dispatch` per event, `tick` per frame, the injector) and one file per stage; every libinput/EI/
+injector sample runs the chain on arrival, XR samples at the tick after `xrLocateViews`. 7.07
+runtime calls per frame with the action set (5.07 before: `xrSyncActions` and the action spaces
+in the batched locate); event→`xrEndFrame` 8.4 ms per event at a 1 kHz pointer stream, 8.7 ms
+under the vkcube MAILBOX and glmark2 EGL storms, intake age 0 — the trigger is not met.
 
 ## 4. Acquire and release (spec §6)
 
@@ -162,7 +170,7 @@ smithay's `InnerBuffer::drop` sends `wl_buffer.release` and signals the release 
 frame that used them completes (step 3). Retention at R0 with one client: max 2
 frames (the two slots), mean 2.0 — gate 2's bound.
 
-## 5. Code layout: the spec's nine modules in six files
+## 5. Code layout: the spec's nine modules in six files plus the `input` directory
 
 Spec §3 names nine modules. R0 implements them in six files. The collapse is deliberate — the R0
 gates test the frame path, not the decomposition — and the seams are already where the spec puts
@@ -174,7 +182,7 @@ them, so splitting later is a file move, not a redesign.
 | `render` | `src/render.rs` | render pass + pipeline (push constants, alpha blend, depth), shm staging path, dmabuf import with DRM modifiers, per-view depth + framebuffers, 2 frame slots (cmd + fence), timestamp queries, `sampled_modifiers` for the feedback table | 3D clients' colour+depth composition (M2, zxr-shell-v2); damage-aware upload |
 | `frontend` | `src/state.rs` (handler half) | every smithay delegate state + handler impl (compositor, buffer, shm, dmabuf, syncobj, xdg-shell, seat, data-device, DnD, output, pointer-constraints); `ClientState`; the acquire hook; dmabuf validation; the one `wl_output` | layer-shell and the M1 protocol set (spec §10); `--greeter` mode |
 | `scene` | `src/scene.rs` (arenas, verbs, flatten, hit) + `src/state.rs` (the member payload: window, panel, dirty) | `Arena<T>` with generational handles; `frames` / `places` / `members` (spec §5a normative); `add / remove / reparent / set_local / set_flags / focus`; `flatten` → band-ordered quad list + overflow, budget by band priority; full-pose ray→plane→surface hit; fan placement as the stand-in policy | 3D nodes (M2); the WM `free` engine (M1) |
-| `input` | `state.rs::update_gaze_pointer` (R0: head ray → `Scene::hit` → seat pointer; keyboard focus follows scene focus) | the R0 floor | the module of spatial-input §1a: intake (libinput calloop source · EI · `xrSyncActions` per tick) → synthesis (runtime aim/pinch/poke/system-gesture flags; joint bridge while Monado lacks them) → reserved input → mode → a11y transforms → stabilize → tier arbiter over a closed enum of source kinds → hit test → WM grabs → IM → seat; one action set as the XR source seam; no input thread unless the M1 gate's latency trigger fires (research/68 §9.1) |
+| `input` | `src/input/` (22 files): `mod.rs` types + `Chain` + `Input` + injector; `reserved.rs`, `mode.rs`, `a11y.rs`, `activity.rs`, `stabilize.rs`, `tier.rs` + `quality.rs` + `held.rs` + `loss.rs`, `hit.rs`, `seat.rs` + `touch.rs` + `pointer.rs` + `cursor.rs` + `emphasis.rs` + `theme.rs`, `actions.rs` + `bridge.rs`, `focus.rs`, `text.rs`, `libinput.rs`, `ei.rs` | the module of spatial-input §1a as built (research/70 §1): nine static slots in KWin's order over a closed `SourceKind` enum; one action set (`actions.rs`) as the XR seam, the §10 joint bridge; smithay `InputBackend` for libinput (libseat) and EIS; `wl_touch` + `wl_pointer` transports; reticle and client cursor as band-5 quads; focus/activation, text-entry seam, presence, idle activity; per-event dispatch, XR at the tick; no input thread (trigger measured, not met) | the `Grabs` slot's WM policy (window-workspace-management); the poke indicator and ray line; the theme/size settings key; every stand-in's value (first hardware) |
 | `policy` | `Scene::add` (the fan) | — (a stand-in, §6) | placement rules and comfort caps from research/36; preferences from `org.mura.Settings1`; the bounded `zxr_window_management` face (ADR 0012 amendment) |
 | `modes`, `unit` | — | — | `--greeter` restricted scene, `sd_notify`, variable publication (M1; session-bootstrap rev 3) |
 | `trace` | `src/journal.rs`, `src/control.rs` | counters; SIGUSR1 / exit dump; the line-protocol control socket | tracing spans |

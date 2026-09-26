@@ -85,7 +85,13 @@ tracking — only `ht_ctrl_emu` turns a pinch into a simple-controller `select`
 `psvr2.c:1235-1250`); the simulated HMD has head pose only, no button (`simulated_hmd.c:194-217`).
 **Transfer.** The tier order is the same in every platform that states one: gaze (when present)
 > hand aim ray > controller aim ray > head ray, with direct touch overriding rays inside a
-distance band, and *one* targeting mode active at a time. Mura's device contract already carries
+distance band, and *one* targeting mode active at a time. *(Correction, 2026-09-26, research/70
+§6 item 1: the ruled design — spatial-input §3 and ADR 0013's amendment — places the controller
+aim ray **above** the hand ray when a controller is held, on the precision argument (a tracked
+controller's pose is steadier than a hand's aim), and the built arbiter follows the design. This
+line's hand-over-controller order came from the platforms' *mode* precedence — a visible
+controller switches the mode, an idle one does not — which the design expresses as the "held"
+test rather than as the order. The owner decides if the two should be reconciled the other way.)* Mura's device contract already carries
 the facts the switch needs (`controllers ∈ none|imu-3dof|optical-6dof`; eye tracking per
 research/29). The one Mura-specific finding: on Monado today the *runtime* does not deliver the
 hand aim/pinch the standard puts on it, so either zxr synthesizes them from joints (what

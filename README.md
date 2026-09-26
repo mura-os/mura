@@ -45,7 +45,9 @@ zxr M1; Alt+Return = terminal, Alt+Shift+E = quit) plus Monado running the **sim
 (`XR_RUNTIME_JSON` exported inside the session; windowless null compositor by default). Flags:
 `--client` (xrgears OpenXR smoke — adds Monado's mirror window showing the composited XR view),
 `--mirror`/`--no-mirror`, `--rotate` (canned head motion), `--controllers`, `--no-monado`,
-`--verbose`. No VM, no image.
+`--verbose`; `--zxr` runs zxr in the compositor slot (R0 frame path + the M1 input floor:
+`zxr ctl <sock> source hand-right value pinch 0.9` and friends inject synthetic input, `ctl journal`
+prints the counters — specs/zxr-core.md §8, §11). No VM, no image.
 
 **Rung 2 — `nix run .#virtual-headset-vm`** (module/system integration; iteration = incremental
 rebuild, no image assembly — the VM shares the host `/nix/store`). Two fixtures, one per login

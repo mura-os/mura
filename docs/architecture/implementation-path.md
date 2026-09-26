@@ -597,12 +597,21 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   in `pkgs/zxr/src/scene.rs` before M1's `input` and `policy` work starts, because the hit test
   (spatial-input §4) and the WM verbs (window-workspace-management §2) run over its member pass
   and mutation API; the R0 flat plane list is not a base for either.
-- **The input model** — [spatial-input.md](spatial-input.md) (draft rev 0) specifies the tier
-  rule, the two transports, focus/activation, cursors, peripherals and text entry. Order: R0 keeps
-  the head-ray stand-in; M1 implements the seat with pointer + keyboard + touch, the tier rule for
-  the sources the dev host and first hardware have (head ray, libinput mouse/keyboard, controller
-  aim ray, hand aim ray via the zxr-side bridge), focus-on-commit and `xdg-activation`, the
-  cursors, the text-input chain, and measures at its gate the stand-in thresholds, the libinput-event→`xrEndFrame` latency under the research/62 §8 client storm (the input-thread trigger of research/68 §9.1: a dedicated thread for the libinput source only if it exceeds one display period; measured with the buffer-hold policy of research/69 §3 in place — release at replacement, so the storm is the client's commit rate, not a hold) and `runtime_calls_per_frame` with the action set attached; gaze targeting
+- **The input model** — [spatial-input.md](spatial-input.md) (draft rev 0.2) specifies the tier
+  rule, the two transports, focus/activation, cursors, peripherals and text entry. **The input
+  floor exists** ([research/70](../research/70-input-bring-up-results.md); spec §8 normative rev
+  3.5): the seat with pointer + keyboard + touch, the tier rule over head ray, libinput
+  mouse/keyboard, controller aim ray and hand aim ray via the zxr-side bridge, focus-on-commit and
+  `xdg-activation`, the cursors as quads, the text-input chain, EIS, presence and idle activity,
+  with the gate measured on the nested host — 7.07 runtime calls/frame with the action set;
+  event→`xrEndFrame` 8.4–8.7 ms per event under the research/62 §8 storms (release at
+  replacement, research/69), so research/68 §9.1's input-thread trigger is not met and no thread
+  is added. **What waits for hardware:** every threshold (research/70 §5 — pinch, blink/loss,
+  held, near band, dwell, reserved press windows, reticle angle), the poke indicator and ray line,
+  the libinput path on a real seat (the host session owns its seat; the plan's frame-VM `uinput`
+  proof was not run), the bridge's cost at 90 Hz, `XR_EXT_user_presence` from a real
+  `HEAD_DETECT`; the `Grabs` slot waits for the window manager's policy; the cursor theme/size
+  settings key and the controller-vs-hand order are owner items (spec §14); gaze targeting
   lands with the first eye-tracking target's Monado driver (research/29: Galaxy XR, Play For
   Dream, Steam Frame); the `XR_EXT_hand_interaction` device in Monado is an upstream item raised
   before M1's hand work so the bridge can delete; 3D-client input (spatial-input §11) is M2's

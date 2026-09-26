@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 3.4 (2026-09-26; rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3.5 (2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -411,10 +411,42 @@ session, so an event poll bound to ticks alone never starts: R0 found this as a 
 The wait thread additionally gates on "session running" in its handshake and retries on
 `XR_ERROR_SESSION_NOT_RUNNING`. The loop-shape ruling (§2) is unchanged by this.
 
-## 8. Input (research/59 §6; research/63; ADR 0013 amendment 2026-09-26)
+## 8. Input (normative from rev 3.5, 2026-09-26 — research/59 §6; research/63; research/68; research/70; ADR 0013 amendment 2026-09-26)
 
-The design is [spatial-input.md](../docs/architecture/spatial-input.md) (draft rev 0); this
-section is the module's contract.
+The design is [spatial-input.md](../docs/architecture/spatial-input.md) (§1a ruled, §3/§5/§6/§9/§10
+ruled); this section is the module's contract, **normative as built** in `pkgs/zxr/src/input/`
+(research/70 §1 is the file table). Where the code carries a stand-in the bullet says so; the
+stand-ins' values and sources are research/70 §5, the first-hardware list.
+
+- **Where it lives (research/68, ruled 9.1/9.2):** in the compositor, on the state loop. Every
+  non-XR event (libinput, EI, the injector) is dispatched through the chain when it arrives
+  (`input::dispatch`); XR sources are sampled once per tick after `xrLocateViews`
+  (`xrSyncActions`, then the action spaces in the tick's one batched `xrLocateSpaces`). No input
+  thread: the §1a trigger (event→`xrEndFrame` > one display period under the research/62 §8
+  storm) was measured and not met (research/70 §3.2); a thread for the libinput source only is
+  the recorded response if hardware measurement ever meets it.
+- **The shape:** a closed `SourceKind` enum (`Head, Gaze, Hand(L|R), Controller(L|R), Pointer,
+  Keyboard`), a by-value `Sample`, and a static nine-slot chain in KWin's order — `Reserved →
+  Mode → A11y → Stabilize → Tier → Hit → Grabs → Im → Seat` — each slot one `Stage` whose `run`
+  returns `Continue` or `Consumed`; the first `Consumed` ends the sample. `Grabs` is a no-op
+  until window-workspace-management's policy lands. Not plugins, not trait objects (§1a).
+- **The XR seam is one action set** (`mura`): aim/grip poses, select, menu, `system`, gaze pose,
+  pinch/aim-activate/grasp/poke values and `ready` per hand, with suggested bindings for
+  `khr/simple_controller`, `ext/hand_interaction_ext`, `ext/eye_gaze_interaction`, Touch and
+  Index; `XR_MNDX_system_buttons` by raw path where advertised (it *exposes* a controller's
+  home button; the reserved stage does the reserving). The §10 bridge derives pinch/poke/ready
+  and the system-gesture flags from joints while Monado lacks `EXT_hand_interaction` values and
+  `FB_hand_tracking_aim`. The non-XR seam is smithay's `InputBackend` (libinput via libseat,
+  EIS with zxr as server; EI samples carry `EMULATED`).
+- **Reserved first, mode second, a11y third.** The `system` role (action, `hmdButtons.systemRole`,
+  the gesture flag) is consumed at slot 0 with native-openxr-apps §6's press map (short summon,
+  long recenter, double show/hide, chord quit — stand-in windows); greeter/lock consume every
+  non-keyboard sample below them (ADR 0007 I1); presence off (`XR_EXT_user_presence`) suspends the
+  XR kinds, cancels open contacts and sends `xdg_toplevel.suspended`; dwell-as-commit and pointer
+  gain are transforms ahead of targeting.
+- **The test-only injector** (`zxr ctl source <kind> pose|button|value|delta|axis|flag|joints|off`,
+  `ctl present`, `ctl mode`, `ctl a11y`) synthesises samples of any kind on the control socket; it
+  is how the harness drives what the simulated HMD cannot; documented in `--help` as test-only.
 
 - **Sources** (§2 there): gaze (`XR_EXT_eye_gaze_interaction`), hands (`XR_EXT_hand_interaction`
   aim/pinch/poke/grip + values + `ready`; §10 for the Monado bridge), controllers (the device's
@@ -440,9 +472,13 @@ section is the module's contract.
 - **Gaze never reaches a client.** One exception, named: scrolling the gazed element from a
   stick or wheel enters the pointer at the gaze point, sends `axis`, leaves.
 - **Cursors** by class: none for gaze; a compositor reticle at the hit for rays and poke (sized in
-  visual angle); for pointer-class, the reticle plus the client's cursor meaning —
+  visual angle — 1.5° stand-in); for pointer-class, the reticle plus the client's cursor meaning —
   `cursor-shape-v1` names rendered from the compositor's theme, else the client's `set_cursor`
-  image drawn on the plane with its hotspot.
+  image, with its hotspot at the pointer. **As built:** both are band-5 quads over the plane
+  (the reticle a 64×64 panel drawn once; the client cursor a panel sized to the image, redrawn
+  only when the image changes — never a panel re-pass per motion; the cursor-plane shape). The
+  theme comes from `XCURSOR_THEME`/`XCURSOR_SIZE`/`XCURSOR_PATH` (KWin's first step) until
+  settings-schema names the key (open, §14).
 - **The mouse pointer** lives on a plane in plane-local coordinates (libinput flat profile +
   compositor gain); warps to the looked-at plane when the look has moved (gaze, degrading to
   head); leaving a plane without a look change it becomes an angular ray from the head until it
@@ -456,8 +492,11 @@ section is the module's contract.
   `input-method-v2`; `pointer-warp-v1` is honoured per its own rule (focus + valid enter serial).
 - **3D clients (M2)**: `zxr-shell-v2` input takes `XR_EXT_hand_interaction`'s shape (poses,
   values, `ready`) with exclusive capture; gaze not delivered by default (permission model open).
-- **Stand-ins** (measured at M1's gate): pinch thresholds, hover ramp 500–1000 ms, near/far band,
-  dwell 150–250 + 650–850 ms, eyes→head timeout 500–1500 ms.
+- **Stand-ins** (the first-hardware list; research/70 §5 has every value and its source): pinch
+  0.75/0.5 and 1.0/1.5 cm, emphasis ramp 700 ms, near band 0.18/0.22 m, dwell 200 + 750 ms,
+  eyes→head 800 ms, controller held 2 s, reserved press windows 400/800/300/1000 ms, reticle
+  1.5°, pointer gain 1.0. None is measured on trackers; the nested gate measured the
+  architecture, not the thresholds.
 
 ## 9. Modes, unit, restart (ADR 0007; session-bootstrap rev 3)
 
@@ -525,6 +564,18 @@ grow-only lifecycle (0 per second in a steady session with popups opening and cl
 surface zxr was not sampling — 0 under the ruled `replacement` policy, non-zero only under
 `--debug-hold`), `held_outstanding_max` (most client buffers held at once, the pinned-memory
 bound), `suspended_configures` (`xdg_toplevel.suspended` state changes sent).
+**Rev 3.5 — the input counters** (research/70 §3): `input_samples` and per-slot
+`input_consumed_by_slot` (the chain's census — which stage ends each sample), `input_events`
+with `input_event_age_us_mean/max` (event timestamp → chain processing; 0 means nothing queued),
+`input_event_to_end_us_mean/max` (the *oldest* event of a tick → that tick's completed
+`xrEndFrame`) and `input_event_to_end_per_event_us_mean` (the same interval over every event —
+the §8 trigger's number; the oldest-event form equals one display period under a saturating
+stream by construction), `call_sync_actions_*`, `call_get_action_state_*`, `call_hand_joints_*`
+in the runtime-call census, `input_tier_changes/deferrals`, `input_source_losses`,
+`input_touch_downs/cancels`, `input_pointer_handoffs/warps`, `input_gaze_scrolls`,
+`input_presence_changes`, `input_cursor_named_ticks` (a `cursor-shape-v1` name the theme could
+not render), and the focus/text/intake block `focus_commits`, `activations_*`, `urgency_marks`,
+`keys_physical/emulated`, `osk_suppressed`, `libinput_*`, `ei_*`.
 
 ## 12. Conformance — the R0 gates (research/39 §5, measured)
 
@@ -550,6 +601,10 @@ headset). Each gate is a written result with numbers in
    panel. **Measured (host, research/65 §2.3 as ruled):** 5.07 calls/tick static, 8.05 with a
    client committing every frame; 0 projection frames; panel passes = displayed commits;
    popups grow and shrink the panel bounds with `stale_texture_draws = 0`.
+   **Input floor (rev 3.5, research/70 §3):** with the action set attached the static census is
+   7.07 calls/tick (the two added: `xrSyncActions`, and the action spaces folded into the one
+   batched `xrLocateSpaces`), 10.0 under a committing client; `xrSyncActions` 21 µs without
+   controllers, 45 µs with two (Monado's per-device round trips are inside the call).
 3. **Window behaviour under churn.** Resize, positioner-constrained popups, focus handoff, client
    `kill -9` mid-frame, surface destruction with in-flight GPU work — no unresolved GPU waits
    (every submitted fence signals), no stale textures (a destroyed surface is not sampled), the
@@ -557,6 +612,21 @@ headset). Each gate is a written result with numbers in
 4. **Xwayland early.** One X11 app (xterm) participates through xwayland-satellite as an ordinary
    Wayland client; the fallback (`X11Wm`) is exercised only if satellite's constraints bite, and
    the result says which.
+
+5. **The input gate (M1, rev 3.5 — research/70).** The ruled input architecture end to end on
+   the nested host: (a) the functional set — head-ray floor parity, action set attached and
+   located every tick, synthetic hand pinch → `wl_touch` on a GTK menubar, synthetic controllers
+   with pointer handoff, EI keyboard/pointer typing into a terminal, `xdg-activation` without a
+   serial → urgency only, `text-input-v3` → `input-method-v2` binding, the reserved `system`
+   press consumed at slot 0, the lock gate, presence off/on — every one a pass/fail line; (b) the
+   numbers — runtime calls/frame with the action set, event→`xrEndFrame` per-event and oldest
+   under a 1 kHz pointer idle and under the research/62 §8 storms (after research/69's policy),
+   wake-ups/s, zxr CPU, 0 missed deadlines, RSS delta. **Measured (host):** 10/10 functional;
+   7.07 calls/frame; per-event 8.4 ms idle, 8.7 ms under vkcube MAILBOX and glmark2 EGL; oldest
+   16.2–16.4 mean / 17.4–17.8 max (= the 16.67 ms period + wake→end); event age 0 under every
+   storm; wake-ups 1.7–1.9 k/s idle (1.0 k on the spine), 2.8 k with the stream; CPU 10–13 ms/s
+   idle, 27 with the stream; 0 missed in every clean trial; RSS anon 7.6 → 8.2 MB, binary
+   4.95 → 6.41 MB, closure +5.7 MB. The §8 trigger not met; no input thread.
 
 Plus the fence (budget impact above) and the unit contract items already verified for sway by
 D4 (readiness, restart in the same session), re-run with zxr in the slot behind a flag.
@@ -607,3 +677,10 @@ attachment (§7); the compositor's scheduling request through the unit (minimum 
 `RESET_ON_FORK`; §9); no depth-layer submission while the runtime does not read it (§7);
 multiview for the projection pass once it carries 3D content (M2); display refresh rate as a
 user setting (settings-schema).
+**Open from the input floor (rev 3.5, research/70 §5–§6; decider: the owner):** the cursor
+theme and size key in settings-schema (the code reads `XCURSOR_THEME`/`XCURSOR_SIZE` until then);
+whether a held controller outranks a hand ray when both target (spatial-input §3 says so and the
+code follows it; research/63 §1's "Transfer" line said the reverse); the `Head` kind's class
+label (pointer in the code, touch-class "whatever commits" in §3); every stand-in in research/70
+§5 at first hardware; and, for Monado upstream, `xrSyncActions` batching, `FB_hand_tracking_aim`,
+`XR_EXT_user_presence` and `MNDX_system_buttons` on the simulated devices.

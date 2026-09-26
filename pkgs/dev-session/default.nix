@@ -169,6 +169,10 @@ writeShellApplication {
       xw=()
       [ "$x11" = 1 ] && xw=(--xwayland :7 --spawn "xterm -fa Monospace -fs 14")
       echo "[session] starting zxr (R0) with foot inside; SIGUSR1 dumps the frame journal"
+      # Nested on a host: the host session owns the seat, so zxr must not open a libseat session
+      # (it would take the desktop's input devices). Peripherals reach the nested zxr over EI
+      # (zxr is the EIS server) and the test injector (`zxr ctl source …`; spec §8).
+      export ZXR_NO_LIBINPUT=1
       COMPOSITOR_CMD=(zxr --spawn foot "''${xw[@]}" "''${zxr_args[@]}")
       "''${COMPOSITOR_CMD[@]}"
       exit $?
