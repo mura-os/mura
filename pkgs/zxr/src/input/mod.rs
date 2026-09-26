@@ -783,3 +783,7 @@ pub mod a11y;
 pub mod activity;
 pub mod mode;
 pub mod reserved;
+pub mod held;
+pub mod loss;
+pub mod quality;
+pub mod tier;

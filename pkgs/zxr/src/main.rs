@@ -148,6 +148,10 @@ fn run() -> Result<(), String> {
     st.input.chain.set(input::Slot::Reserved, Box::new(input::reserved::Reserved::default()));
     st.input.chain.set(input::Slot::Mode, Box::new(input::mode::ModeGate::default()));
     st.input.chain.set(input::Slot::A11y, Box::new(input::a11y::A11y::default()));
+    // the tier arbiter (spatial-input §3, ruled; ADR 0013 amendment items 1, 2, 4): one targeting
+    // kind at a time, gaze → held controller → hand → head, direct touch overriding a ray inside
+    // WiVRn's 0.18/0.22 band, and no transition mid-gesture
+    st.input.chain.set(input::Slot::Tier, Box::new(input::tier::TierStage::new()));
     tracing::info!(stages = ?st.input.chain.names(), "input chain");
     st.hold = args.hold;
     tracing::info!(debug_panels = ?st.debug_panels, "composition: quads always, projection only with depth content (ADR 0006 amendment 2)");
