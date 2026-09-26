@@ -503,6 +503,15 @@ pub fn tick(st: &mut Zxr, head: xr::Posef, time: xr::Time, now_ns: u64) {
     let mut chain = std::mem::take(&mut st.input.chain);
     let mut queue = std::mem::take(&mut st.input.queue);
     for mut s in queue.drain(..) {
+        // intake latency: from the event's timestamp (libinput/EI/injector) to the tick that
+        // processes it — the input gate's number, with `wake_to_end` covering the rest of the
+        // path to `xrEndFrame` (research/68 §9.1 trigger)
+        if s.is_event() && s.time_ns <= now_ns && s.time_ns > 0 {
+            let age = now_ns - s.time_ns;
+            st.journal.input_event_age_ns_total += age;
+            st.journal.input_event_age_ns_max = st.journal.input_event_age_ns_max.max(age);
+            st.journal.input_events += 1;
+        }
         if let Some(slot) = chain.run(&mut s, st) {
             st.journal.input_consumed[slot as usize] += 1;
         }

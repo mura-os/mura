@@ -94,6 +94,10 @@ pub struct Journal {
     pub input_samples: u64,
     pub input_consumed: [u64; 9],
     pub input_presence_changes: u64,
+    /// intake latency of event samples (libinput/EI/injector): event timestamp → the tick that ran it
+    pub input_events: u64,
+    pub input_event_age_ns_total: u64,
+    pub input_event_age_ns_max: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -226,6 +230,9 @@ impl Journal {
         let _ = writeln!(s, "input_samples_per_frame_x100={}", self.input_samples * 100 / f);
         let _ = writeln!(s, "input_consumed_by_slot={}", self.input_consumed.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(","));
         let _ = writeln!(s, "input_presence_changes={}", self.input_presence_changes);
+        let _ = writeln!(s, "input_events={}", self.input_events);
+        let _ = writeln!(s, "input_event_age_us_mean={}", if self.input_events > 0 { self.input_event_age_ns_total / self.input_events / 1000 } else { 0 });
+        let _ = writeln!(s, "input_event_age_us_max={}", self.input_event_age_ns_max / 1000);
         s
     }
 }
