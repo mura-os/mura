@@ -1,6 +1,7 @@
 # zxr — the program architecture, as built at R0
 
-**Status: DRAFT, rev 0 (2026-09-26). Everything here is subject to change.** This document
+**Status: DRAFT, rev 0.1 (2026-09-26; updated with the gate results of
+[research/61](../research/61-r0-bring-up-results.md)). Everything here is subject to change.** This document
 describes the compositor *as it exists in `pkgs/zxr` at time of writing* and records the decisions behind that
 shape with their status (ruled / determined / R0 discovery / stand-in / open). It is the reader's
 map between three things that must agree: [specs/zxr-core.md](../../specs/zxr-core.md) (the
@@ -170,7 +171,10 @@ mechanism the bring-up showed was missing, no comparable needed, recorded for th
 | foreign-queue acquire/release barriers around every dmabuf drawn, layout `GENERAL` outside | determined | wlroots `render/vulkan/pass.c:337-359` |
 | two frame slots, one frame in flight with the runtime | determined | research/59 §2–3; spec §2 |
 | frame callbacks once per refresh after `xrEndFrame` | determined | research/59 §5; spec §6.6 |
-| **periodic `xrPollEvent` timer (5 ms until running, 250 ms after)** | **R0 discovery** — session `READY` precedes any tick, so an event poll bound to ticks deadlocks; every OpenXR app polls events every loop iteration (hello_xr, Monado's own clients); the loop-shape ruling is unaffected | spec rev 2 (§7) |
+| **periodic `xrPollEvent` timer (5 ms until running, 250 ms after)** | **R0 discovery** — session `READY` precedes any tick, so an event poll bound to ticks deadlocks; every OpenXR app polls events every loop iteration (hello_xr, Monado's own clients); the loop-shape ruling is unaffected | spec rev 2 §7 |
+| **signals blocked before any thread exists; children unblock in `pre_exec`** | **R0 discovery** — calloop's `Signals` blocks on its own thread only; SIGTERM reaching the wait thread killed the process before the journal (`exit=143`) | spec rev 2 §9; research/61 §6.2 |
+| **teardown: `xrRequestExitSession` → STOPPING → EXITING, idle device, release buffers, destroy textures, renderer before `xr`** | **R0 discovery** — the session's swapchain images dropped before the renderer's views of them (`exit=139`) | spec rev 2 §9; research/61 §6.3 |
+| per-commit acquire cost ≈ 21 µs (14.7 k commits/s → 31 % of a desktop core) | measured; mechanism confirmed (0 missed), source granularity an M1 budget item | spec rev 2 §6.3; research/61 §3 |
 | gaze ray from the head pose as the R0 pointer | stand-in for the input floor (spec §8: head-aim + select) | spec §8 |
 | fan placement: centre, then alternating right/left at 0.9 m, yaw 0.35 rad toward the viewer | stand-in for `policy` | research/36 §prose: "head-relative spawn … second window adjacent" — the shape, not the numbers |
 | plane distance 1.5 m; 0.0012 m/px (≈ 8.3 px/cm) | **stand-in, discretionary — flagged**: comparables range WiVRn 0.5 m, KWin VR 1.0 m at 20 px/cm, Android XR 1.75 m (research/36 §placement; research/31 §2.12); the M1 `policy` module takes these from the device contract / settings, not from code | owner / M1 |

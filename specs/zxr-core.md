@@ -1,11 +1,14 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 1 (2026-09-26). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 2 (2026-09-26). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
 amendments). Normative for `pkgs/zxr`. Its conformance checklist (§12) *is* the R0 bring-up
-spike; rev 2 is written from what R0 teaches.
+spike; **rev 2 records what R0 taught** ([research/61](../docs/research/61-r0-bring-up-results.md)
+§6): the runtime-event timer (§7), the signal mask and teardown order (§9), both acquire paths
+exercised (§6.3), the fast client's per-commit cost (§6.4), the RSS fence's host caveat (§12),
+and the measured values beside each gate (§12). The scene data model of §5a stays **draft**.
 **Design sources:** ADR 0006 (the model, the base), ADR 0007 (greeter/lock mode), ADR 0012 (the
 seams), composition §7 (the MVP, constraints 1–9, milestones), [places-model.md](../docs/architecture/places-model.md),
 [session-bootstrap.md](session-bootstrap.md) rev 3 (the unit contract), [session-auth.md](session-auth.md)
@@ -187,14 +190,29 @@ which an XR projection layer re-rendered every frame does not do.
    into a device image per commit. **A CPU copy on the dmabuf path is a bug**; `trace` counts
    copies and R0 asserts zero.
 3. **Acquire**: `wp_linux_drm_syncobj_v1` acquire points gate the surface transaction through
-   smithay's `DrmSyncPointBlocker` (an eventfd source; the loop never blocks). Rev 2 may move the
-   wait onto the GPU (`export_sync_file` → `vkImportSemaphoreFdKHR`) if R0's numbers say so.
+   smithay's `DrmSyncPointBlocker` (an eventfd source; the loop never blocks); a dmabuf without
+   an acquire point gates on its implicit fence through the readable-fd blocker (cosmic-comp's
+   shape). **Rev 2:** both paths are exercised — Vulkan clients on RADV take the syncobj path
+   (245 752 acquires, gate 2), Xwayland's glamor buffers the implicit one (gate 4). The GPU-side
+   wait (`export_sync_file` → `vkImportSemaphoreFdKHR`) was not needed: the CPU-side blocker
+   cost 0 missed deadlines under the fast client. What it does cost is **per commit** — ≈ 21 µs
+   on the dev host for a client committing 14.7 k/s (source insert + remove per acquire) — an M1
+   budget item on the granularity of the source, not on the mechanism.
 4. **Compose**: the scene pass samples imported images into the swapchain image for the frame.
-5. **Release**: a release point is signalled when the **GPU** is done reading the buffer — a sync
-   file exported from the queue submission that sampled it, imported into the release timeline
-   (gamescope's and mutter's shape) — never on CPU-side drop. Without syncobj the compositor
-   sends `wl_buffer.release` at the same moment. This is what bounds a fast client: it gets its
-   buffer back exactly when the compositor is done, and no sooner.
+   Every dmabuf drawn gets a foreign-queue acquire barrier before the pass and a release barrier
+   after (`GENERAL` ↔ `SHADER_READ_ONLY_OPTIMAL`, wlroots' shape, `render/vulkan/pass.c:337-359`).
+5. **Release**: a release point is signalled when the **GPU** is done reading the buffer — never
+   on CPU-side drop of the *frame*. **Rev 2 states the mechanism as built:** the scene holds one
+   smithay `Buffer` clone per surface per frame that sampled it and drops the clones only after
+   that frame slot's fence has completed; smithay's `InnerBuffer::drop` then sends
+   `wl_buffer.release` and signals the release point (`backend/renderer/utils/wayland.rs:68-79`).
+   This is GPU-done semantics with the fence wait on the loop's next use of the slot (one frame
+   later), which is why retention is exactly 2 frames; the exported-sync-file import into the
+   release timeline (gamescope's and mutter's shape) remains the alternative if a client needs
+   the release point signalled *before* the compositor's next slot reuse. Buffers replaced before
+   any frame sampled them are released by smithay at replacement. This is what bounds a fast
+   client: it gets its buffer back exactly when the compositor is done, and no sooner (gate 2:
+   retention max 2, mean 2.0, under a 245× overrun).
 6. **Frame callbacks**: sent right after `xrEndFrame`, at most one per refresh per surface
    (niri's throttle), with the *next* frame's predicted display time as the target (motorcar's
    policy, Monado's expectation; research/59 §2). The compositor never waits for a client.
@@ -214,6 +232,13 @@ loop:         on FrameState: xrLocateViews(predictedDisplayTime) → snapshot th
 counted (§11), never compensated by waiting. Depth to Monado is for reprojection only (the
 runtime does not depth-test across layers; research/59 §3).
 
+**Runtime events have their own source (rev 2, research/61 §6.1).** `xrPollEvent` runs on a
+calloop timer — 5 ms until the session is running, 250 ms after — and on every tick. Session
+`READY` (→ `xrBeginSession`) precedes any frame, and `xrWaitFrame` is legal only on a running
+session, so an event poll bound to ticks alone never starts: R0 found this as a black mirror.
+The wait thread additionally gates on "session running" in its handshake and retries on
+`XR_ERROR_SESSION_NOT_RUNNING`. The loop-shape ruling (§2) is unchanged by this.
+
 ## 8. Input (research/59 §6)
 
 The input floor first (research/42): head-aim ray + `hmdButtons.<selectRole>`, dwell where the
@@ -231,6 +256,17 @@ acknowledges `start_session`. `zxr` (session): binds the socket, publishes `WAYL
 (and `DISPLAY` once satellite is up), `sd_notify(READY=1)`; `Restart=on-failure` +
 `RestartMode=direct` in the same logind session (D4); clients die with the compositor (every
 comparable; research/59 §11) and the wrapper returns to the greeter.
+
+**Signals and teardown (rev 2, research/61 §6.2–6.3).** The signals the loop handles
+(`SIGTERM`, `SIGINT`, `SIGUSR1`) are blocked with `pthread_sigmask` **before any thread exists**
+— calloop's `Signals` source blocks them on its own thread only, and a `SIGTERM` delivered to
+the wait thread or a driver worker takes the default action and kills the process before the
+journal is written. Children spawned by the compositor unblock them again in `pre_exec`. On
+exit: `xrRequestExitSession`, then drive the state machine to `STOPPING → xrEndSession →
+EXITING` (bounded, 500 ms) so the wait thread is parked on the handshake, not inside the
+runtime; write the journal; idle the device; release every held client buffer; destroy the
+texture caches; then drop the renderer (its views of the swapchain images) **before** the
+session that owns those images. The field order of the state struct encodes the last rule.
 
 ## 10. Protocols by milestone (research/60 §17)
 
@@ -285,6 +321,21 @@ headset). Each gate is a written result with numbers in
 
 Plus the fence (budget impact above) and the unit contract items already verified for sway by
 D4 (readiness, restart in the same session), re-run with zxr in the slot behind a flag.
+
+**Measured (rev 2, research/61 §1):** gate 1 — 0/600 missed, GPU 79 µs mean / 122 µs max,
+movable and resizable over the seat and control socket; gate 2 — 4 dmabuf imports for a 4-image
+Vulkan swapchain, 0 CPU copies, 16-entry device feedback table, 245 752 `linux-drm-syncobj-v1`
+acquires and 0 implicit from a MAILBOX client committing 14.7 k/s, retention max 2 frames, 0
+missed; gate 3 — resize honoured, GTK menus as positioner popups (nested to 3), `kill -9` of the
+fast dmabuf client mid-commit, of the shm client, and of a GTK client with a menu open, all with
+`stale_texture_draws = 0`, `fences_outstanding ≤ 2`, 0 missed; gate 4 — xterm via satellite as
+an 884×556 plane, keystrokes from zxr's seat arriving in the X11 client, Xwayland's dmabufs on
+the implicit path (8 acquires); fallback not triggered. **The fence, restated:** the process
+number on this host is 7.5 MB anon + 2.7 MB binary + 4.8 MB RADV; the host total (55–60 MB) is
+inflated by the loader mapping llvmpipe and Dozen, which the device image will not carry. Rev 2
+states the RSS fence as *anon + binary + the one driver ≤ 60 MB*, with the host total reported
+alongside. The per-commit acquire cost (≈ 21 µs on this host at 14.7 k commits/s) is recorded
+as an M1 budget item (§6.4), not a fence.
 
 ## 13. What R0 does not decide
 
