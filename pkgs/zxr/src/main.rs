@@ -152,6 +152,8 @@ fn run() -> Result<(), String> {
     // kind at a time, gaze → held controller → hand → head, direct touch overriding a ray inside
     // WiVRn's 0.18/0.22 band, and no transition mid-gesture
     st.input.chain.set(input::Slot::Tier, Box::new(input::tier::TierStage::new()));
+    // the action spaces become scene frames the batched locate finds (spatial-input §2; actions.rs)
+    input::actions::register_frames(&mut st);
     tracing::info!(stages = ?st.input.chain.names(), "input chain");
     st.hold = args.hold;
     tracing::info!(debug_panels = ?st.debug_panels, "composition: quads always, projection only with depth content (ADR 0006 amendment 2)");
