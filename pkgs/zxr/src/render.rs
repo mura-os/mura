@@ -78,6 +78,8 @@ pub struct Renderer {
     pub gpu_ns_last: u64,
     /// `--panels=quad`: blits into panel swapchains and their analytic bytes (read + write)
     pub panel_blits: u64,
+    /// timestamps may be read only after the first submission wrote them (validation 09401)
+    pub query_written: bool,
     pub panel_blit_bytes: u64,
     ext_mem_fd: ash::khr::external_memory_fd::Device,
     ext_fence_fd: ash::khr::external_fence_fd::Device,
@@ -198,6 +200,7 @@ impl Renderer {
                 timestamp_period_ns: props.limits.timestamp_period as f64,
                 gpu_ns_last: 0,
                 panel_blits: 0,
+                query_written: false,
                 panel_blit_bytes: 0,
                 ext_mem_fd: ash::khr::external_memory_fd::Device::new(&core.instance, d),
                 ext_fence_fd: ash::khr::external_fence_fd::Device::new(&core.instance, d),
@@ -496,6 +499,7 @@ impl Renderer {
             let submit = [vk::SubmitInfo::default().command_buffers(&cmds)];
             d.queue_submit(self.queue, &submit, f.fence).map_err(|e| e.to_string())?;
             self.frames[slot].in_use = true;
+            self.query_written = true;
             Ok(())
         }
     }
@@ -559,6 +563,9 @@ impl Renderer {
 
     /// GPU time of the last completed pass (call after `wait_slot`).
     pub fn read_gpu_time(&mut self) -> Option<u64> {
+        if !self.query_written {
+            return None;
+        }
         unsafe {
             let mut ts = [0u64; 2];
             self.device.get_query_pool_results(self.query_pool, 0, &mut ts, vk::QueryResultFlags::TYPE_64).ok()?;

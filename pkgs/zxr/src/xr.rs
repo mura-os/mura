@@ -144,9 +144,12 @@ impl XrCore {
             ash::ext::queue_family_foreign::NAME,
         ];
         let ext_ptrs: Vec<*const i8> = device_exts.iter().map(|e| e.as_ptr()).collect();
-        let mut timeline = vk::PhysicalDeviceTimelineSemaphoreFeatures::default().timeline_semaphore(true);
-        let mut features12 = vk::PhysicalDeviceVulkan12Features::default().timeline_semaphore(true);
-        let dev_info = vk::DeviceCreateInfo::default().queue_create_infos(&qinfo).enabled_extension_names(&ext_ptrs).push_next(&mut features12).push_next(&mut timeline);
+        // Timeline semaphores via the KHR feature struct, not Vulkan12Features: Monado inserts a
+        // VkPhysicalDeviceTimelineSemaphoreFeatures itself unless one is already in the chain
+        // (oxr_vulkan.c:491-508), and Vulkan12Features + that struct together violate
+        // VUID-VkDeviceCreateInfo-pNext-02830 (found by the validation layer, research/65 §0.2).
+        let mut features12 = vk::PhysicalDeviceTimelineSemaphoreFeatures::default().timeline_semaphore(true);
+        let dev_info = vk::DeviceCreateInfo::default().queue_create_infos(&qinfo).enabled_extension_names(&ext_ptrs).push_next(&mut features12);
         let device_raw = unsafe {
             instance
                 .create_vulkan_device(system, get_ipa, physical_raw, &dev_info as *const _ as *const _)
