@@ -12,6 +12,7 @@
 , libxkbcommon
 , libinput
 , seatd
+, udev
 , openxr-loader
 , vulkan-loader
 , xwayland-satellite
@@ -27,7 +28,7 @@ rustPlatform.buildRustPackage {
     };
   };
   nativeBuildInputs = [ pkg-config shaderc ];
-  buildInputs = [ libxkbcommon libinput seatd ];
+  buildInputs = [ libxkbcommon libinput seatd udev ];
   GLSLC = "${shaderc.bin}/bin/glslc";
   MURA_OPENXR_LOADER = "${openxr-loader}/lib/libopenxr_loader.so.1";
   MURA_XWAYLAND_SATELLITE = "${xwayland-satellite}/bin/xwayland-satellite";

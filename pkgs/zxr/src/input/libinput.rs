@@ -304,7 +304,9 @@ pub fn start(st: &mut Zxr, handle: &LoopHandle<'static, Zxr>) -> Result<bool, St
                     if s.kind == SourceKind::Head {
                         st.peripherals.hmd_buttons += 1;
                     }
-                    st.input.push(s);
+                    // per-event dispatch on the state loop (research/68 §9.1, ruled): through the chain now
+                    let now = crate::state::now_ns();
+                    crate::input::dispatch(st, s, now);
                 }
                 // gestures, touch, tablet, switches: future (pointer-gestures needs pinch/swipe)
                 None => st.peripherals.events_unmapped += 1,

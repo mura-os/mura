@@ -26,6 +26,7 @@ use smithay::wayland::compositor::{with_surface_tree_downward, TraversalAction};
 use smithay::desktop::PopupManager;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
+use input::cursor;
 use render::PlaneDraw;
 use scene::{MemberId, M_PER_PX};
 use state::{now_ns, spawn_client, DebugPanels, HoldPolicy, PanelSwapchain, TexRef, Zxr, PANEL_SHRINK_TICKS};
@@ -262,7 +263,7 @@ fn run() -> Result<(), String> {
     let res = event_loop.run(None, &mut st, |state| {
         let _ = state.dh.flush_clients();
     });
-    let journal = st.journal.render(now_ns());
+    let journal = format!("{}{}\n", st.journal.render(now_ns()), input::focus::render_counters(&st));
     print!("{journal}");
     if let Some(p) = &st.journal_path {
         let _ = std::fs::write(p, &journal);
@@ -416,7 +417,9 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     //    priority; overflow to the projection pass. The scratch is taken out so the list can be
     //    read while members are mutated below, and put back at the end.
     let head_pos = [head.position.x, head.position.y, head.position.z];
-    let budget = if st.debug_panels == DebugPanels::Projection { 0 } else { st.quad_budget() };
+    // one quad is reserved for the reticle whenever a pointer-class source shows one (spatial-input §7)
+    let reticle_quads = usize::from(st.input.reticle.is_some());
+    let budget = if st.debug_panels == DebugPanels::Projection { 0 } else { st.quad_budget().saturating_sub(reticle_quads) };
     let mut submit = std::mem::take(&mut st.scene.submit);
     st.scene.flatten_into(&mut submit, head_pos, budget, |p| p.presentable());
     let depth = st.depth_content_present(!submit.overflow.is_empty());
@@ -503,10 +506,23 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     }
     st.journal.members_dirty += dirty.len() as u64;
 
-    // 5. GPU work — only if there is any: dirty panel passes and/or the projection pass
-    let submit_gpu = !dirty.is_empty() || depth;
+    // the reticle's panel: a 64×64 swapchain created the first tick a reticle is shown, drawn once
+    if st.input.reticle.is_some() && st.reticle_panel.is_none() {
+        let sc = st.xr.create_panel_swapchain(cursor::RETICLE_PX, cursor::RETICLE_PX)?;
+        let target = st.renderer.make_panel_target(sc.extent, st.xr.color_format, &sc.images)?;
+        st.journal.panel_swapchains_created += 1;
+        let bounds = Rectangle::new(Point::from((0, 0)), Size::from((cursor::RETICLE_PX as i32, cursor::RETICLE_PX as i32)));
+        st.reticle_panel = Some(PanelSwapchain { sc, target, has_image: false, bounds, shrink_since: None, passes: 0 });
+        let mut tex = st.renderer.create_shm_texture(cursor::RETICLE_PX, cursor::RETICLE_PX)?;
+        st.renderer.upload_shm(&mut tex, &cursor::ring_pixels(cursor::RETICLE_PX), cursor::RETICLE_PX * 4)?;
+        st.reticle_tex = Some(tex);
+    }
+    let reticle_pass = st.reticle_panel.as_ref().map(|p| !p.has_image).unwrap_or(false);
+
+    // 5. GPU work — only if there is any: dirty panel passes, the reticle's one pass and/or the projection pass
+    let submit_gpu = !dirty.is_empty() || depth || reticle_pass;
     if submit_gpu {
-        let Zxr { renderer, dmabuf_textures, surface_tex, journal, scene, xr, .. } = &mut *st;
+        let Zxr { renderer, dmabuf_textures, surface_tex, journal, scene, xr, reticle_panel, reticle_tex, .. } = &mut *st;
         let resolve = |r: &TexRef| -> Option<&render::Texture> {
             match r {
                 TexRef::Dmabuf(bid) => dmabuf_textures.get(bid).map(|(t, _)| t),
@@ -549,6 +565,20 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
             renderer.panel_passes += 1;
             renderer.panel_bytes += (w * h) as u64 * 4 * 2;
         }
+        // the reticle pass: the ring texture into its panel, once
+        if reticle_pass {
+            if let (Some(ps), Some(texture)) = (reticle_panel.as_mut(), reticle_tex.as_ref()) {
+                let idx = xr.acquire_panel_image(&mut ps.sc)?;
+                journal.panel_acquires += 1;
+                let side = cursor::RETICLE_PX as f32;
+                let ortho = math::ortho_px(side, side);
+                let planes = [PlaneDraw { model: math::model([side * 0.5, side * 0.5, 0.0], 0.0), half_size: [side * 0.5, side * 0.5], texture, flip_v: true }];
+                renderer.record_pass_in(cmd, &ps.target, idx, ash::vk::Extent2D { width: cursor::RETICLE_PX, height: cursor::RETICLE_PX }, &ortho, &planes, [0.0, 0.0, 0.0, 0.0]);
+                ps.has_image = true;
+                ps.passes += 1;
+                renderer.panel_passes += 1;
+            }
+        }
         // the projection pass: overflow members (and, from M2, volumes / environment / cutout)
         if depth {
             let projection_indices = xr.acquire_images()?;
@@ -585,6 +615,12 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 m.m.dirty = false;
             }
         }
+        if reticle_pass {
+            if let Some(ps) = reticle_panel.as_mut() {
+                xr.release_panel_image(&mut ps.sc)?;
+                journal.panel_releases += 1;
+            }
+        }
         if depth {
             xr.release_images()?;
         }
@@ -600,7 +636,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     //    (band ascending, nearest last — painter's order, `rendering.adoc:1143-1147`)
     {
         let emphasis = st.input.emphasis;
-        let Zxr { xr, scene, .. } = &mut *st;
+        let reticle = st.input.reticle;
+        let Zxr { xr, scene, reticle_panel, .. } = &mut *st;
         let mut quads: Vec<QuadLayer<'_>> = Vec::with_capacity(submit.quads.len());
         for q in &submit.quads {
             let Some(m) = scene.get(q.member) else { continue };
@@ -621,6 +658,12 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 // touch-class emphasis of the targeted member (spatial-input §4)
                 emphasis: emphasis.filter(|(m, _)| *m == q.member).map(|(_, e)| e).unwrap_or(0.0),
             });
+        }
+        // the reticle: band 5, nearest — last in painter's order, never emphasised (spatial-input §7)
+        if let (Some((pose, size)), Some(ps)) = (reticle, reticle_panel.as_ref()) {
+            if ps.has_image {
+                quads.push(QuadLayer { swapchain: &ps.sc, pose, size, image_extent: [cursor::RETICLE_PX, cursor::RETICLE_PX], emphasis: 0.0 });
+            }
         }
         xr.end_frame_with_quads(time, if depth { Some(&views) } else { None }, &quads)?;
     }
@@ -780,7 +823,7 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
                 let band = st.scene.band(id).unwrap_or(0);
                 let panel = m.m.panel.as_ref().map(|p| format!("{}x{}", p.sc.extent.width, p.sc.extent.height)).unwrap_or_else(|| "-".into());
                 s.push_str(&format!(
-                    "{}{} band={band} place={} {}x{} pos=({:.2},{:.2},{:.2}) mapped={} dirty={} panel={panel} {title}\n",
+                    "{}{} band={band} place={} {}x{} pos=({:.2},{:.2},{:.2}) mapped={} dirty={} urgent={} panel={panel} {title}\n",
                     id.0.index(),
                     if Some(id) == st.scene.focused { "*" } else { " " },
                     m.place.0.index(),
@@ -791,11 +834,13 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
                     w.position.z,
                     m.m.mapped(),
                     m.m.dirty
+,
+                    m.m.urgent
                 ));
             }
             s.trim_end().to_string()
         }
-        Journal => st.journal.render(now_ns()).trim_end().to_string(),
+        Journal => format!("{}{}", st.journal.render(now_ns()), input::focus::render_counters(st)).trim_end().to_string(),
         Quiet(on) => {
             st.set_quiet(on);
             format!("quiet {}", if on { "on" } else { "off" })

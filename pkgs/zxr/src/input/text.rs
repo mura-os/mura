@@ -72,7 +72,7 @@ pub const OSK_SUPPRESS_NS: u64 = 5 * 60 * 1_000_000_000;
 
 /// Stand-in: the `Im` stage performs the seat's `KeyboardHandle::input` for key samples and
 /// consumes them, until lane C's `Seat` stage emits keys. Flip to `false` when it does.
-pub const IM_EMITS_KEYS: bool = true;
+pub const IM_EMITS_KEYS: bool = false;
 
 /// The text-entry state on `Zxr`.
 #[derive(Default)]

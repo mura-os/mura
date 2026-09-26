@@ -102,9 +102,10 @@ pub fn plane_point(st: &Zxr, member: MemberId, local: [f32; 2]) -> Option<(WlSur
 /// Focus follows the commit, never hover (spatial-input §6, ruled): a `down` or `button` press
 /// on a member makes it the keyboard focus and raises it; `focus_window` counts the change.
 pub fn commit_focus(st: &mut Zxr, member: MemberId) {
-    if st.scene.focused != Some(member) {
-        st.focus_window(Some(member));
-    }
+    // the focus module (spatial-input §6): kb focus + Activated, the focus stack, the commit
+    // serial the activation rule compares against; `focus_window` inside counts the change
+    let serial = smithay::utils::SERIAL_COUNTER.next_serial();
+    crate::input::focus::commit_focus(st, member, serial);
 }
 
 /// The stage in the `Seat` slot.
@@ -156,7 +157,6 @@ impl SeatStage {
             },
         }
         self.cursors.set_client_on_plane(self.pointer.logic.plane.is_some());
-        self.cursors.ensure_texture(&mut st.renderer);
         let touch_target = match tier {
             Some(t) if t.class == Class::Touch => hit.map(|h| h.member),
             _ => None,
@@ -218,7 +218,7 @@ impl Stage for SeatStage {
         self.present(st);
         self.emphasis.tick(now_ns);
         // publish for the frame procedure (main.rs step 6) and the journal
-        st.input.reticle = self.cursors.reticle_quad().map(|(p, s, _)| (p, s));
+        st.input.reticle = self.cursors.reticle_quad();
         st.input.emphasis = self.emphasis.target().map(|m| (m, self.emphasis.emphasis_of(m)));
         st.journal.input_touch_downs = self.touch.logic.downs;
         st.journal.input_touch_cancels = self.touch.logic.cancels;

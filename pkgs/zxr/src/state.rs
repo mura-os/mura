@@ -101,6 +101,16 @@ pub struct Zxr {
     pub _viewporter: ViewporterState,
     pub _presentation: PresentationState,
     pub _single_pixel: SinglePixelBufferState,
+    /// cursor-shape-v1 (spatial-input §7: names rendered from one theme at one scale)
+    pub _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState,
+    /// ADR 0007: `ext-idle-notify-v1` + `zwp_idle_inhibit_v1`
+    pub idle_notifier: smithay::wayland::idle_notify::IdleNotifierState<Zxr>,
+    pub _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState,
+    pub idle_inhibitors: Vec<WlSurface>,
+    /// the reticle's 64×64 swapchain + target, drawn once (spatial-input §7; input/cursor.rs)
+    pub reticle_panel: Option<PanelSwapchain>,
+    /// the ring texture the reticle pass samples (16 KiB; lives for the session)
+    pub reticle_tex: Option<crate::render::Texture>,
     /// spatial-input §6: `xdg_activation_v1` — tokens carry the commit's serial (`focus.rs`)
     pub activation_state: XdgActivationState,
     /// spatial-input §12: the text-entry seam — `text-input-v3`, `input-method-v2`,
@@ -282,6 +292,9 @@ impl Zxr {
         let viewporter = ViewporterState::new::<Self>(&dh);
         let presentation = PresentationState::new::<Self>(&dh, libc::CLOCK_MONOTONIC as u32);
         let single_pixel = SinglePixelBufferState::new::<Self>(&dh);
+        let cursor_shape = smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh);
+        let idle_notifier = smithay::wayland::idle_notify::IdleNotifierState::<Self>::new(&dh, loop_handle.clone());
+        let idle_inhibit = smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Self>(&dh);
         let popups = PopupManager::default();
         // ---- focus/activation and the text-entry seam (spatial-input §6, §8, §12)
         let activation_state = XdgActivationState::new::<Self>(&dh);
@@ -387,6 +400,12 @@ impl Zxr {
             _viewporter: viewporter,
             _presentation: presentation,
             _single_pixel: single_pixel,
+            _cursor_shape: cursor_shape,
+            idle_notifier,
+            _idle_inhibit: idle_inhibit,
+            idle_inhibitors: Vec::new(),
+            reticle_panel: None,
+            reticle_tex: None,
             activation_state,
             _text_input_state: text_input_state,
             _input_method_state: input_method_state,
@@ -1149,7 +1168,11 @@ impl SeatHandler for Zxr {
     fn seat_state(&mut self) -> &mut SeatState<Zxr> {
         &mut self.seat_state
     }
-    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
+    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
+        // cursor-shape names and set_cursor surfaces alike; the seat stage takes it each tick
+        // (spatial-input §7)
+        self.input.cursor_image = Some(image);
+    }
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let dh = &self.dh;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
@@ -1186,6 +1209,32 @@ impl WaylandDndGrabHandler for Zxr {
 }
 
 impl OutputHandler for Zxr {}
+
+// cursor-shape-v1 needs the tablet seat handler bound (smithay `cursor_shape.rs:252-258`); zxr
+// serves no tablet tools yet.
+impl smithay::input::tablet::TabletSeatHandler for Zxr {
+    type ToolFocus = WlSurface;
+}
+
+// ADR 0007: serve `ext-idle-notify-v1`, honour `zwp_idle_inhibit_v1`; user activity reaches the
+// notifier from `input::activity::notify` (KWin's spy shape, `input.cpp:3169-3172`).
+impl smithay::wayland::idle_notify::IdleNotifierHandler for Zxr {
+    fn idle_notifier_state(&mut self) -> &mut smithay::wayland::idle_notify::IdleNotifierState<Self> {
+        &mut self.idle_notifier
+    }
+}
+
+impl smithay::wayland::idle_inhibit::IdleInhibitHandler for Zxr {
+    fn inhibit(&mut self, surface: WlSurface) {
+        self.idle_inhibitors.push(surface);
+        self.idle_notifier.set_is_inhibited(true);
+    }
+    fn uninhibit(&mut self, surface: WlSurface) {
+        self.idle_inhibitors.retain(|s| *s != surface);
+        let on = !self.idle_inhibitors.is_empty();
+        self.idle_notifier.set_is_inhibited(on);
+    }
+}
 impl smithay::wayland::pointer_constraints::PointerConstraintsHandler for Zxr {}
 
 /// spatial-input §6 lines 291-297 (`xdg_activation_v1`): the token's serial decides; refusal is

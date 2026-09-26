@@ -125,7 +125,8 @@ fn accept(st: &mut Zxr, handle: &LoopHandle<'static, Zxr>, context: eis::Context
                         if s.kind == SourceKind::Head {
                             st.peripherals.hmd_buttons += 1;
                         }
-                        st.input.push(s);
+                        let now = crate::state::now_ns();
+                        crate::input::dispatch(st, s, now);
                     }
                     None => st.ei.events_unmapped += 1,
                 },

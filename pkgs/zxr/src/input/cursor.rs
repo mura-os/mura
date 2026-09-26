@@ -14,7 +14,7 @@
 //! `src/input.c:448-512`, motorcar, Simula — research/63 §7 :325-328).
 //!
 //! This file is the **state**: where the reticle is this tick (as a world pose and a size), the
-//! one procedural ring texture, and which client cursor is current (smithay delivers both
+//! one procedural ring (drawn by the frame procedure), and which client cursor is current (smithay delivers both
 //! `cursor-shape-v1` names and `set_cursor` surfaces through `SeatHandler::cursor_image` as one
 //! `CursorImageStatus`, `input/pointer/cursor_image.rs:33-43`). The reticle is presented as a
 //! band-5 quad by the frame procedure from [`Cursors::reticle_quad`]; the client cursor is drawn
@@ -29,12 +29,11 @@
 //! distance — the brief's number; HoloLens' ≥ 2° is a *target* size, MRTK3's reticle scales
 //! with distance (`MRTKRayReticleVisual.cs:161-166`) without a stated angle.
 //!
-//! Budget: one 64×64 texture created once; a few scalars per tick; no allocation.
+//! Budget: one 64×64 ring rendered once (frame procedure); a few scalars per tick; no allocation.
 
 use openxr as xr;
 use smithay::input::pointer::CursorImageStatus;
 
-use crate::render::{Renderer, Texture};
 use crate::xr::math;
 
 /// Reticle diameter in degrees of visual angle at the hit distance (stand-in — flagged).
@@ -66,14 +65,13 @@ pub struct Cursors {
     reticle: Option<(xr::Posef, f32)>,
     /// the logical pointer is on a plane: the client cursor is drawable there
     client_on_plane: bool,
-    texture: Option<Texture>,
     client: CursorImageStatus,
     hidden_typing: bool,
 }
 
 impl Default for Cursors {
     fn default() -> Self {
-        Cursors { reticle: None, client_on_plane: false, texture: None, client: CursorImageStatus::default_named(), hidden_typing: false }
+        Cursors { reticle: None, client_on_plane: false, client: CursorImageStatus::default_named(), hidden_typing: false }
     }
 }
 
@@ -142,41 +140,11 @@ impl Cursors {
         }
     }
 
-    /// Create the ring texture once (an anti-aliased white ring, BGRA, premultiplied).
-    pub fn ensure_texture(&mut self, renderer: &mut Renderer) {
-        if self.texture.is_some() {
-            return;
-        }
-        let mut tex = match renderer.create_shm_texture(RETICLE_PX, RETICLE_PX) {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!("reticle texture: {e}");
-                return;
-            }
-        };
-        let pixels = ring_pixels(RETICLE_PX);
-        match renderer.upload_shm(&mut tex, &pixels, RETICLE_PX * 4) {
-            Ok(()) => self.texture = Some(tex),
-            Err(e) => {
-                tracing::warn!("reticle upload: {e}");
-                renderer.destroy_texture(tex);
-            }
-        }
-    }
-
-    /// The reticle to present this tick as a band-5 quad: its world pose, its size in metres
-    /// (square) and the ring texture. `None` when there is no reticle or the texture is not up.
-    pub fn reticle_quad(&self) -> Option<(xr::Posef, [f32; 2], &Texture)> {
+    /// The reticle to present this tick as a band-5 quad: its world pose and its size in metres
+    /// (square). The ring texture and the 64×64 panel are the frame procedure's (`Zxr.reticle_*`).
+    pub fn reticle_quad(&self) -> Option<(xr::Posef, [f32; 2])> {
         let (pose, d) = self.reticle?;
-        let tex = self.texture.as_ref()?;
-        Some((pose, [d, d], tex))
-    }
-
-    /// Give the texture back to the renderer (teardown).
-    pub fn destroy(&mut self, renderer: &mut Renderer) {
-        if let Some(t) = self.texture.take() {
-            renderer.destroy_texture(t);
-        }
+        Some((pose, [d, d]))
     }
 }
 
@@ -247,7 +215,7 @@ mod tests {
         c.set_reticle(math::pose_identity(), [0.0, 0.0], 1.5);
         assert_eq!(c.kind(), Kind::Reticle);
         assert!(c.client_cursor().is_none(), "a hand ray has no client cursor");
-        assert!(c.reticle_quad().is_none(), "no texture yet");
+        assert!(c.reticle_quad().is_some(), "a reticle is set");
         c.set_client_on_plane(true);
         assert_eq!(c.kind(), Kind::ReticleAndClient);
         let p = math::pose_apply(math::pose_identity(), [0.0, 0.0, RETICLE_LIFT_M]);

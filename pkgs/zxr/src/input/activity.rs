@@ -91,8 +91,12 @@ pub fn notify(st: &mut Zxr, now_ns: u64) {
 /// [`notify`] keeping the sample's provenance (`Flags::EMULATED`, `libei/README.md:53-71`).
 pub fn notify_flagged(st: &mut Zxr, now_ns: u64, flags: Flags) {
     st.input.activity.record(now_ns, flags);
-    // `ext-idle-notify`: `st.idle_notifier.notify_activity(&seat)` once lane F lands the state
-    // (smithay `idle_notify/mod.rs:236-244`); `zwp_idle_inhibit_v1` via `set_is_inhibited`.
+    // `ext-idle-notify` (smithay `idle_notify/mod.rs:236-244`); emulated input counts only when
+    // the record does (libei's distinction)
+    if !flags.contains(Flags::EMULATED) || st.input.activity.count_emulated {
+        let seat = st.seat.clone();
+        st.idle_notifier.notify_activity(&seat);
+    }
 }
 
 #[cfg(test)]
