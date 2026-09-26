@@ -16,6 +16,7 @@
 , sway
 , foot
 , xrgears
+, vulkan-tools
 , xterm
 , coreutils
 , gnugrep
@@ -38,7 +39,11 @@ let
 in
 writeShellApplication {
   name = "dev-session";
-  runtimeInputs = [ monado sway foot xrgears xterm coreutils gnugrep procps mura.zxr ];
+  # vulkan-tools (vkcube, vulkaninfo) comes from the same nixpkgs as monado/xrgears/zxr so
+  # its glibc matches the host's Mesa ICDs. A vkcube from an unrelated store path once fell
+  # back to llvmpipe and mislabelled a whole set of host benches as dmabuf (research/65 §2.3,
+  # research/67 §6): bench clients are taken from this PATH, never from a hard-coded path.
+  runtimeInputs = [ monado sway foot xrgears vulkan-tools xterm coreutils gnugrep procps mura.zxr ];
   text = ''
     usage() {
       cat <<USAGE
@@ -87,6 +92,23 @@ writeShellApplication {
     if [ ! -e /dev/dri ]; then
       echo "dev-session: /dev/dri missing — no GPU render node available." >&2
       exit 1
+    fi
+    # Which Vulkan devices this session's clients (monado, xrgears, zxr, vkcube) will see.
+    # Printed so every bench log carries it; a CPU-only list means the ICDs failed to load
+    # (typically a glibc mismatch between the tools and the host Mesa) and any dmabuf/GPU
+    # number measured in this session would be llvmpipe + wl_shm, not the GPU.
+    # (queried without a display: device enumeration needs none, and vulkaninfo's surface
+    # probes crash on an unreachable one)
+    vk_devices=$(env -u DISPLAY -u WAYLAND_DISPLAY vulkaninfo --summary 2>/dev/null | grep -E 'deviceName|deviceType' \
+      | sed -E 's/^[[:space:]]*deviceType[[:space:]]*=[[:space:]]*PHYSICAL_DEVICE_TYPE_//; s/^[[:space:]]*deviceName[[:space:]]*=[[:space:]]*/  /' \
+      | paste -d' ' - - || true)
+    if [ -z "$vk_devices" ]; then
+      echo "dev-session: WARNING: vulkaninfo found no Vulkan device — ICDs failed to load; GPU clients will fail." >&2
+    else
+      echo "[vulkan] devices:"; while IFS= read -r d; do echo "[vulkan] $d"; done <<<"$vk_devices"
+      if ! echo "$vk_devices" | grep -qvE '^[[:space:]]*CPU '; then
+        echo "dev-session: WARNING: only CPU (llvmpipe) Vulkan devices — the hardware ICD did not load; this session measures software rendering." >&2
+      fi
     fi
 
     pids=()
