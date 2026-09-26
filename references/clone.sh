@@ -253,6 +253,20 @@ repos=(
   'uci|https://github.com/openwrt/uci.git|'
   'procd|https://github.com/openwrt/procd.git|'
   'steamos-manager|https://gitlab.steamos.cloud/holo/steamos-manager.git|v26.4.1'
+  # --- zxr architecture study (docs/research/59, /60; specs/zxr-core.md) ---
+  # gamescope = SteamOS's compositor: a Wayland compositor that is itself a Vulkan app with its
+  # own pacing and an OpenVR presentation backend; wlx-overlay-s = the OpenXR overlay loop WayVR
+  # grew in; river = the layout-CLIENT precedent for pluggable window-management policy;
+  # mako/dunst = layer-shell notification daemons; phosh = the mobile shell's lock/OSD/keyboard
+  # seams; the GNOME/KDE portal backends = the consent and capture seam as the desktops ship it.
+  'gamescope|https://github.com/ValveSoftware/gamescope.git|'
+  'wlx-overlay-s|https://github.com/galister/wlx-overlay-s.git|'
+  'river|https://codeberg.org/river/river.git|'
+  'mako|https://github.com/emersion/mako.git|'
+  'dunst|https://github.com/dunst-project/dunst.git|'
+  'phosh|https://gitlab.gnome.org/World/Phosh/phosh.git|'
+  'xdg-desktop-portal-gnome|https://gitlab.gnome.org/GNOME/xdg-desktop-portal-gnome.git|'
+  'xdg-desktop-portal-kde|https://invent.kde.org/plasma/xdg-desktop-portal-kde.git|'
 )
 
 mkdir -p .logs

@@ -172,5 +172,13 @@
   "snapd": {"url": "https://github.com/canonical/snapd.git", "commit": "88bf726206374c8133ef65c1191a54a0a8948b78", "ref": "master", "cloned": "2026-09-25T16:42:22Z"},
   "uci": {"url": "https://github.com/openwrt/uci.git", "commit": "74f6277aabffc943d026f406df57c22595134c42", "ref": "master", "cloned": "2026-09-25T16:42:22Z"},
   "procd": {"url": "https://github.com/openwrt/procd.git", "commit": "6af440ae47245eb1674ee2b777c758439b01b6bb", "ref": "main", "cloned": "2026-09-25T16:42:22Z"},
-  "steamos-manager": {"url": "https://gitlab.steamos.cloud/holo/steamos-manager.git", "commit": "a0d399defebd60db30ba38325d9cf47dbda49bee", "ref": "v26.4.1", "cloned": "2026-09-25T16:42:22Z"}
+  "steamos-manager": {"url": "https://gitlab.steamos.cloud/holo/steamos-manager.git", "commit": "a0d399defebd60db30ba38325d9cf47dbda49bee", "ref": "v26.4.1", "cloned": "2026-09-25T16:42:22Z"},
+  "gamescope": {"url": "https://github.com/ValveSoftware/gamescope.git", "commit": "ad2763da1c48860f649abfe842a087188dcb6e20", "ref": "master", "cloned": "2026-09-26T08:00:25Z"},
+  "wlx-overlay-s": {"url": "https://github.com/galister/wlx-overlay-s.git", "commit": "54713b95f435b8d448fb93723e83aceaa80ec5d0", "ref": "main", "cloned": "2026-09-26T08:00:25Z"},
+  "river": {"url": "https://codeberg.org/river/river.git", "commit": "fd5ea7fe823cda6db7411871cac600a0ebd3b154", "ref": "main", "cloned": "2026-09-26T08:00:25Z"},
+  "mako": {"url": "https://github.com/emersion/mako.git", "commit": "cce37cd3405f64eee1b07d4656b5ecbbc912b46d", "ref": "master", "cloned": "2026-09-26T08:00:25Z"},
+  "dunst": {"url": "https://github.com/dunst-project/dunst.git", "commit": "df50df4bb2ec4f8b8aef0b837644fa93274b0863", "ref": "master", "cloned": "2026-09-26T08:00:25Z"},
+  "phosh": {"url": "https://gitlab.gnome.org/World/Phosh/phosh.git", "commit": "be4867981144345505374778367453291bc55418", "ref": "main", "cloned": "2026-09-26T08:00:25Z"},
+  "xdg-desktop-portal-gnome": {"url": "https://gitlab.gnome.org/GNOME/xdg-desktop-portal-gnome.git", "commit": "a4f6ed64474ff6fe6c4eb9dbe092d97cafd6ea81", "ref": "main", "cloned": "2026-09-26T08:00:25Z"},
+  "xdg-desktop-portal-kde": {"url": "https://invent.kde.org/plasma/xdg-desktop-portal-kde.git", "commit": "a5d9198ff29bad08db0c68ffd189ea72b4cb7352", "ref": "master", "cloned": "2026-09-26T08:00:25Z"}
 }
