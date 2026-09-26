@@ -138,6 +138,19 @@ X11-app focus/pointer behaviour beyond output bounds and therefore affect **our*
 Xwayland integration too, independent of KWin; Mesa radeonsi `OVR_multiview` (relevant to any
 GL-multiview path; our Vulkan renderer uses `VK_KHR_multiview`, unaffected).
 
+**Monado `XR_EXT_hand_interaction` device** (added 2026-09-26 with the amendment below; **this
+one is work, not a watch**): Monado exposes the profile's bindings
+(`src/xrt/auxiliary/bindings/bindings.json:209-263`) but no driver fills them from hand
+tracking — `ht_ctrl_emu` derives only a simple-controller `select` from tip distance
+(`drivers/ht_ctrl_emu/ht_ctrl_emu.cpp:411-464`); the standard puts the stabilised aim pose,
+`pinch_ext/value`, `poke_ext/pose` and the `ready` gates on the runtime
+(`ext_hand_interaction.adoc:86-88, 162-163, 316-338`). Mura's item: an `xrt_device` over
+Mercury's joints producing the four poses and three values, upstreamed. Until it lands, zxr's
+hand tiers run on a joint-derived bridge behind the same internal interface with MRTK3/StereoKit
+thresholds as stand-ins ([spatial-input.md §10](../spatial-input.md)); the bridge deletes when
+the device exists. Order and gate: [implementation-path.md §5.1](../implementation-path.md)
+("The input model").
+
 ## Rationale
 
 - The two decisions that matter — *don't build from it*, *do mine it* — both follow from the same

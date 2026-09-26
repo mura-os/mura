@@ -194,7 +194,15 @@ a client only through the OpenXR extension it enables — whether an *additional
 permission gate is required is an open question whose decider is the eye-tracking privacy review
 carried with ADR 0011's backlog, [28 §q5](../research/28-eye-tracking-stack.md),
 [38 §7](../research/38-desktop-linux-security-landscape.md)) are properties of this plane's
-boundary, stated in the owning ADRs.
+boundary, stated in the owning ADRs. **Gaze and 2D clients** (ruled 2026-09-26, ADR 0013
+amendment; [spatial-input.md §5, §9](spatial-input.md)): 2D Wayland clients cannot bind the
+OpenXR gaze profile at all, and gaze-driven input reaches them as `wl_touch` — a position only
+at the commit — so no 2D client ever receives where the wearer looks. **The one deliberate
+disclosure:** scrolling the gazed element from a controller stick or mouse wheel enters the
+pointer at the gaze point for the `axis` event and leaves. It is the same class of disclosure as
+a tap (a position, on a user action), it is the only path by which gaze position reaches a
+client, and it is named here so it cannot drift into "gaze drives the pointer". Any change to
+it is a change to this boundary and goes through the same privacy review.
 
 ### Shell plane
 
