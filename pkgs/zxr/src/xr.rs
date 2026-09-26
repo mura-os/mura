@@ -55,6 +55,8 @@ pub struct XrCore {
     pub environment_blend: xr::EnvironmentBlendMode,
     /// `XrSystemGraphicsProperties::maxLayerCount` — bounds the quad layers (spec §7 rev 3)
     pub max_layer_count: u32,
+    /// the instance enabled `XR_KHR_composition_layer_color_scale_bias` (emphasis; else none)
+    pub color_scale_bias: bool,
     pub session_running: bool,
     pub exit_requested: bool,
     /// `XR_EXT_user_presence` (`XrEventDataUserPresenceChangedEXT`): the last value the runtime
@@ -196,6 +198,9 @@ pub struct QuadLayer<'a> {
     /// the part of the image the panel occupies (grow-only swapchains, spec §5a): top-left
     /// `image_extent` pixels
     pub image_extent: [u32; 2],
+    /// touch-class hover emphasis ∈ [0,1] (spatial-input §4) — applied as `XR_KHR_composition_layer_color_scale_bias`
+    /// when the runtime has it (Monado: `oxr_extension_support.py:47`); no fallback pass without it
+    pub emphasis: f32,
 }
 
 /// `xrGetSystemProperties` with the eye-gaze and hand-tracking property structs chained (the
@@ -255,6 +260,8 @@ impl XrCore {
         // headset on/off as a session event (spatial-input §1a; Monado reports it from the head
         // device's HEAD_DETECT input — not on the simulated HMD)
         exts.ext_user_presence = available.ext_user_presence;
+        // spatial-input §4: plane-level emphasis of the targeted member on its quad layer
+        exts.khr_composition_layer_color_scale_bias = available.khr_composition_layer_color_scale_bias;
         // the XR sources (spatial-input §2), each only when advertised: the hand-interaction and
         // eye-gaze profiles bind through the action set; hand tracking feeds the §10 bridge
         // while Monado has no `EXT_hand_interaction` device (research/63 §1 "Monado status")
@@ -371,6 +378,7 @@ impl XrCore {
         let views = instance.enumerate_view_configuration_views(system, VIEW_TYPE).map_err(|e| e.to_string())?;
         let blend = instance.enumerate_environment_blend_modes(system, VIEW_TYPE).map_err(|e| e.to_string())?[0];
         let max_layer_count = instance.system_properties(system).map(|p| p.graphics_properties.max_layer_count).unwrap_or(16);
+        let exts_enabled_color_scale_bias = instance.exts().khr_composition_layer_color_scale_bias.is_some();
         tracing::info!(max_layer_count, "runtime layer cap");
         let formats = session.enumerate_swapchain_formats().map_err(|e| e.to_string())?;
         let want = [vk::Format::B8G8R8A8_SRGB, vk::Format::R8G8B8A8_SRGB, vk::Format::B8G8R8A8_UNORM, vk::Format::R8G8B8A8_UNORM];
@@ -436,7 +444,7 @@ impl XrCore {
         }
 
         Ok((
-            XrCore { instance, system, session, stream, space, views, swapchains, color_format, environment_blend: blend, max_layer_count, session_running: false, exit_requested: false, presence_event: None, calls: Default::default(), actions, head: xr::Posef::IDENTITY, events: xr::EventDataBuffer::new(), handshake, ticks: Some(ticks) },
+            XrCore { instance, system, session, stream, space, views, swapchains, color_format, environment_blend: blend, max_layer_count, session_running: false, exit_requested: false, presence_event: None, color_scale_bias: exts_enabled_color_scale_bias, calls: Default::default(), actions, head: xr::Posef::IDENTITY, events: xr::EventDataBuffer::new(), handshake, ticks: Some(ticks) },
             VkCore { entry: vk_entry, instance: vk_instance, physical, device, queue_family, queue },
         ))
     }
@@ -700,16 +708,35 @@ impl XrCore {
             }
         }
         let projection = views.map(|_| xr::CompositionLayerProjection::new().space(&self.space).views(&pv));
-        let quad_layers: Vec<xr::CompositionLayerQuad<xr::Vulkan>> = quads
+        // one colour scale/bias struct per quad, chained on `next` for the emphasised ones only
+        // (spatial-input §4; stand-in: scale 1 + 0.15·e, flagged). `biases` outlives `quad_layers`
+        // and the `end` call below, so the raw pointer stays valid.
+        let biases: Vec<xr::sys::CompositionLayerColorScaleBiasKHR> = quads
             .iter()
             .map(|q| {
-                xr::CompositionLayerQuad::new()
+                let s = 1.0 + 0.15 * q.emphasis.clamp(0.0, 1.0);
+                xr::sys::CompositionLayerColorScaleBiasKHR { ty: xr::sys::CompositionLayerColorScaleBiasKHR::TYPE, next: std::ptr::null(), color_scale: xr::Color4f { r: s, g: s, b: s, a: 1.0 }, color_bias: xr::Color4f { r: 0.0, g: 0.0, b: 0.0, a: 0.0 } }
+            })
+            .collect();
+        let quad_layers: Vec<xr::CompositionLayerQuad<xr::Vulkan>> = quads
+            .iter()
+            .zip(biases.iter())
+            .map(|(q, b)| {
+                let layer = xr::CompositionLayerQuad::new()
                     .layer_flags(xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA)
                     .space(&self.space)
                     .eye_visibility(xr::EyeVisibility::BOTH)
                     .sub_image(xr::SwapchainSubImage::new().swapchain(&q.swapchain.handle).image_array_index(0).image_rect(xr::Rect2Di { offset: xr::Offset2Di { x: 0, y: 0 }, extent: xr::Extent2Di { width: q.image_extent[0].min(q.swapchain.extent.width) as i32, height: q.image_extent[1].min(q.swapchain.extent.height) as i32 } }))
                     .pose(q.pose)
-                    .size(xr::Extent2Df { width: q.size[0], height: q.size[1] })
+                    .size(xr::Extent2Df { width: q.size[0], height: q.size[1] });
+                if self.color_scale_bias && q.emphasis > 0.0 {
+                    let mut raw = layer.into_raw();
+                    raw.next = (b as *const xr::sys::CompositionLayerColorScaleBiasKHR).cast();
+                    // SAFETY: `biases` outlives this vector and the `end` call; the struct is a valid chain element.
+                    unsafe { xr::CompositionLayerQuad::from_raw(raw) }
+                } else {
+                    layer
+                }
             })
             .collect();
         let mut layers: Vec<&xr::CompositionLayerBase<xr::Vulkan>> = Vec::with_capacity(1 + quad_layers.len());

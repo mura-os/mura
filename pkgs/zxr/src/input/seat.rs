@@ -212,8 +212,19 @@ impl Stage for SeatStage {
     }
 
     fn tick(&mut self, st: &mut Zxr, now_ns: u64) {
+        if let Some(c) = st.input.cursor_image.take() {
+            self.cursors.set_client_cursor(c);
+        }
         self.present(st);
         self.emphasis.tick(now_ns);
+        // publish for the frame procedure (main.rs step 6) and the journal
+        st.input.reticle = self.cursors.reticle_quad().map(|(p, s, _)| (p, s));
+        st.input.emphasis = self.emphasis.target().map(|m| (m, self.emphasis.emphasis_of(m)));
+        st.journal.input_touch_downs = self.touch.logic.downs;
+        st.journal.input_touch_cancels = self.touch.logic.cancels;
+        st.journal.input_gaze_scrolls = self.pointer.logic.gaze_scrolls;
+        st.journal.input_pointer_handoffs = self.pointer.logic.owner.handoffs;
+        st.journal.input_pointer_warps = self.pointer.logic.warps;
     }
 }
 
@@ -225,7 +236,7 @@ mod tests {
     use crate::xr::math;
 
     fn sel(k: SourceKind, class: Class) -> Option<Selection> {
-        Some(Selection { targeting: k, class, since_ns: 0 })
+        Some(Selection { targeting: k, class, direct: false, changed_at_ns: 0 })
     }
 
     fn members() -> (MemberId, MemberId) {

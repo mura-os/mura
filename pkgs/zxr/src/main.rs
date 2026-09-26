@@ -581,6 +581,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     // 6. xrEndFrame: the projection layer (if any) first, then the quads in the flatten's order
     //    (band ascending, nearest last — painter's order, `rendering.adoc:1143-1147`)
     {
+        let emphasis = st.input.emphasis;
         let Zxr { xr, scene, .. } = &mut *st;
         let mut quads: Vec<QuadLayer<'_>> = Vec::with_capacity(submit.quads.len());
         for q in &submit.quads {
@@ -599,6 +600,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 pose: openxr::Posef { orientation: q.world.orientation, position: openxr::Vector3f { x: p[0], y: p[1], z: p[2] } },
                 size: [ps.bounds.size.w as f32 * M_PER_PX, ps.bounds.size.h as f32 * M_PER_PX],
                 image_extent: [ps.bounds.size.w.max(1) as u32, ps.bounds.size.h.max(1) as u32],
+                // touch-class emphasis of the targeted member (spatial-input §4)
+                emphasis: emphasis.filter(|(m, _)| *m == q.member).map(|(_, e)| e).unwrap_or(0.0),
             });
         }
         xr.end_frame_with_quads(time, if depth { Some(&views) } else { None }, &quads)?;
@@ -815,9 +818,16 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
         }
         Source(cmd) => {
             let now = now_ns();
-            let Zxr { input, .. } = &mut *st;
-            match input.injector.apply(&cmd, now, input.head, &mut input.queue) {
-                Ok(r) => format!("queued {r}"),
+            // dispatched now, like a device event (spatial-input §1a: per-event dispatch on the loop)
+            let mut out: Vec<input::Sample> = Vec::with_capacity(1);
+            let head = st.input.head;
+            match st.input.injector.apply(&cmd, now, head, &mut out) {
+                Ok(r) => {
+                    for s in out {
+                        input::dispatch(st, s, now);
+                    }
+                    format!("dispatched {r}")
+                }
                 Err(e) => format!("error {e}"),
             }
         }

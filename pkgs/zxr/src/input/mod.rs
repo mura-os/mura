@@ -474,11 +474,18 @@ pub struct Input {
     /// §14); the A11y stage takes them at its next `tick`
     pub a11y_dwell: Option<bool>,
     pub a11y_gain: Option<f64>,
+    /// the client's cursor as `SeatHandler::cursor_image` last reported it (cursor-shape names and
+    /// `set_cursor` surfaces alike); taken by the seat stage each tick (spatial-input §7)
+    pub cursor_image: Option<smithay::input::pointer::CursorImageStatus>,
+    /// this tick's reticle (world pose, size m) for the frame procedure's band-5 quad (§7)
+    pub reticle: Option<(xr::Posef, [f32; 2])>,
+    /// the touch-class emphasis target this tick (member, level ∈ [0,1]) — spatial-input §4
+    pub emphasis: Option<(crate::scene::MemberId, f32)>,
 }
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None }
+        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_image: None, reticle: None, emphasis: None }
     }
 }
 
@@ -493,6 +500,38 @@ impl Input {
         if self.present != Some(present) {
             self.present = Some(present);
             self.presence_changed = true;
+        }
+    }
+}
+
+/// Run one event sample through the chain **now** — the per-event dispatch of the state-loop
+/// shape (research/68 §9.1, ruled: libinput/EI events are dispatched when they arrive, not
+/// batched to the tick; the tick-bound read is the recorded rethink candidate, not the default).
+/// XR samples still arrive at the tick (`tick`), since that is when the runtime has them. If no
+/// tick has run yet (no head pose), the sample is queued for the first one.
+pub fn dispatch(st: &mut Zxr, mut s: Sample, now_ns: u64) {
+    if st.input.head.is_none() {
+        st.input.queue.push(s);
+        return;
+    }
+    if s.is_event() && s.time_ns <= now_ns && s.time_ns > 0 {
+        let age = now_ns - s.time_ns;
+        st.journal.input_event_age_ns_total += age;
+        st.journal.input_event_age_ns_max = st.journal.input_event_age_ns_max.max(age);
+        st.journal.input_events += 1;
+        st.input.tick_oldest_event_ns = Some(st.input.tick_oldest_event_ns.map_or(s.time_ns, |t| t.min(s.time_ns)));
+    }
+    let mut chain = std::mem::take(&mut st.input.chain);
+    if let Some(slot) = chain.run(&mut s, st) {
+        st.journal.input_consumed[slot as usize] += 1;
+    }
+    st.journal.input_samples += 1;
+    st.input.chain = chain;
+    // anything the stages pushed (a cancel, a dwell commit) follows immediately, in order
+    if !st.input.queue.is_empty() {
+        let mut q = std::mem::take(&mut st.input.queue);
+        for s2 in q.drain(..) {
+            dispatch(st, s2, now_ns);
         }
     }
 }

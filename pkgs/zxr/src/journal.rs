@@ -114,6 +114,13 @@ pub struct Journal {
     pub input_tier_changes: u64,
     pub input_tier_deferrals: u64,
     pub input_source_losses: u64,
+    /// the transports (spatial-input §5): touch contacts opened and cancelled, gaze-scroll exceptions,
+    /// logical-pointer handoffs and warps
+    pub input_touch_downs: u64,
+    pub input_touch_cancels: u64,
+    pub input_gaze_scrolls: u64,
+    pub input_pointer_handoffs: u64,
+    pub input_pointer_warps: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -260,6 +267,11 @@ impl Journal {
         let _ = writeln!(s, "input_tier_changes={}", self.input_tier_changes);
         let _ = writeln!(s, "input_tier_deferrals={}", self.input_tier_deferrals);
         let _ = writeln!(s, "input_source_losses={}", self.input_source_losses);
+        let _ = writeln!(s, "input_touch_downs={}", self.input_touch_downs);
+        let _ = writeln!(s, "input_touch_cancels={}", self.input_touch_cancels);
+        let _ = writeln!(s, "input_gaze_scrolls={}", self.input_gaze_scrolls);
+        let _ = writeln!(s, "input_pointer_handoffs={}", self.input_pointer_handoffs);
+        let _ = writeln!(s, "input_pointer_warps={}", self.input_pointer_warps);
         s
     }
 }
