@@ -225,3 +225,29 @@ From [research/60](../../research/60-de-abstractions-mapped-to-xr.md), ruled by 
   with the spatial frame added — so the spatial desktop environment is user-configurable at the
   process level, which is the owner's stated goal. The compositor keeps what §3 already names:
   focus, hit-testing, the window and place model, the boundary, composition.
+
+## Amendment 2026-09-26 (ii) — the manager's design, exclusivity, and what the seam carries
+
+From [research/64](../../research/64-window-workspace-management-from-comparables.md) and
+[window-workspace-management.md](../window-workspace-management.md), ruled by the owner:
+
+- **The seam has a draft wire form** — `protocols/zxr-window-management-v1.xml`, continuing
+  river's `river-window-management-v1` (manage/render double-buffered sequences) with the spatial
+  verbs the places model needs (assign to place, pose clamped to compositor `limits`, engine,
+  arrange, emphasis). The compositor-kept invariants named above are *reported* to the manager
+  as `limits` and applied by clamping; they are never on the wire as verbs.
+- **Exclusivity exists — ruled: "analogous to fullscreen on the desktop and most games will
+  require this."** Two mechanisms, both Mura's: a zxr client's scene granted the environment
+  layer (`grant_exclusive` on the seam; a zxr-shell-v2 request for 3D clients), at most one at a
+  time, layers 4–6 always presented in front; and a native OpenXR application as Monado's
+  primary session with zxr as an `XR_EXTX_overlay` session — zxr is the shell that switches
+  Monado's primary client (its IPC hook exists for this). **The exit path is not a gesture to be
+  assumed**; it is a reserved system input to be researched (research/64 §16) — the owner with
+  the input workstream.
+- **Defaults ruled for the in-process manager:** minimize keeps state on the launcher/dock
+  client (the tray/launcher component of this ADR is the dock), degrading to close-as-the-verb
+  without one; no window cap ("the user's responsibility"); follow never by default, opt-in per
+  window or application ("my monitor doesn't follow me").
+- **Open:** how much arrangement the in-process default ships (one engine vs a small set —
+  window-workspace-management.md §13 Q2); whether the external manager may do more than *hint*
+  focus, and the disconnect contract (Q5).

@@ -518,8 +518,10 @@
         Grant the window's client exclusive presentation of the environment
         layer, or revoke it. At most one window may hold the grant; granting
         a second revokes the first. The compositor's own layers remain
-        presented and the wearer's recenter gesture ends the grant. Ignored
-        unless the exclusive capability is advertised.
+        presented, and the compositor may end the grant at any time on the
+        wearer's behalf; a revoked grant is reported to the window manager
+        by a state event. Ignored unless the exclusive capability is
+        advertised.
 
         This request modifies management state.
       </description>

@@ -595,6 +595,12 @@ manager's questions are the same dimensions asked of a *set* of planes plus thre
 
 ## 15. Questions to the owner — one item each, options are the comparables' positions
 
+*Status (2026-09-26, later the same day): Q1 ruled (b) with (a) as the degraded mode; Q3 ruled
+no cap ("the user's responsibility"); Q4 ruled yes (fullscreen's analogue; both mechanisms of
+window-workspace-management.md §9), with the exit path explicitly **not** a gesture by assumption
+and sent to research (§16); Q6 ruled never-by-default, opt-in per window/application. Q2 restated
+in window-workspace-management.md §13 (how much the in-process default ships); Q5 open.*
+
 **Q1 — What does "minimize" mean by default?**
 *Why a decision:* three shipping positions, none dominant; the protocol is neutral (verdict 7)
 but the default policy the wearer meets is not.
@@ -667,7 +673,32 @@ labelled: opt-in per place with Lindlbauer's out-of-view fallback as the *presen
 this matches places-model layer 2 and is close to a determination (verdict 8) — flagged only
 because kwin-vr, our closest Linux precedent, chose otherwise.
 
-## 16. Source index
+## 16. Addendum — leaving an exclusive scene: what the platforms reserve (for Q4-exit)
+
+Collected from the passes above and a read of the OpenXR spec and Monado; a dedicated pass
+should widen it (SteamVR's dashboard/system button, PICO, the Steam Frame's controls, Linux
+game-controller "home"), but the *shape* is already uniform.
+
+| platform | reserved control | short press | long press | other | source |
+|---|---|---|---|---|---|
+| visionOS | Digital Crown (hardware) | Home View | recenter ("everything in your view… apps, Environments, and interactive experiences", locked content exempt) | double-click = show surroundings; turn = immersion level; Crown + top button hold = force quit | [Apple tan1e2a29e00], [tan5f2b0eb70], [dev009366408] |
+| Horizon OS | Meta/Oculus button (right controller); hands: pinch-and-hold | Navigator | recenter ("press and hold… until your view resets") | double-tap = show/hide all windows | [Meta 133727602066940], [149215193811647], [172903867975450] |
+| Android XR (Galaxy XR) | Top button (hardware) + touchpad | Launcher | touchpad hold = recenter | double-tap touchpad = passthrough | [Samsung ANS10007517], [ANS10007511] |
+| HoloLens 2 | Start gesture (wrist tap) / voice "Go home" | Start menu | — | "Follow me", "Bigger/Smaller/Close/Face me" voice | [holographic-home], [hololens2-basic-usage] |
+| OpenXR | `/input/system/click` | — | — | "may not be available for application use" — the spec reserves it on every profile that has it | `openxr-docs/specification/sources/chapters/semantic_paths.adoc:716, 759, 886` |
+| Monado | the *shell* chooses the primary client | `ipc_handle_system_set_primary_client` / `monado-ctl -p <id>`; `set_z_order`, `set_main_app_visibility` | — | `XR_EXTX_overlay` sessions stay drawn above the primary app (`XRT_FEATURE_OPENXR_OVERLAY`) | `monado/src/xrt/ipc/server/ipc_server_handler.c:1563-1570`, `xrt_compositor.h:2395-2420`, `CMakeLists.txt:417` |
+| kwin-vr / WayVR | overlay session + own binding | radial menu / show-hide | recenter after `resetViewDelay` 2 s | — | research/31 §2.2; `wlx-common/src/windowing.rs:8-26` |
+| Linux desktop | none universal — F11 is per app; the compositor's own binding (Super) is the escape | — | — | `xdg_toplevel.unset_fullscreen` is the client's | — |
+
+**Shape:** one *physical* control the application never receives, owned by the shell, whose
+press length splits three actions — return the shell (short), recenter (long), passthrough
+(double/other). Mura's device contract already names HMD-body buttons by role (`hmdButtons`,
+`selectRole`); the open questions are the role name(s) per tier (HMD body vs controller system
+button vs hand gesture where nothing else exists), whether long-press recenter is right when
+recenter is otherwise a compositor action the wearer rarely needs, and how this composes with the
+input floor (research/42). Decider: the owner, jointly with the input workstream.
+
+## 17. Source index
 
 Pinned clones: `references/{motorcar,wxrc,kwin-vr,kwin-vr-patches,wlx-overlay-s,xrdesktop,simula,stardustxr-server,flatland,breezy-desktop,wivrn,kwin,mutter,gnome-shell,cosmic-comp,niri,hyprland,river,paperwm,wlroots}` at the commits in `references/MANIFEST.json`. Papers: `references/PAPERS.json` topic `xr-windowing`.
 

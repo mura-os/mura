@@ -42,11 +42,13 @@ signal.
 3. **Planes scale angularly; volumes scale physically** (verdict 3). A plane keeps its apparent
    size as it moves in depth so legibility and target size — angular quantities — hold; a 3D
    client volume keeps its metres because it is a physical object.
-4. **No window cap** (verdict 6, AGENTS.md rule 3). Off-view planes are budgeted by the
-   compositor (frame-callback throttling, texture GC); clutter is managed (§8), not prevented.
-5. **World-fixed by default; follow is opt-in with threshold, hysteresis and a rate limit;
-   recenter is the compositor's one gesture, exempting pinned content** (verdict 8; research/36
-   §8).
+4. **No window cap — ruled by the owner (2026-09-26): "the user's responsibility."** Off-view
+   planes are budgeted by the compositor (frame-callback throttling, texture GC); clutter is
+   managed (§8), not prevented.
+5. **World-fixed by default; follow is never the default and is opt-in per window/application —
+   ruled by the owner (2026-09-26): "if I'm at my desk and walk away from it, my monitor doesn't
+   follow me."** Opt-in follow has threshold, hysteresis and a rate limit; recenter exempts
+   pinned content (verdict 8; research/36 §8).
 6. **Surface snapping is the spatial snap** (verdict 9): pinning to a detected surface is the
    places-model `pin` verb onto an anchor frame; there is no window-to-window snap.
 7. **Safety occlusion is not the manager's** (verdict 11): proximity dimming, boundary fade and
@@ -122,10 +124,10 @@ States a member can be in, and their protocol meaning:
 |---|---|---|---|
 | mapped | a plane in a place | — | client commit + manager placement |
 | hidden | not rendered, keeps place and pose, no frame callbacks | none (a compositor-side state, river's `hide`) | manager |
-| minimized | *open item Q1*: either "hidden + shown on the launcher/dock with state" or "does not exist; close is the verb" | `set_minimized` from clients is an event to the manager (river), never applied by the compositor | manager |
+| minimized | **ruled (2026-09-26):** hidden, state kept, shown on the launcher/dock client with an indicator ("transitions the app to the background without quitting"); when no dock client runs the system degrades to close-is-the-verb with relaunch-into-place | `set_minimized` from clients is an event to the manager (river), never applied by the compositor | manager |
 | maximized | fills the place's engine slot (`arc`/`dock`/`band`) or the spawn size × `wm.size.maximized` (`free`) | `maximized` configure state | manager on request |
 | fullscreen | fills the *band* of its place; other members of the place hidden while fullscreen | `fullscreen` configure state | manager on request |
-| exclusive | *open item Q4*: the client's scene takes the environment layer | none today; a `zxr_` request if ruled | compositor policy + wearer |
+| exclusive | **ruled:** the client's scene takes the environment layer (§9 mechanism 1); native OpenXR apps are Monado's primary session with zxr as overlay (§9 mechanism 2) | `exclusive_requested` → `grant_exclusive` on the seam; a zxr-shell-v2 request for 3D clients | manager grants; the wearer's reserved system input always returns the shell (exit path: research pending) |
 | closed | `xdg_toplevel` destroyed | — | client; the manager's `close` sends `xdg_toplevel.close` |
 
 Restore: places-model §7 — a pinned place remembers member identities and poses; an app that
@@ -161,9 +163,10 @@ switching *surfaces* read and may request:
 Attachment constraints per places-model layer 2: `rigid` (default for every place on a world or
 anchor frame), `lazy-follow`, `billboard`, `tether`. Defaults and parameters:
 
-- **Default: `rigid`.** Nothing follows the head unless the wearer or the app's place asks.
-- **`lazy-follow`** (opt-in per place, one gesture on the place's bar — HoloLens "Follow me",
-  Horizon "move with you"): the place re-seats toward the head's forward when the head has been
+- **Default: `rigid` — ruled (2026-09-26).** Nothing follows the head; "apps stay in the
+  workplace they originated". The wearer opts a window or application in, never the app itself.
+- **`lazy-follow`** (opt-in per window or per application, from the place's bar or the
+  launcher — HoloLens "Follow me", Horizon "move with you"): the place re-seats toward the head's forward when the head has been
   more than `follow.threshold` degrees off the place's centre for `follow.delay` seconds, moving
   at most `follow.rate` degrees/second and stopping within `follow.stop` degrees; never while a
   member of the place is grabbed (WayVR `pause_movement`). Comparable values: HoloLens
@@ -198,12 +201,36 @@ The environment layer's content is chosen by the wearer (a wallpaper client on l
 `background`; the passthrough producer over the perception intake) and requested by apps as a
 preference: an app may ask to *replace* the environment with its own scene or to *coexist*
 with it (visionOS `.immersiveEnvironmentBehavior`; Android XR's `SpatialEnvironment` in Full
-Space), and the compositor may refuse. **Whether a client may request exclusivity — one scene
-taking the environment layer, other apps' windows hidden, the shell's own windows and the
-wearer's exit gesture preserved — is open (§13 Q4).** If ruled in, it is a `zxr_` request on
-the seam and on zxr-shell-v2, at most one at a time, always reversible by the compositor's
-recenter/summon gesture, and never hiding layers 4–6 (visionOS's own rule that windows render in
-front of progressive/full content).
+Space), and the compositor may refuse.
+
+**Exclusivity — ruled by the owner (2026-09-26): yes.** "This is analogous to fullscreen on the
+desktop and most games will require this." Two mechanisms exist and both are Mura's:
+
+1. **A zxr client's scene takes the environment layer** — a zxr-shell-v2 3D client (or a plane
+   client's fullscreen scene) is *granted* the environment layer (`grant_exclusive` on the seam;
+   the request arrives as `exclusive_requested`); at most one grant at a time; other apps'
+   planes may be hidden by the manager; layers 4–6 (shell, overlay, foreground) stay presented
+   in front (visionOS's rule for progressive/full: "helps people avoid losing track of windows
+   behind virtual content").
+2. **A native OpenXR application** (a game with its own OpenXR session) is not zxr's client at
+   all: Monado's multi-client compositor decides which session is *primary* and *visible*
+   (`ipc_handle_system_set_primary_client`, `monado-ctl -p <id>`; `xrt_syscomp_set_z_order`,
+   `set_main_app_visibility` — `monado/src/xrt/ipc/server/ipc_server_handler.c:1563-1570`,
+   `xrt_compositor.h:2395-2420`), and zxr stays presented as an **overlay session**
+   (`XR_EXTX_overlay`, `XRT_FEATURE_OPENXR_OVERLAY`, `monado/CMakeLists.txt:417`) — the shape
+   kwin-vr (research/31 §2.2, its Qt patch 0002) and WayVR already use. zxr is then the *shell
+   that switches Monado's primary client*, which is what Monado's IPC hook is for.
+
+**The exit path is open and needs its own research (§13 Q4-exit).** The owner: a "gesture" is
+underdefined and should not be assumed; what must exist is a way to bring the shell's layers
+back and leave the exclusive scene or quit the app. Every platform reserves a *system input* for
+exactly this — OpenXR itself marks `/input/system/click` "may not be available for application
+use" on every profile that has it (`openxr-docs/…/semantic_paths.adoc:716, 759, 886`), and the
+device contract already names HMD-body buttons by role (`hmdButtons`, `selectRole`). The
+research question is which reserved input(s) per device tier, what a short/long/double press
+does (return shell / recenter / passthrough are the three actions the platforms split across
+one button), and how that composes with the input floor — research/64 §16 collects the
+platform facts; the decider is the owner, jointly with the input workstream.
 
 ## 10. Scene kinds
 
@@ -256,28 +283,43 @@ M1 measurement): `wm.spawn.distance`, `wm.spawn.elevation`, `wm.spawn.overlap`,
 `wm.focus.sibling_alpha`, `wm.external_manager` (the executable of an external manager, empty =
 in-process default). The `ownership` of each is declarative by default (settings-schema.md).
 
-## 13. Open items (deciders named; research/64 §15 has the full positions)
+## 13. Rulings and open items (research/64 §15 has the full positions)
 
-- **Q1 — minimize by default.** (a) none — close is background, relaunch into place (visionOS,
-  niri); (b) minimize keeps state on the launcher/dock with an indicator (Horizon, GNOME,
-  cosmic). The protocol is neutral (river's shape). My read, labelled: (b) for the in-process
-  default because the dock client exists; (a) when no dock client runs. Owner.
-- **Q2 — the default engine for a fresh place.** (a) free + offset spawn + tidy (visionOS,
-  Android XR, Horizon); (b) angular slots (kwin-vr, zen, xrdesktop, research/36); (c) dock;
-  (d) band. My read, labelled: `free` whose spawn/tidy allocator is the angular-slot search —
-  (b) inside (a). Owner.
-- **Q3 — a hard window cap.** None anywhere (visionOS, Android XR, kwin-vr, niri) vs slot/activity
-  caps (Horizon 6/12, HoloLens 3 active, iPadOS 4). Rule 3 forbids the cap; the compositor
-  budgets off-view planes. Recorded as a determination in research/64 unless the owner objects.
-- **Q4 — client-requested exclusivity.** visionOS (one immersive space, user can always reduce
-  immersion), Android XR (`requestFullSpace` + cue to leave), Horizon (immersive app + 3
-  windows), Linux (none beyond per-output fullscreen). My read, labelled: visionOS's shape on the
-  environment layer with the shell's layers always visible. Owner — touches zxr-shell-v2 and the
-  protocol posture.
+**Ruled by the owner, 2026-09-26** (recorded in the sections named):
+
+- **Q1 minimize** — keeps state, parks on the launcher/dock client with an indicator; degrades
+  to close-is-the-verb when no dock client runs (§5). The tray/launcher component of ADR 0012 is
+  the dock.
+- **Q3 cap** — none; "the user's responsibility" (§1.4).
+- **Q4 exclusivity** — yes, fullscreen's analogue; both mechanisms of §9 are Mura's. **The exit
+  path is not a gesture to be assumed; it is open** — see below.
+- **Q6 follow** — never by default; opt-in per window/application (§1.5, §7).
+
+**Open (deciders named):**
+
+- **Q2 — the default intra-place engine, restated.** A place's *engine* is the places-model's
+  layer-3 "intra-place layout": the rule by which the windows *inside one place* are positioned
+  relative to each other — free (each keeps the pose it was given; tidy on request), arc
+  (slots on an arc around the wearer), dock (slots on a bar), band (one curved strip). It is not
+  a workspace-switching or a follow question. The owner's remark that engines like the band are
+  "exactly the reason why we wanted window/workspace management not in the compositor" sharpens
+  the question: **how much of this does the in-process default ship?** (a) *The minimum* — one
+  engine, `free` with the angular-slot allocator for spawn and tidy; every other arrangement
+  (dock, band, tiling, adaptive) is an external manager's over the seam — river's posture ("all
+  window management policy" outside) applied to arrangement while the compositor keeps a
+  working default. (b) *A small shipped set* — `free` + `arc` in-process, `dock`/`band` as the
+  shell clients need them — KWin's posture (several placement policies and quick-tiling
+  built in, more via scripts). My read, labelled: (a) — it matches the owner's stated reason
+  for the seam and keeps `policy` small; the band the foreign-session quad needs is one member
+  in `free`, not an engine. Decider: the owner.
+- **Q4-exit — how the wearer leaves an exclusive scene and brings the shell back.** Not a
+  gesture by assumption; a reserved system input per device tier (OpenXR's `/input/system/click`
+  is reserved from applications for this; every platform binds one physical control to
+  shell/recenter/passthrough by press length). Needs its own short research pass; research/64
+  §16 holds the platform facts gathered so far. Decider: the owner, jointly with the input
+  workstream.
 - **Q5 — focus on the seam, and disconnect.** river's manager owns focus; ADR 0012's amendment
-  keeps "focus rules" in the compositor. My read, labelled: the manager *hints*, the compositor's
-  rules decide; on disconnect the compositor reverts to the default policy. Owner (joint with
-  the input workstream, which owns the rules themselves).
-- **Q6 — follow default.** never (visionOS) / per-window opt-in (HoloLens, Horizon) / follow-all
-  (kwin-vr). My read, labelled: opt-in per place with the out-of-view fallback as presentation;
-  near a determination (verdict 8), flagged because kwin-vr chose otherwise. Owner.
+  keeps "focus rules" in the compositor. My read, labelled: the manager *hints* (`focus_hint`),
+  the compositor's rules decide; on disconnect the compositor reverts to the default policy for
+  new events and leaves existing placements untouched. Decider: the owner (jointly with the
+  input workstream, which owns the rules).
