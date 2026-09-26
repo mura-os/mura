@@ -553,7 +553,7 @@ grounds; its refinements are recorded here because they change what M1 measures.
   so passing only the active sets saves nothing today — part of the upstream item.
 
 *Status of §9.1 and §9.2:* two independent reads (this pass and the efficiency review) converge
-on (a) for both; **the owner's ruling is awaited** — the items stay open until it is given.
+on (a) for both; **ruled by the owner, 2026-09-26: (a) for both** — §9.1 the state loop with the M1 latency trigger (after the buffer-hold policy is resolved), §9.2 the closed enum of source kinds and the static stage list.
 
 ## 10. Sources
 

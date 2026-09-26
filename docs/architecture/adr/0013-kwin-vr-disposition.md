@@ -254,7 +254,7 @@ the evidence split on; the converging items were acted on under rule 8. The desi
    research/68 (determination D2, 2026-09-26): the reserved system-gesture recogniser is the
    runtime's on the same terms — `FB_hand_tracking_aim`-shaped flags, bridged until Monado has
    them; the placement of the whole module (in-compositor, state loop, one action set as the XR
-   source seam, KWin-ordered stages) is spatial-input §1a's, with two owner items open
+   source seam, KWin-ordered stages) is spatial-input §1a's, both owner items ruled 2026-09-26
    (research/68 §9.1, §9.2).*
 
 Numbers in the design (pinch hysteresis, hover ramp, near/far band, dwell, eyes→head timeout) are
