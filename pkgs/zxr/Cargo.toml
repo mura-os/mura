@@ -20,6 +20,8 @@ openxr = { version = "0.22", default-features = false, features = ["loaded"] }
 # The renderer's Vulkan (the device is the runtime's); the version smithay's backend_vulkan uses.
 ash = "0.38"
 tracing = "0.1"
+# Xcursor theme lookup and parsing for cursor-shape-v1 names (spatial-input §7; input/theme.rs).
+xcursor = "0.3"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 
 [profile.release]

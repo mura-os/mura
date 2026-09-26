@@ -111,6 +111,15 @@ pub struct Zxr {
     pub reticle_panel: Option<PanelSwapchain>,
     /// the ring texture the reticle pass samples (16 KiB; lives for the session)
     pub reticle_tex: Option<crate::render::Texture>,
+    /// the client cursor's panel (§7): sized to the cursor surface, redrawn only when that
+    /// surface commits, positioned per tick as a band-5 quad — the cursor-plane shape every
+    /// desktop compositor prefers over compositing the cursor into the window
+    pub cursor_panel: Option<PanelSwapchain>,
+    pub cursor_commit: Option<smithay::backend::renderer::utils::CommitCounter>,
+    pub cursor_hotspot: smithay::utils::Point<i32, smithay::utils::Logical>,
+    /// the cursor theme for `cursor-shape-v1` names, and the texture of the current name
+    pub cursor_theme: crate::input::theme::Theme,
+    pub cursor_named: Option<(smithay::input::pointer::CursorIcon, crate::render::Texture)>,
     /// spatial-input §6: `xdg_activation_v1` — tokens carry the commit's serial (`focus.rs`)
     pub activation_state: XdgActivationState,
     /// spatial-input §12: the text-entry seam — `text-input-v3`, `input-method-v2`,
@@ -406,6 +415,11 @@ impl Zxr {
             idle_inhibitors: Vec::new(),
             reticle_panel: None,
             reticle_tex: None,
+            cursor_panel: None,
+            cursor_commit: None,
+            cursor_hotspot: Default::default(),
+            cursor_theme: crate::input::theme::Theme::from_env(),
+            cursor_named: None,
             activation_state,
             _text_input_state: text_input_state,
             _input_method_state: input_method_state,

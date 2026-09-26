@@ -15,7 +15,7 @@ mod xr;
 use std::os::unix::net::UnixListener;
 use std::time::Duration;
 
-use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
+use smithay::backend::renderer::utils::{with_renderer_surface_state, RendererSurfaceStateUserData};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::signals::{Signal, Signals};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -413,7 +413,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     //    read while members are mutated below, and put back at the end.
     let head_pos = [head.position.x, head.position.y, head.position.z];
     // one quad is reserved for the reticle whenever a pointer-class source shows one (spatial-input §7)
-    let reticle_quads = usize::from(st.input.reticle.is_some());
+    let reticle_quads = usize::from(st.input.reticle.is_some()) + usize::from(st.input.client_cursor.is_some());
     let budget = if st.debug_panels == DebugPanels::Projection { 0 } else { st.quad_budget().saturating_sub(reticle_quads) };
     let mut submit = std::mem::take(&mut st.scene.submit);
     st.scene.flatten_into(&mut submit, head_pos, budget, |p| p.presentable());
@@ -513,11 +513,49 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         st.reticle_tex = Some(tex);
     }
     let reticle_pass = st.reticle_panel.as_ref().map(|p| !p.has_image).unwrap_or(false);
+    // the client cursor's panel (§7): sized to the image, redrawn only when the image changes —
+    // a `set_cursor` surface on its commits, a `cursor-shape-v1` name when the name changes
+    let mut cursor_draw: Option<(CursorTex, Rectangle<i32, Logical>)> = None;
+    match st.input.client_cursor.clone() {
+        Some((_, _, input::CursorSource::Surface(surf))) => {
+            if let Some(tex) = st.update_surface_texture(&surf, tick.frame_id) {
+                let (commit, size) = with_renderer_surface_state(&surf, |s| (s.current_commit(), s.surface_size())).map(|(c, s)| (c, s.unwrap_or_else(|| Size::from((1, 1))))).unwrap_or((Default::default(), Size::from((1, 1))));
+                st.cursor_hotspot = smithay::wayland::compositor::with_states(&surf, |s| s.data_map.get::<smithay::input::pointer::CursorImageSurfaceData>().map(|d| d.lock().unwrap().hotspot)).unwrap_or_default();
+                let fresh = ensure_cursor_panel(st, size)?;
+                if fresh || st.cursor_commit != Some(commit) {
+                    st.cursor_commit = Some(commit);
+                    cursor_draw = Some((CursorTex::Surface(tex), Rectangle::new(Point::from((0, 0)), size)));
+                }
+            }
+        }
+        Some((_, _, input::CursorSource::Named(icon))) => match st.cursor_theme.lookup(icon) {
+            Some(img) => {
+                let size = Size::from((img.width as i32, img.height as i32));
+                st.cursor_hotspot = Point::from(img.hotspot);
+                let fresh = ensure_cursor_panel(st, size)?;
+                let changed = st.cursor_named.as_ref().map(|(i, _)| *i != icon).unwrap_or(true);
+                if changed {
+                    if let Some((_, old)) = st.cursor_named.take() {
+                        st.renderer.destroy_texture(old);
+                    }
+                    let mut tex = st.renderer.create_shm_texture(img.width, img.height)?;
+                    st.renderer.upload_shm(&mut tex, &img.argb, img.width * 4)?;
+                    st.cursor_named = Some((icon, tex));
+                }
+                if fresh || changed {
+                    st.cursor_commit = None;
+                    cursor_draw = Some((CursorTex::Named, Rectangle::new(Point::from((0, 0)), size)));
+                }
+            }
+            None => st.input.cursor_named_ticks += 1,
+        },
+        None => {}
+    }
 
     // 5. GPU work — only if there is any: dirty panel passes, the reticle's one pass and/or the projection pass
-    let submit_gpu = !dirty.is_empty() || depth || reticle_pass;
+    let submit_gpu = !dirty.is_empty() || depth || reticle_pass || cursor_draw.is_some();
     if submit_gpu {
-        let Zxr { renderer, dmabuf_textures, surface_tex, journal, scene, xr, reticle_panel, reticle_tex, .. } = &mut *st;
+        let Zxr { renderer, dmabuf_textures, surface_tex, journal, scene, xr, reticle_panel, reticle_tex, cursor_panel, cursor_named, .. } = &mut *st;
         let resolve = |r: &TexRef| -> Option<&render::Texture> {
             match r {
                 TexRef::Dmabuf(bid) => dmabuf_textures.get(bid).map(|(t, _)| t),
@@ -532,6 +570,13 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                     if t.dmabuf && !foreign.contains(&t.image) {
                         foreign.push(t.image);
                     }
+                }
+            }
+        }
+        if let Some((CursorTex::Surface(tex), _)) = cursor_draw.as_ref() {
+            if let Some(t) = resolve(tex) {
+                if t.dmabuf && !foreign.contains(&t.image) {
+                    foreign.push(t.image);
                 }
             }
         }
@@ -559,6 +604,26 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
             ps.passes += 1;
             renderer.panel_passes += 1;
             renderer.panel_bytes += (w * h) as u64 * 4 * 2;
+        }
+        // the client cursor pass: the cursor surface into its panel, on its commits only
+        if let (Some((src, bounds)), Some(ps)) = (cursor_draw.as_ref(), cursor_panel.as_mut()) {
+            let texture = match src {
+                CursorTex::Surface(tex) => resolve(tex),
+                CursorTex::Named => cursor_named.as_ref().map(|(_, t)| t),
+            };
+            if let Some(texture) = texture {
+                let idx = xr.acquire_panel_image(&mut ps.sc)?;
+                journal.panel_acquires += 1;
+                let (w, h) = (bounds.size.w.max(1) as f32, bounds.size.h.max(1) as f32);
+                let ortho = math::ortho_px(w, h);
+                let planes = [PlaneDraw { model: math::model([w * 0.5, h * 0.5, 0.0], 0.0), half_size: [w * 0.5, h * 0.5], texture, flip_v: true }];
+                renderer.record_pass_in(cmd, &ps.target, idx, ash::vk::Extent2D { width: w as u32, height: h as u32 }, &ortho, &planes, [0.0, 0.0, 0.0, 0.0]);
+                ps.has_image = true;
+                ps.passes += 1;
+                renderer.panel_passes += 1;
+            } else {
+                journal.stale_texture_draws += 1;
+            }
         }
         // the reticle pass: the ring texture into its panel, once
         if reticle_pass {
@@ -616,6 +681,14 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 journal.panel_releases += 1;
             }
         }
+        if cursor_draw.is_some() {
+            if let Some(ps) = cursor_panel.as_mut() {
+                if ps.has_image {
+                    xr.release_panel_image(&mut ps.sc)?;
+                    journal.panel_releases += 1;
+                }
+            }
+        }
         if depth {
             xr.release_images()?;
         }
@@ -632,7 +705,9 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     {
         let emphasis = st.input.emphasis;
         let reticle = st.input.reticle;
-        let Zxr { xr, scene, reticle_panel, .. } = &mut *st;
+        let client_cursor = st.input.client_cursor.as_ref().map(|(m, l, _)| (*m, *l));
+        let hs = st.cursor_hotspot;
+        let Zxr { xr, scene, reticle_panel, cursor_panel, .. } = &mut *st;
         let mut quads: Vec<QuadLayer<'_>> = Vec::with_capacity(submit.quads.len());
         for q in &submit.quads {
             let Some(m) = scene.get(q.member) else { continue };
@@ -653,6 +728,18 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 // touch-class emphasis of the targeted member (spatial-input §4)
                 emphasis: emphasis.filter(|(m, _)| *m == q.member).map(|(_, e)| e).unwrap_or(0.0),
             });
+        }
+        // the client cursor: on the pointer's plane, its hotspot at the pointer, lifted 1 mm (§7)
+        if let (Some((member, local)), Some(ps)) = (client_cursor, cursor_panel.as_ref()) {
+            if ps.has_image {
+                if let Some(world) = scene.world_pose(member) {
+                    let (w, h) = (ps.bounds.size.w as f32, ps.bounds.size.h as f32);
+                    let cx = local[0] + (w * 0.5 - hs.x as f32) * M_PER_PX;
+                    let cy = local[1] - (h * 0.5 - hs.y as f32) * M_PER_PX;
+                    let p = math::pose_apply(world, [cx, cy, 0.001]);
+                    quads.push(QuadLayer { swapchain: &ps.sc, pose: openxr::Posef { orientation: world.orientation, position: openxr::Vector3f { x: p[0], y: p[1], z: p[2] } }, size: [w * M_PER_PX, h * M_PER_PX], image_extent: [ps.sc.extent.width, ps.sc.extent.height], emphasis: 0.0 });
+                }
+            }
         }
         // the reticle: band 5, nearest — last in painter's order, never emphasised (spatial-input §7)
         if let (Some((pose, size)), Some(ps)) = (reticle, reticle_panel.as_ref()) {
@@ -978,4 +1065,30 @@ fn close_event_latency(st: &mut Zxr) {
         st.journal.input_event_to_end_per_event_n += n;
         st.journal.input_event_to_end_per_event_ns_total += (end as u128 * n as u128).saturating_sub(sum) as u64;
     }
+}
+
+/// Where the client cursor pass samples from this tick.
+enum CursorTex {
+    Surface(TexRef),
+    Named,
+}
+
+/// The client cursor's panel at `size` — kept when it already matches, otherwise retired and
+/// recreated (cursor images are small; a change of size is a change of shape). Returns whether
+/// the panel is fresh (needs its first pass).
+fn ensure_cursor_panel(st: &mut Zxr, size: Size<i32, Logical>) -> Result<bool, String> {
+    let (w, h) = (size.w.max(1) as u32, size.h.max(1) as u32);
+    if let Some(p) = st.cursor_panel.as_ref() {
+        if p.sc.extent.width == w && p.sc.extent.height == h {
+            return Ok(false);
+        }
+    }
+    if let Some(old) = st.cursor_panel.take() {
+        st.retire_panel(old);
+    }
+    let sc = st.xr.create_panel_swapchain(w, h)?;
+    let target = st.renderer.make_panel_target(sc.extent, st.xr.color_format, &sc.images)?;
+    st.journal.panel_swapchains_created += 1;
+    st.cursor_panel = Some(PanelSwapchain { sc, target, has_image: false, bounds: Rectangle::new(Point::from((0, 0)), size), shrink_since: None, passes: 0 });
+    Ok(true)
 }

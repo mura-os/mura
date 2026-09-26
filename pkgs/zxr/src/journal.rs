@@ -124,6 +124,8 @@ pub struct Journal {
     pub input_gaze_scrolls: u64,
     pub input_pointer_handoffs: u64,
     pub input_pointer_warps: u64,
+    /// ticks a `cursor-shape-v1` name was the client cursor and went unrendered (§7 theme open)
+    pub input_cursor_named_ticks: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -273,6 +275,7 @@ impl Journal {
         let _ = writeln!(s, "input_gaze_scrolls={}", self.input_gaze_scrolls);
         let _ = writeln!(s, "input_pointer_handoffs={}", self.input_pointer_handoffs);
         let _ = writeln!(s, "input_pointer_warps={}", self.input_pointer_warps);
+        let _ = writeln!(s, "input_cursor_named_ticks={}", self.input_cursor_named_ticks);
         s
     }
 }

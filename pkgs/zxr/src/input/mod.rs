@@ -432,6 +432,13 @@ pub use tier::Selection;
 /// One hit of a targeting ray this tick (spec §5a hit test): written by the Hit stage for the
 /// sample's kind, read by the transport stages. Plane-local metres, y up; `distance` along the
 /// ray. The surface under the point is resolved by the transport through `Zxr::hit_surface_at`.
+/// Where the client cursor's pixels come from this tick (§7).
+#[derive(Clone, Debug)]
+pub enum CursorSource {
+    Surface(smithay::reexports::wayland_server::protocol::wl_surface::WlSurface),
+    Named(smithay::input::pointer::CursorIcon),
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Hit {
     pub kind: SourceKind,
@@ -483,13 +490,19 @@ pub struct Input {
     pub cursor_image: Option<smithay::input::pointer::CursorImageStatus>,
     /// this tick's reticle (world pose, size m) for the frame procedure's band-5 quad (§7)
     pub reticle: Option<(xr::Posef, [f32; 2])>,
+    /// this tick's client cursor (§7 pointer-class): the plane it is on, the pointer's plane-local
+    /// point (m, from the plane centre) and the image — the client's `set_cursor` surface or a
+    /// `cursor-shape-v1` name the frame procedure renders from the theme (`input::theme`)
+    pub client_cursor: Option<(crate::scene::MemberId, [f32; 2], CursorSource)>,
+    /// ticks a `cursor-shape-v1` name was current and the theme had no image for it
+    pub cursor_named_ticks: u64,
     /// the touch-class emphasis target this tick (member, level ∈ [0,1]) — spatial-input §4
     pub emphasis: Option<(crate::scene::MemberId, f32)>,
 }
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, tick_event_count: 0, tick_event_time_sum_ns: 0, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_image: None, reticle: None, emphasis: None }
+        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, tick_event_count: 0, tick_event_time_sum_ns: 0, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_image: None, reticle: None, client_cursor: None, cursor_named_ticks: 0, emphasis: None }
     }
 }
 
@@ -847,3 +860,4 @@ pub mod focus;
 pub mod text;
 pub mod libinput;
 pub mod ei;
+pub mod theme;

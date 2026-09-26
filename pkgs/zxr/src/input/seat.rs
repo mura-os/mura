@@ -32,10 +32,11 @@ use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 
 use super::cursor::Cursors;
+use smithay::input::pointer::CursorImageStatus;
 use super::emphasis::Emphasis;
 use super::pointer::PointerTransport;
 use super::touch::TouchTransport;
-use super::{Class, Flow, Hit, Sample, Selection, SourceKind, Stage};
+use super::{Class, CursorSource, Flow, Hit, Sample, Selection, SourceKind, Stage};
 use crate::scene::{self, MemberId, Shape};
 use crate::state::Zxr;
 
@@ -219,12 +220,21 @@ impl Stage for SeatStage {
         self.emphasis.tick(now_ns);
         // publish for the frame procedure (main.rs step 6) and the journal
         st.input.reticle = self.cursors.reticle_quad();
+        st.input.client_cursor = None;
+        if let (Some((member, local)), Some(c)) = (self.pointer.logic.plane, self.cursors.client_cursor()) {
+            match c {
+                CursorImageStatus::Surface(s) => st.input.client_cursor = Some((member, local, CursorSource::Surface(s.clone()))),
+                CursorImageStatus::Named(icon) => st.input.client_cursor = Some((member, local, CursorSource::Named(*icon))),
+                CursorImageStatus::Hidden => {}
+            }
+        }
         st.input.emphasis = self.emphasis.target().map(|m| (m, self.emphasis.emphasis_of(m)));
         st.journal.input_touch_downs = self.touch.logic.downs;
         st.journal.input_touch_cancels = self.touch.logic.cancels;
         st.journal.input_gaze_scrolls = self.pointer.logic.gaze_scrolls;
         st.journal.input_pointer_handoffs = self.pointer.logic.owner.handoffs;
         st.journal.input_pointer_warps = self.pointer.logic.warps;
+        st.journal.input_cursor_named_ticks = st.input.cursor_named_ticks;
     }
 }
 
