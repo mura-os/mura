@@ -491,10 +491,7 @@ impl Stage for TierStage {
             // disappears (§7) and the shell may show which source is active
             tracing::debug!(targeting = ?out.selection.targeting, class = ?out.selection.class, direct = out.selection.direct, "input tier: change");
         }
-        // INTEGRATION: once `Input` carries the field (see the report's patch item), publish it
-        // for the stages below — one line, here:
-        // st.input.tier = Some(out.selection);
-        let _ = &out.selection;
+        st.input.tier = Some(out.selection);
         Flow::Continue
     }
 
@@ -503,8 +500,10 @@ impl Stage for TierStage {
         if out.changed {
             tracing::debug!(targeting = ?out.selection.targeting, class = ?out.selection.class, "input tier: change (timeout)");
         }
-        // INTEGRATION: st.input.tier = Some(out.selection);
-        let _ = st;
+        st.input.tier = Some(out.selection);
+        st.journal.input_tier_changes = self.arbiter.state().changes;
+        st.journal.input_tier_deferrals = self.arbiter.state().deferrals;
+        st.journal.input_source_losses = self.arbiter.state().losses;
     }
 }
 

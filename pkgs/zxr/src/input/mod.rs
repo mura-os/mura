@@ -140,6 +140,9 @@ impl Flags {
     /// produced by an accessibility transform (dwell, mouse keys) rather than a device — KWin's
     /// dwell clicker gives its clicks a device of their own (`plugins/dwellclicker/dwellclicker.cpp:188-194`)
     pub const A11Y: Flags = Flags(1 << 6);
+    /// the controller reports it is in the wearer's hand — the profile's `proximity`/`touch`
+    /// component (`semantic_paths.adoc:551-554, 578-588`); overrides the held heuristic (`held.rs`)
+    pub const IN_HAND: Flags = Flags(1 << 7);
 
     pub fn contains(self, f: Flags) -> bool {
         self.0 & f.0 == f.0
@@ -422,15 +425,9 @@ pub enum Mode {
     Locked,
 }
 
-/// The tier arbiter's output (spatial-input §3): which kind targets now and with which class.
-/// Written by the Tier stage, read by everything after it.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct Selection {
-    pub targeting: SourceKind,
-    pub class: Class,
-    /// when this selection began (a tier change is an event)
-    pub since_ns: u64,
-}
+/// The tier arbiter's output (spatial-input §3): which kind targets now, with which class, and
+/// whether it is direct touch. Written by the Tier stage, read by everything after it.
+pub use tier::Selection;
 
 /// One hit of a targeting ray this tick (spec §5a hit test): written by the Hit stage for the
 /// sample's kind, read by the transport stages. Plane-local metres, y up; `distance` along the

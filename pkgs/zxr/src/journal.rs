@@ -102,6 +102,11 @@ pub struct Journal {
     pub input_event_to_end_n: u64,
     pub input_event_to_end_ns_total: u64,
     pub input_event_to_end_ns_max: u64,
+    /// input tier (spatial-input §3): targeting-source changes, transitions deferred by a commit
+    /// in progress, and sources that lost tracking mid-gesture
+    pub input_tier_changes: u64,
+    pub input_tier_deferrals: u64,
+    pub input_source_losses: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -239,6 +244,9 @@ impl Journal {
         let _ = writeln!(s, "input_event_age_us_max={}", self.input_event_age_ns_max / 1000);
         let _ = writeln!(s, "input_event_to_end_us_mean={}", if self.input_event_to_end_n > 0 { self.input_event_to_end_ns_total / self.input_event_to_end_n / 1000 } else { 0 });
         let _ = writeln!(s, "input_event_to_end_us_max={}", self.input_event_to_end_ns_max / 1000);
+        let _ = writeln!(s, "input_tier_changes={}", self.input_tier_changes);
+        let _ = writeln!(s, "input_tier_deferrals={}", self.input_tier_deferrals);
+        let _ = writeln!(s, "input_source_losses={}", self.input_source_losses);
         s
     }
 }
