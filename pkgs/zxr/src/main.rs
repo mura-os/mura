@@ -382,12 +382,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         st.journal.quiet_frames += 1;
         st.journal.last_tick_submitted = false;
         st.xr.end_frame(time, None)?;
-        if let Some(t0) = st.input.tick_oldest_event_ns.take() {
-            let d = now_ns().saturating_sub(t0);
-            st.journal.input_event_to_end_n += 1;
-            st.journal.input_event_to_end_ns_total += d;
-            st.journal.input_event_to_end_ns_max = st.journal.input_event_to_end_ns_max.max(d);
-        }
+        close_event_latency(st);
         let now = Duration::from_millis(st.now_ms() as u64);
         let output = st.output.clone();
         let mut called_back: Vec<scene::MemberId> = Vec::new();
@@ -667,12 +662,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         }
         xr.end_frame_with_quads(time, if depth { Some(&views) } else { None }, &quads)?;
     }
-    if let Some(t0) = st.input.tick_oldest_event_ns.take() {
-        let d = now_ns().saturating_sub(t0);
-        st.journal.input_event_to_end_n += 1;
-        st.journal.input_event_to_end_ns_total += d;
-        st.journal.input_event_to_end_ns_max = st.journal.input_event_to_end_ns_max.max(d);
-    }
+    close_event_latency(st);
 
     // 7. frame callbacks: once per refresh, after xrEndFrame (§6.6). Visibility-gated
     //    (research/65 §4.2; niri `niri.rs:5178-5208`, KWin `item.cpp:739-751`, mutter
@@ -969,5 +959,23 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             Err(e) => format!("error {e}"),
         },
         Unknown(l) => format!("unknown: {l}"),
+    }
+}
+
+/// Close this tick's event→`xrEndFrame` interval (the M1 gate's trigger number, spec §12): the
+/// oldest event's age (mean/max) and the per-event mean over every event the tick carried.
+fn close_event_latency(st: &mut Zxr) {
+    let end = now_ns();
+    if let Some(t0) = st.input.tick_oldest_event_ns.take() {
+        let d = end.saturating_sub(t0);
+        st.journal.input_event_to_end_n += 1;
+        st.journal.input_event_to_end_ns_total += d;
+        st.journal.input_event_to_end_ns_max = st.journal.input_event_to_end_ns_max.max(d);
+    }
+    let n = std::mem::take(&mut st.input.tick_event_count);
+    let sum = std::mem::take(&mut st.input.tick_event_time_sum_ns);
+    if n > 0 {
+        st.journal.input_event_to_end_per_event_n += n;
+        st.journal.input_event_to_end_per_event_ns_total += (end as u128 * n as u128).saturating_sub(sum) as u64;
     }
 }

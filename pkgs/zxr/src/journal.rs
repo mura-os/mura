@@ -109,6 +109,9 @@ pub struct Journal {
     pub input_event_to_end_n: u64,
     pub input_event_to_end_ns_total: u64,
     pub input_event_to_end_ns_max: u64,
+    /// the same interval per event (every event of the tick, not only the oldest)
+    pub input_event_to_end_per_event_n: u64,
+    pub input_event_to_end_per_event_ns_total: u64,
     /// input tier (spatial-input §3): targeting-source changes, transitions deferred by a commit
     /// in progress, and sources that lost tracking mid-gesture
     pub input_tier_changes: u64,
@@ -264,6 +267,7 @@ impl Journal {
         let _ = writeln!(s, "input_event_age_us_max={}", self.input_event_age_ns_max / 1000);
         let _ = writeln!(s, "input_event_to_end_us_mean={}", if self.input_event_to_end_n > 0 { self.input_event_to_end_ns_total / self.input_event_to_end_n / 1000 } else { 0 });
         let _ = writeln!(s, "input_event_to_end_us_max={}", self.input_event_to_end_ns_max / 1000);
+        let _ = writeln!(s, "input_event_to_end_per_event_us_mean={}", if self.input_event_to_end_per_event_n > 0 { self.input_event_to_end_per_event_ns_total / self.input_event_to_end_per_event_n / 1000 } else { 0 });
         let _ = writeln!(s, "input_tier_changes={}", self.input_tier_changes);
         let _ = writeln!(s, "input_tier_deferrals={}", self.input_tier_deferrals);
         let _ = writeln!(s, "input_source_losses={}", self.input_source_losses);

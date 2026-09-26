@@ -465,6 +465,10 @@ pub struct Input {
     /// the oldest event sample processed this tick (for the event → `xrEndFrame` latency the
     /// input gate measures; `main.rs` closes it after `xrEndFrame`)
     pub tick_oldest_event_ns: Option<u64>,
+    /// this tick's event count and timestamp sum, for the per-event mean (the oldest-event
+    /// number above is one display period by construction under a saturating stream)
+    pub tick_event_count: u64,
+    pub tick_event_time_sum_ns: u128,
     /// the test-only injector's latched per-kind state
     pub injector: Injector,
     /// last-input record for the idle ladder (ADR 0007) — a side effect of every stage, never a
@@ -485,7 +489,7 @@ pub struct Input {
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_image: None, reticle: None, emphasis: None }
+        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, tick_event_count: 0, tick_event_time_sum_ns: 0, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_image: None, reticle: None, emphasis: None }
     }
 }
 
@@ -520,6 +524,8 @@ pub fn dispatch(st: &mut Zxr, mut s: Sample, now_ns: u64) {
         st.journal.input_event_age_ns_max = st.journal.input_event_age_ns_max.max(age);
         st.journal.input_events += 1;
         st.input.tick_oldest_event_ns = Some(st.input.tick_oldest_event_ns.map_or(s.time_ns, |t| t.min(s.time_ns)));
+        st.input.tick_event_count += 1;
+        st.input.tick_event_time_sum_ns += s.time_ns as u128;
     }
     let mut chain = std::mem::take(&mut st.input.chain);
     if let Some(slot) = chain.run(&mut s, st) {
@@ -561,6 +567,8 @@ pub fn tick(st: &mut Zxr, head: xr::Posef, time: xr::Time, now_ns: u64) {
             st.journal.input_event_age_ns_max = st.journal.input_event_age_ns_max.max(age);
             st.journal.input_events += 1;
             st.input.tick_oldest_event_ns = Some(st.input.tick_oldest_event_ns.map_or(s.time_ns, |t| t.min(s.time_ns)));
+            st.input.tick_event_count += 1;
+            st.input.tick_event_time_sum_ns += s.time_ns as u128;
         }
         if let Some(slot) = chain.run(&mut s, st) {
             st.journal.input_consumed[slot as usize] += 1;
