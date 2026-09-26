@@ -100,6 +100,7 @@
           mura-recovery = (pkgsFor system).mura.recovery; # the recovery menu + actions (specs/recovery-menu.md)
           mura-perception-intake = (pkgsFor system).mura.perceptionIntake; # the intake protocol library + §8 harness (specs/perception-intake.md)
           mura-settingsd = (pkgsFor system).mura.settingsd; # the settings daemon + CLI (specs/settings-daemon.md; D7)
+          zxr = (pkgsFor system).mura.zxr; # the compositor, R0 bring-up (specs/zxr-core.md)
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux")
           {
@@ -193,6 +194,7 @@
           mura-recovery = self.packages.${system}.mura-recovery;
           mura-perception-intake = self.packages.${system}.mura-perception-intake;
           mura-settingsd = self.packages.${system}.mura-settingsd;
+          zxr = self.packages.${system}.zxr;
           # The interpreter proof and the Python fence (tests/closure.nix): the closure of every
           # Mura program plus greetd carries no interpreter; the toplevels' residual nixpkgs
           # Python is a pinned, shrinking allowlist.

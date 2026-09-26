@@ -5,8 +5,10 @@
 #   nix run .#dev-session               # nested session window + simulated Monado
 #   nix run .#dev-session -- --client   # + xrgears rendering against the runtime
 #   nix run .#dev-session -- --rotate   # canned head motion in the simulated HMD
+#   nix run .#dev-session -- --zxr      # zxr (R0) as the session against Monado; foot inside
 #
-# The nested compositor is sway until zxr's M1 lands; swap COMPOSITOR_CMD then.
+# The nested compositor is sway until zxr's M1 lands; `--zxr` runs zxr in that slot (R0
+# bring-up, specs/zxr-core.md §12), with Monado's mirror window as the only view of it.
 { lib
 , writeShellApplication
 , writeText
@@ -14,9 +16,11 @@
 , sway
 , foot
 , xrgears
+, xterm
 , coreutils
 , gnugrep
 , procps
+, mura
 }:
 let
   swayConfig = writeText "dev-session-sway.cfg" ''
@@ -34,7 +38,7 @@ let
 in
 writeShellApplication {
   name = "dev-session";
-  runtimeInputs = [ monado sway foot xrgears coreutils gnugrep procps ];
+  runtimeInputs = [ monado sway foot xrgears xterm coreutils gnugrep procps mura.zxr ];
   text = ''
     usage() {
       cat <<USAGE
@@ -42,6 +46,10 @@ writeShellApplication {
 
       --client       also launch xrgears inside the session (OpenXR smoke);
                      implies --mirror so you can see the XR view
+      --zxr          run zxr (R0) as the session instead of sway: foot spawned inside,
+                     Monado's mirror window shows the composited view; implies --mirror.
+                     Extra zxr flags go after "--" (e.g. -- --frames 600 --journal /tmp/j)
+      --x11          with --zxr: also start xwayland-satellite on :7 and spawn xterm (gate 4)
       --mirror       show Monado's XR output window (black until a client renders)
       --no-mirror    force the windowless null compositor even with --client
       --rotate       simulated HMD follows a canned rotation (SIMULATED_ROTATE)
@@ -52,9 +60,12 @@ writeShellApplication {
     USAGE
     }
 
-    client=0 rotate=0 controllers=0 monado_on=1 verbose=0 mirror=auto
-    for a in "$@"; do case "$a" in
+    client=0 rotate=0 controllers=0 monado_on=1 verbose=0 mirror=auto zxr=0 x11=0
+    zxr_args=()
+    while [ $# -gt 0 ]; do a=$1; shift; case "$a" in
       --client) client=1 ;;
+      --zxr) zxr=1 ;;
+      --x11) x11=1 ;;
       --mirror) mirror=1 ;;
       --no-mirror) mirror=0 ;;
       --rotate) rotate=1 ;;
@@ -62,8 +73,10 @@ writeShellApplication {
       --no-monado) monado_on=0 ;;
       --verbose) verbose=1 ;;
       --help) usage; exit 0 ;;
+      --) zxr_args=("$@"); break ;;
       *) echo "dev-session: unknown flag $a" >&2; usage; exit 1 ;;
     esac; done
+    [ "$zxr" = 1 ] && [ "$mirror" = auto ] && mirror=1
     [ "$mirror" = auto ] && mirror=$client
 
     # Preflight: we nest inside an existing graphical session.
@@ -123,6 +136,17 @@ writeShellApplication {
     if [ "$client" = 1 ]; then
       ( sleep 2; echo "[xrgears] starting"; exec xrgears ) > >(sed 's/^/[xrgears] /') 2>&1 &
       pids+=($!)
+    fi
+
+    if [ "$zxr" = 1 ]; then
+      # zxr is an OpenXR client: it needs no host window; Monado's mirror is the view.
+      # The control socket is announced in its log (zxr-<pid>.sock under XDG_RUNTIME_DIR).
+      xw=()
+      [ "$x11" = 1 ] && xw=(--xwayland :7 --spawn "xterm -fa Monospace -fs 14")
+      echo "[session] starting zxr (R0) with foot inside; SIGUSR1 dumps the frame journal"
+      COMPOSITOR_CMD=(zxr --spawn foot "''${xw[@]}" "''${zxr_args[@]}")
+      "''${COMPOSITOR_CMD[@]}"
+      exit $?
     fi
 
     echo "[session] starting nested compositor (sway; Alt+Return = terminal, Alt+Shift+E = quit)"

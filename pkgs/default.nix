@@ -27,6 +27,9 @@ final: prev: {
     # The settings daemon + CLI (specs/settings-schema.md, specs/settings-daemon.md;
     # modules/os/settings.nix; D7).
     settingsd = final.callPackage ./mura-settingsd { };
+    # The compositor (specs/zxr-core.md; ADR 0006): one OpenXR client of Monado, one Wayland
+    # compositor. R0 bring-up — runs nested in the dev-session slot (`dev-session --zxr`).
+    zxr = final.callPackage ./zxr { };
     # The plymouth theme (boot / failure feedback / recovery screen) is device-specific — it is
     # composited from assets/branding with the panel geometry — so modules/os/recovery.nix calls
     # pkgs/mura-plymouth-theme directly with the contract's values; no fixed overlay attribute.
