@@ -248,6 +248,12 @@ From [research/64](../../research/64-window-workspace-management-from-comparable
   client (the tray/launcher component of this ADR is the dock), degrading to close-as-the-verb
   without one; no window cap ("the user's responsibility"); follow never by default, opt-in per
   window or application ("my monitor doesn't follow me").
-- **Open:** how much arrangement the in-process default ships (one engine vs a small set —
-  window-workspace-management.md §13 Q2); whether the external manager may do more than *hint*
-  focus, and the disconnect contract (Q5).
+- **Arrangement — ruled: minimal in-process.** The compositor's `policy` module carries one
+  engine (`free`, with angular-slot spawn and tidy); `arc`, `dock`, `band` and later engines are
+  built by Mura as *default external managers* over the seam and shipped as session components
+  — the owner: "minimal in process, but we'll build the rest as default and ship them."
+- **Disconnect — ruled: Hyprland's shape.** The compositor continues with its built-ins,
+  placements untouched; a reconnecting manager takes over from current state.
+- **Open:** whether an external manager may *set* keyboard focus or only request it under the
+  compositor's rules (window-workspace-management.md §13 Q5-focus); the exit path from an
+  exclusive scene (Q4-exit).

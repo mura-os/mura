@@ -99,22 +99,30 @@ independently — "position is managed by its parent, not the WM".
 
 ## 4. Layer-3 engines and their selection
 
-A place has exactly one engine (places-model layer 3). The default manager ships four; each
-implements `spawn(member) -> pose`, `arrange(place)`, `on_member_moved(member)` and may refuse
-nothing — a member the user drags stays where the user put it unless `managed` and the engine
-is asked to `arrange`.
+A place has exactly one engine (places-model layer 3). Each engine implements
+`spawn(member) -> pose`, `arrange(place)`, `on_member_moved(member)` and may refuse nothing — a
+member the user drags stays where the user put it unless `managed` and the engine is asked to
+`arrange`.
 
-| engine | spawn | arrange (one-shot) | when a member is moved | precedent |
-|---|---|---|---|---|
-| `free` | head-relative + angular free slot (§3) | tidy: the N most recently used members onto free angular slots at spawn distance, oldest first, unmanaged/pinned untouched | keeps the user's pose | visionOS, Android XR Home Space (+Tidy), Horizon detached |
-| `arc` | next free slot on an arc of radius `spawn.distance`, angular spacing `arc.spacing`, elevation band `arc.band` | re-pack the arc by recency | snaps to the nearest slot on release | kwin-vr `SpaceAllocator3D`, zen seat capsule, xrdesktop `arrange_sphere`, motorcar's fan |
-| `dock` | into the next of `dock.slots` slots on a bar angled toward the head; overflow displaces the least recent | none needed | detaching from the bar reparents the member to the place's sibling `free` place | Horizon Navigator dock, HoloLens Start, Stage Manager |
-| `band` | one curved band (`band.width_deg`, `band.curvature`) the members tile into left-to-right | re-tile | members slide along the band | Breezy, Mac Virtual Display, Horizon theater; the foreign-session mode-3 quad is a one-member band |
+**Ruled by the owner (2026-09-26): the in-process default is minimal — it ships `free` only
+(with the angular-slot allocator for spawn and tidy). `arc`, `dock`, `band` and everything after
+them are built by Mura as *default external managers* over the seam and shipped with the
+system** — river's posture for arrangement, with a working in-process floor the compositor can
+always fall back to (§11 disconnect). The table below therefore describes engines of two kinds:
+the one the compositor carries, and the ones Mura ships as manager programs.
 
-Engine parameters are per place, persisted with a pinned place (places-model §7). **Which engine
-a fresh transient place gets is open (§13 Q2).** Additional engines (tiling, scrollable strip,
-adaptive) arrive only over the seam as external managers or as in-process modules once evidence
-exists; the seam's `set_engine` carries a `custom` value for the former.
+| engine | where it lives | spawn | arrange (one-shot) | when a member is moved | precedent |
+|---|---|---|---|---|---|
+| `free` | **in-process (the floor)** | head-relative + angular free slot (§3) | tidy: the N most recently used members onto free angular slots at spawn distance, oldest first, unmanaged/pinned untouched | keeps the user's pose | visionOS, Android XR Home Space (+Tidy), Horizon detached |
+| `arc` | shipped external manager | next free slot on an arc of radius `spawn.distance`, angular spacing `arc.spacing`, elevation band `arc.band` | re-pack the arc by recency | snaps to the nearest slot on release | kwin-vr `SpaceAllocator3D`, zen seat capsule, xrdesktop `arrange_sphere`, motorcar's fan |
+| `dock` | shipped external manager | into the next of `dock.slots` slots on a bar angled toward the head; overflow displaces the least recent | none needed | detaching from the bar reparents the member to the place's sibling `free` place | Horizon Navigator dock, HoloLens Start, Stage Manager |
+| `band` | shipped external manager | one curved band (`band.width_deg`, `band.curvature`) the members tile into left-to-right | re-tile | members slide along the band | Breezy, Mac Virtual Display, Horizon theater; the foreign-session mode-3 quad is a one-member band |
+
+Engine parameters are per place, persisted with a pinned place (places-model §7). A fresh
+transient place gets `free` unless a manager is running and assigns another. Every shipped
+external manager is an ordinary session component (ADR 0012): its own process, started by the
+session, selected by `wm.external_manager`, replaceable by the user's own; the seam's
+`set_engine` carries `custom` for managers whose arrangement the compositor does not know.
 
 ## 5. Lifecycle
 
@@ -265,9 +273,13 @@ layers and safety occlusion; hit-testing and input routing; recenter; compositio
 that violates a limit is clamped, not rejected, and the applied state is reported — the manager
 learns the truth from `state`, as river's WM learns real dimensions from `dimensions`.
 
-**Disconnect** (§13 Q5): the design intent is *revert to the in-process default policy for new
-events, leave existing placements untouched* — Mura has the default river lacks; the XML states
-only that behaviour on disconnect is compositor policy until ruled.
+**Disconnect — ruled by the owner (2026-09-26, "Hyprland's shape").** When the manager's
+connection ends — crash, exit, or unload — the compositor *continues with its built-ins*: the
+in-process `free` floor takes over for new events, existing placements are left exactly as they
+are, nothing becomes inert (Hyprland ejects a crashed plugin and keeps running; contrast river,
+which makes every object inert and waits). A manager that reconnects — restarted by its unit,
+or a different one — binds the global and takes over from the current state (river's hot-swap),
+receiving the full state in its first manage sequence. The XML states this.
 
 **Unavailability:** the global is advertised only to the manager process (the session's
 configured WM client, spawned by the session like any shell component); a second binder gets
@@ -297,29 +309,18 @@ in-process default). The `ownership` of each is declarative by default (settings
 
 **Open (deciders named):**
 
-- **Q2 — the default intra-place engine, restated.** A place's *engine* is the places-model's
-  layer-3 "intra-place layout": the rule by which the windows *inside one place* are positioned
-  relative to each other — free (each keeps the pose it was given; tidy on request), arc
-  (slots on an arc around the wearer), dock (slots on a bar), band (one curved strip). It is not
-  a workspace-switching or a follow question. The owner's remark that engines like the band are
-  "exactly the reason why we wanted window/workspace management not in the compositor" sharpens
-  the question: **how much of this does the in-process default ship?** (a) *The minimum* — one
-  engine, `free` with the angular-slot allocator for spawn and tidy; every other arrangement
-  (dock, band, tiling, adaptive) is an external manager's over the seam — river's posture ("all
-  window management policy" outside) applied to arrangement while the compositor keeps a
-  working default. (b) *A small shipped set* — `free` + `arc` in-process, `dock`/`band` as the
-  shell clients need them — KWin's posture (several placement policies and quick-tiling
-  built in, more via scripts). My read, labelled: (a) — it matches the owner's stated reason
-  for the seam and keeps `policy` small; the band the foreign-session quad needs is one member
-  in `free`, not an engine. Decider: the owner.
+- **Q2 — ruled (2026-09-26): minimal in-process.** The compositor carries `free` only; `arc`,
+  `dock`, `band` and later engines are built by Mura as default external managers and shipped
+  (§4).
+- **Q5-disconnect — ruled (2026-09-26): Hyprland's shape.** The compositor continues with its
+  built-ins; placements untouched; a reconnecting manager takes over (§11).
 - **Q4-exit — how the wearer leaves an exclusive scene and brings the shell back.** Not a
   gesture by assumption; a reserved system input per device tier (OpenXR's `/input/system/click`
   is reserved from applications for this; every platform binds one physical control to
   shell/recenter/passthrough by press length). Needs its own short research pass; research/64
   §16 holds the platform facts gathered so far. Decider: the owner, jointly with the input
   workstream.
-- **Q5 — focus on the seam, and disconnect.** river's manager owns focus; ADR 0012's amendment
-  keeps "focus rules" in the compositor. My read, labelled: the manager *hints* (`focus_hint`),
-  the compositor's rules decide; on disconnect the compositor reverts to the default policy for
-  new events and leaves existing placements untouched. Decider: the owner (jointly with the
-  input workstream, which owns the rules).
+- **Q5-focus — may an external manager set keyboard focus, or only ask for it?** Open; the
+  positions and the terms are laid out in research/64 §15 Q5 and in the owner conversation of
+  2026-09-26. Decider: the owner, jointly with the input workstream (which owns the focus rules
+  themselves).

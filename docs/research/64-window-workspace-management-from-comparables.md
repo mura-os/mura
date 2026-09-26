@@ -598,8 +598,10 @@ manager's questions are the same dimensions asked of a *set* of planes plus thre
 *Status (2026-09-26, later the same day): Q1 ruled (b) with (a) as the degraded mode; Q3 ruled
 no cap ("the user's responsibility"); Q4 ruled yes (fullscreen's analogue; both mechanisms of
 window-workspace-management.md §9), with the exit path explicitly **not** a gesture by assumption
-and sent to research (§16); Q6 ruled never-by-default, opt-in per window/application. Q2 restated
-in window-workspace-management.md §13 (how much the in-process default ships); Q5 open.*
+and sent to research (§16); Q6 ruled never-by-default, opt-in per window/application. Q2 ruled
+minimal in-process (`free` only; `arc`/`dock`/`band` built by Mura as default external managers
+and shipped). Q5-disconnect ruled Hyprland's shape (continue with built-ins; placements kept;
+reconnecting manager takes over). Q5-focus open pending the owner's request for the terms.*
 
 **Q1 — What does "minimize" mean by default?**
 *Why a decision:* three shipping positions, none dominant; the protocol is neutral (verdict 7)

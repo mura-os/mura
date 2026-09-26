@@ -65,8 +65,12 @@
       sequence, or to send manage_finish or render_finish out of order;
       such requests raise the sequence_order error.
 
-      The behaviour of the compositor when the window manager client
-      disconnects is compositor policy.
+      When the window manager client disconnects, the compositor continues
+      with its own default policy: existing window state is left unchanged
+      and new windows are placed by the compositor until another window
+      manager binds this global. A window manager that binds while windows
+      exist receives the complete current state before its first
+      manage_start event.
     </description>
 
     <enum name="error">
