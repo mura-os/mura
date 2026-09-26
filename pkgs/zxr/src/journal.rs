@@ -41,6 +41,13 @@ pub struct Calls {
     pub release_image: Lat,
     pub end_frame: Lat,
     pub poll_event: Lat,
+    /// `xrSyncActions`, once per tick (spatial-input §1a): N_devices `update_inputs` RPCs on
+    /// Monado (`oxr_input.c:2045-2050`, `ipc_client_xdev.c:37-70`) — the upstream batching item
+    pub sync_actions: Lat,
+    /// `xrGetActionState*` / `xrGetCurrentInteractionProfile`: client-side on Monado (no round trip), recorded, not in the census
+    pub get_action_state: Lat,
+    /// `xrLocateHandJointsEXT`, one per tracked hand per tick while the §10 bridge runs
+    pub hand_joints: Lat,
 }
 
 /// Time a closure and record it in a `Lat`.
@@ -190,10 +197,10 @@ impl Journal {
         let _ = writeln!(s, "uptime_ms={}", now_ns.saturating_sub(self.started_at_ns) / 1_000_000);
         // runtime calls (research/63 §1): per-call latency and the per-frame census
         let c = &self.calls;
-        let total = c.wait_frame.n + c.begin_frame.n + c.locate_views.n + c.locate_spaces.n + c.acquire_image.n + c.wait_image.n + c.release_image.n + c.end_frame.n + c.poll_event.n;
+        let total = c.wait_frame.n + c.begin_frame.n + c.locate_views.n + c.locate_spaces.n + c.acquire_image.n + c.wait_image.n + c.release_image.n + c.end_frame.n + c.poll_event.n + c.sync_actions.n + c.hand_joints.n;
         let _ = writeln!(s, "runtime_calls_total={}", total);
         let _ = writeln!(s, "runtime_calls_per_frame_x100={}", if self.frames > 0 { total * 100 / self.frames } else { 0 });
-        let blocking_ns = c.begin_frame.sum_ns + c.locate_views.sum_ns + c.locate_spaces.sum_ns + c.acquire_image.sum_ns + c.wait_image.sum_ns + c.release_image.sum_ns + c.end_frame.sum_ns;
+        let blocking_ns = c.begin_frame.sum_ns + c.locate_views.sum_ns + c.locate_spaces.sum_ns + c.acquire_image.sum_ns + c.wait_image.sum_ns + c.release_image.sum_ns + c.end_frame.sum_ns + c.sync_actions.sum_ns + c.hand_joints.sum_ns;
         let _ = writeln!(s, "runtime_calls_loop_us_per_frame={}", if self.frames > 0 { blocking_ns / self.frames / 1000 } else { 0 });
         c.wait_frame.render(&mut s, "wait_frame");
         c.begin_frame.render(&mut s, "begin_frame");
@@ -204,6 +211,12 @@ impl Journal {
         c.release_image.render(&mut s, "release_image");
         c.end_frame.render(&mut s, "end_frame");
         c.poll_event.render(&mut s, "poll_event");
+        c.sync_actions.render(&mut s, "sync_actions");
+        c.get_action_state.render(&mut s, "get_action_state");
+        c.hand_joints.render(&mut s, "hand_joints");
+        c.sync_actions.render(&mut s, "sync_actions");
+        c.get_action_state.render(&mut s, "get_action_state");
+        c.hand_joints.render(&mut s, "hand_joints");
         // GPU structure (research/63 §2): analytic, not measured
         let _ = writeln!(s, "passes_per_frame={}", self.passes_per_frame);
         let _ = writeln!(s, "attachment_bytes_est_per_frame={}", self.attachment_bytes_est);

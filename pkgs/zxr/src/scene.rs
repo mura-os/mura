@@ -150,6 +150,8 @@ pub enum FrameKind {
     Anchor,
     Docked,
     Peer,
+    /// the eye-gaze action space (spatial-input §2)
+    Gaze,
 }
 
 pub struct Frame {

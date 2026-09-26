@@ -538,6 +538,10 @@ impl XrCore {
         if a.eye_gaze {
             a.gaze_sample(&self.session, time, now_ns, out);
         }
+        // the census (spec §11): the action set's calls beside the frame loop's
+        self.calls.sync_actions = a.sync_actions_lat.clone();
+        self.calls.get_action_state = a.get_action_state_lat.clone();
+        self.calls.hand_joints = a.hand_joints_lat.clone();
     }
 
     /// The action spaces, once, for `actions::register_frames` to move into the scene as

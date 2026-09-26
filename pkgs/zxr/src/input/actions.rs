@@ -288,7 +288,7 @@ pub fn register_frames(st: &mut Zxr) {
         let kind = match tag {
             PoseTag::Aim(Side::Left) | PoseTag::Grip(Side::Left) | PoseTag::Poke(Side::Left) => FrameKind::LeftHand,
             PoseTag::Aim(Side::Right) | PoseTag::Grip(Side::Right) | PoseTag::Poke(Side::Right) => FrameKind::RightHand,
-            PoseTag::Gaze => FrameKind::Head,
+            PoseTag::Gaze => FrameKind::Gaze,
         };
         let id = st.scene.add_frame(Space::Xr(space), kind);
         tracing::debug!(?tag, ?id, "action space registered as a scene frame");

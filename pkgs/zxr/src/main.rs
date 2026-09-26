@@ -812,7 +812,7 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
         Source(cmd) => {
             let now = now_ns();
             let Zxr { input, .. } = &mut *st;
-            match input.injector.apply(&cmd, now, &mut input.queue) {
+            match input.injector.apply(&cmd, now, input.head, &mut input.queue) {
                 Ok(r) => format!("queued {r}"),
                 Err(e) => format!("error {e}"),
             }

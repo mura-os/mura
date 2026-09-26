@@ -544,6 +544,8 @@ pub fn tick(st: &mut Zxr, head: xr::Posef, time: xr::Time, now_ns: u64) {
 #[derive(Default)]
 pub struct Injector {
     latched: Vec<(SourceKind, Sample)>,
+    /// the joint bridge's per-hand state for `source <hand> joints …` (hysteresis, hold)
+    bridge: [bridge::State; 2],
 }
 
 impl Injector {
@@ -565,7 +567,7 @@ impl Injector {
     }
 
     /// Translate one injector command into a queued sample. Returns the reply line.
-    pub fn apply(&mut self, cmd: &crate::control::SourceCmd, now_ns: u64, queue: &mut Vec<Sample>) -> Result<String, String> {
+    pub fn apply(&mut self, cmd: &crate::control::SourceCmd, now_ns: u64, head: Option<xr::Posef>, queue: &mut Vec<Sample>) -> Result<String, String> {
         use crate::control::SourceCmd as C;
         let kind_of = |k: &str| SourceKind::parse(k).ok_or_else(|| format!("unknown source kind {k}"));
         let reply;
@@ -653,14 +655,15 @@ impl Injector {
                 reply = format!("{k:?} {name} {}", if *on { "on" } else { "off" });
                 *s
             }
-            C::Joints { kind, joints: _ } => {
+            C::Joints { kind, joints } => {
                 let k = kind_of(kind)?;
-                // lane D's bridge consumes joints (`Injector::joints`); until then a joints command
-                // marks the hand ready with its latched pose
-                let s = self.latch(k, now_ns);
-                s.flags.insert(Flags::BRIDGED);
-                reply = format!("{k:?} joints (bridge pending)");
-                *s
+                // the §10 joint bridge, driven by the harness (no simulated hands exist)
+                let SourceKind::Hand(side) = k else { return Err(format!("joints need a hand kind, got {k:?}")) };
+                let i = if side == Side::Left { 0 } else { 1 };
+                let s = bridge::bridge_from_joints_with(k, joints, head.unwrap_or(xr::Posef::IDENTITY), now_ns, &mut self.bridge[i]);
+                *self.latch(k, now_ns) = s; // a later `press` carries the bridged aim
+                reply = format!("{k:?} joints pinch={:.2} flags={:?}", s.values.pinch, s.flags);
+                s
             }
             C::Off { kind } => {
                 let k = kind_of(kind)?;
