@@ -214,21 +214,26 @@ Readings:
    whose frame costs less than a dispatch; a GPU-bound client's rate is its GPU's, and a
    frame-callback-respecting client's is the fallback cadence. Recorded in budgets.md §5.
 
-**Flagged judgments (rule 4 — not forced by the evidence, stated for the owner):**
+**Flagged judgments (rule 4), both put to the owner 2026-09-26 and resolved the same day:**
 
 - **Hidden members: fallback callbacks (≈ 1 Hz) or none?** The comparables split 7 (none: weston,
   wlroots, Mir, Louvre, Hyprland, mutter, KWin) : 3 (≈ 1 Hz: smithay, niri, cosmic-comp), with the
   1 Hz side's reason being compatibility ("clients might get blocked in their main loop", Minecraft,
-  Veloren) and the none side's being the protocol text. zxr already chose the 1 Hz fallback for
-  out-of-view members on the same evidence; the A/B kept it for hidden members for consistency.
-  [window-workspace-management.md](../architecture/window-workspace-management.md) §"hidden" says
-  "no frame callbacks" (river's `hide`). The two should agree; which way is the owner's call — the
-  cost difference is 1 dispatch per second per hidden member.
+  Veloren) and the none side's being the protocol text. **Resolved: the 1 Hz fallback** (the owner
+  was indifferent and delegated; the agent's recommendation, adopted). The case: "none" has a known
+  failure class that every none-side compositor patched after the fact (niri's timer after
+  Minecraft/Veloren, Mir's Firefox heartbeat, mutter's flush-on-configure hatch), while the floor
+  costs one dispatch per second per hidden member and at most one client frame per second; and
+  with `suspended` now sent, the protocol's "stop rendering" intent behind "should avoid
+  signaling" is carried by the state, leaving the callback only the job of keeping blocking
+  clients alive — for which the floor is cheap insurance. One rule for out-of-view, quiet and
+  hidden; [window-workspace-management.md](../architecture/window-workspace-management.md)
+  §"hidden" updated to match (it said "no frame callbacks", river's `hide`).
 - **`suspended` immediately (KWin) or after a delay (mutter, 3 s)?** mutter's reason is not stated
   in its tree; the plausible one — not flapping the client's render state across brief occlusions
   and workspace animations — does not apply to quiet mode (a game start/stop) or an explicit hide,
-  so zxr sets it immediately. If a transient state ever drives it (fullscreen band, overview), the
-  hysteresis becomes a real question.
+  so zxr sets it immediately. **Confirmed by the owner.** If a transient state ever drives it
+  (fullscreen band, overview), the hysteresis becomes a real question.
 
 ## 4. Recorded items (not decided here)
 

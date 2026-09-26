@@ -131,7 +131,7 @@ States a member can be in, and their protocol meaning:
 | state | meaning | `xdg_toplevel` | who decides |
 |---|---|---|---|
 | mapped | a plane in a place | — | client commit + manager placement |
-| hidden | not rendered, keeps place and pose, no frame callbacks | none (a compositor-side state, river's `hide`) | manager |
+| hidden | not rendered, keeps place and pose; frame callbacks on the ≈ 1 Hz fallback cadence and `xdg_toplevel.suspended` set — the one rule for every member zxr is not composing (out-of-view, quiet, hidden; [research/69](../research/69-buffer-hold-policy-for-non-presented-surfaces.md) §3, owner-delegated 2026-09-26: the 1 Hz floor is the smithay family's compatibility insurance against clients that block on a callback, `suspended` carries the protocol's "stop rendering"; river's `hide` sends none) | none (a compositor-side state, river's `hide`) | manager |
 | minimized | **ruled (2026-09-26):** hidden, state kept, shown on the launcher/dock client with an indicator ("transitions the app to the background without quitting"); when no dock client runs the system degrades to close-is-the-verb with relaunch-into-place | `set_minimized` from clients is an event to the manager (river), never applied by the compositor | manager |
 | maximized | fills the place's engine slot (`arc`/`dock`/`band`) or the spawn size × `wm.size.maximized` (`free`) | `maximized` configure state | manager on request |
 | fullscreen | fills the *band* of its place; other members of the place hidden while fullscreen | `fullscreen` configure state | manager on request |

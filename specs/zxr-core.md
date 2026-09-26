@@ -214,9 +214,12 @@ submit:  { quads: Vec<QuadEntry>, projection: Vec<DrawItem> }   // per-tick scra
 - **A member that is not composed is `suspended`.** Its toplevel's configure carries
   `xdg_toplevel.suspended` (xdg-shell v6 — "the surface is currently not ordinarily being
   repainted") while zxr is quiet or the member is hidden, cleared on return; set on the state
-  change (KWin `windowitem.cpp:195-203`; mutter's 3 s delay, `window.c:110`, is a flagged
-  judgment, research/69 §3). `Zxr::set_suspended`, `Zxr::set_quiet`; `hidden` is a payload
-  field excluded from the flatten and the dirty walk (`Payload::presentable`).
+  change, immediately (KWin `windowitem.cpp:195-203`; mutter's 3 s delay, `window.c:110`, was
+  put to the owner and not adopted — research/69 §3). Such a member receives frame callbacks on
+  the ≈ 1 Hz fallback cadence — the same rule as out-of-view members (research/65 §4.2), ruled
+  for hidden members too (research/69 §3, owner-delegated). `Zxr::set_suspended`,
+  `Zxr::set_quiet`; `hidden` is a payload field excluded from the flatten and the dirty walk
+  (`Payload::presentable`).
 - **Panel state lives in the member payload.** `M` is the frontend's production struct — the
   smithay `Window`, `panel: Option<PanelSwapchain>`, `dirty`, `mapped_at`, `last_frame_callback`, `hidden` (rev 3.4)
   — and a test struct in tests; `scene` names no Wayland or Vulkan type and the ownership table of
