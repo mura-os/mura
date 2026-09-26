@@ -243,10 +243,17 @@ The smithay skeleton dropped into the dev-session slot, measured against the fou
 [doc 39 §5](../research/39-compositor-base-landscape.md): real projection-layer presentation on
 a runtime-created Vulkan device; zero-CPU-copy dmabuf import with explicit sync end-to-end;
 window behavior under churn (resize/popups/kill-mid-frame, no unresolved GPU waits — previewing
-M4's stopping rule); Xwayland early (smithay `X11Wm` vs xwayland-satellite is an R0 *output*).
-Entry: nothing — the harness exists. Exit: a written result per gate + the instrumentation
-numbers. Registry rows it moves: none directly (it's evidence, not a component), but every
-authority-plane "specified" row becomes buildable on its skeleton.
+M4's stopping rule); Xwayland early. **Entry (since 2026-09-26): the program spec exists** —
+[specs/zxr-core.md](../../specs/zxr-core.md) rev 1, derived from [research/59](../research/59-xr-compositor-architecture-from-comparables.md)
+and [research/60](../research/60-de-abstractions-mapped-to-xr.md) with the motorcar/wxrc lineage
+read first, and the 2026-09-26 rulings (ADR 0006/0012 amendments: calloop owns the thread and
+`xrWaitFrame` runs on a dedicated thread; xwayland-satellite, no longer an R0 output; no
+compositor-side windowed backend — Monado's simulated HMD is the dev backend; WM policy in-process
+with a bounded protocol later; every shell component its own process). The §5.1 rule "no rung
+before its spec" applied to R0. Exit: a written result per gate + the instrumentation numbers
+([research/61](../research/61-r0-bring-up-results.md)), spec rev 2 from what R0 taught, the
+fallback trigger evaluated. Registry rows it moves: none directly (it's evidence, not a
+component), but every authority-plane "specified" row becomes buildable on its skeleton.
 
 ### G1 — the greeter scene in dev-session
 

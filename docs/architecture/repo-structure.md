@@ -47,6 +47,8 @@ pkgs/                          # overlay: XR components, kernels, tools (nixpkgs
                                # Mura's own programs are Rust (AGENTS.md rule 6); tests/closure.nix
                                # proves the login-path closure carries no interpreter
   mura-authd/                  # the lock-path PAM helper + conformance harness (Rust; D5) — pkgs.mura.authd
+  zxr/                         # the compositor: one OpenXR client of Monado, one Wayland compositor (Rust, smithay + openxrs + ash;
+                               # specs/zxr-core.md; R0 in the dev-session slot behind a flag) — pkgs.mura.zxr
   mura-session/                # the session wrapper greetd execs, `start`/`finalize` (Rust, libc only; D4 rev 3) — pkgs.mura.session
   mura-preflight/              # the XR preflight probe P1–P7 → /run/mura/preflight.json (Rust; D6) — pkgs.mura.preflight
   mura-setup/                  # the setup program's system instance — D3 STUB (Rust, libc only); `--recovery` = the
