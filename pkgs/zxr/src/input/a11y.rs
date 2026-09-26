@@ -144,7 +144,13 @@ impl Dwell {
 /// stage below sees an ordinary commit. KWin's dwell clicker does the same through an input device
 /// of its own (`references/kwin/src/plugins/dwellclicker/dwellclicker.cpp:188-194`).
 pub fn commit_samples(kind: SourceKind, now_ns: u64) -> [Sample; 2] {
-    [Sample::new(kind, now_ns).with_button(Button::Select, true), Sample::new(kind, now_ns).with_button(Button::Select, false)]
+    // marked `Flags::A11Y`: a transform's commit, not a device's (KWin gives its dwell clicks a
+    // device of their own, `plugins/dwellclicker/dwellclicker.cpp:188-194`)
+    let mut down = Sample::new(kind, now_ns).with_button(Button::Select, true);
+    let mut up = Sample::new(kind, now_ns).with_button(Button::Select, false);
+    down.flags.insert(crate::input::Flags::A11Y);
+    up.flags.insert(crate::input::Flags::A11Y);
+    [down, up]
 }
 
 /// The `Slot::A11y` stage.
@@ -203,6 +209,17 @@ impl Stage for A11y {
             tracing::info!(?kind, count = self.dwell_commits, "a11y: dwell commit");
         }
         Flow::Continue
+    }
+
+    /// Settings pushed through `Input` (the control socket now; `org.mura.Settings1` later,
+    /// spatial-input §14) are taken here, once per tick.
+    fn tick(&mut self, st: &mut Zxr, _now_ns: u64) {
+        if let Some(on) = st.input.a11y_dwell.take() {
+            self.set_dwell(on);
+        }
+        if let Some(g) = st.input.a11y_gain.take() {
+            self.set_gain(g);
+        }
     }
 }
 

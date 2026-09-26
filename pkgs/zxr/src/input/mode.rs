@@ -28,7 +28,7 @@
 //! suspends the XR sources, and stops there. "Presence never *unlocks* without a biometric"
 //! (line 100), so nothing here ever leaves `Mode::Locked`.
 
-use super::activity::{self, Activity};
+use super::activity;
 use super::reserved::cancel_sample;
 use super::{Flow, Mode, Sample, SourceKind, Stage};
 use crate::scene::MemberId;
@@ -78,19 +78,11 @@ pub struct ModeGate {
     pub xr_gated: u64,
     /// cancel samples pushed for XR sources at a doff
     pub doff_cancels: u64,
-    activity: Activity,
 }
 
 impl ModeGate {
-    /// ns of the last input that counted as user activity (`activity.rs`; KWin's spy shape,
-    /// `references/kwin/src/input.cpp:3169-3172`).
-    pub fn last_activity(&self) -> u64 {
-        self.activity.last_activity()
-    }
-
-    pub fn activity(&self) -> &Activity {
-        &self.activity
-    }
+    // The activity record lives on `Input::activity` (KWin's spy shape, `references/kwin/src/input.cpp:3169-3172`);
+    // read it there — this stage only feeds it (`don` counts as activity).
 
     /// The `exclusive` layer-shell hook (spatial-input §1a line 115; ADR 0007's "the seat routes
     /// only to the lock scene"): a member whose surface holds an exclusive layer-shell role may
@@ -159,7 +151,6 @@ impl Stage for ModeGate {
     }
 
     fn tick(&mut self, st: &mut Zxr, now_ns: u64) {
-        self.activity.absorb_pending();
         if !st.input.presence_changed {
             return;
         }
@@ -229,18 +220,5 @@ mod tests {
             assert!(!c.tracked, "a cancel is a release on a source that is gone");
             assert_eq!(c.button, Some((Button::Select, false)));
         }
-    }
-
-    /// `don` calls `activity::notify`, which needs a `&mut Zxr`; what that writes is the pending
-    /// cell this stage folds in at every tick, so that is what the test drives.
-    #[test]
-    fn don_counts_as_activity_through_the_pending_cell() {
-        let mut a = Activity::default();
-        activity::record_pending(42, crate::input::Flags::default());
-        a.absorb_pending();
-        assert_eq!(a.last_activity(), 42);
-        assert_eq!(a.events(), 1);
-        a.absorb_pending();
-        assert_eq!(a.events(), 1, "absorbed once");
     }
 }

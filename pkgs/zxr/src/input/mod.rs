@@ -137,6 +137,9 @@ impl Flags {
     pub const SYNTHETIC: Flags = Flags(1 << 4);
     /// produced by the joint bridge rather than the runtime's interaction profile
     pub const BRIDGED: Flags = Flags(1 << 5);
+    /// produced by an accessibility transform (dwell, mouse keys) rather than a device — KWin's
+    /// dwell clicker gives its clicks a device of their own (`plugins/dwellclicker/dwellclicker.cpp:188-194`)
+    pub const A11Y: Flags = Flags(1 << 6);
 
     pub fn contains(self, f: Flags) -> bool {
         self.0 & f.0 == f.0
@@ -467,11 +470,18 @@ pub struct Input {
     pub tick_oldest_event_ns: Option<u64>,
     /// the test-only injector's latched per-kind state
     pub injector: Injector,
+    /// last-input record for the idle ladder (ADR 0007) — a side effect of every stage, never a
+    /// slot: KWin's `UserActivitySpy` shape (`references/kwin/src/input.cpp:3169-3172`)
+    pub activity: activity::Activity,
+    /// a11y settings pushed from the control socket (later `org.mura.Settings1`, spatial-input
+    /// §14); the A11y stage takes them at its next `tick`
+    pub a11y_dwell: Option<bool>,
+    pub a11y_gain: Option<f64>,
 }
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, injector: Injector::default() }
+        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None }
     }
 }
 

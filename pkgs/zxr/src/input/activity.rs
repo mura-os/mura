@@ -27,14 +27,8 @@
 //! EI events enter the same spy path) is a **flagged judgment**: no comparable states a rule for
 //! an XR headset whose idle ladder also locks.
 //!
-//! **Where the state lives — flagged.** `Zxr` has no activity field and `state.rs`/`input/mod.rs`
-//! are not this lane's to edit, so `notify` parks its record in a per-thread cell that the
-//! `Mode` stage folds into its own [`Activity`] at each tick ([`Activity::absorb_pending`]). The
-//! state loop is single-threaded, so the cell is exactly one `u64` pair and costs nothing; it is
-//! still a hidden place for state that belongs on `Input`. The additive patch that removes it is
-//! in this lane's report.
-
-use std::cell::Cell;
+//! **Where the state lives.** On `Input::activity` (spine, `input/mod.rs`) — every stage and the
+//! seat reach it through `notify`; nothing is parked in thread-local state.
 
 use super::Flags;
 use crate::state::Zxr;
@@ -87,23 +81,6 @@ impl Activity {
         self.last_ns = self.last_ns.max(now_ns);
     }
 
-    /// Fold in whatever [`notify`] recorded since the last tick.
-    pub fn absorb_pending(&mut self) {
-        PENDING.with(|p| {
-            let (last, n, emulated) = p.take();
-            if n == 0 {
-                return;
-            }
-            self.events += n;
-            self.emulated_events += emulated;
-            self.last_ns = self.last_ns.max(last);
-        });
-    }
-}
-
-thread_local! {
-    /// (last counted ns, events, emulated events) since the last `absorb_pending`
-    static PENDING: Cell<(u64, u64, u64)> = const { Cell::new((0, 0, 0)) };
 }
 
 /// Record user activity. The call every stage makes; see the module note on where it lands.
@@ -113,20 +90,9 @@ pub fn notify(st: &mut Zxr, now_ns: u64) {
 
 /// [`notify`] keeping the sample's provenance (`Flags::EMULATED`, `libei/README.md:53-71`).
 pub fn notify_flagged(st: &mut Zxr, now_ns: u64, flags: Flags) {
-    // `st` is taken because this is the call site lane C and lane F will use and because honouring
-    // `zwp_idle_inhibit_v1` reads compositor state (the inhibiting surface's mapped-ness); neither
-    // protocol state exists on `Zxr` yet — the patch is in this lane's report.
-    let _ = st;
-    record_pending(now_ns, flags);
-}
-
-/// The cell write [`notify`] makes, without the `&mut Zxr` no stage has in a unit test.
-pub fn record_pending(now_ns: u64, flags: Flags) {
-    PENDING.with(|p| {
-        let (last, n, emulated) = p.get();
-        let emulated_now = u64::from(flags.contains(Flags::EMULATED));
-        p.set((last.max(now_ns), n + 1, emulated + emulated_now));
-    });
+    st.input.activity.record(now_ns, flags);
+    // `ext-idle-notify`: `st.idle_notifier.notify_activity(&seat)` once lane F lands the state
+    // (smithay `idle_notify/mod.rs:236-244`); `zwp_idle_inhibit_v1` via `set_is_inhibited`.
 }
 
 #[cfg(test)]

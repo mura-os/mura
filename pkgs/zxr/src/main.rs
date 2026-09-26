@@ -784,6 +784,20 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
                 None => format!("error unknown mode {m}"),
             }
         }
+        A11y(key, val) => match (key.as_str(), val.as_str()) {
+            ("dwell", v) => {
+                st.input.a11y_dwell = Some(v == "on" || v == "1");
+                format!("a11y dwell {v}")
+            }
+            ("gain", v) => match v.parse::<f64>() {
+                Ok(g) => {
+                    st.input.a11y_gain = Some(g);
+                    format!("a11y gain {g}")
+                }
+                Err(_) => format!("error a11y gain {v}"),
+            },
+            _ => format!("error unknown a11y setting {key}"),
+        },
         Present(on) => {
             st.input.set_present(on);
             st.journal.input_presence_changes += 1;

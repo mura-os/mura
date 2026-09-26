@@ -34,6 +34,8 @@ pub enum Command {
     Present(bool),
     /// `mode normal|greeter|locked`: the input mode (ADR 0007) from the harness
     Mode(String),
+    /// `a11y dwell on|off` / `a11y gain <f>`: the a11y stage's settings (spatial-input §13–§14) from the harness
+    A11y(String, String),
     Unknown(String),
 }
 
@@ -122,6 +124,7 @@ pub fn parse(line: &str) -> Command {
         (Some("spawn"), Some(_)) => Command::Spawn(line.trim_start_matches("spawn").trim().to_string()),
         (Some("present"), Some(v)) => Command::Present(v == "on" || v == "1"),
         (Some("mode"), Some(m)) => Command::Mode(m.to_string()),
+        (Some("a11y"), Some(k)) => Command::A11y(k.to_string(), it.next().unwrap_or("").to_string()),
         (Some("source"), Some(kind)) => parse_source(kind, it.collect::<Vec<_>>().as_slice()).map(Command::Source).unwrap_or_else(|| Command::Unknown(line.to_string())),
         _ => Command::Unknown(line.to_string()),
     }
@@ -214,6 +217,8 @@ mod tests {
         assert_eq!(parse("source hand-left flag system_gesture on"), Command::Source(SourceCmd::Flag { kind: "hand-left".into(), name: "system_gesture".into(), on: true }));
         assert_eq!(parse("source hand-left off"), Command::Source(SourceCmd::Off { kind: "hand-left".into() }));
         assert_eq!(parse("present off"), Command::Present(false));
+        assert_eq!(parse("a11y dwell on"), Command::A11y("dwell".into(), "on".into()));
+        assert_eq!(parse("a11y gain 1.5"), Command::A11y("gain".into(), "1.5".into()));
         assert!(matches!(parse("source hand-left pose 0 1"), Command::Unknown(_)));
         assert!(matches!(parse("source hand-left joints 1 2 3"), Command::Unknown(_)));
     }
