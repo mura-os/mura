@@ -408,9 +408,25 @@ impl Chain {
 // The module state and the per-tick entry point
 // ---------------------------------------------------------------------------------------------
 
+/// The compositor's input mode (ADR 0007): the mode stage gates everything below it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Mode {
+    #[default]
+    Normal,
+    /// `--greeter`: only the auth scene / exclusive layer-shell may receive
+    Greeter,
+    /// the built-in lock (ADR 0007 I1–I3)
+    Locked,
+}
+
 /// The `input` module's state on `Zxr`.
 pub struct Input {
     pub chain: Chain,
+    /// greeter / lock / normal — set by `--greeter`, the lock machine, the control socket
+    pub mode: Mode,
+    /// XR sources suspended (doff, docked): the mode stage sets it from `present`; peripherals
+    /// continue (spatial-input §1a)
+    pub xr_suspended: bool,
     /// samples produced between ticks (libinput, EI, the injector) and by the XR sync; drained
     /// in order at the tick
     pub queue: Vec<Sample>,
@@ -426,7 +442,7 @@ pub struct Input {
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, injector: Injector::default() }
+        Input { chain: Chain::default(), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, injector: Injector::default() }
     }
 }
 

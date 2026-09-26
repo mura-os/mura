@@ -749,6 +749,21 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             st.set_quiet(on);
             format!("quiet {}", if on { "on" } else { "off" })
         }
+        Mode(m) => {
+            let mode = match m.as_str() {
+                "normal" => Some(input::Mode::Normal),
+                "greeter" => Some(input::Mode::Greeter),
+                "locked" | "lock" => Some(input::Mode::Locked),
+                _ => None,
+            };
+            match mode {
+                Some(mode) => {
+                    st.input.mode = mode;
+                    format!("mode {mode:?}")
+                }
+                None => format!("error unknown mode {m}"),
+            }
+        }
         Present(on) => {
             st.input.set_present(on);
             st.journal.input_presence_changes += 1;

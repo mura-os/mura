@@ -32,6 +32,8 @@ pub enum Command {
     Source(SourceCmd),
     /// `present on|off`: user presence (`XR_EXT_user_presence`) from the harness
     Present(bool),
+    /// `mode normal|greeter|locked`: the input mode (ADR 0007) from the harness
+    Mode(String),
     Unknown(String),
 }
 
@@ -119,6 +121,7 @@ pub fn parse(line: &str) -> Command {
         }
         (Some("spawn"), Some(_)) => Command::Spawn(line.trim_start_matches("spawn").trim().to_string()),
         (Some("present"), Some(v)) => Command::Present(v == "on" || v == "1"),
+        (Some("mode"), Some(m)) => Command::Mode(m.to_string()),
         (Some("source"), Some(kind)) => parse_source(kind, it.collect::<Vec<_>>().as_slice()).map(Command::Source).unwrap_or_else(|| Command::Unknown(line.to_string())),
         _ => Command::Unknown(line.to_string()),
     }
