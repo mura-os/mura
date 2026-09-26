@@ -150,6 +150,16 @@ impl TouchLogic {
             Some(c) if c.kind == s.kind => {
                 // the contact this kind holds: loss cancels, a release edge lifts, else drag
                 if !s.tracked || !s.ready {
+                    // smithay delivers `cancel` only for slots with events pending in the current
+                    // frame (`touch/mod.rs` `TouchInternal::cancel`: "cancel called without prior
+                    // events"; slots whose `current == pending` are skipped) — libinput's frame
+                    // model, where a cancel closes an open frame. Every down contact is therefore
+                    // re-stated at its last point in the frame the cancel closes.
+                    for id in 0..CONTACT_COUNT as u32 {
+                        if let Some(c) = self.contacts.contact(id) {
+                            out.push(TouchOp::Motion { id, member: c.member, local: c.local });
+                        }
+                    }
                     out.push(TouchOp::Cancel);
                     self.contacts.clear();
                     self.cancels += 1;
@@ -231,9 +241,15 @@ impl TouchTransport {
                     // focus follows the commit, never hover (spatial-input §6)
                     super::seat::commit_focus(st, member);
                 }
-                TouchOp::Motion { id, .. } => {
-                    let Some((_, _, (surface, logical, origin))) = resolved.as_ref() else { continue };
-                    self.touch.motion(st, Some((surface.clone(), *origin)), &MotionEvent { slot: TouchSlot::from(Some(id)), location: *logical, time });
+                TouchOp::Motion { id, member, local } => {
+                    // the drag point is this sample's resolved hit; a cancel re-states other
+                    // contacts at their own last points
+                    let point = match resolved.as_ref() {
+                        Some((m, l, p)) if *m == member && *l == local => Some(p.clone()),
+                        _ => super::seat::plane_point(st, member, local),
+                    };
+                    let Some((surface, logical, origin)) = point else { continue };
+                    self.touch.motion(st, Some((surface, origin)), &MotionEvent { slot: TouchSlot::from(Some(id)), location: logical, time });
                 }
                 TouchOp::Up { id } => {
                     let serial = SERIAL_COUNTER.next_serial();
@@ -345,14 +361,17 @@ mod tests {
         let mut l = TouchLogic::default();
         let mut ops = Vec::new();
         l.plan(&hand(Side::Left, 0.9), Some((m, [0.0, 0.0])), &mut ops);
-        assert!(l.contacts.is_down(0));
-        // lane A's loss path: a sample with the pose gone
+        l.plan(&hand(Side::Right, 0.9), Some((m, [0.4, 0.0])), &mut ops);
+        assert!(l.contacts.is_down(0) && l.contacts.is_down(1));
+        // lane A's loss path: a sample with the pose gone. Every down contact is re-stated in
+        // the frame the cancel closes (smithay's frame-marker rule), then the session cancels.
         let mut lost = Sample::new(SourceKind::Hand(Side::Left), 5);
         lost.tracked = false;
         lost.ready = false;
         l.plan(&lost, None, &mut ops);
-        assert_eq!(ops, vec![TouchOp::Cancel]);
-        assert_eq!(l.contacts.down_count(), 0);
+        assert_eq!(ops, vec![TouchOp::Motion { id: 0, member: m, local: [0.0, 0.0] }, TouchOp::Motion { id: 1, member: m, local: [0.4, 0.0] }, TouchOp::Cancel]);
+        assert!(!ops.contains(&TouchOp::Up { id: 0 }));
+        assert_eq!(l.contacts.down_count(), 0, "cancel ends the whole session (the protocol's shape)");
         assert_eq!(l.cancels, 1);
         // an untracked pinch never goes down
         let mut s = hand(Side::Left, 0.9);
