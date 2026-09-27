@@ -260,13 +260,12 @@ component), but every authority-plane "specified" row becomes buildable on its s
 *Rev 2026-09-27 (ADR 0007 amendment): the auth scene is a **trusted client**, not
 compositor-drawn; G1 is therefore two deliverables and one prerequisite.*
 
-**Prerequisite — the greeter program's toolkit** (research pass, owner-run): a comparables +
-measurement pass over how the shipping greeters/lockers and Rust shell stacks are built
-(gtkgreet/regreet on GTK4, cosmic-greeter on iced/libcosmic with the tiny-skia and wgpu
-backends, Slint's software renderer, swaylock's cairo floor, kscreenlocker's QML as the
-what-not-to-do), measured on the R0 host — static binary + closure, RSS at the scene, cold start
-to first frame, idle wake-ups/CPU, `text-input-v3` for the OSK path, an accessibility tree. No
-interpreter (rule 6); the compositor takes no toolkit at all.
+**Prerequisites — done and built.** *Done (rev 4.3):* the shell-plane research and design —
+[research/75](../research/75-shell-plane-from-comparables.md) (how the shipping shells are built;
+Slint 1.18 measured on nested zxr and ruled for Mura's own components) and
+[shell-plane.md](shell-plane.md). *Built before G1:* zxr's shell-layer half (shell-plane.md §2 —
+layer-shell + anchoring, the binding filter, the socketpair admission, the motion dedupe), because
+the greeter maps as a layer surface and its keyboard is a layer-shell OSK.
 
 **Deliverable 1 — `zxr --greeter` (restricted mode):** R0's OpenXR loop + renderer composing
 **one trusted member**: the greeter program, spawned by zxr with a pre-connected socketpair as
@@ -277,7 +276,7 @@ keys to that member and consumes everything else (as built, `input/mode.rs`). Th
 over `$GREETD_SOCK` (a fake greetd in the harness): held by zxr and relayed, or spoken by the
 client — decided with deliverable 2 (session-auth §5).
 
-**Deliverable 2 — the greeter program** (new component, registry row; the toolkit from the
+**Deliverable 2 — the greeter program** (`mura-greeter`, Slint — shell-plane.md §3.1, §4; the toolkit from the
 prerequisite): generic prompt rendering per session-auth §2.3's style set — the digit pad keys
 off `style=secret` plus the user's mirrored `numeric-credential` hint, never prompt text; session
 list from a static config; the standard furniture of multi-user.md §2 (power menu, clock, session
@@ -660,11 +659,18 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   and button handling are G1's exit criteria; the **per-target Monado 3DoF HMD driver** precedes
   any *in-headset* greeter on that target and belongs to each device's bring-up ladder — the
   rung-1/rung-2 harnesses (simulated HMD) need none of it.
-- **The greeter program and its toolkit** (ADR 0007 amendment 2026-09-27): order is the toolkit
-  comparables + measurement pass (owner-run) → the greeter program (G1 deliverable 2) → G1's
-  restricted mode composing it → G2. The lock scene of G3 is the same program; nothing in zxr
-  draws UI in either mode. The toolkit decision is the greeter's; later shell components (OSK,
-  launcher, panels) may inherit it, but that is each component's row, not this one's.
+- **The shell plane** ([shell-plane.md](shell-plane.md), from [research/75](../research/75-shell-plane-from-comparables.md);
+  supersedes the "greeter program and its toolkit" entry of rev 4.2 — the research pass is done and
+  the toolkit ruled). Order: **zxr's shell-layer half first** — `wlr-layer-shell` +
+  `zxr-layer-anchoring-v1` (bands 2/4/5, exclusive angular bands, head-frame default), the
+  per-connection binding filter, the socketpair admission of §2.3, the still-pointer motion
+  dedupe (research/75 D3) — because no shipping OSK or panel can map on zxr without it
+  (research/75 D2); then the **greeter program** (`mura-greeter`, Slint) and G1's restricted mode
+  composing it; then **squeekboard carried** over the socketpair as the greeter's keyboard path;
+  then G2/G3. The session components (panel + tray host, OSD + polkit agent, launcher, mako
+  carried) land after M1's window floor gives them windows to show; `mura-overview` after places.
+  Each component's unit joins `mura-session.target` as `Wants=` + `PartOf=graphical-session.target`
+  (ruled Q1). The Slint OSK replaces squeekboard when its ray-designed layout exists (ruled Q5).
 - **The stand-in swaps**: gtkgreet+cage out at G2; sway out at M1. Both recorded as exit
   criteria; neither stand-in is ever in a shipped image.
 - **All hardware-gated work**: the Lynx spike rule stands (design-backlog standing rule);

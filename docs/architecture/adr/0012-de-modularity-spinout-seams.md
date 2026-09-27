@@ -228,7 +228,12 @@ From [research/60](../../research/60-de-abstractions-mapped-to-xr.md), ruled by 
   row), the OSD (a layer-shell client fed over D-Bus), portal backends. COSMIC's process split
   with the spatial frame added — so the spatial desktop environment is user-configurable at the
   process level, which is the owner's stated goal. The compositor keeps what §3 already names:
-  focus, hit-testing, the window and place model, the boundary, composition.
+  focus, hit-testing, the window and place model, the boundary, composition. *Specified
+  2026-09-27 in [shell-plane.md](../shell-plane.md)* (from [research/75](../../research/75-shell-plane-from-comparables.md)):
+  each component's process, unit, seams, frame, a11y and settings contract; the compositor's
+  shell-layer half; the ruled shape — systemd user units, research/30's binding rule plus channel
+  identity for the spawned greeter/lock and OSK, Slint for Mura's own components, mako and
+  squeekboard carried.
 
 ## Amendment 2026-09-26 (ii) — the manager's design, exclusivity, and what the seam carries
 
