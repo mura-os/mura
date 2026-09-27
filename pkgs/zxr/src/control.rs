@@ -29,6 +29,9 @@ pub enum Command {
     /// `grab focused` — grab the focused plane with the head ray (kwin-vr's grab-window shortcut;
     /// the harness's direct path into the Grabs stage); `grab end` releases
     Grab(String),
+    /// window-management verbs on the focused member (the floor's, wm §5/§7/§8): `wm tidy`,
+    /// `wm recenter`, `wm maximize on|off`, `wm fullscreen on|off`, `wm minimize`, `wm follow on|off`
+    Wm(String, String),
     /// research/69: hide / show the focused member (window-workspace-management.md "hidden")
     Hide(bool),
     /// The test-only source injector (spatial-input §1a; plan judgment 1): a synthetic sample
@@ -106,6 +109,7 @@ pub fn parse(line: &str) -> Command {
         (Some("quiet"), Some(v)) => Command::Quiet(v == "on" || v == "1"),
         (Some("primary"), Some(v)) => Command::Primary(v == "on" || v == "1"),
         (Some("grab"), Some(v)) => Command::Grab(v.to_string()),
+        (Some("wm"), Some(v)) => Command::Wm(v.to_string(), it.next().unwrap_or("").to_string()),
         (Some("hide"), Some(v)) => Command::Hide(v == "on" || v == "1"),
         (Some("close"), _) => Command::Close,
         (Some("key"), Some(code)) => match code.parse() {

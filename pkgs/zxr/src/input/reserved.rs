@@ -394,12 +394,13 @@ impl Reserved {
             }
             SystemAction::Recenter => {
                 self.recenters += 1;
-                // TODO(recenter): re-seating is the runtime's. The hook is a `LOCAL` re-anchor of
-                // zxr's own reference space plus the primary session's — the `xrRequestExitSession`
-                // class of runtime call zxr does not have on Monado yet (native-openxr-apps §6
-                // line 233 "long = recenter", research/66 §14's upstream list; spatial-input §2
-                // line 179 "long press recenters (research/36 §8)"). Pinned places stay put.
-                tracing::info!(count = self.recenters, "reserved: recenter (§6 long press) — runtime re-seat pending");
+                // the compositor's half: a rigid re-seat of the head-relative members toward the
+                // head's forward (wm §7; policy::recenter — the floor's tidy at the head, pinned
+                // exempt). The runtime's half — a `LOCAL` re-anchor of zxr's own reference space
+                // plus the primary session's — is still Monado's upstream item (native-openxr-apps
+                // §6 line 233, research/66 §14).
+                let moved = crate::policy::recenter(st);
+                tracing::info!(count = self.recenters, moved, "reserved: recenter (§6 long press) — members re-seated; runtime re-anchor pending");
             }
             SystemAction::Quit => {
                 self.quits += 1;

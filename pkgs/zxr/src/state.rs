@@ -170,6 +170,8 @@ pub struct Zxr {
     /// the wearer's preferences and the input calibrations, resolved in-process (settings.rs;
     /// research/73 §6 option b); `prefs.generation` moves on every reload
     pub prefs: crate::settings::Prefs,
+    /// the window-management floor (policy/, window-workspace-management §2–§8)
+    pub policy: crate::policy::Policy,
     /// the open settings engine and its watch state, when an artifact exists
     pub settings: Option<crate::settings::Settings>,
     pub children: Vec<Child>,
@@ -477,6 +479,7 @@ impl Zxr {
             frames_limit: None,
             journal_path: None,
             prefs: crate::settings::Prefs::default(),
+            policy: crate::policy::Policy::default(),
             settings: None,
             children: Vec::new(),
             satellite_pid: None,
@@ -852,6 +855,10 @@ impl Zxr {
         if !self.scene.focus(id) {
             return;
         }
+        // the policy's most-recently-used order (tidy places by it, wm §4)
+        if let Some(m) = id {
+            self.policy.touch(m);
+        }
         for (i, m) in self.scene.iter() {
             if let Some(t) = m.m.window.toplevel() {
                 t.with_pending_state(|s| {
@@ -1099,6 +1106,10 @@ impl CompositorHandler for Zxr {
                     let size = plane_size_of(&window, &self.scene.layout);
                     self.scene.set_shape(id, Shape::Plane { size });
                     if newly_mapped {
+                        // the size is known now: the free engine places the plane for real
+                        // (window-workspace-management §3; policy::placed_at_map)
+                        let parent = window.toplevel().and_then(|t| t.parent()).and_then(|p| self.member_for_root(&p));
+                        crate::policy::placed_at_map(self, id, parent);
                         let (at_request, pending) = match self.scene.get_mut(id) {
                             Some(m) => {
                                 m.m.mapped_at = self.frame_id.max(1);
@@ -1188,13 +1199,16 @@ impl XdgShellHandler for Zxr {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
+        // a transient's parent (set before the first commit) places it beside the parent (wm §3)
+        let parent = surface.parent().and_then(|p| self.member_for_root(&p));
         let window = Window::new_wayland_window(surface);
         // mapped_at 0 = not yet mapped; commit() flips it on the first buffer. Placement is the
-        // stand-in fan in the default place (spec §5a) until M1's `free` engine.
+        // `free` engine's (policy/free.rs, window-workspace-management §3): the current place,
+        // head-relative spawn into a free angular slot, or beside the parent.
         let size = plane_size_of(&window, &self.scene.layout);
         // the new-window rule's "request time" (spatial-input §6): the seat's last commit now
         let payload = Payload { window, panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0, hidden: false, urgent: false, requested_at_commit: self.focus.last_commit_serial, pending_activation: None };
-        let id = self.scene.add_fanned(Shape::Plane { size }, Flags::WINDOW, payload);
+        let id = crate::policy::spawn(self, Shape::Plane { size }, Flags::WINDOW, payload, parent);
         // a new, unmapped toplevel must not steal focus from a mapped one
         if let Some(prev) = self.scene.iter().filter(|(i, m)| *i != id && m.m.mapped()).map(|(i, _)| i).last() {
             self.scene.focus(Some(prev));
@@ -1208,6 +1222,11 @@ impl XdgShellHandler for Zxr {
             return;
         };
         let had_focus = self.scene.focused == Some(id);
+        // a fullscreen member closing brings its hidden siblings back (wm §5)
+        if matches!(self.policy.state(id).life, crate::policy::Life::Fullscreen(_)) {
+            crate::policy::lifecycle::fullscreen(self, id, false);
+        }
+        crate::policy::removed(self, id);
         if let Some(member) = self.scene.remove(id) {
             if member.m.mapped() {
                 self.journal.toplevels_unmapped += 1;
@@ -1243,6 +1262,40 @@ impl XdgShellHandler for Zxr {
     }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
+
+    /// `set_maximized` / `unset_maximized`: the floor decides (wm §5 — the manager on request;
+    /// with no external manager the floor is the manager).
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(id) = self.member_for_root(surface.wl_surface()) {
+            crate::policy::lifecycle::maximize(self, id, true);
+        }
+    }
+
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(id) = self.member_for_root(surface.wl_surface()) {
+            crate::policy::lifecycle::maximize(self, id, false);
+        }
+    }
+
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, _output: Option<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>) {
+        if let Some(id) = self.member_for_root(surface.wl_surface()) {
+            crate::policy::lifecycle::fullscreen(self, id, true);
+        }
+    }
+
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        if let Some(id) = self.member_for_root(surface.wl_surface()) {
+            crate::policy::lifecycle::fullscreen(self, id, false);
+        }
+    }
+
+    /// `set_minimized`: never applied as a compositor state (wm §5); the floor's minimize verb
+    /// decides — dock indicator when a dock client exists, else close (Q1 ruled).
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(id) = self.member_for_root(surface.wl_surface()) {
+            crate::policy::lifecycle::minimize(self, id);
+        }
+    }
 
     /// A client's `xdg_toplevel.move`: the compositor's own grab (window-workspace-management §4a,
     /// research/76 convergence 5 — kwin-vr on KWin's move, wxrd/wxrc/river on the request). The

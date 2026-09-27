@@ -424,6 +424,8 @@ impl GrabsStage {
         if serial.is_some() {
             self.grabs_from_requests += 1;
         }
+        // the wearer owns this pose now: tidy/siblings no longer treat it as the engine's slot
+        st.policy.moved_by_wearer(member);
         st.input.grabbed = Some(member);
         st.input.grabbing_kind = Some(kind);
         tracing::info!(?member, ?kind, ?op, from_request = serial.is_some(), "grab: start");

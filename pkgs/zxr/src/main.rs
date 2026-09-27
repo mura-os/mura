@@ -8,6 +8,7 @@ mod control;
 mod input;
 mod journal;
 mod render;
+mod policy;
 mod scene;
 mod settings;
 mod state;
@@ -374,6 +375,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         st.journal.input_presence_changes += 1;
     }
     input::tick(st, head, time, now_ns());
+    // the window-management floor's timed work: settings by generation, lazy-follow (wm §7)
+    policy::tick(st, now_ns());
 
     // 2. this frame's slot: wait for its previous submission, release what it sampled
     let slot = (tick.frame_id % 2) as usize;
@@ -984,6 +987,8 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             let panel = st.cursor_panel.as_ref().map(|p| format!("{}x{} passes={}", p.sc.extent.width, p.sc.extent.height, p.passes)).unwrap_or_else(|| "-".into());
             let inputs = st.input.cursor_inputs.map(|i| format!("targeting={:?} owner={:?} on_plane={} reticle={} typing={} client={}", i.targeting, i.owner, i.pointer_on_plane, i.reticle, i.hidden_typing, i.client_name)).unwrap_or_default();
             s.push_str(&format!("cursor: layer={content} panel={panel} swapchains_created={} layers_submitted={} {inputs}\n", st.journal.cursor_swapchains_created, st.journal.cursor_layers));
+            s.push_str(&policy::describe(st));
+            s.push('\n');
             // the settings picture (settings.rs): where it came from and how often it moved
             s.push_str(&format!(
                 "settings: artifact={} keys={} generation={} reloads={} invalid={} cursor.ray={} pointer.gain={} dwell={} density_px_per_cm={:.1} targeting={} dominant={} xkb={}/{} repeat={}/{} theme={}@{} warp={} long_press_ms={}\n",
@@ -1017,6 +1022,35 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
         Primary(on) => {
             st.primary_changed(on);
             format!("primary {} quiet={} keep_planes={}", if on { "on" } else { "off" }, st.quiet, st.prefs.games_keep_planes)
+        }
+        Wm(verb, arg) => {
+            let on = arg == "on" || arg == "1";
+            let focused = st.scene.focused;
+            match (verb.as_str(), focused) {
+                ("tidy", _) => {
+                    let place = policy::current_place(st);
+                    format!("tidy: {} members re-seated", policy::arrange(st, place))
+                }
+                ("recenter", _) => format!("recenter: {} members re-seated", policy::recenter(st)),
+                ("maximize", Some(id)) => {
+                    policy::lifecycle::maximize(st, id, on);
+                    format!("maximize {on} {:?}", st.policy.state(id).life)
+                }
+                ("fullscreen", Some(id)) => {
+                    policy::lifecycle::fullscreen(st, id, on);
+                    format!("fullscreen {on} {:?}", st.policy.state(id).life)
+                }
+                ("minimize", Some(id)) => {
+                    policy::lifecycle::minimize(st, id);
+                    "minimize".into()
+                }
+                ("follow", Some(id)) => {
+                    st.policy.set_follow(id, on);
+                    format!("follow {on} {:?}", st.policy.state(id).attachment)
+                }
+                (v @ ("maximize" | "fullscreen" | "minimize" | "follow"), None) => format!("{v}: no focus"),
+                (other, _) => format!("unknown wm verb {other:?} (tidy|recenter|maximize|fullscreen|minimize|follow)"),
+            }
         }
         Grab(what) => match what.as_str() {
             "focused" => match st.scene.focused {

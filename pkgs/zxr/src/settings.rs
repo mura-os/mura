@@ -539,6 +539,27 @@ impl Prefs {
         crate::input::loss::GestureCfg { pinch_close: self.hand_pinch_close, pinch_open: self.hand_pinch_open.min(self.hand_pinch_close), poke_down_m: h.poke_down_m, poke_up_m: h.poke_up_m.max(h.poke_down_m) }
     }
 
+    /// The window-management floor's configuration (`wm.spawn.*`, `wm.minimize`, `wm.follow.*`,
+    /// `wm.move.billboard`, the comfort limits) — policy/.
+    pub fn policy_cfg(&self) -> crate::policy::PolicyCfg {
+        use crate::policy::{FollowCfg, Limits, Minimize, PolicyCfg, SpawnCfg};
+        let h = &self.hardware;
+        PolicyCfg {
+            spawn: SpawnCfg {
+                distance_m: if self.wm_spawn_distance_m > 0.0 { self.wm_spawn_distance_m } else { 1.5 },
+                elevation_deg: self.wm_spawn_elevation_deg.clamp(-60.0, 60.0),
+                sibling_offset_m: self.wm_spawn_sibling_offset_m.max(0.0),
+                sibling_yaw_rad: self.wm_spawn_sibling_yaw_rad,
+                spacing_rad: 0.05,
+            },
+            limits: Limits { min_distance_m: h.comfort_min_distance_m.max(0.05), max_distance_m: h.comfort_max_distance_m.max(h.comfort_min_distance_m + 0.1), max_angular_deg: h.comfort_max_angular_deg.clamp(5.0, 179.0) },
+            minimize: Minimize::parse(&self.wm_minimize).unwrap_or_default(),
+            follow: FollowCfg { threshold_deg: self.wm_follow_threshold_deg.max(1.0), delay_ms: self.wm_follow_delay_ms, rate: self.wm_follow_rate.max(0.05), stop_deg: self.wm_follow_stop_deg.max(0.0) },
+            follow_default: self.wm_follow_default,
+            billboard: self.wm_move_billboard,
+        }
+    }
+
     /// The grab's configuration (`wm.grab.*`, `wm.move.billboard`, the comfort limits, the pinch
     /// ladder) — window-workspace-management §4a.
     pub fn grab_cfg(&self) -> crate::input::grabs::GrabCfg {
