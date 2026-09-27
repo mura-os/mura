@@ -1,6 +1,8 @@
 # specs/session-auth: the lock auth helper, lock events, and greeter mode
 
-**Status:** rev 4 (2026-09-24, **helper hardening**: security review of the D5 helper absorbed —
+**Status:** rev 5 (2026-09-27 — **the auth scene is a trusted client**, ADR 0007 amendment: §5
+the greeter program over a pre-connected socketpair, zxr draws no UI; the scene's absence is
+blank + never-unlock + unit restart; §6 item 6a). Rev 4 (2026-09-24, **helper hardening**: security review of the D5 helper absorbed —
 nonce moved off argv into `MURA_AUTHD_NONCE`, process hardening on the kscreenlocker-worker
 model (§2.1), strict response handling, a `mura-lock[-*]` service allowlist, a threat model
 (§2.5), and §6 item 9 VM-verified). Rev 3 (D5 landed): `mura-authd` exists — `pkgs/mura-authd`,
@@ -198,7 +200,13 @@ tooling has no Session1 to talk to, by design):
 **Disabled** (hard): the client Wayland listening socket; all privileged globals;
 capture/injection; the places store; perception beyond the IMU tier (cameras off pre-auth).
 **Enabled**: the OpenXR loop on IMU-only tracking; per-unit calibration from system state; the
-built-in auth scene (internal, not a client); the greetd client conversation of §1, with sessions
+auth scene — **rev 5: the greeter program, one trusted client composed as the scene's only
+member, connected over a pre-connected socketpair (`WAYLAND_SOCKET`, kscreenlocker's
+`setWaylandFd` shape) so no listening socket exists; zxr draws no UI itself** (ADR 0007
+amendment 2026-09-27; rev 4 said "internal, not a client"); the greetd client conversation of §1
+(*open, decided with the greeter program:* whether zxr holds the `$GREETD_SOCK` connection and
+relays prompts/responses to the client, or the client speaks greetd itself as gtkgreet/regreet do
+— the §1 authority split holds either way, PAM stays greetd's), with sessions
 enumerated from the module system (`mura.xr.shell` values); and — on the multi-user profile
 only (amendment per [ADR 0018](../docs/architecture/adr/0018-multi-user-accounts.md) decision 9)
 — exactly **one** `mura-provisiond` conversation, *create-guest*: gated server-side on the
@@ -208,6 +216,17 @@ reachable from greeter mode. **Exit**: on `start_session`
 acknowledgment, tear down the Monado session and exit 0 (greetd's exit-then-start sequencing owns
 the DRM handoff). **Docked** (ADR 0015): the auth scene additionally presents flat on the
 external connector; identical conversation.
+
+**The scene's absence (rev 5).** The same greeter program is the in-session lock's scene, over the
+same channel. When the client is not there — not yet started, crashed, killed — the compositor
+composes an **opaque scene** (`ext-session-lock-v1`'s "blank all outputs with an opaque colour",
+research/12 §2.2) and routes input to no one; **its exit never unlocks** (I3; the protocol's "if
+the client dies while the session is locked, the compositor must not unlock"). Recovery is the
+client's user unit (`Restart=on-failure`; systemd's, not a compositor loop); in `--greeter` mode
+greetd's `default_session` supervision also applies. The compositor draws no fallback UI: a blank
+locked scene is the comparables' behaviour (sway, niri, Hyprland, COSMIC), and a headset
+compositor does not improvise an emergency window (research/12 §3). The lock authority stays
+compositor state (§3); only its UI moved out.
 
 ## 6. Conformance checklist
 
@@ -231,8 +250,13 @@ Status per item (D5, `tests/vm/default-image.nix` / `multi-user.nix`, `mura-auth
    **Needs zxr.**
 5. Crash-restart: T10 both branches. **Partial:** the compositor restarts inside the same login
    session (D4, `RestartMode=direct`); *into locked* needs the lock scene (zxr, D5→G3).
-6. Greeter mode: no Wayland listening socket (`ss`/`lsof`); camera nodes unopened; **no PAM
-   symbols loaded** in the greeter process (greetd owns login PAM). **Needs zxr (G1/G2).**
+6. Greeter mode: no Wayland listening socket (`ss`/`lsof`) — the greeter program's connection
+   is the inherited fd only; camera nodes unopened; **no PAM symbols loaded** in zxr *or* the
+   greeter program (greetd owns login PAM). **Needs zxr (G1/G2).**
+6a. *(added rev 5)* The scene's absence: `kill -9` the greeter/lock client ⇒ the composed frame
+   is opaque with zero client samples, no unlock (I3), input reaches nothing; the unit restarts
+   the client and the scene returns; a second client presenting the inherited fd's credentials
+   is impossible because no listening socket exists. **Needs zxr (G1) + the greeter program.**
 7. Batched conversation: a module issuing two prompts + one info in one callback round-trips as
    one `prompt_batch`/`respond_batch` pair. **Verified** with `pam_mura_test.so batched`:
    one `prompt_batch` with `secret`, `visible`, `info`; one `respond_batch` with an empty slot

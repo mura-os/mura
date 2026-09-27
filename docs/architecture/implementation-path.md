@@ -9,7 +9,7 @@ groundwork with no compositor dependency, verified in the rung-2 VM with stand-i
 by dependency class; G2 reduced to a recorded swap; the pre-groundwork specifications named in
 §5.1; **rev 4.1 same day — F2/F3/D2/D3 absorb first-run rev 2.5 / ADR 0017 rev 2.4: sshd
 upstream on every profile, `mura-setup` one program in two instances, the `setup-complete`
-marker, Cockpit dropped**).
+marker, Cockpit dropped**; **rev 4.2, 2026-09-27 — G1 rewritten for ADR 0007's amendment: the auth scene is a trusted client (the greeter program, its toolkit a prerequisite research pass), zxr `--greeter` composes it over a socketpair and draws no UI**).
 **What this is:** the ordered build path from power-on to a zxr session, derived from the
 dependency graph ([desktop-environment.md §6](desktop-environment.md)) — not a replacement for
 it. Rungs are ordered only where a hard dependency exists; everything else is a parallel track.
@@ -257,17 +257,39 @@ component), but every authority-plane "specified" row becomes buildable on its s
 
 ### G1 — the greeter scene in dev-session
 
-`zxr --greeter` as a window: R0's OpenXR loop + renderer, the internal auth scene (generic
-prompt rendering per session-auth §2.3's style set — the digit pad keys off `style=secret` plus
-the user's mirrored `numeric-credential` hint, never prompt text), a fake greetd speaking the
-JSON IPC over `$GREETD_SOCK`, session list from a static config, the standard furniture of
-multi-user.md §2 (power menu, clock, session chooser, accessibility). **No Wayland listening
-socket** — assert it in the harness (`ss`/`lsof`, the session-auth §6.6 conformance check,
-minus PAM which greetd owns). Exit: prompt → response → `start_session` acknowledged → clean
-teardown, on the simulated HMD, with `--rotate` proving the scene is really mura — **and the
-whole exit path driven at the input floor**: simulated head-aim plus one key event standing in
-for `hmdButtons.<selectRole>`, then once more with the key masked (dwell only); a hardware
-keyboard typing into the auth scene (first-run-onboarding §4.4, §8 checks 10–11).
+*Rev 2026-09-27 (ADR 0007 amendment): the auth scene is a **trusted client**, not
+compositor-drawn; G1 is therefore two deliverables and one prerequisite.*
+
+**Prerequisite — the greeter program's toolkit** (research pass, owner-run): a comparables +
+measurement pass over how the shipping greeters/lockers and Rust shell stacks are built
+(gtkgreet/regreet on GTK4, cosmic-greeter on iced/libcosmic with the tiny-skia and wgpu
+backends, Slint's software renderer, swaylock's cairo floor, kscreenlocker's QML as the
+what-not-to-do), measured on the R0 host — static binary + closure, RSS at the scene, cold start
+to first frame, idle wake-ups/CPU, `text-input-v3` for the OSK path, an accessibility tree. No
+interpreter (rule 6); the compositor takes no toolkit at all.
+
+**Deliverable 1 — `zxr --greeter` (restricted mode):** R0's OpenXR loop + renderer composing
+**one trusted member**: the greeter program, spawned by zxr with a pre-connected socketpair as
+`WAYLAND_SOCKET` (kscreenlocker's channel); **no Wayland listening socket** — assert it in the
+harness (`ss`/`lsof`, session-auth §6 items 6/6a; PAM is greetd's). While the client is absent
+the frame is an opaque scene and nothing unlocks; its unit restarts it. The `Mode` gate routes
+keys to that member and consumes everything else (as built, `input/mode.rs`). The greetd IPC
+over `$GREETD_SOCK` (a fake greetd in the harness): held by zxr and relayed, or spoken by the
+client — decided with deliverable 2 (session-auth §5).
+
+**Deliverable 2 — the greeter program** (new component, registry row; the toolkit from the
+prerequisite): generic prompt rendering per session-auth §2.3's style set — the digit pad keys
+off `style=secret` plus the user's mirrored `numeric-credential` hint, never prompt text; session
+list from a static config; the standard furniture of multi-user.md §2 (power menu, clock, session
+chooser, accessibility); large targets for a ray. The same program is the in-session lock's scene
+(G3).
+
+Exit: prompt → response → `start_session` acknowledged → clean teardown, on the simulated HMD,
+with `--rotate` proving the scene is really mura — **and the whole exit path driven at the input
+floor**: simulated head-aim plus one key event standing in for `hmdButtons.<selectRole>`, then
+once more with the key masked (dwell only); a hardware keyboard typing into the auth scene
+(first-run-onboarding §4.4, §8 checks 10–11); **and** the client killed mid-scene → opaque
+frame, no unlock, restarted by its unit (session-auth §6 item 6a).
 
 ### G2 — the swap (the first shippable greeter)
 
@@ -281,7 +303,7 @@ the stand-in session; **gtkgreet and cage are no longer in the closure**; re-loc
 to the XR greeter; zero pickable accounts still renders free-text entry + power menu; the power
 menu powers the VM off with no authentication (login1 `allow_active`, research/11 §11.A); a
 Wi-Fi profile added at the greeter is a system connection; a passwordless declared account logs
-in with no prompt and a digits-only one gets the digit pad; the greeter process never loads PAM
+in with no prompt and a digits-only one gets the digit pad; neither zxr nor the greeter program loads PAM
 symbols (session-auth §6.6).
 
 ### M1 — the spatial 2D desktop (composition §7.5)
@@ -638,6 +660,11 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   and button handling are G1's exit criteria; the **per-target Monado 3DoF HMD driver** precedes
   any *in-headset* greeter on that target and belongs to each device's bring-up ladder — the
   rung-1/rung-2 harnesses (simulated HMD) need none of it.
+- **The greeter program and its toolkit** (ADR 0007 amendment 2026-09-27): order is the toolkit
+  comparables + measurement pass (owner-run) → the greeter program (G1 deliverable 2) → G1's
+  restricted mode composing it → G2. The lock scene of G3 is the same program; nothing in zxr
+  draws UI in either mode. The toolkit decision is the greeter's; later shell components (OSK,
+  launcher, panels) may inherit it, but that is each component's row, not this one's.
 - **The stand-in swaps**: gtkgreet+cage out at G2; sway out at M1. Both recorded as exit
   criteria; neither stand-in is ever in a shipped image.
 - **All hardware-gated work**: the Lynx spike rule stands (design-backlog standing rule);

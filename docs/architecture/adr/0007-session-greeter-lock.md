@@ -1,6 +1,8 @@
 # ADR 0007: Session, greeter, and lock model — autologin appliance + greetd multi-user, lock as compositor state
 
-**Status:** accepted (draft)
+**Status:** accepted (draft); **amended 2026-09-27 — the auth scene is a trusted client, not
+compositor-drawn** (see "Amendment 2026-09-27" at the end; the lock *authority* and the three
+invariants are unchanged)
 **Date:** 2026-09-22
 **Context sources:** [11-display-managers-greeters](../../research/11-display-managers-greeters.md),
 [12-lock-screens-and-appliance-login](../../research/12-lock-screens-and-appliance-login.md).
@@ -48,15 +50,20 @@ systemd's job; any mutable "next-boot" override must be self-clearing (Jovian's 
 
 **Multi-user / desktop profile.** greetd `default_session` runs the **zxr compositor in `--greeter`
 mode** as a dedicated `greeter` user: it brings up Monado + the XR display path (IMU-only tracking,
-no client Wayland socket), composes one built-in auth scene (login panel + session list), speaks
+no client Wayland *listening* socket), composes one auth scene (login panel + session list —
+*amended 2026-09-27: the scene is the greeter program, one trusted client over a pre-connected
+socketpair, not compositor-drawn*), speaks
 `$GREETD_SOCK`, and exits on `start_session`; greetd then starts the chosen user session (its own
 Monado + compositor). Same compositor binary, restricted mode. The dev/desktop profile also keeps
 the standard `ext-session-lock-v1` path so ordinary tooling (swayidle + swaylock/hyprlock) works.
 
 ### The lock model: internal compositor state, three invariants
 
-The built-in lock is **not** a separate process and **not** (by default) the `ext-session-lock-v1`
-protocol; it is a compositor state machine obeying ([12 §2.4](../../research/12-lock-screens-and-appliance-login.md)):
+The built-in lock's **authority** is compositor state — not (by default) the `ext-session-lock-v1`
+protocol; it is a compositor state machine obeying ([12 §2.4](../../research/12-lock-screens-and-appliance-login.md)).
+*Amended 2026-09-27:* the lock's **scene** is a trusted client (the same greeter program), and the
+compositor's obligation when that client is absent is the protocol's — blank opaquely, never
+unlock, restart it (see the amendment). The invariants are unchanged:
 
 - **I1** — while locked, no client colour/depth buffer is sampled and no input reaches any client
   (focus is withdrawn; the seat routes only to the lock scene).
@@ -132,10 +139,14 @@ boundary and hardware substrate for iris auth are specified in
   ([11 §7](../../research/11-display-managers-greeters.md)).
 - **SDDM/GDM as the daemon** — rejected; wrong coupling (they assume they spawn the greeter compositor
   / a 2D themed greeter). greetd's minimal broker + our compositor-as-greeter is the fit.
-- **kscreenlocker-style separate lock-UI process** — rejected; the lock scene must render through the
-  compositor's Monado path anyway, so a second XR-rendering process buys isolation we already take at
-  the PAM boundary, at the cost of restart supervision and a bespoke trust channel
-  ([12 §3](../../research/12-lock-screens-and-appliance-login.md)).
+- **kscreenlocker-style separate lock-UI process** — ~~rejected~~ **adopted 2026-09-27 (amendment
+  below)**. The original rejection ("the lock scene must render through the compositor's Monado
+  path anyway, so a second XR-rendering process buys isolation we already take at the PAM boundary,
+  at the cost of restart supervision and a bespoke trust channel",
+  [12 §3](../../research/12-lock-screens-and-appliance-login.md)) rested on a premise ADR 0012
+  later removed: a lock UI process is not "a second XR-rendering process" — it is an ordinary
+  Wayland client composed as a quad, exactly like every other shell component. The supervision is
+  systemd's, not the compositor's.
 - **Mandatory `ext-session-lock-v1` for the built-in lock** — rejected as the mechanism; internal
   state is conformant in spirit and simpler. Kept as a compatibility surface for dev/third-party.
 - **Presence-based unlock without biometrics** — rejected; don ≠ owner.
@@ -154,3 +165,54 @@ headset lockers. *PIN storage/enrollment UX is **closed** by
 digits-only password sets a non-secret hint file `state/credential-hint/<user>` (sticky directory, owner-checked; D2) that
 selects the digit-pad rendering (ADR 0018 rev 3.1, multi-user.md §3); no PIN module, no secret
 store, the owner-password-is-PIN bridge withdrawn.*
+
+## Amendment 2026-09-27 — the auth scene is a trusted client, not compositor-drawn
+
+**What changes.** The greeter scene (`--greeter`) and the in-session lock scene are drawn by **one
+trusted client program** (the greeter program; its toolkit is a separate decision, being
+researched), composed by zxr as the only member of a restricted scene. zxr draws no UI of its own
+in either mode — no text, no widgets. Everything else in this ADR stands: greetd owns login PAM,
+`mura-authd` owns the lock's PAM conversation, the compositor owns the lock *authority* (state
+machine, triggers, logind, presence) and invariants I1–I3.
+
+**Why (comparables, rule 7).** Every comparable but one draws its greeter/locker as a client:
+greetd's design intent ("the greeter is any program"), gtkgreet/regreet/tuigreet under cage,
+swaylock/hyprlock under `ext-session-lock-v1`, `kscreenlocker_greet` under KWin over a private
+pre-authenticated socket ([12 §3](../../research/12-lock-screens-and-appliance-login.md)),
+cosmic-greeter under cosmic-comp. The exception is GNOME Shell, whose compositor already *is* a
+toolkit host — the premise [ADR 0012](0012-de-modularity-spinout-seams.md) rejected for Mura. This ADR's
+original "internal scene" rested on two arguments, both of which no longer hold: (1) "a separate
+process would be a second XR client" — since ADR 0012 every shell component is a Wayland client
+composed as a quad, so the UI process is nothing new; (2) "the lock surface must exist when every
+client is dead" — the scene already depended on a client (the virtual-keyboard path is the OSK
+component), and the protocol comparables satisfy the same invariant without any compositor-drawn
+UI (below). Keeping the scene internal would have put a text/layout stack into the most
+privileged process for one screen, made its look the vendor's (overview invariant 10), and
+diverged from every shipping shape but GNOME's.
+
+**The invariant, restated from the protocol.** `ext-session-lock-v1`'s compositor obligations
+([12 §2.2](../../research/12-lock-screens-and-appliance-login.md)) are I1–I3's mechanism:
+on lock, **blank all outputs with an opaque colour** and route input to no normal client; "if the
+client dies while the session is locked, the compositor must not unlock" — it keeps composing the
+blank (or the client's last frame) and recovery is policy: **restart the locker**. Mura's rule: the
+lock/greeter client runs in its own user unit with `Restart=on-failure` (the standard mechanism,
+rule 1 — not kscreenlocker's hand-rolled four tries and emergency window, which
+[12 §3](../../research/12-lock-screens-and-appliance-login.md) already rejected); while it is
+absent zxr composes the opaque scene; nothing ever unlocks on a client's exit. In `--greeter` mode
+there is no session behind the scene, so a dead greeter costs a blank frame until greetd's
+`default_session` supervision or the unit restarts it — nothing to unlock.
+
+**The channel.** A **pre-connected socketpair** handed to the client as `WAYLAND_SOCKET`
+(kscreenlocker's `setWaylandFd`, `ksldapp.cpp:377-423`), in both restricted modes. No public
+listening socket is created — session-auth §5's "no client Wayland listening socket" stays
+literal — and exactly one process is admitted. `ext-session-lock-v1` remains the dev/desktop
+profile's seam for ordinary lockers (unchanged). *Discretionary (rule 4):* the protocol comparables
+use the public socket + `ext-session-lock`; the fd channel is chosen because the appliance profile
+has no public socket to offer in greeter mode and wants one trusted locker, not any client.
+
+**Consequences.** ADR 0012's lock-scene bullet, [specs/session-auth.md](../../../specs/session-auth.md)
+§5–§6, [specs/zxr-core.md](../../../specs/zxr-core.md) §3/§9, `pkgs/zxr/src/input/mode.rs` and
+[implementation-path.md](../implementation-path.md) G1 are amended the same day. The greeter
+program is a new component (registry row); its toolkit is decided by a comparables + measurement
+pass before G1 starts. The `Mode` gate's destination becomes "the one trusted member" rather than
+"the auth scene"; its behaviour (consume everything but keys; keys to that member) is unchanged.

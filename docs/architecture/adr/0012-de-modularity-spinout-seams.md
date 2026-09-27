@@ -1,7 +1,8 @@
 # ADR 0012: Desktop-environment modularity and spin-out seams
 
 **Status:** accepted (draft); amended 2026-09-26 (window-management seam; shell components as
-processes — §Amendment below)
+processes — §Amendment below); amended 2026-09-27 (the lock/greeter scene is a trusted client,
+per ADR 0007's amendment — the in-process exception is withdrawn)
 **Date:** 2026-09-22 (amended 2026-09-26)
 **Context sources:** [30-wayland-de-anatomy-protocol-seams](../../research/30-wayland-de-anatomy-protocol-seams.md)
 (protocol inventory, KWin/COSMIC precedent, per-candidate verdicts),
@@ -66,8 +67,11 @@ where latency, lock, or capture invariants forbid delegation.
   initial placement, tiling trees, or focus-prevention; in XR an all-powerful external policy
   client could steer content into the user's face or across the boundary. External tools may write
   validated *configuration*; they do not hold a live policy socket.
-- **Lock scene (appliance profile)** — compositor-internal per ADR 0007 (the lock surface must
-  exist when every client is dead); `ext-session-lock-v1` remains the dev/desktop-profile seam.
+- **Lock scene (appliance profile)** — ~~compositor-internal per ADR 0007~~ *amended 2026-09-27
+  (ADR 0007 amendment):* a **trusted client** (the greeter program) over a pre-connected
+  socketpair, like every other shell component; the compositor keeps only the lock *authority*
+  and the protocol's obligation when the client is absent — blank opaquely, never unlock, the
+  client's user unit restarts it. `ext-session-lock-v1` remains the dev/desktop-profile seam.
 - **Effects/animation module** — window open/close/move/switch transitions as an in-process
   module (KWin-effects precedent: effects get paint hooks and the window list, never input or
   protocol objects), under **authority-owned comfort caps**: in XR, sudden motion or scaling of

@@ -16,7 +16,11 @@
 //! **What still passes while gated.** `Keyboard` samples: the auth scene is a PAM conversation and
 //! needs them (ADR 0007 lines 74-82 — the lock UI renders generic PAM prompts with a digit-pad
 //! fast path *and a virtual keyboard path*). The mode-gated destination for everything that
-//! passes is the **auth scene**, not a client; there is no client focus while gated (I1). The
+//! passes is the **one trusted member** — the greeter/lock client admitted over the pre-connected
+//! socketpair (ADR 0007 amendment 2026-09-27, session-auth rev 5 §5); no *normal* client has
+//! focus while gated (I1), and while that member is absent nothing does — the frame is an
+//! opaque scene and nothing unlocks. (Before the amendment this doc said "the auth scene, not a
+//! client"; the gate's behaviour is the same, its destination is now a member.) The
 //! second exception the design names — members of an `exclusive` layer-shell surface — has no
 //! implementation to gate: zxr serves no `wlr-layer-shell` yet, so [`ModeGate::exclusive`] is the
 //! documented hook and is empty.
