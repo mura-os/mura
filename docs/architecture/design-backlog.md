@@ -34,9 +34,15 @@ spikes on real hardware, then the *proven* path is encoded — not designed spec
 - **#2 AVB / verified-boot policy.** Per-device modes (`unlocked-disable` / `unlocked-custom-key` /
   `vendor-signed-only`), vbmeta chain, rollback-index rules, key custody. Unsupported modes produce
   no flashable output.
-- **#3 Unlock-to-flash install state machine.** Read-only probes, required firmware/build/unlock
-  state, backups, human-confirmation boundaries, permitted writes, post-reboot verification,
-  recovery — per device. Replaces the argv-template flasher enum for real devices.
+- **#3 Unlock-to-flash install state machine.** The static cross-transport data model now exists in
+  [`specs/install-target-manifest.md`](../../specs/install-target-manifest.md), derived from
+  [research/71](../research/71-unlock-installer-precedents.md), and the source-only target records
+  are [research/72](../research/72-xr-unlock-and-flash-targets.md): read-only probes, exact
+  firmware/build/unlock state, unit-bound backups, confirmation boundaries, permitted writes,
+  reconnect/post-reboot verification and recovery. **The Lynx hardware gate remains:** static
+  research enables no write; gate exit is one exact plan hardware-qualified with its recovery
+  matrix. [implementation-path §5](implementation-path.md) remains the ordering authority. The
+  plan, not the argv-template flasher enum, is authoritative for real devices.
 - **#10 Stop/go spikes for the fatal risks.** Four kill-criteria spikes before framework work: boot
   current Linux on Lynx; present via Turnip/`VK_KHR_display` (or prove the DRM-lease fallback);
   acquire timestamped synchronized IMU/camera with calibration; run a minimal Monado pose path.

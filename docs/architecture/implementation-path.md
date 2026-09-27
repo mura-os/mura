@@ -641,6 +641,9 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
 - **The stand-in swaps**: gtkgreet+cage out at G2; sway out at M1. Both recorded as exit
   criteria; neither stand-in is ever in a shipped image.
 - **All hardware-gated work**: the Lynx spike rule stands (design-backlog standing rule);
+  `specs/install-target-manifest.md` rev 0 and research/71–72 are static input to that gate and
+  enable no write; the installer state-machine gate exits only with one exact target plan,
+  unit-backup contract and recovery matrix hardware-qualified;
   the Steam Frame donor workstream continues in parallel on its own ladder; nothing in this
   path requires hardware before M4's exit. Per-device microphone support likewise advances only
   through the A0/S1/S2/R1–R5 evidence states in

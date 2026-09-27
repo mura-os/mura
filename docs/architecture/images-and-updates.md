@@ -50,29 +50,37 @@ dynamic-partition device through the pipeline; design-backlog gate).
 
 ## The reference-free flashing bundle
 
-Every device produces a **reference-free flashing bundle**: a directory of `.img` files + a
-machine-readable install manifest (hashes, provenance, recovery instructions) + a flash script that
-uses **bare tool names** so it tars up and runs from a non-Nix laptop
-([01](../research/01-mobile-nixos.md) §6.3, meta-qcom's "factory restore bundle"
-[02](../research/02-postmarketos.md) §9 item 11). A declarative flasher table (pmOS pattern,
-[02](../research/02-postmarketos.md) §6) maps `mura.deployment.flashMethod` → argv templates
-resolved from the contract, including `flash_vbmeta` (avbtool verification-disable where the device is
-unlocked) and `flash_dtbo`.
+Every supported, image-producing target produces a **reference-free flashing bundle**: a
+directory of `.img` files plus an
+authenticated machine-readable plan following
+[`specs/install-target-manifest.md`](../../specs/install-target-manifest.md) (hashes, provenance,
+states, guards, exact writes and recovery). A bare-tool shell guide may be generated so the bundle
+runs from a non-Nix laptop ([01](../research/01-mobile-nixos.md) §6.3, meta-qcom's "factory restore
+bundle" [02](../research/02-postmarketos.md) §9 item 11), but it is a view of the typed plan, never
+installer input. The pmOS declarative flasher table ([02](../research/02-postmarketos.md) §6)
+contributes the low-level operation vocabulary; a single
+`mura.deployment.flashMethod` → argv template cannot represent unlock, backup, mode transitions,
+rollback guards or recovery on real targets ([research/71](../research/71-unlock-installer-precedents.md)).
 
 ## Build never flashes
 
-Non-negotiable ([overview.md](overview.md) invariant 1): `nix build` produces images and bundles; it
-never writes to a block device. The **installer** is a separate stage that independently verifies
-model, firmware prerequisites, partition layout, slot state, and bootloader conditions before
-writing, and:
+Non-negotiable ([overview.md](overview.md) invariant 1): `nix build` produces images, the typed
+plan and bundles; it never writes to a block device. The **installer** is a separate stage that
+interprets that plan and independently verifies model, firmware prerequisites, partition layout,
+slot state, bootloader conditions and artifact authentication before each write, and:
 - refuses to run on a mismatched board (Tow-Boot identity check,
   [01](../research/01-mobile-nixos.md) §12);
 - protects `mura.deployment.protectedPartitions` (persist/calib/NV/identity) unless a separately
   reviewed operation explicitly touches them;
+- re-identifies the same physical unit after every USB reconnect and fails closed on an absent or
+  unknown guard;
+- has a target-specific recovery edge at every write boundary;
 - for single-slot devices, documents a different recovery guarantee than an A/B device — it does not
   advertise the same atomicity.
 
 Unlocking and verified-boot policy are device constraints producing correct images never bypasses.
+Relocking is not a universal final step: it is offered only where the installed trust root and
+rollback state are proven compatible, and remains the administrator's choice.
 
 ## Updates: two backends behind one transaction
 

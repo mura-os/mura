@@ -191,5 +191,20 @@
   "xrizer": {"url": "https://github.com/Supreeeme/xrizer.git", "commit": "0989a7fac2d1efb7ea82f5fe1a8ed30c3eeb9596", "ref": "main", "cloned": "2026-09-26T13:28:39Z"},
   "opencomposite": {"url": "https://gitlab.com/znixian/OpenOVR.git", "commit": "cff07db75c4823afe93ed7027b03d5f7bc86f164", "ref": "openxr", "cloned": "2026-09-26T13:28:39Z"},
   "aosp-frameworks-native": {"url": "https://android.googlesource.com/platform/frameworks/native", "commit": "4f463a6b1de9198963dc6aff74154a504ba3f8f6", "ref": "main", "cloned": "2026-09-26T17:02:00Z"},
-  "openvr": {"url": "https://github.com/ValveSoftware/openvr.git", "commit": "0924064316de3effbcd1acf1e309182a2deb1c05", "ref": "master", "cloned": "2026-09-26T17:02:00Z"}
+  "openvr": {"url": "https://github.com/ValveSoftware/openvr.git", "commit": "0924064316de3effbcd1acf1e309182a2deb1c05", "ref": "master", "cloned": "2026-09-26T17:02:00Z"},
+  "grapheneos-org": {"url": "https://github.com/GrapheneOS/grapheneos.org.git", "commit": "10ef3b7cc4acf0a2b8ce4237cf73178b76118040", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "grapheneos-fastboot-js": {"url": "https://github.com/GrapheneOS/fastboot.js.git", "commit": "ffe7e270061b95fe0f0f3abd1aa7d3c28999d1d9", "ref": "master", "cloned": "2026-09-27T10:13:20Z"},
+  "grapheneos-flasher": {"url": "https://github.com/264nm/grapheneos-flasher.git", "commit": "a25ba0589bcf210d0e123e012a1d075e80461413", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "aosp-system-core": {"url": "https://android.googlesource.com/platform/system/core", "commit": "a3b721a32242006b59cb12bd62c9133632af3a2d", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "avb": {"url": "https://android.googlesource.com/platform/external/avb", "commit": "761178607206f4cb2af79ed9eec52d8cbd814adb", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "ubports-installer": {"url": "https://github.com/ubports/ubports-installer.git", "commit": "b50b3da2519574cea8f7e3cb7dfb6798efb336b4", "ref": "master", "cloned": "2026-09-27T10:13:20Z"},
+  "ubports-installer-configs": {"url": "https://github.com/ubports/installer-configs.git", "commit": "bdf712de090d58491e6e4ab56f777688472498d5", "ref": "master", "cloned": "2026-09-27T10:13:20Z"},
+  "bootloader-unlock-wall-of-shame": {"url": "https://github.com/zenfyrdev/bootloader-unlock-wall-of-shame.git", "commit": "92d55840269532ec0576c30a60db297a703f2daa", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "fuguquest": {"url": "https://github.com/Henry1887/fuguquest.git", "commit": "53cbd602d7a3978e4a5eac089096015ae756c24c", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "more-picohaxx-tool": {"url": "https://github.com/chaixshot/more-picohaxx-tool.git", "commit": "29591aec1b2babab3c3c26239e85576da556e968", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "pico-documentation": {"url": "https://github.com/thoricelli/PICO-documentation.git", "commit": "99face1b92ccf8350e30268089e2da5b2682010e", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "pico4-downgrade-guide": {"url": "https://github.com/Spalishe/Pico4-Downgrade-Guide.git", "commit": "9ddfb0092d19039505ae3caa383b468160c56336", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "queststack": {"url": "https://github.com/starseed12345/QuestStack.git", "commit": "7f943f867067e8ef575ec91b8554c4cb08fa83ac", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "quest1-bootloader-unlocker-web": {"url": "https://github.com/darknight1050/quest1-bootloader-unlocker-web.git", "commit": "7f34276ecef9021771e7bf4a2d53f10b26243334", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "quest-bootloader-unlocker": {"url": "https://github.com/darknight1050/quest-bootloader-unlocker.git", "commit": "e171bbee61e754863fd3a82fe9dc35cd18adf3ac", "ref": "main", "cloned": "2026-09-27T10:13:20Z"}
 }

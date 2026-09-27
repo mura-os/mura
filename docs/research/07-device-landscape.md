@@ -9,9 +9,9 @@ The six targets divide into three practical classes. Oculus Quest 1 and Lynx R1 
 | Device | SoC | Stock OS | Unlock status (2026-09-22) | Kernel source | Mainline status | Firmware source |
 |---|---|---|---|---|---|---|
 | Oculus Quest 1 (`monterey`) | Snapdragon 835 / MSM8998 | Meta/Oculus Android; final release is Android 10-based | Community unlock works on final build `49845030443200410` using a vulnerable v29 ABL in the inactive slot | Meta's archived [Oculus kernel tree](https://github.com/facebookincubator/oculus-linux-kernel), Linux 4.4-era | MSM8998 is substantially upstream; no public Monterey DTS/complete port found | Unofficial [Quest firmware archive](https://cocaine.trade/Quest_firmware); no official historical archive |
-| Lynx R1 | Snapdragon XR2 Gen 1; SM8250-family, downstream board platform `kona` | Lynx AOSP 12 | Vendor-documented open bootloader; fastboot and authenticated Firehose recovery available | **Unverified:** no public Lynx-R1 vendor kernel tree found; do not confuse Lynx's GPL ORB-SLAM release with kernel source | Active; postmarketOS/mainline boots to a debug shell | Official [Lynx firmware portal](https://portal.lynx-r.com/downloads/firmware/lynx-r-1/) |
+| Lynx R1 | Snapdragon XR2 Gen 1; SM8250-family, downstream board platform `kona` | Lynx AOSP 12 | Vendor-documented open bootloader; fastboot and authenticated Firehose recovery documented | **Unverified:** no public Lynx-R1 vendor kernel tree found; do not confuse Lynx's GPL ORB-SLAM release with kernel source | Active; postmarketOS/mainline boots to a debug shell | Official [Lynx firmware portal](https://portal.lynx-r.com/downloads/firmware/lynx-r-1/) retains metadata, but tested artifacts currently return 404 |
 | Samsung Galaxy XR (`SM-I610`, board reported as `anorak`) | Snapdragon XR2+ Gen 2; public Qualcomm part-number mapping is unverified | Android XR / “XR One UI,” Android 14-based | Launch firmware unlockable; Dec. 2025 update reportedly removes unlock; Apr. 2026 update reportedly adds rollback barrier | Official model-specific release through [Samsung Open Source](https://opensource.samsung.com/uploadSearch?searchValue=SM-I610) | Generic SM8550/QCS8550 support is strong, but the XR2+ mapping and Galaxy XR board port are unverified; community port is reported in progress | Samsung FUS via Frija/SamFirm ecosystem; Samsung support site does not publish full images |
-| Play For Dream MR (`anorak`) | Snapdragon XR2+ Gen 2; exact silicon ID unverified | DreamOS, Android 14-based | FreeXR reports an unlocked unit with vendor-left-unburnt eFuse; scope and update durability are unknown | No public vendor GPL kernel release located | No public device port; only adjacent SM8550-family upstream work | OTA only; official downloads page exposes manuals, not firmware |
+| Play For Dream MR (`anorak`) | Snapdragon XR2+ Gen 2; exact silicon ID unverified | DreamOS, Android 14-based | One photographed FastBoot screen shows `SECURE BOOT - no` and `DEVICE STATE - unlocked`; method, retail scope and durability unknown | No public vendor GPL kernel release located | No public device port; only adjacent SM8550-family upstream work | Delta-only OTA reported; official downloads page exposes manuals, not firmware |
 | Valve Steam Frame (`deckard`) | Snapdragon 8 Gen 3 / SM8650 | SteamOS, Arch-derived aarch64 Linux; **not Android** | Developer Mode exposes SSH/RDP and root-capable stock Linux; alternate-OS/secure-boot policy is not yet documented | **Kernel identity donor-verified** ([33 §4](33-steam-frame-donor.md)): 6.18 LTS, pkgbase `linux-618-deckard`, config extracted via IKCONFIG, production DTBs in-image; binary packages public, source tarball still unlocated (GPL acquisition task) | SM8650 has broad upstream support; Valve uses upstream Mesa Turnip | Official public [SteamOS VR image index](https://holo-images.steamos.cloud/vr/) with `.raucb` and `.castr` — **reconstructed, audited, and mirrored by a VM-boot-proven Mura image** ([33 §9](33-steam-frame-donor.md)) |
 | Meta Quest 3 (`eureka`) | Snapdragon XR2 Gen 2, package marking `SXR2230P`; SM8550-derived | Meta Horizon OS; Android 12.1L at launch, Android 14 currently | Locked; temporary root exists on selected firmware, but no public bootloader unlock | No verified Quest 3 GPL source drop found; older Quest source repository does not contain Eureka | SM8550 is well-supported upstream; no public Eureka DTS/bootable mainline port | Official latest-only [Meta update tool](https://www.meta.com/help/quest/software_update/); unofficial [historical archive](https://cocaine.trade/Quest_3_firmware) |
 
@@ -104,11 +104,22 @@ Status terms above are deliberately narrow: “root” means control after the v
 
 ### 5. Stock firmware sources and version policy
 
-- Lynx publishes complete firmware downloads and checksums on the official [R1 firmware page](https://portal.lynx-r.com/downloads/firmware/lynx-r-1/). Release 1.4.1 is the latest listed at the research date.
-- Packages support both ADB sideload and complete QFIL/QDL restore. Lynx says users may [restore to a specific version](https://portal.lynx-r.com/documentation/view/updating-your-device), making this the cleanest Android donor workflow in the set.
+- Lynx's official [R1 firmware page](https://portal.lynx-r.com/downloads/firmware/lynx-r-1/)
+  still listed 1.4.1 on 2026-09-27 with MD5 `3c0e60e393d899403a4037c5c9fcb1d3`,
+  but its tested `ota-lynx-user-v1-4-1-6942b6a7eb266.zip` redirect and tested older links returned
+  object-store 404. Artifact acquisition and stock 1.4.1 inspection are currently blocked.
+- The documented package format supports both ADB sideload and complete QFIL/QDL restore, and Lynx
+  says users may [restore to a specific version](https://portal.lynx-r.com/documentation/view/updating-your-device).
+  That is the cleanest vendor-described Android restore workflow in the set, but it is not
+  operationally usable while the referenced artifacts return 404.
 - No firmware version is known to patch the open bootloader. Pinning is still required because system/vendor interfaces, panel behavior, and firmware blobs change.
-- Start with 1.4.1 for current userspace and separately preserve the version used by the mainline developer. Do not assume DT or calibration compatibility across hardware revisions.
-- The downloads are publicly served by Lynx. Redistribution terms are not stated; Mura should record URL, MD5/SHA-256, and extraction recipe rather than mirror the ZIP.
+- Treat 1.4.1 as portal metadata until the vendor artifact becomes obtainable; do not substitute a
+  mirror without provenance. Separately preserve the version used by the mainline developer. Do
+  not assume DT or calibration compatibility across hardware revisions.
+- The portal publishes release metadata and download redirects, but the tested objects are
+  currently unavailable. If service resumes, record the resolved URL, publisher MD5,
+  independently computed SHA-256 and extraction recipe rather than silently following a mutable
+  redirect.
 
 ### 6. Donor suitability
 
@@ -203,10 +214,19 @@ Status terms above are deliberately narrow: “root” means control after the v
 
 ### 4. Boot chain
 
-- The only concrete public unlock evidence located is the FreeXR target note and its linked [ShinyQuagsire recovery photo](https://mastodon.social/@ShinyQuagsire/114027425822225840). It is community evidence, not vendor documentation.
-- “Unburnt eFuse” suggests a development/factory-like unit that does not enforce the production Qualcomm root of trust. It does **not** prove that every retail unit is unlocked.
-- Expected chain is Qualcomm PBL → XBL → ABL/UEFI → AVB Android boot images, but all Play For Dream-specific partition names, fastboot commands, A/B behavior, and boot image versions are **unknown**.
-- No public Firehose programmer, EDL restore package, `boot.img`, `vendor_boot.img`, or partition dump was found.
+- The only concrete public unlock-state image located is the FreeXR target note and its linked
+  [ShinyQuagsire FastBoot photo](https://mastodon.social/@ShinyQuagsire/114027425822225840).
+  It visibly shows `PRODUCT_NAME - anorak`, `VARIANT - SXR UFS`, `SECURE BOOT - no` and
+  `DEVICE STATE - unlocked` on one unit. It is community evidence, not an unlock method or vendor
+  policy.
+- “Unburnt eFuse” does not prove a wholly unfused chain: follow-up analysis reports that XBL-SC
+  still verified a QTI signature. Model the unit as selectively open, not representative of every
+  retail unit.
+- Community reports demonstrate A/B behavior, a boot image per slot, failed `fastboot boot`,
+  delta-only OTA and `misc` forcing a recovery loop after slot-A damage. A custom SXR2250 EDL
+  payload regained Fastboot by changing reboot reason but did not restore partitions.
+- Complete GPT/protected-state mapping, exact Fastboot USB ID, stock recovery, accepted
+  general-purpose Firehose, full firmware and stock restore remain **unknown**.
 - It is unknown whether the open state survives DreamOS updates, whether OTA burns fuses, or whether only an early batch was affected. Treat auto-update as unsafe until a unit's QFPROM and boot state are archived.
 
 ### 5. Stock firmware sources and version policy
@@ -254,8 +274,12 @@ Status terms above are deliberately narrow: “root” means control after the v
 
 - The exact Frame boot chain and alternate-OS policy are **not publicly documented**. Generic current Qualcomm Linux uses PBL → XBL → UEFI → systemd-boot/UKI, described in Qualcomm's [boot-flow documentation](https://docs.qualcomm.com/doc/80-80022-3/topic/boot-flow-and-architecture-overview.html), but Frame-specific use of systemd-boot/UKI is unverified.
 - It does not use Android `boot.img`, `vendor_boot`, fastbootd, or dynamic Android `super` as its OS update abstraction.
-- SteamOS uses atomic A/B system partitions with RAUC and casync/desync. Collabora documents the [A/B RAUC update design](https://www.collabora.com/news-and-blog/news-and-events/steamos-3-6-how-the-steam-deck-atomic-updates-are-improving.html).
-- A Frame-specific GPT and ESP/bootloader map were not found. Do not copy the Steam Deck's eight-partition GRUB layout into the build until a Frame image or device confirms it.
+- SteamOS uses atomic A/B system partitions with RAUC and casync/desync. The audited Frame donor
+  proves per-slot `rootfs`, `efi` and `var`, plus shared `esp`, `syspersist` and `home`; its
+  post-install handler reformats inactive `var` and syncs `/var` including the `/etc` overlay
+  ([33 §2](33-steam-frame-donor.md)). RAUC covers in-system root updates, not first installation.
+- The donor also proves a separate boot LUN, but not the complete physical map or an alternate-OS
+  first-install path. Do not copy the Steam Deck's eight-partition GRUB layout.
 - Developer Mode officially enables SSH, RDP, and ADB; ADB addresses the native debugging bridge and Lepton instances, not an Android host OS. Valve documents [`ssh steamos@frame`, ADB, and `steamos-readonly disable`](https://partner.steamgames.com/doc/steamhardware/steamframe/debugging).
 - Stock root access is therefore operationally available through the `steamos` user and `sudo`. This is different from a cryptographic bootloader unlock; Secure Boot keys and external-boot behavior remain **unknown**.
 
@@ -396,4 +420,11 @@ Mura needs at least two image families. Quest 1, Lynx, Galaxy XR, Play For Dream
 
 Kernel packaging must separate SoC support from board support. MSM8998 and SM8250 can share mature linux-msm foundations, SM8550-like XR2 Gen 2/XR2+ devices need newer GKI/mainline branches, and Steam Frame's SM8650 can track a modern upstream kernel. Each headset still needs its own DTS, panel/camera/audio topology, firmware manifest, calibration preservation rules, and hardware enablement status; “SoC boots” must not be represented as “XR headset works.” Audio is a versioned board closure of ADSP firmware/topology, codec and machine-card routes, UCM or PAL configuration, and session policy — a generic SoC audio driver or a stock-Android recording proves none of those joins for Mura.
 
-Donor acquisition must be a first-class, reproducible input rather than committed blobs. Lynx can use an official versioned ZIP; Samsung needs model/CSC-aware FUS acquisition and careful launch-firmware pinning; Meta requires official latest-only recovery plus user-supplied historical archives; Play For Dream currently requires capture from an owned device; Steam Frame can reconstruct official RAUC/casync images directly. Nix derivations should record URL, cryptographic hash, license/redistribution status, extraction recipe, and a strict boundary between redistributable firmware and per-unit calibration/identity data.
+Donor acquisition must be a first-class, reproducible input rather than committed blobs. Lynx has
+official versioned metadata but its tested ZIP links currently return 404; Samsung needs
+model/CSC-aware FUS acquisition and careful launch-firmware pinning; Meta requires official
+latest-only recovery plus user-supplied historical archives; Play For Dream currently requires
+capture from an owned device; Steam Frame can reconstruct pinned official RAUC/casync images
+directly. Nix derivations should record URL, cryptographic hash, license/redistribution status,
+extraction recipe, and a strict boundary between redistributable firmware and per-unit
+calibration/identity data.

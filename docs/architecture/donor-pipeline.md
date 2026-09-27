@@ -34,11 +34,13 @@ monolith ([06](../research/06-donor-pipeline.md) §2.3).
 
 ### acquire
 Fetches the verbatim vendor artifact as a single content-addressed store path.
-- `fetchurl` for stable public URLs (Lynx portal, Steam Frame `holo-images.steamos.cloud`,
-  Google-style factory zips).
+- `fetchurl` for verified stable public URLs (Steam Frame `holo-images.steamos.cloud`,
+  Google-style factory zips). A portal link is not stable merely because its metadata remains
+  public: Lynx's listed 1.4.1 and tested older objects returned 404 on 2026-09-27
+  ([research/72 §8](../research/72-xr-unlock-and-flash-targets.md)).
 - `requireFile` with an instructive `message` for authenticated / click-through / device-dumped /
-  community-mirror sources (Samsung FUS output, Meta historical archives, PFDM captures) — the brick
-  appliance pattern.
+  community-mirror / temporarily unavailable vendor sources (Samsung FUS output, Meta historical
+  archives, PFDM captures, the currently unavailable Lynx archive) — the brick appliance pattern.
 - On-device extraction (an explicit path option + pure escape hatch, nixos-apple-silicon style) for
   per-unit firmware that cannot be redistributed.
 - For casync-backed donors (Steam Frame), acquire the `.raucb` bundle and, separately, a
@@ -118,8 +120,12 @@ unified). The full worked example is in [06](../research/06-donor-pipeline.md) �
   device = "lynx-r1"; vendor = "lynx"; buildId = "1.4.1"; class = "android-factory";
   artifacts = {
     firmware-zip = {
-      name = "…"; hash = "sha256-…"; publisherSha256 = "…";
-      source = { kind = "fetchurl"; urls = [ "https://portal.lynx-r.com/…" ]; };
+      name = "ota-lynx-user-v1-4-1-6942b6a7eb266.zip";
+      hash = "sha256-…"; publisherHash = "md5-3c0e60e393d899403a4037c5c9fcb1d3";
+      source = {
+        kind = "requireFile";
+        message = "Obtain the exact Lynx 1.4.1 archive; the vendor portal object was unavailable when audited.";
+      };
     };
   };
   expect = { fingerprintContains = "lynx/…"; abScheme = true; dynamicPartitions = true; };
@@ -127,7 +133,7 @@ unified). The full worked example is in [06](../research/06-donor-pipeline.md) �
                 keepVerbatim = [ "modem" "persist" "vbmeta" ]; };
   extract = { kernel = { from = "boot"; items = [ "kernel" "ramdisk" "mkbootimg-args" ]; };
               firmware = { from = "vendor"; allowPrefixes = [ "lib/firmware/" ]; maxTotalBytes = 1073741824; }; };
-  licensing = { fetchIsPublic = true; redistributable = false; gplComponents = [ "kernel" ]; };
+  licensing = { fetchIsPublic = false; redistributable = false; gplComponents = [ "kernel" ]; };
   contract = null;   # ./contracts/lynx-r1-1.4.1.json once reviewed
 }
 ```

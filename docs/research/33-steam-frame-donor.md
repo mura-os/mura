@@ -8,6 +8,8 @@ recipe: `references/archive-steam-frame/archive-steam-frame.sh`). Feeds
 [07-device-landscape](07-device-landscape.md), and the uefi-rauc image family. Extracted small
 artifacts (kconfig, DTS, scripts, inspection transcripts) persist beside the image under
 `extracted/` in the archive directory.
+This is a pinned 2026-09-21 specimen, not channel-independent “latest”: the official `vr/` index
+already contained builds through 2026-09-25 when checked on 2026-09-27.
 
 ## 1. Reconstruction audit
 
@@ -45,8 +47,16 @@ channel-specific signer). Recorded, not blocking.
 `/etc/fstab` adds the rest of the GPT: `syspersist` (PARTLABEL, ext4, **ro**), per-slot
 `efi` (vfat, `by-partsets/self/efi`), shared `esp` (vfat), shared `home` (ext4,
 `x-systemd.growfs`); `/var` and `/etc` mounts are handled in the initrd (SteamOS overlay
-pattern). So the full disk is: `esp` (shared) + per-slot `efi`×2 + `rootfs`×2 + `syspersist` +
-`home` — the Steam Deck layout on aarch64.
+pattern). The post-install handler resolves the inactive slot's `var`, reformats it as ext4, mounts
+it below the inactive rootfs and synchronizes `/var`, including the `/etc` overlay
+(`references/archive-steam-frame/frame-archive-deckard-20260921.6090922-0.5.0/extracted/batch2.txt:851-916`).
+The proven stock OS partition set is therefore shared `esp`,
+`syspersist` and `home`, plus per-slot `efi`×2, `rootfs`×2 and **`var`×2**. This is not the
+complete physical map because §3 separately establishes a boot LUN.
+
+The current `devices/valve-steam-frame/donor.nix` partition list omits the proven `var-A/B` pair.
+That manifest/document mismatch remains open; this audit does not silently treat the listed
+subset as the stock layout.
 
 ## 3. Boot chain — U-Boot, not stock UEFI
 
@@ -189,7 +199,7 @@ channel as separate facts and leaves `mura.xr.sensing.micChannels = 0` until run
 | identify | Done — manifest + os-release + system.conf (this doc) |
 | parse/extract | Done for phase-1 needs (configs, kernel, DTS, inventories); deeper extraction (firmware closure, initrd contents) deferred to adaptation work |
 | qualify | Payload hash verified against Valve's manifest; bundle-signature chain **open** (§1); `redistributable=false → localOnly` |
-| gaps | No GPT/ESP/recovery *bytes* in the payload (expected — it's a slot image); the *layout* is fully specified by §2–§3, so image structure is not blocked. Flash procedure (Download/recovery path) remains device-side future work. |
+| gaps | No GPT/ESP/recovery *bytes* in the payload (expected — it's a slot image); §2–§3 specify the evidenced OS and boot-LUN partition roles, while exact complete physical ordering remains open and the donor manifest omits `var-A/B`. Flash procedure (Download/recovery path) remains device-side future work. |
 
 ## 8. What this changes in the plan
 

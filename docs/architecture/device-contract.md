@@ -190,13 +190,16 @@ not “the vendor specification lists a microphone.”
 | `mura.deployment.bootScheme` | enum `android-bootimg`\|`uefi-rauc`\|`abl-uboot` | selects image family + update backend |
 | `mura.deployment.partitions` | listOf submodule | layout; `keepVerbatim` list for pass-through blobs |
 | `mura.deployment.abSlots` | bool | drives slot handling and the mark-successful unit |
-| `mura.deployment.flashMethod` | enum | `fastboot`\|`heimdall`\|`edl-qdl`\|`rauc`\|… (declarative flasher table) |
+| `mura.deployment.flashMethod` | enum | coarse build-time capability label only (`fastboot`\|`heimdall`\|`edl-qdl`\|`rauc`\|…); real-device operations and state transitions come exclusively from the reviewed [`install-target` plan](../../specs/install-target-manifest.md), never from an argv template |
 | `mura.deployment.protectedPartitions` | listOf str | persist/calib/NV — never touched without a separately-reviewed op |
 | `mura.deployment.imageVariants` | listOf str | which `lib/images/` variants to build |
 
 The exact boot/donor facts, root-versus-unlock boundary, protected-state evidence and recovery gates
 for each build are in [research/51](../research/51-android-boot-donor-extraction-audit.md).
 No donor-independent default may fill a header, slot or flash fact that audit leaves unknown.
+Static per-build unlock and restore evidence is in
+[research/72](../research/72-xr-unlock-and-flash-targets.md); research alone does not enable a
+write plan.
 
 ### `mura.hardware.ipd.*` and the `eyes` subsystem (ADR 0011)
 

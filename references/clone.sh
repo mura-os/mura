@@ -34,6 +34,24 @@ repos=(
   'meta-qcom|https://github.com/qualcomm-linux/meta-qcom.git|'
   'mkosi|https://github.com/systemd/mkosi.git|'
   'freexr|https://github.com/FreeXR/FreeXR.git|init'
+  # --- device unlock / installation state machines (docs/research/71-72) ---
+  # Source-level mechanism evidence only. Firmware archives, engineering loaders,
+  # unlock tokens and per-unit backups are never cloned into the research corpus.
+  'grapheneos-org|https://github.com/GrapheneOS/grapheneos.org.git|'
+  'grapheneos-fastboot-js|https://github.com/GrapheneOS/fastboot.js.git|'
+  'grapheneos-flasher|https://github.com/264nm/grapheneos-flasher.git|'
+  'aosp-system-core|https://android.googlesource.com/platform/system/core|main'
+  'avb|https://android.googlesource.com/platform/external/avb|main'
+  'ubports-installer|https://github.com/ubports/ubports-installer.git|'
+  'ubports-installer-configs|https://github.com/ubports/installer-configs.git|'
+  'bootloader-unlock-wall-of-shame|https://github.com/zenfyrdev/bootloader-unlock-wall-of-shame.git|'
+  'fuguquest|https://github.com/Henry1887/fuguquest.git|'
+  'more-picohaxx-tool|https://github.com/chaixshot/more-picohaxx-tool.git|'
+  'pico-documentation|https://github.com/thoricelli/PICO-documentation.git|'
+  'pico4-downgrade-guide|https://github.com/Spalishe/Pico4-Downgrade-Guide.git|'
+  'queststack|https://github.com/starseed12345/QuestStack.git|'
+  'quest1-bootloader-unlocker-web|https://github.com/darknight1050/quest1-bootloader-unlocker-web.git|'
+  'quest-bootloader-unlocker|https://github.com/darknight1050/quest-bootloader-unlocker.git|'
   # --- wxrc compositor lineage (Mura compositor research) ---
   'motorcar|https://github.com/evil0sheep/motorcar.git|stable'
   'motorcar-thesis|https://github.com/evil0sheep/MastersThesis.git|'
@@ -97,7 +115,6 @@ repos=(
   'libei|https://gitlab.freedesktop.org/libinput/libei.git|'
   'pipewire|https://gitlab.freedesktop.org/pipewire/pipewire.git|'
   # --- spatial sharing: streaming engines (docs/research/18) ---
-  'alvr|https://github.com/alvr-org/ALVR.git|'
   'sunshine|https://github.com/LizardByte/Sunshine.git|'
   'wolf|https://github.com/games-on-whales/wolf.git|'
   # --- spatial sharing: wayland proxying / virtio (docs/research/19) ---
@@ -143,7 +160,6 @@ repos=(
   'ava-256|https://github.com/facebookresearch/ava-256.git|'
   'goliath|https://github.com/facebookresearch/goliath.git|'
   'baballonia|https://github.com/Project-Babble/Baballonia.git|'
-  'eyetrackvr|https://github.com/EyeTrackVR/EyeTrackVR.git|'
   'vrcfacetracking|https://github.com/benaclejames/VRCFaceTracking.git|'
   'ofera|https://github.com/ysshwan147/OFERA.git|'
   'lam-audio2expression|https://github.com/aigc3d/LAM_Audio2Expression.git|'
