@@ -521,13 +521,16 @@ stand-ins' values and sources are research/70 §5, the first-hardware list.
   stack and never the override (mako, squeekboard, waybar, phosh's panel). An `exclusive`
   surface on `bottom`/`background` is the override only while no window is mapped (niri's rule).
   Popups inherit their root's interactivity (protocol `:275`).
-- **A still pointer sends nothing (rev 3.12; research/75 D3, research/77 §2.7).** The pointer
-  transport drops a planned `motion` whose `wl_fixed` (1/256 px) rounding equals the last one
-  sent to the same surface, and the `frame` that would follow it — wlroots' seat rule
-  (`references/wlroots/types/seat/wlr_seat_pointer.c:241-258`: "Ensure we don't send duplicate
-  motion events"), placed where wlroots places it, because smithay's `PointerHandle::motion` has
-  no such rule (`smithay/src/input/pointer/mod.rs:792-825`). Enter, leave, a new surface and a
-  locked pointer keep their paths.
+- **A still pointer sends nothing (rev 3.12; research/75 D3, research/77 §2.7; shell-plane
+  §2.5).** The pointer transport drops a planned `motion` whose surface-local point is within
+  **one logical pixel** (both axes) of the last one sent to the same surface, and the `frame` that
+  would follow it — wlroots' seat rule (`references/wlroots/types/seat/wlr_seat_pointer.c:241-258`:
+  "Ensure we don't send duplicate motion events"), placed where wlroots places it, because
+  smithay's `PointerHandle::motion` has no such rule (`smithay/src/input/pointer/mod.rs:792-825`).
+  The resolution is the design's pixel, not wlroots' `wl_fixed`: gate 8 (e) measured a
+  head-anchored plane under the head ray jittering ~0.2 px numerically — 1/256 px let 20
+  motions/s through, pixel rounding still 11 per 10 s at boundaries, the one-pixel dead band 5
+  per 10 s of real head drift. Enter, leave, a new surface and a locked pointer keep their paths.
 - **Gaze never reaches a client.** One exception, named: scrolling the gazed element from a
   stick or wheel enters the pointer at the gaze point, sends `axis`, leaves.
 - **Cursors** by class: none for gaze; a compositor reticle at the hit for rays and poke (sized in
@@ -856,7 +859,7 @@ headset). Each gate is a written result with numbers in
    is build-time; the test manager is not built). The §12 fence holds.
 8. **The shell-layer gate (rev 3.12, research/77; the nested acceptance of the shell-layer
    half).** Nested, unmodified clients: (a) **squeekboard** admitted over the socketpair maps as
-   a `top` layer member on the head frame, anchored bottom|left|right with its own 360 px height
+   a `top` layer member on the head frame, anchored bottom|left|right with its own height (mode height / 3: 497 px on the 1920×1493 head rectangle)
    (its arithmetic on `XR-1`, research/77 §2.6) as the exclusive zone, so the head frame's
    usable rectangle loses that band; `zwp_input_method_v2` and `zwp_virtual_keyboard_v1` bind
    (privileged, trusted) and a key typed on it reaches an xdg toplevel's `text-input-v3`;
@@ -872,6 +875,34 @@ headset). Each gate is a written result with numbers in
    layer members mapped vs none, `layer_arranges` = the number of commits/maps (never per tick);
    (g) a trusted client killed while gated: `trusted_lost` = 1, the composed set is empty, the
    mode stays.
+   **Measured (host, 2026-09-27; 48 checks, 0 failures — research/77 §7):** (a) squeekboard over
+   the socketpair: `top`, namespace `osk`, box 1920×497+0+996 (its own arithmetic on the
+   1920×1493 head rectangle: 1493/3), exclusive edge bottom, zone 497, `none`, trusted; the head
+   usable rectangle 1920×966+0+30 with waybar's 30 px top bar also mapped; `zwp_input_method_v2`
+   and `zwp_virtual_keyboard_v1` bound; a controller-ray click on a key reached the focused foot
+   as `zwp_text_input_v3.commit_string` (squeekboard types through `zwp_input_method_v2.commit_string`,
+   research/75 §3.2), and the `none` surface did not take the focus; (b) mako on `notify-send`:
+   `top`, top|right, 320×58 at +1600+30 (inside the bar's band — the Neutral rule), `none`, band
+   4, never focused; (c) waybar (gtk-layer-shell, minimal config): `top`, top|left|right, auto
+   exclusive zone 30; (d) the security-context probe: the sandboxed connection sees `xdg_wm_base`
+   and `wl_seat` and none of `zwlr_layer_shell_v1`, `zxr_layer_anchoring_v1`,
+   `wp_security_context_manager_v1`, `ext_session_lock_manager_v1`, `zwp_input_method_manager_v2`,
+   `zwp_virtual_keyboard_manager_v1`, `zxr_window_manager_v1`; its bind of the layer shell by name is
+   "Invalid binding of zwlr_layer_shell_v1 version 1 for global 18" (protocol error 0);
+   `clients_restricted` 1; (e) under the head ray — the simulated HMD drifts, so the ray is not
+   still — 200 head samples in 10 s (the nested 20 Hz), 195 suppressed, 5 sent (> 1 px of real
+   drift each), `frame` only after a `motion`; the same client received one per tick before
+   (research/75 D3); (f) `layer_arranges` 13 for 3 surfaces over 665 frames (creation, initial
+   commits, maps, a row change, unmap); `wake_to_end_us_mean` 402 µs with three layer members vs
+   437 µs baseline (noise-level); RSS 66.2 MB vs 62.0 MB (three more panels), threads 5 (none
+   new); binary 7.11 → 7.55 MB (+0.43 MB: the shell module, the anchoring bindings, session-lock and
+   security-context); (g) `zxr ctl mode locked`: 1.00 members composed per frame (squeekboard
+   only, of 4 mapped); squeekboard killed: `trusted_lost` 1, 0.02 composed per frame, mode
+   `Locked`, the layer member gone; `--greeter`: no listening socket, the socketpair client bound
+   the layer shell and mapped, 1.00 composed per frame, mode `Greeter`. **Also measured:** a
+   `mura-settings set shell.place:osk.elevation_deg 0` moved the mapped OSK live (the store watch →
+   `take_prefs` → arrange), from (0.0, −0.34, −0.41) to eye level at 1.0 m. The harness's
+   controller/head geometry is `docs/research/77` §7's note. The §12 fence holds.
 
 Plus the fence (budget impact above) and the unit contract items already verified for sway by
 D4 (readiness, restart in the same session), re-run with zxr in the slot behind a flag.

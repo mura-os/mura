@@ -183,7 +183,10 @@ startup tracker) is the anti-pattern to avoid: each of its four requests has a s
 The shell plane's budget rule is the compositor's to honour first. Research/75 §5.4 found that a
 head-ray-owned pointer resting on a client makes the seat deliver `wl_pointer.motion` every tick to
 a still client (62 wake-ups/s). Rule: **no `motion` unless the plane-local position changed** by at
-least one logical pixel; no `frame` without an event. A layer surface with keyboard interactivity
+least one logical pixel; no `frame` without an event. *Built (rev 0.2; spec §8 rev 3.12, gate 8
+measured):* a one-pixel dead band in the pointer transport — wlroots' `wl_fixed` resolution was
+tried first and leaked 20 motions/s of numerical jitter on a head-anchored plane; the pixel is the
+right unit. A layer surface with keyboard interactivity
 `none` receives no keyboard events; a surface not under the ray receives nothing. Panels and OSDs
 redraw on damage only; a component that animates does so under the comfort caps (composition §7.3
 constraint 6) and stops when its animation ends.

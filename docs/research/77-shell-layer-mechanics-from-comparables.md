@@ -314,8 +314,8 @@ box is the frame rectangle in the layer surface's pixel space (§3.4).
   the physical size is absent), ideal button 9.48 mm × 4 rows, arrangement `Wide` for a landscape
   or ≥ 115 mm screen, landscape `Wide` height = `min(max(px_h/3, recommended), px_h/2)`
   (`squeekboard/src/state.rs:357-440`; `outputs.rs:405-416`). On zxr's `XR-1` (1920×1080,
-  600×340 mm): density 3.2 px/mm, ideal 122 px, recommended 122, **panel height 360 px**
-  (1080/3), exclusive zone 360. It uses `wl_output.scale` (`state.rs:438`; `outputs.rs:236-248`).
+  600×340 mm): density 3.2 px/mm, ideal 122 px, recommended 122, **panel height = mode height / 3** — 360 px on a 1080-tall mode, 497 px on the 1493-tall head rectangle zxr's mode became (§3.3; measured §7),
+  exclusive zone the same. It uses `wl_output.scale` (`state.rs:438`; `outputs.rs:236-248`).
 - **mako**: default layer **`top`** (not overlay), anchor top|right, never sets a zone or
   interactivity (protocol defaults 0 / none); output chosen by `wl_output.name` (v4), no
   xdg-output needed; binds compositor, shm, layer_shell, seat, wl_output, xdg_activation and
@@ -363,10 +363,15 @@ sizes every unaware client (Q1).
   logic plans, and plans one per head-ray sample (`pkgs/zxr/src/input/pointer.rs:288, 310,
   458-475`) — research/75 D3's 62 motions/s.
 
-**Transfer:** wlroots' rule at wlroots' place — the seat transport, comparing the `wl_fixed`
-(1/256 px) rounding of the plane-local logical point against the last one sent to the same
-surface, and dropping the `frame` with it. A `Leave`, an enter on a new surface, and a locked
-pointer keep their paths.
+**Transfer:** wlroots' rule at wlroots' place — the seat transport, comparing the plane-local
+logical point against the last one sent to the same surface, and dropping the `frame` with it. A
+`Leave`, an enter on a new surface, and a locked pointer keep their paths. **The resolution did
+not transfer (measured, §7):** wlroots compares at `wl_fixed` (1/256 px) because a 2D pointer
+that did not move produces the identical coordinate; a head-anchored plane under the head ray
+produces a *numerically jittering* one (~0.2 px from the frame pose's per-tick update), so
+1/256 px still let 20 motions/s through and rounding to the pixel still flipped at boundaries
+(11 per 10 s); the rule as built is a **one-logical-pixel dead band** on both axes — shell-plane
+§2.5's wording, which was the design's all along.
 
 ## 3. Angular bands on frames: the derivation
 
@@ -640,6 +645,29 @@ yet and inherit the predicate when they land.
 - **Memory:** a `Shell` struct with ≤ 6 frame rectangles and per-member anchoring state (a
   frame id, an `Option` pose, two `f32`s); no map, no per-output tree.
 
+**Measured (host, 2026-09-27; spec §12 gate 8, 48 checks, 0 failures).** Nested on the simulated
+HMD (dev-session `--zxr --no-mirror`), unmodified squeekboard over the socketpair, mako and a
+minimal-config waybar over the public socket, a `WAYLAND_DEBUG` foot, the security-context probe
+(a 120-line wayland-client program: registry of a plain vs a sandboxed connection, then a bind
+of the hidden global by name):
+
+| | measured |
+|---|---|
+| squeekboard's arrangement | `top`, `osk`, box 1920×497+0+996 on the 1920×1493 head rectangle (its own height arithmetic: 1493/3), exclusive edge bottom, zone 497; the usable rectangle 1920×966+0+30 with waybar's 30 px bar |
+| mako | `top`, top\|right, 320×58 at +1600+30 — inside the bar's band (the Neutral rule), `none`, band 4, never focused |
+| waybar (gtk-layer-shell) | `top`, top\|left\|right, auto exclusive zone 30, configured with the arranged 1920×30 |
+| typing | a controller-ray click on the OSK's centre key → `zwp_input_method_v2.commit_string("…")` → the focused foot's `zwp_text_input_v3.commit_string`; the `none` surface did not take the focus |
+| the placement table live | `mura-settings set shell.place:osk.elevation_deg 0` (+ pitch 0, distance 1.0): the mapped OSK moved from (0.0, −0.34, −0.41) to eye level at 1.0 m within the tick after the store write |
+| filter | the sandboxed connection sees `xdg_wm_base`, `wl_seat` …; none of layer-shell, anchoring, security-context, session-lock, IM, VK, the WM seam; its bind by name: "Invalid binding of zwlr_layer_shell_v1 version 1 for global 18" (protocol error 0) |
+| still pointer | 200 head samples in 10 s (the nested head rate is 20 Hz, not 62); at `wl_fixed` 199 sent; at pixel rounding 11; at the one-pixel dead band 5 (the simulated HMD drifts — real > 1 px moves) and `frame` only after a `motion`; research/75 D3 was one per tick |
+| gated composition | `mode locked`: 1.00 members composed per frame of 4 mapped (squeekboard only); the trusted client killed: `trusted_lost` 1, 0.02 per frame, mode `Locked`, member gone; `--greeter`: no listening socket, 1.00 per frame, mode `Greeter` |
+| tick | `layer_arranges` 13 for 3 surfaces over 665 frames; `wake_to_end_us_mean` 402 µs with three layer members vs 437 µs baseline (noise); RSS 66.2 vs 62.0 MB (three more panel swapchains); threads 5, none new; binary 7.11 → 7.55 MB (+0.43 MB) |
+
+*Harness note:* the injector's controller ray owns the pointer only after it commits once (one
+logical pointer, the device that last committed — spatial-input §5), so the harness clicks the
+window first; the head-frame OSK's world position follows the simulated head's slow drift, so
+targets are read from `zxr ctl list` immediately before each aim.
+
 ## 8. Verdicts against the tree
 
 - `pkgs/zxr/src/input/mode.rs:24-26, 97-104` — the hook is right and its predicate is the
@@ -687,7 +715,7 @@ yet and inherit the predicate when they land.
 - **Q1 — the head frame's default rectangle and distance for unaware clients.** *Why a
   decision:* the protocol leaves the angular size "compositor-chosen"; every unaware client sizes
   itself from the virtual output's mode/physical size (§2.6), so the mapping of 1920×1080 onto an
-  angular rectangle at a distance fixes how large squeekboard's 360 px keyboard (§2.6) appears.
+  angular rectangle at a distance fixes how large squeekboard's mode-height/3 keyboard (§2.6) appears.
   *Options:* (a) **the runtime's view FOV** at the canonical distance — the honest "output edge"
   (the head frame is the display; `xr.rs` has the angles); (b) **a fixed comfortable rectangle**
   inside the FOV (e.g. the composition doc's comfort band — research/36's evidence is that large
