@@ -8,16 +8,19 @@ license = "GPL-3.0-or-later"
 [[bin]]
 name = "mura-settingsd"
 path = "src/main.rs"
+required-features = ["bus"]
 
 [[bin]]
 name = "mura-settings"
 path = "src/bin/mura-settings.rs"
+required-features = ["bus"]
 
 # TEST-ONLY: a stand-in that owns the bus name and answers with a wrong value, for
 # specs/settings-schema.md §9 item 8 (a consumer of a locked key must not believe the bus).
 [[bin]]
 name = "mura-settingsd-liar"
 path = "src/bin/liar.rs"
+required-features = ["bus"]
 
 [dependencies]
 libc = "0.2"
@@ -26,7 +29,13 @@ serde_json = "1"
 # research/58 §11: the Rust desktop comparables' D-Bus stack; the async-io executor and the
 # blocking API measured at +0.9 MB / +1 MB RSS / 3 threads against a libc-only binary. Never
 # tokio's multi-thread runtime (34 threads on this host).
-zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"], optional = true }
+
+# The library (artifact + store + engine) is what a consumer links to resolve keys in-process
+# without the bus (zxr, research/73 §6 option b); the daemon and the CLI need `bus`.
+[features]
+default = ["bus"]
+bus = ["dep:zbus"]
 
 [profile.release]
 opt-level = "s"

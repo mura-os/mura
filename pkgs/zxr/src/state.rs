@@ -162,6 +162,11 @@ pub struct Zxr {
     pub journal: Journal,
     pub frames_limit: Option<u64>,
     pub journal_path: Option<std::path::PathBuf>,
+    /// the wearer's preferences and the input calibrations, resolved in-process (settings.rs;
+    /// research/73 §6 option b); `prefs.generation` moves on every reload
+    pub prefs: crate::settings::Prefs,
+    /// the open settings engine and its watch state, when an artifact exists
+    pub settings: Option<crate::settings::Settings>,
     pub children: Vec<Child>,
     /// xwayland-satellite's pid when spawned: its toplevels are the X11 ones (gate 4)
     pub satellite_pid: Option<u32>,
@@ -460,6 +465,8 @@ impl Zxr {
             journal,
             frames_limit: None,
             journal_path: None,
+            prefs: crate::settings::Prefs::default(),
+            settings: None,
             children: Vec::new(),
             satellite_pid: None,
             pointer_focus: None,

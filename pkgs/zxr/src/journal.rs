@@ -135,6 +135,12 @@ pub struct Journal {
     pub cursor_layers: u64,
     pub cursor_passes: u64,
     pub cursor_swapchains_created: u64,
+    /// settings (research/73 §6): keys resolved from the artifact, reloads on a store change,
+    /// stored values the engine reported invalid, and the generation counter the stages compare
+    pub settings_keys: u64,
+    pub settings_reloads: u64,
+    pub settings_invalid: u64,
+    pub settings_generation: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -290,6 +296,10 @@ impl Journal {
         let _ = writeln!(s, "cursor_layers_per_frame_x100={}", self.cursor_layers * 100 / f);
         let _ = writeln!(s, "cursor_passes={}", self.cursor_passes);
         let _ = writeln!(s, "cursor_swapchains_created={}", self.cursor_swapchains_created);
+        let _ = writeln!(s, "settings_keys={}", self.settings_keys);
+        let _ = writeln!(s, "settings_reloads={}", self.settings_reloads);
+        let _ = writeln!(s, "settings_invalid={}", self.settings_invalid);
+        let _ = writeln!(s, "settings_generation={}", self.settings_generation);
         s
     }
 }

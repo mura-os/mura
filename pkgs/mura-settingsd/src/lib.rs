@@ -4,6 +4,7 @@
 //! reserved: no target declares a device key yet). `mura-settings` is the CLI.
 
 pub mod artifact;
+#[cfg(feature = "bus")]
 pub mod bus;
 pub mod engine;
 pub mod migrations;

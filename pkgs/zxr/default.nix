@@ -20,7 +20,17 @@
 rustPlatform.buildRustPackage {
   pname = "zxr";
   version = "0.1.0";
-  src = lib.cleanSource ./.;
+  # zxr links the settings library (../mura-settingsd, default-features = false: no zbus, no
+  # bus, no bins) as a Cargo path dependency (research/73 §6 option b), so the source is the two
+  # crate trees with zxr as the build root.
+  src = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.unions [
+      (lib.fileset.fromSource (lib.cleanSource ./.))
+      (lib.fileset.fromSource (lib.cleanSource ../mura-settingsd))
+    ];
+  };
+  sourceRoot = "source/zxr";
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {

@@ -9,6 +9,7 @@ mod input;
 mod journal;
 mod render;
 mod scene;
+mod settings;
 mod state;
 mod xr;
 
@@ -138,6 +139,10 @@ fn run() -> Result<(), String> {
     st.frames_limit = args.frames;
     st.journal_path = args.journal.clone();
     st.debug_panels = args.debug_panels;
+    // the wearer's preferences and the input calibrations (specs/settings-schema.md; research/73 §6):
+    // resolved in-process from the artifact and the per-user store, the store directory watched
+    // on this loop — before the stages are built, so their first `*Cfg` is the resolved one
+    settings::install(&mut st, &event_loop.handle());
     // the input chain (spatial-input §1a): the spine installs the R0 head-ray floor in the seat
     // slot; the stages replace it as they land
     st.input.chain.set(input::Slot::Seat, Box::new(input::HeadFloor));
@@ -922,6 +927,19 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             let panel = st.cursor_panel.as_ref().map(|p| format!("{}x{} passes={}", p.sc.extent.width, p.sc.extent.height, p.passes)).unwrap_or_else(|| "-".into());
             let inputs = st.input.cursor_inputs.map(|i| format!("targeting={:?} owner={:?} on_plane={} reticle={} typing={} client={}", i.targeting, i.owner, i.pointer_on_plane, i.reticle, i.hidden_typing, i.client_name)).unwrap_or_default();
             s.push_str(&format!("cursor: layer={content} panel={panel} swapchains_created={} layers_submitted={} {inputs}\n", st.journal.cursor_swapchains_created, st.journal.cursor_layers));
+            // the settings picture (settings.rs): where it came from and how often it moved
+            s.push_str(&format!(
+                "settings: artifact={} keys={} generation={} reloads={} invalid={} cursor.ray={} pointer.gain={} dwell={} density_px_per_cm={:.1}\n",
+                if st.settings.is_some() { st.prefs.artifact_generation.as_str() } else { "none (built-in defaults)" },
+                st.journal.settings_keys,
+                st.prefs.generation,
+                st.journal.settings_reloads,
+                st.journal.settings_invalid,
+                st.prefs.cursor_ray,
+                st.prefs.pointer_gain,
+                st.prefs.dwell_enabled,
+                st.prefs.wm_density_px_per_cm
+            ));
             s.trim_end().to_string()
         }
         Journal => format!("{}{}", st.journal.render(now_ns()), input::focus::render_counters(st)).trim_end().to_string(),

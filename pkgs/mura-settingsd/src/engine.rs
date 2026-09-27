@@ -168,6 +168,18 @@ impl Engine {
         Ok(self.effective_of(&r, &rec))
     }
 
+    /// Drop a cached store so the next read reloads it from disk — for an in-process consumer
+    /// that watches the store directory (research/73 §6 option b; cosmic-config's shape) rather
+    /// than the bus. `store_name` is the file stem (`<schema>` or `<template>:<instance>`).
+    pub fn forget_store(&mut self, store_name: &str) {
+        self.stores.remove(store_name);
+    }
+
+    /// The config root this engine reads per-user preferences from (for a consumer's watch).
+    pub fn config_root(&self) -> &Path {
+        &self.config_root
+    }
+
     fn write_store(&mut self, r: &KeyRef, rec: &KeyRecord, mutate: impl FnOnce(&mut StoreFile)) -> Result<(), Error> {
         let name = r.store_name();
         let _ = self.store(r, rec); // ensure loaded

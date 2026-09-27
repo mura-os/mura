@@ -22,6 +22,12 @@ ash = "0.38"
 tracing = "0.1"
 # Xcursor theme lookup and parsing for cursor-shape-v1 names (spatial-input §7; input/theme.rs).
 xcursor = "0.3"
+# The settings engine, in-process (research/73 §6 option b, ruled): the artifact + the per-user
+# store resolved with the daemon's own code, the store directory watched with one inotify fd on
+# the state loop — no bus, no thread (`bus` off keeps zbus out of the compositor). serde_json is
+# the engine's value type; both are already in the closure through the daemon.
+mura-settingsd = { path = "../mura-settingsd", default-features = false }
+serde_json = "1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 
 [profile.release]
