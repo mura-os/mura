@@ -64,6 +64,24 @@
         assert get("xr.passthrough.latencyMode") == ("low-latency", "default")
         machine.fail("grep -q latencyMode /home/mura/.config/mura/settings/xr.passthrough.json")
 
+    with subtest("settings: research/73 keys — a preference round-trips, a layered key's default is the contract's, a build fact is locked"):
+        keys = machine.succeed("mura-settings --direct list").strip().splitlines()
+        assert len(keys) >= 90, len(keys)                                         # 3 before research/73
+        assert get("input.cursor.ray") == ("both", "default")
+        user(f"{S} set input.cursor.ray image")
+        assert get("input.cursor.ray") == ("image", "user")
+        user(f"{S} reset input.cursor.ray")
+        assert get("input.cursor.ray") == ("both", "default")
+        assert get("input.hand.pinch.close") == ("0.75", "default")               # layered on hardware.input.hand.pinch.close
+        user(f"{S} set input.hand.pinch.close 0.8")
+        assert get("input.hand.pinch.close") == ("0.8", "user")
+        assert get("hardware.input.hand.pinch.close") == ("0.75", "locked")       # the calibration itself is a locked build fact
+        rc, out = user(f"{S} set hardware.input.hand.pinch.close 0.9", check=False)
+        assert rc == 1 and ("Locked" in out or "Immutable" in out), (rc, out)
+        rc, out = user(f"{S} set input.cursor.angle_deg 9", check=False)
+        assert rc == 1 and "Range" in out, (rc, out)
+        user(f"{S} reset input.hand.pinch.close")
+
     with subtest("settings: immutable and locked writes are refused and touch nothing (items 3, §7); range and type too"):
         rc, out = user(f"{S} set hardware.ipd.meters 0.064", check=False)
         assert rc == 1 and "Immutable" in out, (rc, out)

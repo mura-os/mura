@@ -80,6 +80,7 @@ in
       keys = {
         enabled = { type = "bool"; default = true; description = "Whether this place may be entered."; };
         launch = { type = "string"; default = ""; description = "What to launch on entry (empty: nothing)."; };
+        summon = { type = "string"; default = ""; description = "What to summon (bring to the wearer) on entry (empty: nothing) — settings-schema.md §1.1 names it beside `launch`."; };
       };
     };
 

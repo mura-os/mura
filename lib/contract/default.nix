@@ -40,6 +40,10 @@ let
         (lib.attrByPath [ "users" "users" ] { } config));
 in
 {
+  # The wearer's preferences (settings keys, mutable) and the input module's calibrations
+  # (immutable build facts on the same artifact) — research/73; both are `options.mura.*`.
+  imports = [ ./preferences.nix ./input-calibration.nix ];
+
   options.mura = {
 
     ## Identity and support (mandatory minimum) -----------------------------
@@ -583,15 +587,18 @@ in
           '';
         };
         lock = {
-          enable = mkOption {
+          enable = mkSetting {
             type = types.bool;
             default = true;
             description = ''
               Compositor-integrated lock (ADR 0007): an internal composition-policy state
               (compose only the lock scene, route input only to it, PAM via out-of-process
               mura-authd). Not ext-session-lock-v1 (that is exposed only for the dev
-              profile / third-party lockers).
+              profile / third-party lockers). A settings key (`session.lock.enabled`, mutable:
+              GNOME `lock-enabled`, kscreenlocker `Autolock`); an image that must enforce it
+              locks the key (settings-schema.md §7).
             '';
+            settings = { schema = "session.lock"; key = "enabled"; mutability = "mutable"; };
           };
           triggers = mkOption {
             type = types.listOf (types.enum [ "boot" "doff" "idle" "suspend" "explicit" ]);
@@ -602,13 +609,16 @@ in
               whenever a credential is enrolled (Quest power-on-lock model).
             '';
           };
-          doffGraceSeconds = mkOption {
+          doffGraceSeconds = mkSetting {
             type = types.ints.unsigned;
             default = 45;
             description = ''
               Grace window after doff/idle during which don/activity resumes the session
-              without re-auth. 0 = lock immediately (security-sensitive deployments).
+              without re-auth. 0 = lock immediately (security-sensitive deployments). A settings
+              key (`session.lock.doff_grace_s`, mutable — kscreenlocker `LockGrace`, GNOME
+              `lock-delay`); ADR 0007's ~30–60 s band, research/73 §2.9.
             '';
+            settings = { schema = "session.lock"; key = "doff_grace_s"; mutability = "mutable"; range = { min = 0; max = 300; }; };
           };
         };
         readinessTimeoutSeconds = mkOption {
