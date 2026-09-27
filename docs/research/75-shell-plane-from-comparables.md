@@ -583,9 +583,9 @@ toolkit is §7 Q3, not decided here.
   tree; the probe exposed nothing until both were up. The greeter unit set includes them
   (spatial-a11y §1).
 
-## 7. Owner questions (rule 8 form; one item each)
+## 7. Owner questions (rule 8 form; one item each) — Q1–Q5 ruled 2026-09-27, each as the read below; Q6 is a design item, not a question
 
-**Q1 — Start and supervision shape.** *Decided:* how Mura's shell components are started and
+**Q1 — Start and supervision shape — RULED 2026-09-27: (a) systemd user units.** *Decided:* how Mura's shell components are started and
 restarted. *Comparables:* GNOME, Plasma, phosh — systemd user units, `PartOf=graphical-session.target`,
 `Restart=on-failure` (krunner `Restart=no`), `OnFailure=…shutdown.target` for the ones the session
 cannot live without; COSMIC — its own `ProcessManager` (unlimited restarts, backoff), systemd
@@ -596,7 +596,7 @@ compositor, and gives the administrator `systemctl --user mask/edit` replaceabil
 supervisor process and re-implements `Restart=`. My read: (a) — the evidence converges and it is
 rule 1's answer.
 
-**Q2 — The trusted set and its identity.** *Decided:* which globals are privileged and how a
+**Q2 — The trusted set and its identity — RULED 2026-09-27: (a) research/30's rule + channel identity.** *Decided:* which globals are privileged and how a
 client qualifies. *Comparables:* niri/Hyprland/cosmic-comp — the same privileged list (layer-shell,
 session-lock, IM/VK, foreign-toplevel, workspace, data-control, screencopy) hidden from
 security-context clients, everything else unrestricted; KWin/cosmic-panel — channel identity for
@@ -606,7 +606,7 @@ additionally an allow-list of the session's own unit names for the privileged se
 (a) is every comparable; (b) has no precedent and would break third-party panels the
 administrator installs (rule 3). My read: (a).
 
-**Q3 — One toolkit for Mura's own shell components, or per component?** *Decided:* whether the
+**Q3 — One toolkit for Mura's own shell components, or per component? — RULED 2026-09-27: (a) Slint for every component Mura writes, co-located where the comparables co-locate.** *Decided:* whether the
 panel, OSD, notifications UI and launcher Mura writes use the greeter's toolkit. *Comparables:*
 COSMIC — one (libcosmic) for all; Plasma/GNOME — one (Qt/St); wlroots — per tool; phosh — GTK for
 the shell, GTK+Rust for the OSK. *Options:* (a) Slint for every component Mura writes (COSMIC's
@@ -616,7 +616,7 @@ components are co-located (cosmic-osd/notifications' shape); (b) freedom at the 
 in the image. My read: (a), with co-location where the comparables co-locate (OSD + polkit agent;
 notification server + cards).
 
-**Q4 — Notifications: carry or write.** *Decided:* whether the FDO notification server + cards is
+**Q4 — Notifications: carry or write — RULED 2026-09-27: (a) carry mako first.** *Decided:* whether the FDO notification server + cards is
 mako (cairo + pango, D-Bus-activated, a `Type=dbus` unit, no spatial awareness) or a Mura
 component on the shell toolkit that knows the head frame, immersion DND and the critical bypass
 (research/36 §4). *Comparables:* every desktop writes its own (COSMIC, Plasma, GNOME, phosh); the
@@ -626,7 +626,7 @@ default head anchoring for unaware clients (`zxr-layer-anchoring-v1.xml:118-120`
 zxr over D-Bus; (b) is the comparables' shape for an integrated shell. My read: (a) first, as the
 seam is the standard one either way.
 
-**Q5 — The OSK: carry squeekboard/wvkbd or write on the shell toolkit.** *Comparables:* phosh
+**Q5 — The OSK: carry squeekboard/wvkbd or write on the shell toolkit — RULED 2026-09-27: (a) squeekboard to reach G1–G3, then (c) a Slint OSK as the shell component.** *Comparables:* phosh
 carries squeekboard (GTK3+Rust, 104 layouts, `sm.puri.OSK0`); wlroots carries wvkbd; COSMIC and
 Plasma write/carry their own (cosmic-osk, maliit). *Options:* (a) carry squeekboard (layouts,
 `input-method-v2` + `virtual-keyboard-v1`, proven Erase path) on a body/hand frame via the
