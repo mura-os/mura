@@ -183,6 +183,11 @@ pub fn commit_focus(st: &mut Zxr, member: MemberId, serial: Serial) {
     if st.scene.get(member).is_none() {
         return;
     }
+    // a `none` layer surface (panel, OSD, notification, OSK) never takes the keyboard: the commit
+    // changes no focus (spec §8 rev 3.12; the OSK types through the IM into the focused member)
+    if crate::shell::layer_accepts_focus(st, member) == Some(false) {
+        return;
+    }
     st.focus.last_commit_serial = Some(serial);
     st.focus.last_commit_member = Some(member);
     // `wm.focus.raise_on_commit` (GNOME `raise-on-click`, KWin `ClickRaise`): the commit

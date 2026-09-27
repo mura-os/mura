@@ -417,10 +417,14 @@ pub struct PointerTransport {
     last_member: Option<MemberId>,
     /// the focus tuple of the last `Move` (relative motion is delivered against it)
     last_focus: Option<(smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, Point<f64, smithay::utils::Logical>)>,
-    /// the still-pointer rule (spec §8 rev 3.12; research/77 §2.7 — wlroots' `wlr_seat_pointer_send_motion`,
-    /// `types/seat/wlr_seat_pointer.c:241-258`): the surface and the `wl_fixed` (1/256 px) surface-local
-    /// point of the last `motion` sent; an identical one is not sent again
-    last_sent: Option<(smithay::reexports::wayland_server::backend::ObjectId, (i32, i32))>,
+    /// the still-pointer rule (spec §8 rev 3.12; shell-plane §2.5; research/77 §2.7 — wlroots'
+    /// `wlr_seat_pointer_send_motion`, `types/seat/wlr_seat_pointer.c:241-258`, at the *logical pixel*
+    /// rather than wlroots' `wl_fixed`: a head-anchored plane under the head ray jitters by ~0.2 px
+    /// numerically and still woke the client 20/s at 1/256 px — gate 8 (e) measured it): the surface
+    /// and the surface-local point of the last `motion` sent; a point within one logical pixel of it on
+    /// both axes (a dead band, not a rounding — rounding still flipped at pixel boundaries, 11/10 s) is
+    /// not sent again
+    last_sent: Option<(smithay::reexports::wayland_server::backend::ObjectId, (f64, f64))>,
     /// whether anything was sent since the last `frame` (a `frame` with nothing before it is dropped)
     sent_since_frame: bool,
 }
@@ -468,11 +472,12 @@ impl PointerTransport {
                         Some((surface, logical, origin)) => {
                             // a locked pointer (pointer-constraints) keeps its position; relative motion still flows
                             let locked = self.pointer.current_focus().as_ref() == Some(&surface) && is_locked(&surface, &self.pointer);
-                            // wlroots' dedupe: the same surface at the same wl_fixed point sends nothing
+                            // wlroots' dedupe at the logical pixel: the same surface within a pixel of the last
+                            // sent point sends nothing
                             let local = logical - origin;
-                            let fixed = ((local.x * 256.0).round() as i32, (local.y * 256.0).round() as i32);
-                            let key = (surface.id(), fixed);
-                            let same = self.pointer.current_focus().as_ref() == Some(&surface) && self.last_sent.as_ref() == Some(&key);
+                            let key = (surface.id(), (local.x, local.y));
+                            let same = self.pointer.current_focus().as_ref() == Some(&surface)
+                                && self.last_sent.as_ref().map(|(id, (lx, ly))| *id == key.0 && (lx - local.x).abs() < 1.0 && (ly - local.y).abs() < 1.0).unwrap_or(false);
                             if !locked && !same {
                                 self.pointer.motion(st, Some((surface.clone(), origin)), &MotionEvent { location: logical, serial, time });
                                 self.last_sent = Some(key);

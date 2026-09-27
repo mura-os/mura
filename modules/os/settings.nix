@@ -90,16 +90,18 @@ in
     # client's zxr-layer-anchoring request; without a row the request applies; without either the
     # head fallback (`shell.head.*`). Hyprland's layer rules by namespace are the precedent. The
     # template's defaults are the head fallback; zxr's seed rows for the carried components'
-    # namespaces (research/77 §3.3a) apply to an instance with no stored value. Class `state`:
-    # remembered placement, not intent (settings-schema.md §2).
+    # namespaces (research/77 §3.3a) apply to an instance with no stored value. Class
+    # `preference` (the default): a row is the wearer's intent whether typed or grabbed into place
+    # (settings-schema.md §2 — GNOME's favorite-apps shape), and it lives where zxr's one inotify
+    # watch looks (`$XDG_CONFIG_HOME/mura/settings`).
     mura.settings.templates."shell.place" = {
       keys = {
-        frame = { type = "enum"; values = [ "head" "body" "hand_left" "hand_right" "world" "docked" ]; default = "head"; class = "state"; description = "The anchoring frame (zxr-layer-anchoring-v1's enum). An unavailable frame falls back per the protocol (hand → body, docked → head)."; };
-        azimuth_deg = { type = "double"; default = 0.0; range = { min = -180.0; max = 180.0; }; class = "state"; description = "Centre azimuth in the frame, degrees (positive = right)."; };
-        elevation_deg = { type = "double"; default = 0.0; range = { min = -90.0; max = 90.0; }; class = "state"; description = "Centre elevation in the frame, degrees (positive = up)."; };
-        distance_m = { type = "double"; default = 0.5; range = { min = 0.2; max = 5.0; }; class = "state"; description = "Presentation distance from the frame origin, metres."; };
-        pitch_deg = { type = "double"; default = 0.0; range = { min = -90.0; max = 90.0; }; class = "state"; description = "Pitch of the plane about its horizontal axis, degrees (negative = tilted toward a wearer looking down at it — WayVR's keyboard −10)."; };
-        width_deg = { type = "double"; default = 0.0; range = { min = 0.0; max = 180.0; }; class = "state"; description = "Horizontal angular size, degrees; 0 = the compositor's choice (the arranged pixel size at the frame's pixels-per-degree)."; };
+        frame = { type = "enum"; values = [ "head" "body" "hand_left" "hand_right" "world" "docked" ]; default = "head"; description = "The anchoring frame (zxr-layer-anchoring-v1's enum). An unavailable frame falls back per the protocol (hand → body, docked → head)."; };
+        azimuth_deg = { type = "double"; default = 0.0; range = { min = -180.0; max = 180.0; }; description = "Centre azimuth in the frame, degrees (positive = right)."; };
+        elevation_deg = { type = "double"; default = 0.0; range = { min = -90.0; max = 90.0; }; description = "Centre elevation in the frame, degrees (positive = up)."; };
+        distance_m = { type = "double"; default = 0.5; range = { min = 0.2; max = 5.0; }; description = "Presentation distance from the frame origin, metres."; };
+        pitch_deg = { type = "double"; default = 0.0; range = { min = -90.0; max = 90.0; }; description = "Pitch of the plane about its horizontal axis, degrees (negative = tilted toward a wearer looking down at it — WayVR's keyboard −10)."; };
+        width_deg = { type = "double"; default = 0.0; range = { min = 0.0; max = 180.0; }; description = "Horizontal angular size, degrees; 0 = the compositor's choice (the arranged pixel size at the frame's pixels-per-degree)."; };
       };
     };
 

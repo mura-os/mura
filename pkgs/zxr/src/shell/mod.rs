@@ -665,7 +665,7 @@ pub fn describe(st: &Zxr) -> String {
         s.push_str(&format!("zone: frame={:?} rect={}x{} extent={:.1}x{:.1}deg ppd={:.2} distance={:.2} usable={}x{}+{}+{}\n", r.frame, r.size.w, r.size.h, eh, ev, r.ppd, r.distance_m, r.usable.size.w, r.usable.size.h, r.usable.loc.x, r.usable.loc.y));
     }
     s.push_str(&format!(
-        "shell-counters: layers={} arranges={} configures={} focus_overrides={} override={:?} restricted={} trusted={} trusted_lost={} binds_filtered={} motion_deduped={} lock={:?}\n",
+        "shell-counters: layers={} arranges={} configures={} focus_overrides={} override={:?} restricted={} trusted={} trusted_lost={} binds_filtered={} motion_deduped={} lock={:?} mode={:?} frames={} members_composed={}\n",
         st.shell.layers.len(),
         st.shell.arranges,
         st.shell.configures,
@@ -676,7 +676,10 @@ pub fn describe(st: &Zxr) -> String {
         st.journal.trusted_lost,
         st.journal.binds_filtered,
         st.journal.pointer_motion_deduped,
-        st.shell.lock.status()
+        st.shell.lock.status(),
+        st.input.mode,
+        st.journal.frames,
+        st.journal.members_composed
     ));
     s
 }

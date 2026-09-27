@@ -184,7 +184,7 @@ pub struct Zxr {
     pub satellite_pid: Option<u32>,
     pub pointer_focus: Option<WlSurface>,
     /// the R0 head-floor path's last sent (surface, wl_fixed point) — the still-pointer rule
-    pub last_gaze_sent: Option<(ObjectId, (i32, i32))>,
+    pub last_gaze_sent: Option<(ObjectId, (f64, f64))>,
     pub last_head_pose: Option<openxr::Posef>,
     /// research/63 Phase 1b: how panels reach the runtime (projection pass / quad layers / both)
     /// `--debug-panels`: force every plane into the projection layer (the R0 path) for measurement
@@ -954,10 +954,11 @@ impl Zxr {
         let time = smithay::backend::input::InputTime::now();
         match hit {
             Some((_, surface, loc)) => {
-                // the still-pointer rule (spec §8 rev 3.12): the same surface at the same wl_fixed
-                // point sends nothing (wlroots `wlr_seat_pointer_send_motion`)
-                let key = (surface.id(), ((loc.x * 256.0).round() as i32, (loc.y * 256.0).round() as i32));
-                if self.pointer_focus.as_ref() == Some(&surface) && self.last_gaze_sent.as_ref() == Some(&key) {
+                // the still-pointer rule (spec §8 rev 3.12): the same surface at the same logical pixel
+                // sends nothing (wlroots `wlr_seat_pointer_send_motion`, at the pixel — pointer.rs)
+                let key = (surface.id(), (loc.x, loc.y));
+                let same = self.last_gaze_sent.as_ref().map(|(id, (lx, ly))| *id == key.0 && (lx - loc.x).abs() < 1.0 && (ly - loc.y).abs() < 1.0).unwrap_or(false);
+                if self.pointer_focus.as_ref() == Some(&surface) && same {
                     self.journal.pointer_motion_deduped += 1;
                     return;
                 }

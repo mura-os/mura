@@ -222,7 +222,12 @@ fn run() -> Result<(), String> {
     event_loop
         .handle()
         .insert_source(Signals::new(&[Signal::SIGUSR1, Signal::SIGINT, Signal::SIGTERM]).map_err(|e| e.to_string())?, |ev, _, state| match ev.signal() {
-            Signal::SIGUSR1 => print!("{}", state.journal.render(now_ns())),
+            Signal::SIGUSR1 => {
+                // stdout is a pipe under the harness: flush so the dump is readable before exit
+                use std::io::Write as _;
+                print!("{}", state.journal.render(now_ns()));
+                let _ = std::io::stdout().flush();
+            }
             _ => state.loop_signal.stop(),
         })
         .map_err(|e| e.to_string())?;

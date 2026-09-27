@@ -588,6 +588,12 @@ fn apply_render(st: &mut Zxr, ops: Vec<RenderOp>) {
 // ---------------------------------------------------------------------------------------------
 
 impl GlobalDispatch<ZxrWindowManagerV1, ()> for Zxr {
+    /// The WM seam is in the privileged set (spec §10 rev 3.12; shell-plane §2.2): hidden from
+    /// security-context clients like the layer shell.
+    fn can_view(client: Client, _global_data: &()) -> bool {
+        crate::shell::filter::unrestricted(&client)
+    }
+
     fn bind(state: &mut Zxr, dh: &DisplayHandle, client: &Client, resource: New<ZxrWindowManagerV1>, _global_data: &(), data_init: &mut DataInit<'_, Zxr>) {
         let manager = data_init.init(resource, ());
         state.seam.binds += 1;
