@@ -1,6 +1,12 @@
 # The shell plane — components as processes, the compositor's shell-layer half, and the toolkit
 
-**Status: DRAFT, rev 0.1 (2026-09-27).** Derived from [research/75](../research/75-shell-plane-from-comparables.md)
+**Status: DRAFT, rev 0.2 (2026-09-27; rev 0.1 + §2 the compositor's half made mechanical from
+[research/77](../research/77-shell-layer-mechanics-from-comparables.md) — arrangement per frame in
+frame-pixel space, the initial configure, the focus rules, the trusted connection as the gate's
+exception, the filter as `ClientData` bits at insert, the still-pointer rule's placement; §2.6 the
+wearer's placement table `shell.place:<namespace>` — owner ruling 2026-09-27; §3.5 OSD and
+notifications may be separate, Mura's own likely merged — owner ruling; §6 the items the rulings
+leave).** Derived from [research/75](../research/75-shell-plane-from-comparables.md)
 (how the shipping shells are built; the toolkit measured) on top of [research/30](../research/30-wayland-de-anatomy-protocol-seams.md)
 (the seams), [research/36](../research/36-vr-shell-interaction-patterns.md) (the XR interaction
 patterns) and [research/60](../research/60-de-abstractions-mapped-to-xr.md) (each abstraction mapped
@@ -95,16 +101,46 @@ What zxr serves and enforces so that any component of §3 can exist. Spec [zxr-c
 
 ### 2.1 Layer-shell with anchoring
 
-zxr serves `zwlr_layer_shell_v1` and `zxr_layer_anchoring_v1` (spec §10 lists both for M1; neither
-is built — `pkgs/zxr/src/input/mode.rs:24-25`). A layer surface is a member of band 2 (`bottom`),
-4 (`top`) or 5 (`overlay`) of the layer list (spec §4); `background` is the environment's band 1
-and is the wallpaper client's. Its frame is the anchoring request's or **head** by default; its
-exclusive zone becomes an exclusive angular band on that frame (`set_exclusive_angle`); its
-keyboard interactivity keeps the protocol's meaning: `exclusive` takes the keyboard from every
-window while mapped (launcher, greeter, lock), `on_demand` takes it on a commit, `none` never
-(panel, OSD, notifications, OSK). Layer surfaces are never hit-tested as windows for the WM verbs
-(no move/resize grabs; window-workspace-management's floor ignores them) and are never targets of
-`ext-foreign-toplevel-list`.
+zxr serves `zwlr_layer_shell_v1` (v5) and `zxr_layer_anchoring_v1` (spec §10; the mechanics are
+spec §4 rev 3.12, from research/77). A layer surface is a member of band 2 (`bottom`), 4 (`top`)
+or 5 (`overlay`) of the layer list (spec §4); `background` is the environment's band 1 and is the
+wallpaper client's (accepted, not composed until the environment design admits it — spec §14).
+Its frame is the anchoring request's or **head** by default. **Arrangement** is wlroots'
+arithmetic in sway's pass order, run per frame in the frame's pixel rectangle on the surface's
+commit/map/unmap and never per tick: the usable rectangle is per frame (a body-frame panel never
+shrinks the head frame); a positive zone reserves `zone + margin` on the surface's one exclusive
+edge; `set_exclusive_angle` is the same zone in degrees; the client is configured with the
+arranged pixel size on its first commit *after* arranging, so unaware clients' own sizing
+(squeekboard's height from `wl_output`, gtk-layer-shell's auto zone) holds unmodified. The window
+tiers honour the head frame's usable rectangle at spawn and are not moved when a band appears.
+**Keyboard interactivity** keeps the protocol's meaning as every comparable implements it
+(spatial-input §6 rev 0.5): `exclusive` on `top`/`overlay` is the focus override while mapped
+(greeter, lock), `on_demand` is a focus-stack member (launcher), `none` is never focused (panel,
+OSD, notifications, OSK). Layer surfaces are **placeable, never tiled or resized**: the WM engines
+ignore them (no resize grab, no arrangement), a grab on one writes its placement row (§2.6), and
+they are never targets of `ext-foreign-toplevel-list`; they are hit-tested as planes with the
+shell class (bands 4–5, `input/hit.rs`).
+
+### 2.6 The placement table — where a shell surface sits is the wearer's
+
+**Ruled (owner, 2026-09-27; research/77 §3.3a):** the wearer places shell surfaces and chooses
+their frame; no component's position is hardcoded because a design discussion settled it. The
+mechanism is Hyprland's layer rules transposed — a rule matches the surface's **namespace** (the
+string every layer-shell client sends) and overrides the client (`hyprland/src/desktop/rule/layerRule/LayerRule.cpp:96-115`).
+The table is the relocatable settings template **`shell.place:<namespace>`** with keys `frame`
+(any frame the compositor advertises), `azimuth_deg`, `elevation_deg`, `distance_m`, `pitch_deg`,
+`width_deg` (0 = compositor's choice). **Precedence:** a row wins over the client's
+`zxr-layer-anchoring-v1` request; without a row the client's request applies; without either the
+head fallback (`shell.head.{extent_h_deg,extent_v_deg,distance_m}`, 90×70° at 0.5 m — the
+anchoring protocol's own example and WiVRn/WayVR's distance). A grab on a shell plane (the WM
+branch's grab mechanics) writes the row; `mura-settings set shell.place:osk.frame body` is the same
+write by hand; `Reset`/`DeleteInstance` returns to the seed. **Seed rows** (the consumer's defaults
+for an instance without a stored value, GNOME's shape): `osk` → body, low-centre, pitched toward
+the wearer (WayVR's keyboard; research/60 §10); `notifications` → head, upper-right (mako's
+anchor; head-locked toasts, research/36 §4); a bar → body, bottom (research/60 §9). The frame set
+grows with the compositor (`frames` bitfield): a keyboard on the real desk is `frame = world` with
+a pose now and a surface-detected frame when the perception plane offers one. Unaware clients
+(squeekboard, mako, waybar) are placed by the same rows — the namespace is theirs already.
 
 ### 2.2 The binding filter
 
@@ -248,8 +284,14 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
   `fr.emersion.Mako.SetMode` over D-Bus when a native app is primary or a scene is exclusive;
   urgency `critical` is left through by mako's own criteria. Later a Mura component on the shell
   toolkit that knows the head frame directly; the seam (`org.freedesktop.Notifications`) does not
-  change.
+  change. Placement by the `notifications` row of §2.6 (seed: head, upper-right).
 - **Unit:** mako's own `Type=dbus` unit, `PartOf=graphical-session.target`.
+- **OSD and notifications, one process or two (ruled, owner 2026-09-27):** separate processes are
+  **allowed** — the seam is the FDO interface and any daemon may own it (COSMIC's shape:
+  `cosmic-osd` + `cosmic-notifications`); Mura's own components will in practice likely **merge**
+  the two into one Slint process (plasmashell's and GNOME Shell's shape — one resident process,
+  one toolkit instance, on the ≤ 5-process budget). The design admits both; nothing in zxr
+  distinguishes them.
 
 ### 3.6 Launcher — Mura
 
@@ -356,7 +398,14 @@ Nothing in the compositor knows a component's name.
   numbers are host numbers; the device partition is budgets.md §3's at first hardware. Decider: the
   budgets owner with the first device measurement.
 - **A Mura notifications component** replacing mako, and when: decider the shell's second release,
-  on the seam that does not change.
+  on the seam that does not change (merged with the OSD or not — §3.5's ruling admits both).
+- **Seed placement rows in code vs a Nix option** (§2.6): the rows are the consumer's defaults in
+  `shell/place.rs` keyed by namespace; a `mura.xr.shell.place.<namespace>` Nix option that seeds
+  template instances would need the settings artifact to carry per-instance defaults, which
+  GSettings relocatable schemas do not have. Decider: the settings design (settings-schema.md §10).
+- **Grab-to-place on a shell plane**: lands when the WM branch's grab mechanics (research/76) merge;
+  until then rows are written by `mura-settings set` and `zxr ctl`. Decider: the WM workstream's
+  merge order (implementation-path §5).
 
 ## 7. Cross-references
 

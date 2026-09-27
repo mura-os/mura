@@ -1,6 +1,9 @@
 # Spatial input: targeting, hover, commit, focus, cursors, peripherals and text entry
 
-**Status: DRAFT rev 0.4 (2026-09-27; rev 0.3 + §5 a ray-owned pointer is **released when gaze
+**Status: DRAFT rev 0.5 (2026-09-27; rev 0.4 + §6 layer-shell keyboard interactivity as the
+focus module's rules — the exclusive override, `on_demand` as a stack member, `none` never, the
+mode gate's exception as the trusted connection — [research/77](../research/77-shell-layer-mechanics-from-comparables.md);
+rev 0.4 = same day; rev 0.3 + §5 a ray-owned pointer is **released when gaze
 takes the tier**, §14 the `input.cursor.ray` / `input.cursor.scale` preferences — research/70 §9.2;
 rev 0.3 = same day; rev 0.2 + §7 **one cursor element** ruled and built as one
 composition layer in one fixed swapchain, [research/70 §9](../research/70-input-bring-up-results.md); rev 0.2 = 2026-09-26; rev 0.1 + §1a **implemented** markers from
@@ -323,9 +326,21 @@ This is the one place gaze position reaches a client, and it is named as such.
   layer); the compositor never moves or raises for it.
 - **Focus restore** on close: the seat's most-recently-committed member still mapped (the focus
   stack; cosmic-comp, KWin's focus chain).
-- **Layer-shell keyboard interactivity** (`exclusive` for the greeter/lock scene and the
-  keyboard component while shown; `on_demand` otherwise) sits above member focus as in niri's
-  `update_keyboard_focus`.
+- **Layer-shell keyboard interactivity** (rev 0.5, [research/77 §2.3, §4.2](../research/77-shell-layer-mechanics-from-comparables.md);
+  every compositor read converges). `exclusive` on `top`/`overlay` is the **override**: the
+  topmost mapped exclusive surface (overlay before top, most recently mapped first) holds the
+  keyboard whatever the stack says and no toplevel is activated meanwhile (cosmic-comp's rule:
+  "only exclusive shell surfaces can have focus, on the highest layer"; sway's topmost loop;
+  niri's `update_keyboard_focus`). It is the greeter/lock program's mode. `on_demand` is a
+  **member of the focus stack** — it takes focus on map by the new-windows rule and on a commit
+  like any member, and focus returns to the stack on its unmap (sway, river, niri's marker); a
+  launcher's mode. `none` is never focused and never in the stack — a commit on a panel, an OSD,
+  a notification or the OSK changes no focus (every non-lock component read sets `none`,
+  squeekboard included: it types through `virtual-keyboard`, not the seat). `exclusive` on
+  `bottom`/`background` is the override only while no window is mapped (niri). Popups inherit
+  their root's mode. **The mode gate's exception** (§1a's mode row) is the *connection*, not the
+  interactivity: while gated, only members of a trusted client (the socketpair) receive
+  anything — the greeter's exclusive surface and the OSK's `none` surface alike.
 - **What a manager may do** ([window-workspace-management.md §11](window-workspace-management.md),
   ruled 2026-09-26): request focus with the serial of a user commit the compositor delivered to
   it (`interaction` → `focus(window, serial)`); the rule above decides, and refusal is

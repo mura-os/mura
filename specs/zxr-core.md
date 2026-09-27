@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 3.11 (2026-09-27; rev 3.10 + the window-management floor and seam as built — §3 `policy` built (the `free` floor: angular-slot spawn, tidy, lifecycle, follow, recenter; the seam served, XML rev 1, one binder, river sequences, the disconnect contract), §8 `Grabs` as built (`input/grabs.rs`, research/76), §11 the grab / policy / seam counters and the `policy:` and `seam:` list lines, §12 gate 7 measured; rev 3.10 = same day; rev 3.9 + shell-plane.md — §10 the shell-layer half: layer-shell + anchoring as the shell seam, the privileged set filtered per connection, `security-context-v1` moved to the shell-layer work, the still-pointer idle rule; rev 3.9 = same day; rev 3.8 + ADR 0007's amendment — §3 `modes` / §9: the greeter and lock scene is one trusted client over a pre-connected socketpair, zxr draws no UI, an absent client means an opaque scene and never an unlock; rev 3.8 = same day; rev 3.7 + research/73 settings Phase B — §3 `mura-settingsd` as a library and no `zbus` in the compositor, §8 "Settings": the in-process consumer (Engine + one inotify fd on the state loop, `Prefs` by generation, every threshold a preference or a calibration key), §11 settings counters, §12 the settings gate row; rev 3.7 = same day; rev 3.6 + research/70 §9.2 — §8 a ray-owned pointer released when gaze takes the tier, the `input.cursor.ray` / `input.cursor.scale` preferences, §11 `input_pointer_releases`; rev 3.6 = same day; rev 3.5 + research/70 §9 — §8 the cursor as one composition layer in one fixed-size swapchain (ruled: one cursor element, the client's cursor over the ray's reticle, nothing under gaze), §11 cursor counters, §12 the cursor gate row; rev 3.5 = 2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3.12 (2026-09-27; rev 3.11 + research/77 — the shell-layer half **normative**: §4 exclusive angular bands per frame in frame-pixel space (wlroots' arithmetic, sway's pass order), §8 layer-shell keyboard interactivity in the focus module (the exclusive override, `on_demand` as a stack member, `none` never) and the `wl_fixed` motion dedupe, §9 the trusted connection as the gate's exception and the socketpair as `insert_client`, §10 the filter as `ClientData` bits set at insert and the globals it covers, §4 the wearer's placement table `shell.place:<namespace>` over the client's request over the head fallback (owner ruling 2026-09-27), §11 shell counters, §12 the shell-layer gate rows, §14 what the ruling leaves; rev 3.11 = same day; rev 3.10 + the window-management floor and seam as built — §3 `policy` built (the `free` floor: angular-slot spawn, tidy, lifecycle, follow, recenter; the seam served, XML rev 1, one binder, river sequences, the disconnect contract), §8 `Grabs` as built (`input/grabs.rs`, research/76), §11 the grab / policy / seam counters and the `policy:` and `seam:` list lines, §12 gate 7 measured; rev 3.10 = same day; rev 3.9 + shell-plane.md — §10 the shell-layer half: layer-shell + anchoring as the shell seam, the privileged set filtered per connection, `security-context-v1` moved to the shell-layer work, the still-pointer idle rule; rev 3.9 = same day; rev 3.8 + ADR 0007's amendment — §3 `modes` / §9: the greeter and lock scene is one trusted client over a pre-connected socketpair, zxr draws no UI, an absent client means an opaque scene and never an unlock; rev 3.8 = same day; rev 3.7 + research/73 settings Phase B — §3 `mura-settingsd` as a library and no `zbus` in the compositor, §8 "Settings": the in-process consumer (Engine + one inotify fd on the state loop, `Prefs` by generation, every threshold a preference or a calibration key), §11 settings counters, §12 the settings gate row; rev 3.7 = same day; rev 3.6 + research/70 §9.2 — §8 a ray-owned pointer released when gaze takes the tier, the `input.cursor.ray` / `input.cursor.scale` preferences, §11 `input_pointer_releases`; rev 3.6 = same day; rev 3.5 + research/70 §9 — §8 the cursor as one composition layer in one fixed-size swapchain (ruled: one cursor element, the client's cursor over the ray's reticle, nothing under gaze), §11 cursor counters, §12 the cursor gate row; rev 3.5 = 2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -111,6 +111,44 @@ Composition order, back to front, each band an anchoring frame (`zxr-layer-ancho
 Layer-shell's four layers keep their upstream meanings (the wlr protocol text's ordering); the
 environment and foreground layers are Mura's, owned by the compositor's composition and fed by
 separate services. A plane's stacking within a tier is depth, not z-order.
+
+**Rev 3.11 — how a layer surface becomes a member (normative; [research/77](../docs/research/77-shell-layer-mechanics-from-comparables.md)
+§2.1, §3).** A `zwlr_layer_surface_v1` is a scene member (§5a) whose place is on its anchoring
+frame in band 2 (`bottom`), 4 (`top`) or 5 (`overlay`); a `background` surface is accepted and,
+until the environment design admits a wallpaper client to band 1, not composed (frame callbacks
+on the fallback cadence, §5a's not-composed rule). **Where it sits is the wearer's (owner ruling
+2026-09-27; research/77 §3.3a; Hyprland's layer rules by namespace,
+`references/hyprland/src/desktop/rule/layerRule/LayerRule.cpp:96-115`):** the **placement table**
+`shell.place:<namespace>` (a relocatable settings template — `frame`, `azimuth_deg`,
+`elevation_deg`, `distance_m`, `pitch_deg`, `width_deg`) wins when a row exists for the surface's
+namespace; otherwise the client's `zxr-layer-anchoring-v1` request applies; otherwise the head
+fallback (`shell.head.{extent_h_deg,extent_v_deg,distance_m}`, defaults 90×70° at 0.5 m). A user
+grab on a shell plane writes the row (the WM branch's grab mechanics; the plane is placeable,
+never tiled or resized). Seed rows for the carried components' namespaces (`osk` → body,
+low-centre; `notifications` → head, upper-right; a bar → body, bottom) are the consumer's
+defaults for instances without a stored value. **Arrangement** runs on the surface's commit, map
+and unmap — never per tick — in the frame's **pixel rectangle** `W × H = round(extent° · ppd)` at
+the frame's canonical distance, with wlroots' arithmetic
+(`references/wlroots/types/scene/layer_shell_v1.c:61-114`): bounds = the frame's usable rectangle,
+or the full rectangle when the zone is −1; size 0 on an axis stretches between the two anchors
+minus margins; an anchored edge pins, an unanchored axis centres; a positive zone shrinks the
+usable rectangle by `zone + margin` on the surface's one **exclusive edge** — a single anchored
+edge, the odd edge of a three-edge bar, or the client's `set_exclusive_edge`; corners and full
+anchors reserve nothing (`wlr_layer_shell_v1.c:657-684`). Two passes in sway's order: every
+surface with a positive zone, then the rest, each overlay→top→bottom→background
+(`references/sway/sway/desktop/layer_shell.c:56-93`). The usable rectangle is **per frame**: a
+body-frame panel never shrinks the head frame. A bogus zone clamps the usable rectangle to zero
+(wlroots, smithay), it never destroys the client (river's rule is not taken). `set_exclusive_angle`
+is the same zone in the same units, `degrees · ppd`. The arranged box maps back to the member:
+azimuth `((x + w/2) − W/2)/ppd`, elevation `(H/2 − (y + h/2))/ppd`, plane extents
+`2·d·tan(angle/2)`; the client is configured with the arranged pixel size, so every unaware
+client's pixel arithmetic (squeekboard's height from `wl_output` mode + physical size,
+research/77 §2.6) holds unmodified. **Initial configure:** on the surface's first commit, after
+arranging (smithay's stated rule, `references/smithay/src/desktop/wayland/layer.rs:414-424`;
+niri's order); map on the first buffer, as the xdg path does. A layer popup unconstrains to the
+frame rectangle in the surface's coordinates (sway's full-output rule). The **window tiers**
+consume the head frame's usable rectangle at spawn (window-workspace-management §3's free
+slot); an existing window is not moved when a band appears (sway's floating containers).
 
 **Rev 3 — how the bands reach the display (ADR 0006 amendment 2, ruled 2026-09-26).** Two
 transports, chosen per band by whether the content has depth:
@@ -472,6 +510,24 @@ stand-ins' values and sources are research/70 §5, the first-hardware list.
   compositor never raises for it. New windows take focus unless a commit intervened. Focus
   restore = most recently committed mapped member. Nothing about focus is a client's or a
   manager's decision — managers send hints (window-workspace-management.md §11).
+  **Layer-shell keyboard interactivity (rev 3.12, research/77 §2.3, §4.2; every comparable read
+  converges):** an `exclusive` surface on `top`/`overlay` is the **override** — the topmost mapped
+  one (band 5 before 4, most recently mapped first) holds the keyboard whatever the stack says
+  and no toplevel is `Activated` while it exists (cosmic-comp `focus/mod.rs:648-672`; sway
+  `layer_shell.c:103-138`; niri `niri.rs:1238-1368`); recomputed on layer map/unmap/commit,
+  never per tick. An `on_demand` surface is a **member of the focus stack**: it takes focus on
+  map by the new-window rule and on a `down`/`button` commit like any member; focus returns to
+  the stack's most recent member on its unmap (sway `:303-314`). A `none` surface is never in the
+  stack and never the override (mako, squeekboard, waybar, phosh's panel). An `exclusive`
+  surface on `bottom`/`background` is the override only while no window is mapped (niri's rule).
+  Popups inherit their root's interactivity (protocol `:275`).
+- **A still pointer sends nothing (rev 3.12; research/75 D3, research/77 §2.7).** The pointer
+  transport drops a planned `motion` whose `wl_fixed` (1/256 px) rounding equals the last one
+  sent to the same surface, and the `frame` that would follow it — wlroots' seat rule
+  (`references/wlroots/types/seat/wlr_seat_pointer.c:241-258`: "Ensure we don't send duplicate
+  motion events"), placed where wlroots places it, because smithay's `PointerHandle::motion` has
+  no such rule (`smithay/src/input/pointer/mod.rs:792-825`). Enter, leave, a new surface and a
+  locked pointer keep their paths.
 - **Gaze never reaches a client.** One exception, named: scrolling the gazed element from a
   stick or wheel enters the pointer at the gaze point, sends `axis`, leaves.
 - **Cursors** by class: none for gaze; a compositor reticle at the hit for rays and poke (sized in
@@ -550,6 +606,27 @@ acknowledges `start_session`. The in-session lock composes the same client the s
 `RestartMode=direct` in the same logind session (D4); clients die with the compositor (every
 comparable; research/59 §11) and the wrapper returns to the greeter.
 
+**The trusted connection (rev 3.12; research/77 §4.3–4.4, §5.3).** A client admitted over the
+pre-connected socketpair is inserted with `ClientState { trusted: true }` — `DisplayHandle::insert_client`
+on the inherited fd (`--shell-fd N` / `WAYLAND_SOCKET` to the child), the call smithay's own
+Xwayland bring-up makes (`references/smithay/src/xwayland/xserver.rs:218`). The bit is the mode
+gate's exception: while `Mode != Normal`, a sample whose hit member belongs to a trusted client
+passes, everything else below the gate is consumed (I1 read with the amendment: "the lock
+scene" = the trusted members). The composed set while gated is `mapped && trusted` — the greeter
+program's `overlay`/`exclusive` surface and the OSK's `top` surface — and the band-5 cursor,
+which every comparable draws above the lock (sway `root.c:43-56`; niri `niri.rs:4366-4412`);
+no window and no untrusted layer surface is sampled. The comparables that need an OSK on the
+lock screen invent a per-surface opt-in for it (cosmic-comp `show_on_lock`, Hyprland
+`above_lock`, phosh by making the lock itself a layer surface); Mura's bit is the connection,
+so the case is a consequence. **A trusted client's exit** is `ClientData::disconnected` (the
+one hook a client's death fires): the composed set is empty, the frame is the opaque scene,
+nothing unlocks, the unit restarts the program (ADR 0007 amendment; sway paints red and keeps
+the lock, `lock.c:245-258`). `ext-session-lock-v1` stays the dev/desktop profile's seam
+(ADR 0007), served through smithay's `SessionLockManagerState` behind the same filter as the
+rest of the privileged set (§10); its `locked` is sent after the first composed frame with zero
+untrusted samples (I2), and a lock client's death leaves the lock `Defunct` and the scene
+opaque.
+
 **Quiet mode (DRAFT, 2026-09-26, forks ruled — [native-openxr-apps.md §4–§6](../docs/architecture/native-openxr-apps.md)):**
 while a native OpenXR application is Monado's primary, zxr submits no layers and runs no GPU
 pass (the fullscreen-game unredirect analogue) and costs only the frame-loop IPC and the Wayland
@@ -601,7 +678,20 @@ session that owns those images. The field order of the state struct encodes the 
   client unless the plane-local position changed by a logical pixel, no `frame` without an event —
   a still head-ray pointer must not wake the client under it. `security-context-v1` therefore
   moves from "after M1" to *with* the shell-layer half, since the filter needs it to know a client
-  is restricted. None of this is built at rev 3.10 (`input/mode.rs` still notes the absence).
+  is restricted. **Mechanics (rev 3.12, research/77 §5; built with the shell-layer half):** the
+  filter is a predicate over the client's `ClientData`, which wayland-server evaluates when the
+  client's registry is created and again on every `bind` (a bind of a hidden global is a protocol
+  error) — so the bits are set **at `insert_client`** and never later: `ClientState { restricted,
+  trusted }`, `restricted = true` for every stream smithay's `SecurityContextListenerSource`
+  yields (`context_created`), `trusted = true` for the socketpair (§9), both false for the public
+  socket (niri `ClientState.restricted`, `niri.rs:7077-7085`; cosmic-comp `security_context:
+  Some`, `state.rs:154-173`). Every privileged global is created with smithay's filter form
+  (`WlrLayerShellState::new_with_filter`, `SessionLockManagerState::new(dh, filter)`,
+  `InputMethodManagerState::new`, `VirtualKeyboardManagerState::new`, `SecurityContextState::new`
+  with the "no context" predicate) or, for zxr's own `zxr_layer_anchoring_v1`, the same closure in
+  `GlobalDispatch::can_view`. KWin's list omits layer-shell (Plasma trusts its shell process
+  by other means, `kwin/src/wayland_server.cpp:131-139`); Mura has the socketpair for that and
+  keeps layer-shell on the list with niri, cosmic-comp and Hyprland.
 - **Not on the headset**: `tablet-v2`, `tearing-control`, `wlr-output-management`; `fifo-v1` /
   `commit-timing-v1` / `color-management-v1` revisited at M4.
 
@@ -655,6 +745,15 @@ minimizes, the limits, the minimize verb) and a `seam:` line (connected, client,
 refusals, disconnects, manage and render sequences, requests applied, protocol errors), and
 every member line carries `hidden=`. `zxr ctl grab focused|end` and `zxr ctl wm
 tidy|recenter|maximize|fullscreen|minimize|follow` drive the verbs nested.
+**Rev 3.12 — the shell counters** (research/77 §7): `layer_surfaces` (created), `layer_mapped`
+(currently mapped), `layer_arranges` (arrangement runs — commit/map/unmap driven, so a still
+session adds none), `layer_configures`, `layer_focus_overrides` (the exclusive override
+recomputed to a different surface), `binds_filtered` (registry/bind decisions where a privileged
+global was hidden), `clients_restricted`/`clients_trusted` (inserted with the bit), `trusted_lost`
+(a trusted client's `disconnected`), `pointer_motion_deduped` (motions dropped by the still rule
+— the D3 number made visible); `zxr ctl list` adds a `shell:` line per layer member — namespace,
+layer, frame, arranged box, exclusive edge and zone, interactivity — and a `zone:` line per frame
+with its usable rectangle.
 
 ## 12. Conformance — the R0 gates (research/39 §5, measured)
 
@@ -755,6 +854,24 @@ headset). Each gate is a written result with numbers in
    tidy/recenter rounds (41 manage sequences for 40 changes); the release binary 6.83 → 7.11 MB
    (+0.28 MB: grabs, the floor, the seam and its generated bindings); closure +0 (wayland-scanner
    is build-time; the test manager is not built). The §12 fence holds.
+8. **The shell-layer gate (rev 3.12, research/77; the nested acceptance of the shell-layer
+   half).** Nested, unmodified clients: (a) **squeekboard** admitted over the socketpair maps as
+   a `top` layer member on the head frame, anchored bottom|left|right with its own 360 px height
+   (its arithmetic on `XR-1`, research/77 §2.6) as the exclusive zone, so the head frame's
+   usable rectangle loses that band; `zwp_input_method_v2` and `zwp_virtual_keyboard_v1` bind
+   (privileged, trusted) and a key typed on it reaches an xdg toplevel's `text-input-v3`;
+   (b) **mako** maps in `top` (its default) at top|right on `notify-send`, above every window
+   quad, and never takes the keyboard (`none`); (c) a **gtk-layer-shell** client (waybar or the
+   library's example) on `top` with an exclusive zone gets the arranged size in its configure and
+   the band appears in `zxr ctl list`'s `zone:` line; (d) a client that created a
+   `wp_security_context_v1` cannot see `zwlr_layer_shell_v1` in its registry and its `bind` is a
+   protocol error, while a plain client can; in `--greeter` mode the socketpair client binds it
+   and no listening socket exists; (e) **idle:** a still head-ray pointer over a mapped layer
+   surface sends **0** `wl_pointer.motion`/`frame` over 10 s (`WAYLAND_DEBUG` on the client;
+   `pointer_motion_deduped` counts the drops); (f) **budget:** the state-loop tick with three
+   layer members mapped vs none, `layer_arranges` = the number of commits/maps (never per tick);
+   (g) a trusted client killed while gated: `trusted_lost` = 1, the composed set is empty, the
+   mode stays.
 
 Plus the fence (budget impact above) and the unit contract items already verified for sway by
 D4 (readiness, restart in the same session), re-run with zxr in the slot behind a flag.
@@ -783,6 +900,13 @@ recorded wlroots fallback (ADR 0006), and R0's result says explicitly whether on
 
 ## 14. Open items (deciders named)
 
+**Shell placement — ruled** (owner, 2026-09-27; research/77 §9): the wearer's placement table
+(§4). Left from it: the seed rows live in `shell/place.rs` (moving them to a Nix option is a
+settings-design question — decider: the settings owner); the world frame honours no exclusive
+angles and reports the head rectangle's extent at the spawn distance; `background` surfaces are
+composed only when the environment design admits a wallpaper client (decider: the
+passthrough/environment design). Whether a window already inside a newly reserved band is nudged
+— decider: the WM workstream (window-workspace-management).
 The foreground layer's name — "cutout" (the mechanism, the contract's word) or "foreground" (the
 layer) — decider: the owner, at the passthrough rung. Cross-plane drag-and-drop (no comparable;
 the 2D semantics may hold since a ray crossing planes is pointer motion across surfaces) —

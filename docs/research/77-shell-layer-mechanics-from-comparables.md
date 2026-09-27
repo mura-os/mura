@@ -77,10 +77,15 @@ parallel WM workstream (`76-grab-mechanics-from-comparables.md`) before this one
   layer surfaces as members of the existing scene in bands 2/4/5 with the existing hit classes,
   the filter as `ClientData` at insert, the socketpair as `insert_client` on an inherited fd
   with `ClientData::disconnected` as the restart trigger, motion dedupe at the transport.
-  **Owner items:** the head frame's default rectangle and canonical distance for unaware
-  clients (Q1), the frame-extent source (Q2), whether a `bottom`/`background` surface may exist on
-  a non-world frame (Q3). The `ext-session-lock` seam stays what ADR 0007 ruled (dev/desktop
-  profile), and this pass adds the mechanics smithay gives it for free.
+  **Owner ruling (2026-09-27, §9):** where a shell surface sits is the **wearer's** — a
+  per-namespace **placement table** (Hyprland's layer rules, which match a layer surface by its
+  namespace and override the client, are the precedent) as relocatable settings instances
+  `shell.place:<namespace>`, written by the user's grab or by hand; the client's anchoring request
+  is the placement only when no row exists; shipped seed rows (`osk` → body, low-centre;
+  notifications → head, upper-right; a bar → body, bottom) are defaults, not code paths. The head
+  frame's fixed rectangle is only the fallback for a namespace no row names and the home of
+  head-locked transients; its numbers are keys. The `ext-session-lock` seam stays what ADR 0007
+  ruled (dev/desktop profile), and this pass adds the mechanics smithay gives it for free.
 
 ## 1. The protocols as written
 
@@ -413,8 +418,39 @@ OSDs to the camera with zero smoothing (research/36 §4). The head-frame rectang
 itself has one honest source — the runtime's view FOV from `xrLocateViews` (`xr.rs:708, 767`
 already carries `v.fov` per view; the union of both eyes' angles is the "screen edge") — and one
 conservative alternative, a fixed comfortable rectangle inside it. Which, and at what canonical
-distance, is **Q1** (§9): it is not a mechanic and the comparables give positions, not a
-convergence.
+distance, was put to the owner as Q1 (§9); the ruling made it the *fallback* only.
+
+### 3.3a The placement table (owner ruling, 2026-09-27)
+
+The owner's rule: **the wearer places shell surfaces and chooses their frame**; nothing about a
+component's position is hardcoded because a design discussion settled it. The comparable with
+the mechanism is **Hyprland's layer rules**: a rule matches a layer surface by its *namespace* —
+the string every layer-shell client already sends in `get_layer_surface` — and overrides what
+the client asked for (`hyprland/src/desktop/rule/layerRule/LayerRule.cpp:96-115`,
+`RULE_PROP_NAMESPACE`; effects in `LayerRuleEffectContainer.cpp:12-24`). No other compositor read
+lets the *user* re-place a layer surface (sway, river, niri, cosmic-comp and KWin take the
+client's word; the shells configure their own components). In XR every overlay shell lets the
+wearer grab and keep its panels (WayVR's overlays, xrdesktop's windows — research/36 §2, §4).
+Transposed: a **placement table** keyed by namespace, `shell.place:<namespace>` (a relocatable
+settings template, settings-schema §1.1 — `places.entry` is the existing instance machinery),
+with keys `frame`, `azimuth_deg`, `elevation_deg`, `distance_m`, `pitch_deg`, `width_deg`
+(0 = the compositor's choice). **Precedence:** a row wins over the client's anchoring request;
+without a row the client's request applies (a Mura-aware client's `set_frame`/`set_pose`), and
+without either the head fallback (§3.3). A user grab on a shell plane (the WM branch's grab
+mechanics; research/76) writes the row; `mura-settings set shell.place:osk.frame body` is the
+same write by hand. **Seed rows** ship for the namespaces the carried components send —
+`osk` (squeekboard, `squeekboard/src/panel.c:63-86`) → body, low-centre, pitched toward the wearer
+(WayVR's keyboard, `wayvr/wayvr/src/overlays/keyboard/mod.rs:109-110`; research/60 §10);
+`notifications` (mako's) → head, upper-right (mako's anchor, research/36 §4 head-locked toasts);
+a bar (`waybar`, `panel`) → body, bottom (research/60 §9's body-frame dock) — as the consumer's
+defaults for template instances without a stored value (GSettings templates have no
+per-instance defaults; the component ships them — GNOME's shape). *Flagged (rule 4):* the seed
+rows live in zxr's `shell/place.rs` keyed by namespace strings; moving them to a Nix option is a
+mechanism question for the settings design. The frame set is whatever the compositor advertises
+(`frames` bitfield): a desk-projected keyboard is `frame = world` with a pose today and a
+surface-detected frame when the perception plane offers one — a new enum entry, not a redesign.
+**Consequence for shell-plane §2.1:** layer surfaces are *placeable* (grab → row) but never tiled
+or resized by the WM engines; "never a WM target" is narrowed to that.
 
 ### 3.4 Popups and hit testing in frame-pixel space
 
@@ -676,14 +712,23 @@ yet and inherit the predicate when they land.
   design's call) — until then `background` surfaces are accepted and not composed (mapped,
   frame callbacks on the fallback cadence), which is what a wallpaper client tolerates.
 
-**Status of the owner items (2026-09-27):** put to the owner and **not ruled** (the question was
-skipped). To keep the workstream moving without laundering a decision (rule 4), the
-implementation takes **provisional** positions, each a one-value settings key so the ruling is a
-number change, and each marked *provisional* in spec rev 3.11 and shell-plane rev 0.2:
-Q1a → (b) a fixed rectangle, `shell.head.extent_deg` seeded 90×70 (the anchoring protocol's own
-example, `protocols/zxr-layer-anchoring-v1.xml:31-35`); Q1b → 0.5 m, `shell.head.distance_m`
-(the two XR comparables that state a number, WiVRn and WayVR, both say 0.5); Q2 → as proposed;
-Q3 → as proposed. **These remain open items with the owner as decider** (spec §14).
+**Rulings (owner, 2026-09-27, in conversation).** The three questions as put were the wrong
+frame (the owner: "the user should be able to place these, and the user should be able to
+determine what frame they are on"). **Ruled:** shell-surface placement is the wearer's — the
+per-namespace placement table + user grab of §3.3a is the design ("makes sense to me"); the
+design is general over frames, with no component's position hardcoded because it was discussed
+(the desk keyboard is a row with `frame = world`, later a surface frame). What remains of Q1–Q3
+under that ruling: **Q1** — the head rectangle is only the fallback and the home of head-locked
+transients; keys `shell.head.{extent_h_deg,extent_v_deg,distance_m}`, defaults 90×70° (the
+anchoring protocol's own example, `protocols/zxr-layer-anchoring-v1.xml:31-35`) at 0.5 m (WiVRn
+`client/constants.h:103`, WayVR `overlays/keyboard/mod.rs:110`) — a default, not a fork.
+**Q2, Q3** — should not have been asked (edge cases the evidence already settled): the world
+frame reports the head rectangle's extent at the spawn distance and honours no exclusive angles;
+`bottom`/`background` may anchor to any frame, `background` accepted and not composed until the
+environment design admits a wallpaper client. **Also ruled:** OSD and notifications may be
+separate processes (the seam stays `org.freedesktop.Notifications`, mako or any daemon may own
+it); Mura's own components will in practice likely merge the two (plasmashell's and GNOME
+Shell's shape) — recorded in shell-plane §3.4/§3.5/§6.
 
 ## 10. Sources
 
