@@ -674,7 +674,10 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   `zxr-layer-anchoring-v1` (bands 2/4/5, exclusive angular bands, head-frame default), the
   per-connection binding filter, the socketpair admission of §2.3, the still-pointer motion
   dedupe (research/75 D3) — because no shipping OSK or panel can map on zxr without it
-  (research/75 D2). *Its mechanics are research/77 (rev 4.5): arrangement per frame in
+  (research/75 D2). **Built and gated (rev 4.5, 2026-09-27):** `pkgs/zxr/src/shell/`, spec §12
+  gate 8 measured — unmodified squeekboard (over the socketpair), mako and waybar map and behave,
+  the security-context filter and the greeter-mode admission proven, a placement row moves a
+  mapped surface live. *Its mechanics are research/77: arrangement per frame in
   frame-pixel space, the initial configure after arrange, the focus override / stack rules, the
   wearer's placement table `shell.place:<namespace>` (owner ruling), the trusted connection as the
   gate's exception, the filter as `ClientData` bits at insert; spec §4/§8/§9/§10 rev 3.12 are
