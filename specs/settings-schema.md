@@ -1,6 +1,6 @@
 # specs/settings-schema: the generated schema artifact, strata, and reconciliation
 
-**Status:** rev 3 (2026-09-25) — the rev 2 contract re-derived from the stores' source under
+**Status:** rev 4 (2026-09-27) — rev 3 + the per-key axis renamed from `ownership = declarative | runtime` to **`mutability = mutable | immutable`** (§3): the old names implied the wrong thing in both directions — both kinds are declared in Nix, and a `mutable` key is not runtime-only (Nix owns its default, `Reset` returns to it). The words are the comparables' own: NixOS `users.mutableUsers`, KConfig's `[$i]` immutable entries. Field, values, the bus error (`ERR_IMMUTABLE`) and the artifact key change together; per-user stores carry no ownership, so nothing migrates. Rev 3 (2026-09-25) — the rev 2 contract re-derived from the stores' source under
 AGENTS rules 7/8 ([research/58](../docs/research/58-settings-stores-from-comparables.md)).
 Kept, with comparables: the compiled-schema artifact, sparse XDG stores with a state root,
 Set-always-writes/Reset/provenance, relocatable instances, locks as system-layer facts, a single
@@ -40,7 +40,7 @@ range         { min, max } (int/double; optional)
 default       the evaluated build default (post Nix priority resolution)
 class         preference | state                 (§2 — the storage root)
 stratum       build-fact | per-user | device     (§2)
-ownership     declarative | runtime              (§3)
+mutability    mutable | immutable                (§3)
 locked        bool                               (§7; locked ⇒ writes rejected)
 apply         live | restart:<unit> | relogin | reboot   (§6 — a label, not a mechanism)
 description   from the option declaration
@@ -99,13 +99,24 @@ pattern). Nothing is proxied through the session daemon; a client dispatches on 
 system mode exists **only when a target declares a device key** (none does today); the artifact
 reserves the stratum. Handlers for keys with an upstream owner are calls, not stores.
 
-## 3. Ownership
+## 3. Mutability
 
-- **`declarative`** (the default for every exported option): Nix owns the value; runtime writes
-  rejected with `ERR_DECLARATIVE`; the switch reasserts it. NixOS's own shape (`time.timeZone`
-  set; `users.users` declared).
-- **`runtime`** (explicit opt-in on the option): Nix owns the *default*; explicit values survive
-  rebuilds; `Reset` reveals the current default. NixOS's `time.timeZone = null` / `mutableUsers`.
+Every key is declared in Nix. The axis is whether Nix owns the key's *value* or only its
+*default* — NixOS's `users.mutableUsers`, KConfig's `[$i]` immutable entries:
+
+- **`immutable`** (the default for every exported option): Nix owns the value; runtime writes
+  rejected with `ERR_IMMUTABLE`; the switch reasserts it. NixOS's own shape (`time.timeZone`
+  set; `users.users` declared with `mutableUsers = false`). For policy and security-relevant
+  keys, where refusing the write is the point.
+- **`mutable`** (explicit opt-in on the option): Nix owns the *default* — set it in the
+  configuration and it is the default; the wearer's explicit value survives rebuilds; `Reset`
+  reveals the current default. NixOS's `time.timeZone = null` / `mutableUsers = true`; Plasma's
+  kconfig on NixOS. Every per-user *preference* is `mutable` (AGENTS.md rule 3: offer choices).
+
+`immutable` is the key's design; **`locked`** (§7) is this image's policy on a `mutable` key — the
+same refusal with provenance `locked`, generated from the profile module, reversible by the
+administrator without changing the key. Rev 3 called this axis `ownership = declarative | runtime`;
+renamed in rev 4 because both kinds are declarative and `runtime` read as runtime-only.
 
 **`Set` always creates the override, even when equal to the resolved default** — equality is not
 absence of intent (GSettings writes it; `g_settings_get_user_value` tells the two apart; KConfig
@@ -119,9 +130,9 @@ invalid`.
 For key `k` (`D_old/D_new` defaults, optional explicit `U`):
 
 1. `U` absent ⇒ effective value advances silently (dconf; NixOS `dconf update`).
-2. `U` present, valid ⇒ survives (`runtime` keys).
+2. `U` present, valid ⇒ survives (`mutable` keys).
 3. `Reset` ⇒ reveal `D_new`.
-4. Newly `locked`/`declarative` ⇒ `U` is ignored, the enforced value applies, one `Changed`; the
+4. Newly `locked`/`immutable` ⇒ `U` is ignored, the enforced value applies, one `Changed`; the
    stored value is **left in the file** (it is the user's only copy; an older generation reads it
    again).
 5. `U` invalid under the new schema (type, range, enum) ⇒ run declared migrations (§5); if none
@@ -171,7 +182,7 @@ for `device` keys (`mura-settingsd --system`); the same interface on both:
 - `Get(s key) → (v value, s provenance)`; `Set(s key, v value)`; `Reset(s key)`;
   `List(s prefix) → a(s key, v value, s provenance)`; `ListInstances(s template) → as`;
   `DeleteInstance(s instance)`; `GetGeneration() → u`.
-- Errors: `ERR_LOCKED`, `ERR_DECLARATIVE`, `ERR_TYPE`, `ERR_RANGE`, `ERR_UNKNOWN_KEY`,
+- Errors: `ERR_LOCKED`, `ERR_IMMUTABLE`, `ERR_TYPE`, `ERR_RANGE`, `ERR_UNKNOWN_KEY`,
   `ERR_UNKNOWN_INSTANCE`, `ERR_WRONG_BUS` (a per-user key asked of the system mode or the reverse).
 - Signals: `Changed(s key, v value, s provenance)` — every accepted effective-value-or-provenance
   change is durable; *notifications* coalesce per event-loop turn per key, and the final signal of
@@ -183,14 +194,14 @@ the daemon (cosmic's rule): the `mura-settings` CLI reads them directly when the
 
 zxr consumes the daemon and exposes only its own narrow HMD protocol (ADR 0012 §4.5); shell
 components use the bus; entry-policy grants are `places.entry:<place_id>` instances (§1.1) with
-`runtime` ownership and `class = preference`.
+`mutable` and `class = preference`.
 
 ## 9. Conformance checklist
 
 1. Rebuild default-change with/without user value (advance vs survive).
 2. `Set` equal to default ⇒ override created, provenance `Changed` emitted; `Reset` returns to
    default-following.
-3. Declarative write ⇒ `ERR_DECLARATIVE`, no store write.
+3. Immutable write ⇒ `ERR_IMMUTABLE`, no store write.
 4. Kill daemon mid-write ⇒ no torn file; identical resolution on restart.
 5. Stored value invalid under the running schema ⇒ resolves to the default with provenance
    `invalid`; the file is byte-identical afterwards; a generation whose schema accepts it reads

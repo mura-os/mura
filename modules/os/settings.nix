@@ -39,7 +39,7 @@ let
       };
       description = mkOption { type = types.str; default = ""; };
       class = mkOption { type = types.enum [ "preference" "state" ]; default = "preference"; };
-      ownership = mkOption { type = types.enum [ "declarative" "runtime" ]; default = "runtime"; description = "Template keys exist to be written; runtime unless a template says otherwise."; };
+      mutability = mkOption { type = types.enum [ "mutable" "immutable" ]; default = "mutable"; description = "Template keys exist to be written: mutable (Nix default, wearer override) unless a template says otherwise."; };
       apply = mkOption { type = types.str; default = "live"; description = "A label: live | restart:<unit> | relogin | reboot (§6)."; };
     };
   };

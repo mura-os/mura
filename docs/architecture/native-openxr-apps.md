@@ -271,7 +271,7 @@ component in both.
 `system.doubleTapMs`, `system.doublePress` ∈ `show_hide_planes | passthrough | none`,
 `quit.timeout` (stand-in from OpenVR's kill timeout once read), `games.keepPlanes` (Q-D's opt-in,
 per window), `games.controllerSystemButton` (best-effort until the runtime reserves it). All
-`ownership = declarative` (settings-schema.md), seeded from the device contract.
+`mutability = mutable` (settings-schema.md rev 4 §3), seeded from the device contract: the wearer may change them live, `Reset` returns to the seed — ruled 2026-09-27 (research/73 §5 Q1; this section said `declarative` before the rename and the ruling).
 
 ## 10. Rulings (2026-09-26; research/66 §13 has the full positions)
 

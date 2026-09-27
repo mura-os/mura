@@ -303,7 +303,7 @@ M1 measurement): `wm.spawn.distance`, `wm.spawn.elevation`, `wm.spawn.overlap`,
 `wm.size.maximized`, `wm.engine.default` (Q2), `wm.minimize` (Q1), `wm.follow.threshold`,
 `wm.follow.delay`, `wm.follow.rate`, `wm.follow.stop`, `wm.focus.dim`,
 `wm.focus.sibling_alpha`, `wm.external_manager` (the executable of an external manager, empty =
-in-process default). The `ownership` of each is declarative by default (settings-schema.md).
+in-process default). Each is `mutability = mutable` (settings-schema.md rev 4 §3): Nix seeds the default from the contract, the wearer may override it live and the override survives rebuilds, `Reset` returns to the seed — ruled 2026-09-27 (research/73 §5 Q1; rev 0.x of this document said "declarative by default", which in rev 3's vocabulary meant Nix-only).
 
 ## 13. Rulings and open items (research/64 §15 has the full positions)
 

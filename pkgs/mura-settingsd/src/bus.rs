@@ -15,7 +15,7 @@ pub enum BusError {
     #[zbus(error)]
     ZBus(zbus::Error),
     Locked(String),
-    Declarative(String),
+    Immutable(String),
     Type(String),
     Range(String),
     UnknownKey(String),
@@ -29,7 +29,7 @@ impl From<Error> for BusError {
         let m = e.message();
         match e {
             Error::Locked => BusError::Locked(m),
-            Error::Declarative => BusError::Declarative(m),
+            Error::Immutable => BusError::Immutable(m),
             Error::Type => BusError::Type(m),
             Error::Range => BusError::Range(m),
             Error::UnknownKey => BusError::UnknownKey(m),

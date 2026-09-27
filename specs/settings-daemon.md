@@ -97,8 +97,8 @@ For a key `k` of schema `S` (instance `i`):
 
 1. Not in the artifact (and no template matches) → `ERR_UNKNOWN_KEY`.
 2. `locked` → the artifact's `default`, provenance `locked`.
-3. `ownership = declarative` → the artifact's `default`, provenance `default`; `Set` →
-   `ERR_DECLARATIVE`.
+3. `mutability = immutable` → the artifact's `default`, provenance `default`; `Set` →
+   `ERR_IMMUTABLE`.
 4. Stored value present and valid (type, enum, range) → it, provenance `user` (`device` in system
    mode).
 5. Stored value present and invalid → run migrations for `(S, header.schemaVersion)` if below the

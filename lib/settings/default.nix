@@ -39,12 +39,12 @@ let
   keyRecord = { locks, config }: { path, opt }:
     let
       s = opt.muraSettings;
-      ownership = if lib.isFunction (s.ownership or null) then s.ownership config.mura else (s.ownership or "declarative");
+      mutability = if lib.isFunction (s.mutability or null) then s.mutability config.mura else (s.mutability or "immutable");
       id = "${s.schema}.${s.key}";
     in
     assert lib.assertMsg (lib.elem (s.class or "preference") [ "preference" "state" ]) "settings ${id}: class must be preference | state";
     assert lib.assertMsg (lib.elem (s.stratum or "per-user") [ "build-fact" "per-user" "device" ]) "settings ${id}: stratum must be build-fact | per-user | device";
-    assert lib.assertMsg (lib.elem ownership [ "declarative" "runtime" ]) "settings ${id}: ownership must be declarative | runtime";
+    assert lib.assertMsg (lib.elem mutability [ "mutable" "immutable" ]) "settings ${id}: mutability must be mutable | immutable";
     {
       inherit id;
       inherit (s) schema key;
@@ -53,7 +53,7 @@ let
       default = getAttrFromPath path config;
       class = s.class or "preference";
       stratum = s.stratum or "per-user";
-      inherit ownership;
+      inherit mutability;
       locked = lib.elem id locks || (s.stratum or "per-user") == "build-fact";
       apply = s.apply or "live";
     }
@@ -65,7 +65,7 @@ let
     {
       key = kname;
       description = k.description;
-      inherit (k) default class ownership apply;
+      inherit (k) default class mutability apply;
       locked = false;
     }
     // { type = k.type; }

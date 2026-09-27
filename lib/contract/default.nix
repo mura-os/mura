@@ -128,7 +128,7 @@ in
           settings = {
             schema = "hardware.ipd";
             key = "meters";
-            ownership = cfg: if cfg.hardware.ipd.source == "stored" then "runtime" else "declarative";
+            mutability = cfg: if cfg.hardware.ipd.source == "stored" then "mutable" else "immutable";
             # No range: no comparable bounds a stored software IPD (Monado has none); the optics'
             # mechanical range is the device's fact to declare when a target has one.
           };
@@ -453,7 +453,7 @@ in
           description = "Passthrough quality/latency tradeoff. Default favours latency (latency beats cleanliness); the quality knob lives on the geometry pipeline, never the display path.";
           # A per-user preference (settings-schema.md §2): the image sets the default, the wearer
           # may pin either mode; the compositor reads it through the bus.
-          settings = { schema = "xr.passthrough"; key = "latencyMode"; ownership = "runtime"; };
+          settings = { schema = "xr.passthrough"; key = "latencyMode"; mutability = "mutable"; };
         };
         depthBackend = mkOption {
           type = types.enum [ "classical" "vk-qcom" "adreno-dfs" "hexagon" "none" ];
@@ -474,7 +474,7 @@ in
             type = types.enum [ "visible" "hidden" "automatic" ];
             default = "automatic";
             description = "Shell default upper-limb composition policy (per-client overridable), mirroring the visionOS contract.";
-            settings = { schema = "xr.passthrough"; key = "upperLimbVisibility"; ownership = "runtime"; };
+            settings = { schema = "xr.passthrough"; key = "upperLimbVisibility"; mutability = "mutable"; };
           };
         };
       };

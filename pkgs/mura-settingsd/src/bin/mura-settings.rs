@@ -11,7 +11,7 @@
 //!   mura-settings [--system] generation-changed   the NixOS activation hook: Reload on the daemon
 //!   mura-settings --direct get|list …             read the artifact and the files, no bus
 //!                                                 (the consumer discipline of settings-schema.md §7)
-//! Exit: 0; 1 refused (locked/declarative/range/type); 2 unknown key or usage; 3 no bus.
+//! Exit: 0; 1 refused (locked/immutable/range/type); 2 unknown key or usage; 3 no bus.
 
 use mura_settingsd::bus::{from_variant, render_json, to_variant};
 use mura_settingsd::engine::{Error, Mode};
@@ -104,7 +104,7 @@ fn main() {
         eprintln!("mura-settings: {e}");
         exit(match name.rsplit('.').next() {
             Some("UnknownKey") | Some("UnknownInstance") => 2,
-            Some("Locked") | Some("Declarative") | Some("Type") | Some("Range") | Some("WrongBus") => 1,
+            Some("Locked") | Some("Immutable") | Some("Type") | Some("Range") | Some("WrongBus") => 1,
             _ => 3,
         });
     }

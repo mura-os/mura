@@ -18,7 +18,7 @@ pub enum Mode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     Locked,
-    Declarative,
+    Immutable,
     Type,
     Range,
     UnknownKey,
@@ -32,7 +32,7 @@ impl Error {
     pub fn name(&self) -> &'static str {
         match self {
             Error::Locked => "org.mura.Settings1.Error.Locked",
-            Error::Declarative => "org.mura.Settings1.Error.Declarative",
+            Error::Immutable => "org.mura.Settings1.Error.Immutable",
             Error::Type => "org.mura.Settings1.Error.Type",
             Error::Range => "org.mura.Settings1.Error.Range",
             Error::UnknownKey => "org.mura.Settings1.Error.UnknownKey",
@@ -150,7 +150,7 @@ impl Engine {
         if rec.locked {
             return Effective { value: rec.default.clone(), provenance: "locked" };
         }
-        if rec.ownership == "declarative" {
+        if rec.mutability == "immutable" {
             return Effective { value: rec.default.clone(), provenance: "default" };
         }
         let stored = self.store(r, rec).and_then(|s| s.values.get(&r.key).cloned());
@@ -181,15 +181,15 @@ impl Engine {
         store::save(&store::path_for(&root, &name), s).map_err(|e| Error::Io(e.to_string()))
     }
 
-    /// `Set`: refuse locked/declarative/type/range; always write the override; report the new
+    /// `Set`: refuse locked/immutable/type/range; always write the override; report the new
     /// effective value only if value or provenance changed (§3).
     pub fn set(&mut self, id: &str, value: Value) -> Result<Option<Effective>, Error> {
         let (r, rec) = self.lookup(id)?;
         if rec.locked {
             return Err(Error::Locked);
         }
-        if rec.ownership != "runtime" {
-            return Err(Error::Declarative);
+        if rec.mutability != "mutable" {
+            return Err(Error::Immutable);
         }
         let value = coerce(&rec, value)?;
         validate(&rec, &value).map_err(|e| match e {
@@ -212,8 +212,8 @@ impl Engine {
         if rec.locked {
             return Err(Error::Locked);
         }
-        if rec.ownership != "runtime" {
-            return Err(Error::Declarative);
+        if rec.mutability != "mutable" {
+            return Err(Error::Immutable);
         }
         let before = self.effective_of(&r, &rec);
         let had = self.store(&r, &rec).map(|s| s.values.contains_key(&r.key)).unwrap_or(false);
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn refusals() {
         let (mut e, d) = engine(Mode::Session);
-        assert_eq!(e.set("xr.passthrough.enable", Value::from(true)), Err(Error::Declarative));
+        assert_eq!(e.set("xr.passthrough.enable", Value::from(true)), Err(Error::Immutable));
         assert_eq!(e.set("shell.locked.thing", Value::from(4)), Err(Error::Locked));
         assert_eq!(e.get("shell.locked.thing").unwrap().provenance, "locked");
         assert_eq!(e.set("xr.passthrough.latencyMode", Value::from("medium")), Err(Error::Range));

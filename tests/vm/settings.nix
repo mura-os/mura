@@ -64,9 +64,9 @@
         assert get("xr.passthrough.latencyMode") == ("low-latency", "default")
         machine.fail("grep -q latencyMode /home/mura/.config/mura/settings/xr.passthrough.json")
 
-    with subtest("settings: declarative and locked writes are refused and touch nothing (items 3, §7); range and type too"):
+    with subtest("settings: immutable and locked writes are refused and touch nothing (items 3, §7); range and type too"):
         rc, out = user(f"{S} set hardware.ipd.meters 0.064", check=False)
-        assert rc == 1 and "Declarative" in out, (rc, out)
+        assert rc == 1 and "Immutable" in out, (rc, out)
         machine.fail("test -e /home/mura/.config/mura/settings/hardware.ipd.json")
         rc, out = user(f"{S} set xr.passthrough.upperLimbVisibility hidden", check=False)
         assert rc == 1 and "Locked" in out, (rc, out)

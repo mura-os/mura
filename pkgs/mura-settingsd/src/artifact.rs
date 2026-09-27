@@ -34,8 +34,8 @@ pub struct KeyRecord {
     pub class: String,
     #[serde(default = "default_stratum")]
     pub stratum: String,
-    #[serde(default = "default_ownership")]
-    pub ownership: String,
+    #[serde(default = "default_mutability")]
+    pub mutability: String,
     #[serde(default)]
     pub locked: bool,
     #[serde(default = "default_apply")]
@@ -50,8 +50,8 @@ fn default_class() -> String {
 fn default_stratum() -> String {
     "per-user".into()
 }
-fn default_ownership() -> String {
-    "declarative".into()
+fn default_mutability() -> String {
+    "immutable".into()
 }
 fn default_apply() -> String {
     "live".into()
@@ -197,16 +197,16 @@ pub fn fixture() -> Artifact {
 pub const FIXTURE: &str = r#"{
   "artifactVersion": 1,
   "keys": [
-    {"id":"xr.passthrough.latencyMode","schema":"xr.passthrough","key":"latencyMode","type":"enum","values":["low-latency","high-quality"],"default":"low-latency","ownership":"runtime"},
-    {"id":"xr.passthrough.enable","schema":"xr.passthrough","key":"enable","type":"bool","default":false,"ownership":"declarative"},
-    {"id":"hardware.ipd.meters","schema":"hardware.ipd","key":"meters","type":"double","default":0.063,"ownership":"runtime","range":{"min":0.05,"max":0.08}},
-    {"id":"shell.locked.thing","schema":"shell.locked","key":"thing","type":"int","default":3,"ownership":"runtime","locked":true}
+    {"id":"xr.passthrough.latencyMode","schema":"xr.passthrough","key":"latencyMode","type":"enum","values":["low-latency","high-quality"],"default":"low-latency","mutability":"mutable"},
+    {"id":"xr.passthrough.enable","schema":"xr.passthrough","key":"enable","type":"bool","default":false,"mutability":"immutable"},
+    {"id":"hardware.ipd.meters","schema":"hardware.ipd","key":"meters","type":"double","default":0.063,"mutability":"mutable","range":{"min":0.05,"max":0.08}},
+    {"id":"shell.locked.thing","schema":"shell.locked","key":"thing","type":"int","default":3,"mutability":"mutable","locked":true}
   ],
   "schemaVersions": {"xr.passthrough": 1, "hardware.ipd": 1, "shell.locked": 1},
   "templates": {
     "places.entry": {"schemaVersion": 1, "keys": [
-      {"key":"enabled","type":"bool","default":true,"ownership":"runtime"},
-      {"key":"launch","type":"string","default":"","ownership":"runtime"}
+      {"key":"enabled","type":"bool","default":true,"mutability":"mutable"},
+      {"key":"launch","type":"string","default":"","mutability":"mutable"}
     ]}
   }
 }"#;

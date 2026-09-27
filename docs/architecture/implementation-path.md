@@ -582,7 +582,7 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   (`arc`, then `dock`/`band` as the shell clients need them; emphasis) follow the seam;
   adaptive engines only as external managers. The `wm.*` keys of
   [window-workspace-management.md §12](window-workspace-management.md) enter `lib/settings`
-  (the D7 compiler, `ownership = declarative`) with M1's `policy` module, seeded from the
+  (the D7 compiler, `mutability = mutable` — rev 4 vocabulary) with M1's `policy` module, seeded from the
   contract's placement defaults ([device-contract.md](device-contract.md), the panel/placement
   subsection) — no settings code before the module that reads them.
 - **Native OpenXR applications** — [native-openxr-apps.md](native-openxr-apps.md) (draft)

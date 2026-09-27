@@ -11,7 +11,7 @@ the comparables' settings checked for a Mura counterpart. Plan: `user-configurab
 the greeter's PAM flow; ADR 0007's idle and grace timings are in. **Mechanism:**
 [specs/settings-schema.md](../../specs/settings-schema.md) rev 3 (D7, landed) — `mkSetting` on a
 NixOS option compiles a key into `/etc/mura/settings-schema.json`; `mura-settingsd` serves
-`org.mura.Settings1`; ownership `declarative` (Nix owns the value) or `runtime` (Nix owns the
+`org.mura.Settings1`; mutability `immutable` (Nix owns the value) or `mutable` (Nix owns the
 default, the wearer's override survives rebuilds, `Reset` returns to it). **Labels:** every cite is
 `references/<clone>/path:line` from the pins (MANIFEST.json) or a repo path; platform settings
 without source are [external]. **Budget impact:** a research document. Phase B (declaring keys,
@@ -30,7 +30,7 @@ zxr as a consumer, moving calibrations to the contract) begins only after the ow
   fixed silently — hide-cursor-while-typing, the OSK suppression window), **16 device
   calibrations** (all tracker/display numbers now living as `pub const`), **30 engineering
   constants** in rows and a further list in §2.12, **5 contested** rows (11 owner questions in
-  §5, since several questions are about ownership, seeds and mechanism rather than a row), 1
+  §5, since several questions are about mutability, seeds and mechanism rather than a row), 1
   security policy, 1 out of scope. Direction 2 adds **22 finding rows, grouped as 17 findings in
   §3** — knobs every desktop or several XR shells expose for which Mura has no decision at all:
   natural scroll, left-handed buttons, double-click interval, drag threshold, keyboard repeat,
@@ -38,14 +38,13 @@ zxr as a consumer, moving calibrations to the contract) begins only after the ow
   motion, UI scale, idle-delay and lock-delay as named keys, click-freeze, stick deadzone,
   secondary-click-by-hold, sticky/slow/bounce keys, OSK enable.
 - **Ownership posture (owner, 2026-09-27; the KDE-on-NixOS shape).** Every preference is
-  `ownership = runtime`: Nix owns the default (the wearer may set it in their configuration),
+  `mutability = mutable` (spec rev 4 §3 — the axis was renamed from `ownership = declarative | runtime` during this audit because `runtime` read as runtime-only; a `mutable` key is Nix default **and** wearer override): Nix owns the default (the wearer may set it in their configuration),
   the wearer may override it at runtime and the override survives rebuilds, `Reset` returns to
-  Nix, an administrator enforces with locks (spec §7). `declarative` is for policy and
+  Nix, an administrator enforces with locks (spec §7). `immutable` is for policy and
   security-relevant keys only. The 23 wm/system/games keys that
   [window-workspace-management.md §12](../architecture/window-workspace-management.md) and
-  [native-openxr-apps.md §9](../architecture/native-openxr-apps.md) mark "declarative by default"
-  are preferences by the tests below and flip to `runtime` unless a row states a policy reason
-  (§5 Q1 asks whether any does).
+  [native-openxr-apps.md §9](../architecture/native-openxr-apps.md) marked "declarative by default" (Nix-only, in rev 3's words)
+  are preferences by the tests below and are now `mutable` — **ruled 2026-09-27 (Q1: all 23)**; the two design docs are updated.
 - **How zxr should consume settings (§6):** the comparables split between a bus client (mutter
   via GSettings/GDBus, KWin via `KConfigWatcher`, xrdesktop via GSettings) and a file watcher
   (cosmic-comp's `ConfigWatchSource` on calloop; niri's polling thread). `mura-settingsd` is
@@ -87,7 +86,7 @@ decision; a knob with none is a **finding** (§3). Surfaces read, all from the p
 
 **Columns.** `id` · `kind` · `where` (the decision's home) · `now` (value or rule) · `bucket` ·
 `comparable` (precedent + its reason, or "none") · `proposed key · type · default · apply`
-(preferences only; `runtime`, `per-user`, `preference` unless stated) · notes. Defaults proposed
+(preferences only; `mutable`, `per-user`, `preference` unless stated) · notes. Defaults proposed
 are the current values; a different default is an owner item.
 
 ## 2. The table
@@ -246,7 +245,7 @@ are the current values; a different default is an owner item.
 | docked.lock_on_doff / deep_idle | designed | device-contract `lockOnDoffWhileDocked` false, `deepIdleAfter` | doc-only | **preference** | | `session.docked.{lock_on_doff,deep_idle_after_s}` · bool/int · false/null · live |
 | presence.never_unlocks | designed | ADR 0007 | | **constant** (security) | | — |
 | idle.protocols | designed | ADR 0007 | ext-idle-notify, idle-inhibit | **constant** | standard | — |
-| faillock | built | `:626-638` 5 / 300 s | | **policy** (`declarative` stays) | PAM faillock | — |
+| faillock | built | `:626-638` 5 / 300 s | | **policy** (`immutable` stays) | PAM faillock | — |
 | readiness/restart timeouts | built | `:614-623`; `session.nix:100-115` | 30 s; 3/60 s; 1 s; 10 s | **constant** | plasmashell precedent | — |
 | guest.* | designed | multi-user §4 | off | **preference/policy** (admin) | GNOME/KDE guest sessions [external] | `session.guest.*` — the multi-user design's, listed |
 
@@ -312,7 +311,7 @@ sticks/trackballs' wheel emulation, GNOME's gesture-dwell modes and click-type w
 
 ## 4. Declared but undeclared — keys a design names that no `mkSetting` carries
 
-| namespace | keys | doc | stated ownership |
+| namespace | keys | doc | stated mutability (rev 3 words) |
 |---|---|---|---|
 | `input.*` | `targeting.source`, `dwell.enabled`, `dwell.onset_ms`, `dwell.complete_ms`, `pointer.gain`, `pointer.warp`, `magnetism.enabled`, `hand.pinch.{close,open}`, `cursor.ray`, `cursor.scale` (10) | spatial-input §14 | "preferences"; `cursor.*` explicitly `runtime`, `apply = live` |
 | `wm.*` | `spawn.{distance,elevation,overlap,sibling_offset}`, `density.px_per_cm`, `size.{min,max,maximized}`, `engine.default`, `minimize`, `follow.{threshold,delay,rate,stop}`, `focus.{dim,sibling_alpha}`, `external_manager` (17) | window-workspace-management §12 | **declarative by default** |
@@ -321,7 +320,7 @@ sticks/trackballs' wheel emulation, GNOME's gesture-dwell modes and click-type w
 | device-contract | `lockOnDoffWhileDocked`, `deepIdleAfter` | device-contract.md:285-307 | doc-only; not in `lib/contract` |
 
 Compiled today: `hardware.ipd.meters`, `xr.passthrough.latencyMode`, `xr.passthrough.upperLimbVisibility`,
-the `places.entry` template. The settingsd test fixture's `xr.passthrough.enable` (`declarative`)
+the `places.entry` template. The settingsd test fixture's `xr.passthrough.enable` (`immutable`)
 is a fixture, not an option.
 
 ## 5. Owner questions (rule 8 form)
@@ -329,29 +328,34 @@ is a fixture, not an option.
 Each: what is decided · why it is a decision · the comparables' positions · the options ·
 consequences. Options are the comparables' actual positions.
 
-**Q1 — Ownership of the wm/system/games keys.** *Decided:* whether any of the 23 keys wm §12 and
-native-openxr-apps §9 mark `declarative` has a policy reason to refuse the wearer's runtime write.
-*Why a decision:* rule 3 versus the docs' text; the owner's 2026-09-27 posture says `runtime` for
-preferences. *Comparables:* every wm key has a user-writable precedent (kwin-vr's follow family,
-GNOME's focus keys); the press map's *actions* are ruled constants, its *timings* are exposed by
-every platform as accessibility settings [external]. *Options:* (a) all 23 flip to `runtime`
-(the posture); (b) `quit.timeout` and `games.controllerSystemButton` stay `declarative` as safety
-policy, the rest flip. *Consequence:* (a) is one line per key at B1; (b) needs the two rows to
-state their reason in §12/§9. My read: (a) — neither has a comparable that locks it.
+**Q1 — Mutability of the wm/system/games keys — RULED 2026-09-27: all 23 `mutable`.** *Decided:*
+whether any of the 23 keys wm §12 and native-openxr-apps §9 marked `declarative` (rev 3's word
+for Nix-only) has a policy reason to refuse the wearer's runtime write. *Comparables:* every wm key
+has a user-writable precedent (kwin-vr's follow family, GNOME's focus keys); the press map's
+*actions* are ruled constants, its *timings* are exposed by every platform as accessibility
+settings [external]. *Options were:* (a) all 23 `mutable`; (b) `quit.timeout` and
+`games.controllerSystemButton` stay `immutable` as safety policy. *Ruling:* (a) — "they should be
+both": Nix seeds the default, the wearer overrides live, `Reset` returns to Nix. The owner also
+ruled the vocabulary: the axis is now `mutability = mutable | immutable` (spec rev 4 §3), since
+`runtime` implied runtime-only. wm §12 and native-openxr-apps §9 are updated.
 
-**Q2 — `input.hand.pinch.{close,open}` exposed "because they are stand-ins".** *Decided:* whether
-tracker thresholds are keys or contract fields. *Comparables:* no desktop exposes a gesture
-threshold; MRTK3/StereoKit/WiVRn ship them as constants in the runtime or toolkit; xrdesktop
-exposes `grab-window-threshold` 0.25 (`org.xrdesktop.gschema.xml:79`) — one XR shell does. *Options:*
-(a) contract field only (the bucket test); (b) contract field *and* a per-user key layered on it
-(xrdesktop). *Consequence:* (b) means two sources for one number and a settings UI for tracker
-tuning that no platform ships; (a) keeps §14 honest. My read: (a), with §14 amended.
+**Q2 — `input.hand.pinch.{close,open}` — RULED 2026-09-27: layered.** *Decided:* whether tracker
+thresholds are keys or contract fields. *Comparables:* no desktop exposes a gesture threshold;
+MRTK3/StereoKit/WiVRn ship them as constants; xrdesktop exposes `grab-window-threshold` 0.25
+(`org.xrdesktop.gschema.xml:79`). *Options were:* (a) contract field only; (b) contract field
+*and* a per-user key layered on it, the key's Nix default derived from the contract value so
+`Reset` returns to the calibration. *Ruling:* (b) — "not a bad idea". One source of truth for the
+number (the contract), one override on top; `mkSetting`'s `default` is computed from
+`mura.hardware.*` at eval. **Open sub-question (owner):** apply the layering to all 16
+calibrations of §2.5, or only to those with an exposure precedent — pinch/grab threshold
+(xrdesktop), stick deadzone (xrdesktop, WiVRn), click-freeze (three shells)? My read: the latter,
+so half-lives and body-model lengths do not become a settings UI no platform ships.
 
-**Q3 — Pointer acceleration profile.** *Decided:* whether `flat` stays fixed. *Why:* every
-comparable exposes `accel-profile` (GNOME `:188-207`, Hyprland, COSMIC, wayvr's adaptive toggle);
-research/63 §8's reason for flat — no screen to accelerate against — is an argument about the
-*default*, not about withholding the knob. *Options:* (a) key with `flat` default; (b) fixed.
-*Consequence:* (a) is libinput's own option passed through, no code beyond the key. My read: (a).
+**Q3 — Pointer acceleration profile — RULED 2026-09-27: a key, default `flat`.** *Why it was a
+decision:* every comparable exposes `accel-profile` (GNOME `:188-207`, Hyprland, COSMIC, wayvr's
+adaptive toggle); research/63 §8's reason for flat — no screen to accelerate against — is an
+argument about the *default*, not about withholding the knob. libinput's own option passed
+through; no code beyond the key.
 
 **Q4 — Click freeze / stabilisation as a wearer knob.** *Decided:* whether the stabiliser's target
 lock and 50 ms compensation get a user-facing `click_freeze_ms`. *Comparables:* xrdesktop
@@ -443,8 +447,8 @@ does by construction and option (a) must do in addition.
 ## 7. Determinations (what falls out without an owner question)
 
 - **D1 — the buckets hold for 118 of 123 rows;** the 5 contested rows and the 6 questions that
-  are about ownership, seeds or mechanism are §5. Preferences are
-  `runtime` per the owner's posture; calibrations move to `mura.hardware.*`; constants keep their
+  are about mutability, seeds or mechanism are §5. Preferences are
+  `mutable` per the owner's posture; calibrations move to `mura.hardware.*`; constants keep their
   doc comments and get no key.
 - **D2 — the harvest found two code inconsistencies to fix at B3, not decisions:** three pinch
   ladders (`touch.rs` 0.75/0.25, `loss.rs` 0.7/0.5, `bridge.rs` cm) where research/70 §5 records

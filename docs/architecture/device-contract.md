@@ -240,7 +240,7 @@ author picks values from the evidence beside each, and every present value is a 
   385×595 / 2560×1800 / 1024×720 dp; visionOS default 1280×720 pt, no published maximum.
 
 Where the fields live (`mura.hardware.panel` for the fact, a `mura.ux.placement` group for the
-defaults the settings schema seeds — settings-schema.md's `ownership = declarative`) is the
+defaults the settings schema seeds — settings-schema.md's `mutability = mutable`, the contract value being the Nix default) is the
 contract author's call and is flagged as such; the numbers are never chosen here.
 
 ### `mura.hardware.input.*` — the input floor (research/42, ADR 0017 rev 2.1)
