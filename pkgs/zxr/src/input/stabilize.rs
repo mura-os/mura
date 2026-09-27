@@ -26,6 +26,35 @@ pub const GAZE_RELAXATION_THRESHOLD: f32 = 0.1;
 pub const PINCH_CLOSED_THRESHOLD: f32 = 0.9;
 /// Explicit design stand-in: compensate the pose 50 ms before the commit edge.
 pub const COMPENSATION_NS: u64 = 50_000_000;
+
+/// The stabiliser's numbers — `hardware.input.stabilize.*` (the tracker's calibration,
+/// immutable; settings.rs `Prefs::stabilize_cfg`) plus the one layered preference,
+/// `input.pointer.click_freeze_ms` (the compensation window; Q2 ruled, GNOME
+/// `org.gnome.desktop.a11y.mouse` click-assist's shape). The consts above are the defaults.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StabilizeCfg {
+    pub position_half_life_s: f32,
+    pub direction_half_life_s: f32,
+    pub sticky: f32,
+    pub relaxation_ray: f32,
+    pub relaxation_gaze: f32,
+    pub pinch_closed: f32,
+    pub compensation_ns: u64,
+}
+
+impl Default for StabilizeCfg {
+    fn default() -> Self {
+        StabilizeCfg {
+            position_half_life_s: POSITION_HALF_LIFE_S,
+            direction_half_life_s: DIRECTION_HALF_LIFE_S,
+            sticky: STICKY_THRESHOLD,
+            relaxation_ray: RAY_RELAXATION_THRESHOLD,
+            relaxation_gaze: GAZE_RELAXATION_THRESHOLD,
+            pinch_closed: PINCH_CLOSED_THRESHOLD,
+            compensation_ns: COMPENSATION_NS,
+        }
+    }
+}
 const HISTORY_NS: u64 = 250_000_000;
 const HISTORY_LEN: usize = 32;
 const KIND_COUNT: usize = 8;
@@ -112,6 +141,11 @@ impl RayFilter {
     }
 
     pub fn update(&mut self, pose: xr::Posef, time_ns: u64) -> xr::Posef {
+        self.update_with(pose, time_ns, POSITION_HALF_LIFE_S, DIRECTION_HALF_LIFE_S)
+    }
+
+    /// [`update`](Self::update) with the calibration's half-lives.
+    pub fn update_with(&mut self, pose: xr::Posef, time_ns: u64, position_half_life_s: f32, direction_half_life_s: f32) -> xr::Posef {
         if !self.initialized {
             self.pose = pose;
             self.time_ns = time_ns;
@@ -120,8 +154,8 @@ impl RayFilter {
         }
         let dt_s = time_ns.saturating_sub(self.time_ns) as f32 * 1e-9;
         self.time_ns = time_ns;
-        let pa = half_life_alpha(dt_s, POSITION_HALF_LIFE_S);
-        let da = half_life_alpha(dt_s, DIRECTION_HALF_LIFE_S);
+        let pa = half_life_alpha(dt_s, position_half_life_s);
+        let da = half_life_alpha(dt_s, direction_half_life_s);
         self.pose.position.x += (pose.position.x - self.pose.position.x) * pa;
         self.pose.position.y += (pose.position.y - self.pose.position.y) * pa;
         self.pose.position.z += (pose.position.z - self.pose.position.z) * pa;
@@ -154,6 +188,11 @@ impl<T: Copy> TargetLock<T> {
     }
 
     pub fn update(&mut self, current: T, progress: f32, relaxation: f32) -> T {
+        self.update_with(current, progress, relaxation, STICKY_THRESHOLD)
+    }
+
+    /// [`update`](Self::update) with the calibration's sticky threshold.
+    pub fn update_with(&mut self, current: T, progress: f32, relaxation: f32, sticky: f32) -> T {
         if progress < relaxation {
             self.locked = None;
             self.relaxed = true;
@@ -162,7 +201,7 @@ impl<T: Copy> TargetLock<T> {
         if let Some(locked) = self.locked {
             return locked;
         }
-        if progress > STICKY_THRESHOLD {
+        if progress > sticky {
             if self.relaxed {
                 self.locked = Some(current);
             }
@@ -248,9 +287,8 @@ pub struct Stabilize {
     compensators: [Compensator; KIND_COUNT],
     select_held: [bool; KIND_COUNT],
     previous_pinch: [f32; KIND_COUNT],
-    /// `input.pointer.click_freeze_ms` (layered on `hardware.input.stabilize.compensation_ms`):
-    /// how far before the commit edge the pose is taken from
-    pub compensation_ns: u64,
+    /// the calibration and the layered click-freeze (settings.rs `Prefs::stabilize_cfg`)
+    pub cfg: StabilizeCfg,
     prefs_gen: u64,
 }
 
@@ -262,7 +300,7 @@ impl Stabilize {
             compensators: [Compensator::new(); KIND_COUNT],
             select_held: [false; KIND_COUNT],
             previous_pinch: [0.0; KIND_COUNT],
-            compensation_ns: COMPENSATION_NS,
+            cfg: StabilizeCfg::default(),
             prefs_gen: 0,
         }
     }
@@ -282,7 +320,7 @@ impl Stage for Stabilize {
     fn tick(&mut self, st: &mut Zxr, _now_ns: u64) {
         if self.prefs_gen != st.prefs.generation {
             self.prefs_gen = st.prefs.generation;
-            self.compensation_ns = st.prefs.pointer_click_freeze_ms.saturating_mul(1_000_000);
+            self.cfg = st.prefs.stabilize_cfg();
         }
     }
 
@@ -295,8 +333,9 @@ impl Stage for Stabilize {
             self.select_held[i] = pressed;
         }
 
+        let cfg = self.cfg;
         if let Some(pose) = sample.pose {
-            let filtered = self.filters[i].update(pose, sample.time_ns);
+            let filtered = self.filters[i].update_with(pose, sample.time_ns, cfg.position_half_life_s, cfg.direction_half_life_s);
             self.compensators[i].record(sample.time_ns, filtered);
             sample.pose = Some(filtered);
         }
@@ -306,20 +345,20 @@ impl Stage for Stabilize {
             SourceKind::Head | SourceKind::Controller(_) => u8::from(self.select_held[i]) as f32,
             SourceKind::Pointer | SourceKind::Keyboard => 0.0,
         };
-        let relaxation = if sample.kind == SourceKind::Gaze { GAZE_RELAXATION_THRESHOLD } else { RAY_RELAXATION_THRESHOLD };
+        let relaxation = if sample.kind == SourceKind::Gaze { cfg.relaxation_gaze } else { cfg.relaxation_ray };
         if let Some(pose) = sample.pose {
-            sample.pose = Some(self.locks[i].update(pose, progress, relaxation));
+            sample.pose = Some(self.locks[i].update_with(pose, progress, relaxation, cfg.sticky));
         }
 
         // research/63 §3 records Meta's reason: closing a pinch shifts the hand. Apply the
-        // explicit 50 ms stand-in at the commit edge, after sticky locking, so the transport sees
-        // the onset-time target rather than the shifted ray.
+        // compensation window (`input.pointer.click_freeze_ms`, default the calibration's 50 ms)
+        // at the commit edge, after sticky locking, so the transport sees the onset-time target
+        // rather than the shifted ray.
         let button_commit = matches!(sample.button, Some((Button::Select, true)));
-        let pinch_commit =
-            matches!(sample.kind, SourceKind::Hand(_)) && self.previous_pinch[i] < PINCH_CLOSED_THRESHOLD && sample.values.pinch >= PINCH_CLOSED_THRESHOLD;
+        let pinch_commit = matches!(sample.kind, SourceKind::Hand(_)) && self.previous_pinch[i] < cfg.pinch_closed && sample.values.pinch >= cfg.pinch_closed;
         self.previous_pinch[i] = sample.values.pinch;
         if button_commit || pinch_commit {
-            let onset = sample.time_ns.saturating_sub(self.compensation_ns);
+            let onset = sample.time_ns.saturating_sub(cfg.compensation_ns);
             if let Some(pose) = self.compensators[i].pose_at(onset) {
                 sample.pose = Some(pose);
             }

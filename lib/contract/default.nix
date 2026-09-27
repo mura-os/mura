@@ -180,6 +180,19 @@ in
             `hmdButtons` when set — asserted.
           '';
         };
+        systemRole = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = ''
+            Which `hmdButtons` role is the **reserved system control** on the HMD body
+            (native-openxr-apps.md §6 "`hmdButtons.system`": the Steam Frame's Aux, the
+            Galaxy XR's top button, Lynx R-1's R). It may coincide with `selectRole` — at the
+            input floor there is no game to escape from; in a session press length
+            disambiguates (§6, §9 `system.button.long_press_ms`). null = no HMD-body system
+            control (Quest: power and volume only; the controller's system click and the palm
+            gesture remain). Must name a key of `hmdButtons` when set — asserted.
+          '';
+        };
         controllers = mkOption {
           type = types.enum [ "none" "imu-3dof" "optical-6dof" ];
           default = "none";
@@ -824,6 +837,11 @@ in
       assertion = cfg.hardware.input.backRole == null
         || builtins.hasAttr cfg.hardware.input.backRole cfg.hardware.input.hmdButtons;
       message = "mura.hardware.input.backRole = \"${toString cfg.hardware.input.backRole}\" must name a key of mura.hardware.input.hmdButtons or be null (first-run-onboarding.md §4.4).";
+    }
+    {
+      assertion = cfg.hardware.input.systemRole == null
+        || builtins.hasAttr cfg.hardware.input.systemRole cfg.hardware.input.hmdButtons;
+      message = "mura.hardware.input.systemRole = \"${toString cfg.hardware.input.systemRole}\" must name a key of mura.hardware.input.hmdButtons or be null (native-openxr-apps.md §6).";
     }
     {
       # ADR 0017 rev 2: the appliance profile's autologin user must exist in the image.

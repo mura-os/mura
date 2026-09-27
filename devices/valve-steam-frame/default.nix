@@ -41,6 +41,9 @@
       };
       selectRole = "select";
       backRole = "volumeDown";
+      # native-openxr-apps.md §6 / §9 per-target table: the Aux button is also the reserved
+      # system control; press length disambiguates it from select in a session
+      systemRole = "select";
       controllers = "imu-3dof"; # Frame controllers: buttons + IMU before cameras are up
       bluetooth = true;
       proximitySource = "iio";

@@ -24,8 +24,9 @@
 //! the session rather than synthesising an `up` at a position the hand never reached.
 //!
 //! **Pinch stand-ins (flagged):** a commit edge is the sample's `Button::Select` edge when it has
-//! one, else `values.pinch` crossing **≥ 0.75** (close) / **≤ 0.25** (open) — MRTK3's polyfill
-//! thresholds as spatial-input §10 lists them, inverted for `pinch_ext/value` (1 = closed).
+//! one, else `values.pinch` crossing **≥ 0.75** (close) / **≤ 0.5** (open) — MRTK3's select
+//! threshold and its sticky-hover 0.5, the calibration's `hardware.input.hand.pinch.{close,open}`
+//! (one ladder with loss.rs, research/73 D2; the layered `input.hand.pinch.*` overrides it).
 //!
 //! Budget: a three-slot contact table, an eight-bool pinch latch, and a reused op buffer; no
 //! allocation per sample in steady state; no thread.
@@ -44,8 +45,8 @@ pub const CONTACT_COUNT: usize = 3;
 
 /// `pinch_ext/value` at or above which the pinch is a commit (stand-in, MRTK3 — flagged).
 pub const PINCH_CLOSE: f32 = 0.75;
-/// `pinch_ext/value` at or below which a closed pinch releases (stand-in, MRTK3 — flagged).
-pub const PINCH_OPEN: f32 = 0.25;
+/// `pinch_ext/value` at or below which a closed pinch releases (MRTK3 sticky hover 0.5; the calibration's default).
+pub const PINCH_OPEN: f32 = 0.5;
 
 /// One contact id per hand; everything else commits as the targeting source's contact.
 pub fn contact_id(kind: SourceKind) -> u32 {
@@ -331,7 +332,7 @@ mod tests {
         l.plan(&hand(Side::Right, 0.8), Some((m, [0.3, 0.2])), &mut ops);
         assert_eq!(ops, vec![TouchOp::Motion { id: 1, member: m, local: [0.3, 0.2] }, TouchOp::Frame]);
         // between the thresholds nothing changes (hysteresis)
-        l.plan(&hand(Side::Right, 0.5), Some((m, [0.3, 0.2])), &mut ops);
+        l.plan(&hand(Side::Right, 0.6), Some((m, [0.3, 0.2])), &mut ops);
         assert!(ops.is_empty());
         // release
         l.plan(&hand(Side::Right, 0.1), Some((m, [0.3, 0.2])), &mut ops);

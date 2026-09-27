@@ -76,7 +76,9 @@ pub struct GestureCfg {
 
 impl Default for GestureCfg {
     fn default() -> Self {
-        GestureCfg { pinch_close: 0.7, pinch_open: 0.5, poke_down_m: -0.01, poke_up_m: 0.0 }
+        // one ladder with touch.rs and hardware.input.hand.pinch (research/73 D2): WiVRn's
+        // trigger_click_thd is 0.7, MRTK3's select threshold 0.75 — the calibration's 0.75 wins
+        GestureCfg { pinch_close: 0.75, pinch_open: 0.5, poke_down_m: -0.01, poke_up_m: 0.0 }
     }
 }
 
@@ -294,14 +296,14 @@ mod tests {
     }
 
     #[test]
-    fn pinch_uses_wivrns_click_threshold_with_hysteresis() {
+    fn pinch_uses_the_calibrations_ladder_with_hysteresis() {
         let k = SourceKind::Hand(Side::Right);
         let mut l = LossTracker::default();
         let mut s = tracked(k, 0);
-        s.values = Values { pinch: 0.69, ..Values::default() };
+        s.values = Values { pinch: 0.74, ..Values::default() };
         l.observe(&s);
-        assert!(!l.gesture(k).pinch, "0.69 is below trigger_click_thd = 0.7");
-        s.values.pinch = 0.7;
+        assert!(!l.gesture(k).pinch, "0.74 is below the close threshold 0.75 (one ladder with touch.rs, research/73 D2)");
+        s.values.pinch = 0.75;
         l.observe(&s);
         assert!(l.gesture(k).pinch);
         s.values.pinch = 0.6;

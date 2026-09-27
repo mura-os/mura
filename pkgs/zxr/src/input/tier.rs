@@ -257,6 +257,15 @@ impl Arbiter {
         self.loss.cfg.pinch_open = open.min(close);
     }
 
+    /// The calibration (`hardware.input.*`, settings.rs `Prefs::tier_cfg` / `gesture_cfg`): the
+    /// arbiter's thresholds and the loss tracker's whole ladder. Latches are kept — a threshold
+    /// change does not release a gesture or reset the direct-touch band.
+    pub fn set_cfg(&mut self, cfg: TierCfg, gesture: loss::GestureCfg) {
+        self.cfg = cfg;
+        self.gaze.cfg = cfg.gaze;
+        self.loss.cfg = gesture;
+    }
+
     // -- the published answer ------------------------------------------------------------------
 
     pub fn current(&self) -> Selection {
@@ -563,7 +572,8 @@ impl Stage for TierStage {
             if let Some(pin) = Pin::parse(&p.targeting_source) {
                 self.arbiter.set_pin(pin);
             }
-            self.arbiter.set_pinch(p.hand_pinch_close, p.hand_pinch_open);
+            // the calibration and the layered pinch, in one ladder (research/73 D2)
+            self.arbiter.set_cfg(p.tier_cfg(), p.gesture_cfg());
         }
         let out = self.arbiter.tick(now_ns);
         if out.changed {

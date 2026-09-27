@@ -67,6 +67,12 @@ pub struct Calibration {
     pub hit_class_epsilon_m: f32,
     pub palm_cone_deg: f32,
     pub stick_deadzone: f32,
+    /// `hardware.input.hmd.*`: the HMD-body buttons `role=KEY,…` and the select / back / system
+    /// roles (device-contract `hmdButtons`, native-openxr-apps §6); empty = none declared
+    pub hmd_buttons: String,
+    pub hmd_select_role: String,
+    pub hmd_back_role: String,
+    pub hmd_system_role: String,
 }
 
 impl Default for Calibration {
@@ -96,6 +102,10 @@ impl Default for Calibration {
             hit_class_epsilon_m: 0.02,
             palm_cone_deg: 35.0,
             stick_deadzone: 0.0,
+            hmd_buttons: String::new(),
+            hmd_select_role: String::new(),
+            hmd_back_role: String::new(),
+            hmd_system_role: String::new(),
         }
     }
 }
@@ -391,6 +401,10 @@ impl Prefs {
                 hit_class_epsilon_m: m.f("hardware.input.hit.class_epsilon_m", c.hit_class_epsilon_m),
                 palm_cone_deg: m.f("hardware.input.palm.cone_deg", c.palm_cone_deg),
                 stick_deadzone: m.f("hardware.input.stick.deadzone", c.stick_deadzone),
+                hmd_buttons: m.s("hardware.input.hmd.buttons", &c.hmd_buttons),
+                hmd_select_role: m.s("hardware.input.hmd.select_role", &c.hmd_select_role),
+                hmd_back_role: m.s("hardware.input.hmd.back_role", &c.hmd_back_role),
+                hmd_system_role: m.s("hardware.input.hmd.system_role", &c.hmd_system_role),
             },
         }
     }
@@ -442,6 +456,45 @@ impl Prefs {
             double_press: DoublePress::parse(&self.system_double_press).unwrap_or_default(),
             controller_system_button: self.games_controller_system_button,
         }
+    }
+
+    /// The stabiliser's calibration (`hardware.input.stabilize.*`) with the layered
+    /// `input.pointer.click_freeze_ms` as the compensation window.
+    pub fn stabilize_cfg(&self) -> crate::input::stabilize::StabilizeCfg {
+        let h = &self.hardware;
+        crate::input::stabilize::StabilizeCfg {
+            position_half_life_s: h.stab_position_half_life_s.max(0.0),
+            direction_half_life_s: h.stab_direction_half_life_s.max(0.0),
+            sticky: h.stab_sticky.clamp(0.0, 1.0),
+            relaxation_ray: h.stab_relaxation_ray.clamp(0.0, 1.0),
+            relaxation_gaze: h.stab_relaxation_gaze.clamp(0.0, 1.0),
+            pinch_closed: h.stab_pinch_closed.clamp(0.0, 1.0),
+            compensation_ns: self.pointer_click_freeze_ms.saturating_mul(1_000_000),
+        }
+    }
+
+    /// The tier arbiter's calibration (`hardware.input.{gaze,held,near_band,hand.poke}.*`): the
+    /// gaze fallback and return windows, the held-controller test, the near band, and the poke
+    /// depths of the loss tracker's gesture ladder. The stale window is the gaze fallback (the
+    /// symmetry `TierCfg` documents).
+    pub fn tier_cfg(&self) -> crate::input::tier::TierCfg {
+        use crate::input::{held::HeldCfg, quality::GazeCfg, tier::TierCfg};
+        let h = &self.hardware;
+        let gaze = GazeCfg { fallback_ns: h.gaze_fallback_ms.saturating_mul(1_000_000).max(1), return_ns: h.gaze_return_ms.saturating_mul(1_000_000).max(1) };
+        TierCfg {
+            gaze,
+            held: HeldCfg { timeout_ns: h.held_timeout_ms.saturating_mul(1_000_000).max(1), motion_m: h.held_motion_m.max(0.0), axis_thd: h.held_axis.clamp(0.0, 1.0) as f64 },
+            near_enter_m: h.near_enter_m.max(0.0),
+            near_leave_m: h.near_leave_m.max(h.near_enter_m),
+            stale_ns: gaze.fallback_ns,
+        }
+    }
+
+    /// The loss tracker's gesture ladder: the layered pinch (`input.hand.pinch.*`) and the
+    /// calibration's poke depths (`hardware.input.hand.poke.*`).
+    pub fn gesture_cfg(&self) -> crate::input::loss::GestureCfg {
+        let h = &self.hardware;
+        crate::input::loss::GestureCfg { pinch_close: self.hand_pinch_close, pinch_open: self.hand_pinch_open.min(self.hand_pinch_close), poke_down_m: h.poke_down_m, poke_up_m: h.poke_up_m.max(h.poke_down_m) }
     }
 
     /// The scene's scale and placement (`wm.density_px_per_cm`, `wm.spawn.*`).

@@ -123,9 +123,22 @@ impl HmdRoles {
         r
     }
 
-    /// From the environment (`ZXR_HMD_BUTTONS`), until the settings compiler carries the contract.
-    pub fn from_env() -> HmdRoles {
-        std::env::var("ZXR_HMD_BUTTONS").map(|s| HmdRoles::parse(&s)).unwrap_or_default()
+    /// From the environment (`ZXR_HMD_BUTTONS`) — the harness's override; `None` when unset.
+    pub fn from_env() -> Option<HmdRoles> {
+        std::env::var("ZXR_HMD_BUTTONS").ok().map(|s| HmdRoles::parse(&s))
+    }
+
+    /// From the artifact's build facts (`hardware.input.hmd.*`, settings.rs `Calibration`): the
+    /// contract's `hmdButtons` flattened to `role=KEY,…`, and the roles that name its keys
+    /// (`selectRole`, `backRole`, `systemRole`). An empty role, or one naming no button, is none.
+    pub fn from_calibration(buttons: &str, select_role: &str, back_role: &str, system_role: &str) -> HmdRoles {
+        let code_of_role = |role: &str| -> Option<u32> {
+            if role.is_empty() {
+                return None;
+            }
+            buttons.split(',').filter_map(|item| item.trim().split_once('=')).find(|(r, _)| r.trim() == role).and_then(|(_, name)| key_code_of(name.trim()))
+        };
+        HmdRoles { select: code_of_role(select_role), back: code_of_role(back_role), system: code_of_role(system_role) }
     }
 
     /// Which role, if any, an evdev key code carries. `system` is checked first so a code shared
@@ -332,10 +345,22 @@ pub fn start(st: &mut Zxr, handle: &LoopHandle<'static, Zxr>) -> Result<bool, St
     use smithay::backend::session::{Event as SessionEvent, Session};
     use smithay::reexports::input::{DeviceCapability, Libinput};
 
-    st.peripherals.roles = HmdRoles::from_env();
-    if st.peripherals.roles.any() {
-        tracing::info!(roles = ?st.peripherals.roles, "hmdButtons roles (ZXR_HMD_BUTTONS; device-contract 250-271)");
-    }
+    // the HMD-body roles: the artifact's build facts (settings.rs has resolved them by now —
+    // `settings::install` runs before this), or the harness's `ZXR_HMD_BUTTONS` override
+    st.peripherals.roles = match HmdRoles::from_env() {
+        Some(r) => {
+            tracing::info!(roles = ?r, "hmdButtons roles (ZXR_HMD_BUTTONS override; device-contract 250-271)");
+            r
+        }
+        None => {
+            let h = &st.prefs.hardware;
+            let r = HmdRoles::from_calibration(&h.hmd_buttons, &h.hmd_select_role, &h.hmd_back_role, &h.hmd_system_role);
+            if r.any() {
+                tracing::info!(roles = ?r, buttons = %h.hmd_buttons, "hmdButtons roles (hardware.input.hmd.*; device-contract 250-271)");
+            }
+            r
+        }
+    };
     if std::env::var_os("ZXR_NO_LIBINPUT").is_some() {
         tracing::info!("libinput intake skipped (ZXR_NO_LIBINPUT)");
         return Ok(false);
@@ -462,6 +487,20 @@ mod tests {
         assert!(e.flags.contains(Flags::EMULATED));
         let e = sample_of(Raw::Motion { dx: 1.0, dy: 1.0 }, 11, &roles, Flags::EMULATED);
         assert!(e.flags.contains(Flags::EMULATED) && e.kind == SourceKind::Pointer);
+    }
+
+    #[test]
+    fn hmd_button_roles_from_the_contracts_build_facts() {
+        // the Steam Frame's contract: Aux is select and the system control, Vol- is back
+        let buttons = "power=KEY_POWER,volumeUp=KEY_VOLUMEUP,volumeDown=KEY_VOLUMEDOWN,select=KEY_SELECT";
+        let r = HmdRoles::from_calibration(buttons, "select", "volumeDown", "select");
+        assert_eq!(r, HmdRoles { select: Some(KEY_SELECT), back: Some(KEY_VOLUMEDOWN), system: Some(KEY_SELECT) });
+        assert_eq!(r.role_of(KEY_SELECT), Some(Button::System), "a shared code reaches the reserved stage");
+        // the default contract: Vol+ select, Vol- back, no system control
+        let r = HmdRoles::from_calibration("power=KEY_POWER,volumeDown=KEY_VOLUMEDOWN,volumeUp=KEY_VOLUMEUP", "volumeUp", "volumeDown", "");
+        assert_eq!(r, HmdRoles { select: Some(KEY_VOLUMEUP), back: Some(KEY_VOLUMEDOWN), system: None });
+        // a role naming no button is none
+        assert_eq!(HmdRoles::from_calibration("power=KEY_POWER", "select", "", "").select, None);
     }
 
     #[test]

@@ -249,6 +249,23 @@ let
   };
 
   # ...but a back role naming a missing button fails.
+  # native-openxr-apps §6: the reserved system control may share the select button (Steam
+  # Frame Aux) ...
+  inputSystemSharesSelect = {
+    imports = [ validDevice ];
+    config.mura.hardware.input = {
+      hmdButtons = { power = "KEY_POWER"; volumeUp = "KEY_VOLUMEUP"; volumeDown = "KEY_VOLUMEDOWN"; select = "KEY_SELECT"; };
+      selectRole = "select";
+      systemRole = "select";
+    };
+  };
+
+  # ...and a system role naming a missing button fails.
+  inputSystemMissing = {
+    imports = [ validDevice ];
+    config.mura.hardware.input.systemRole = "aux";
+  };
+
   inputBackMissing = {
     imports = [ validDevice ];
     config.mura.hardware.input.backRole = "aux";
@@ -318,6 +335,9 @@ let
     inputDefaultBackVolumeDown = eval.config.mura.hardware.input.backRole == "volumeDown";
     inputNoBackPasses = assertsPass (evalContract inputNoBack);
     inputBackMissingFails = !assertsPass (evalContract inputBackMissing);
+    inputDefaultNoSystemRole = eval.config.mura.hardware.input.systemRole == null;
+    inputSystemSharesSelectPasses = assertsPass (evalContract inputSystemSharesSelect);
+    inputSystemMissingFails = !assertsPass (evalContract inputSystemMissing);
     # Lock triggers default sensibly.
     lockDefaultsOn = eval.config.mura.xr.session.lock.enable == true;
     # multi-user.md §3 / D2: the faillock ladder is a schema value (constraint 9), never

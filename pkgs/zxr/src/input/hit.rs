@@ -52,13 +52,13 @@ pub struct MemberHit {
     pub class: Class,
 }
 
-fn candidate_wins(candidate: MemberHit, current: MemberHit) -> bool {
+fn candidate_wins(candidate: MemberHit, current: MemberHit, epsilon_m: f32) -> bool {
     let cp = candidate.class.priority();
     let bp = current.class.priority();
-    if cp > bp && candidate.distance <= current.distance + CLASS_DEPTH_EPSILON_M {
+    if cp > bp && candidate.distance <= current.distance + epsilon_m {
         return true;
     }
-    if bp > cp && current.distance <= candidate.distance + CLASS_DEPTH_EPSILON_M {
+    if bp > cp && current.distance <= candidate.distance + epsilon_m {
         return false;
     }
     candidate.distance < current.distance
@@ -76,6 +76,19 @@ pub fn hit_member<M>(
     mapped: impl Fn(&M) -> bool,
     class_of: impl Fn(MemberId, Option<u8>) -> Class,
 ) -> Option<MemberHit> {
+    hit_member_with(scene, origin, dir, mapped, class_of, CLASS_DEPTH_EPSILON_M)
+}
+
+/// [`hit_member`] with the depth-offset band from the calibration
+/// (`hardware.input.hit.class_epsilon_m`).
+pub fn hit_member_with<M>(
+    scene: &Scene<M>,
+    origin: [f32; 3],
+    dir: [f32; 3],
+    mapped: impl Fn(&M) -> bool,
+    class_of: impl Fn(MemberId, Option<u8>) -> Class,
+    epsilon_m: f32,
+) -> Option<MemberHit> {
     let (member, local, distance) = scene.hit(origin, dir, |m| mapped(m))?;
     let mut best = MemberHit { member, local, distance, class: class_of(member, scene.band(member)) };
 
@@ -87,7 +100,7 @@ pub fn hit_member<M>(
         let Some(world) = scene.world_pose(id) else { continue };
         let Some((distance, local)) = scene::ray_plane(origin, dir, world, [size[0] * 0.5, size[1] * 0.5]) else { continue };
         let candidate = MemberHit { member: id, local, distance, class: class_of(id, scene.band(id)) };
-        if candidate_wins(candidate, best) {
+        if candidate_wins(candidate, best, epsilon_m) {
             best = candidate;
         }
     }
@@ -108,6 +121,8 @@ pub struct HitStage {
     ticks: u64,
     /// `input.magnetism.enabled` (settings.rs; off by default, spatial-input §4)
     pub magnetism: bool,
+    /// `hardware.input.hit.class_epsilon_m` (the calibration; settings.rs)
+    pub class_epsilon_m: f32,
     /// poke hits produced by magnetism rather than the ray
     pub magnetised: u64,
     prefs_gen: u64,
@@ -115,7 +130,7 @@ pub struct HitStage {
 
 impl HitStage {
     pub const fn new() -> Self {
-        Self { hit_count: 0, ticks: 0, magnetism: false, magnetised: 0, prefs_gen: 0 }
+        Self { hit_count: 0, ticks: 0, magnetism: false, class_epsilon_m: CLASS_DEPTH_EPSILON_M, magnetised: 0, prefs_gen: 0 }
     }
 
     /// Poke magnetism: the fingertip's ray missed every plane; if a mapped plane's nearest point
@@ -145,12 +160,13 @@ impl HitStage {
     fn cast(&mut self, kind: SourceKind, pose: xr::Posef, time_ns: u64, st: &mut Zxr) {
         let origin = [pose.position.x, pose.position.y, pose.position.z];
         let dir = math::rotate(pose.orientation, [0.0, 0.0, -1.0]);
-        let Some(hit) = hit_member(
+        let Some(hit) = hit_member_with(
             &st.scene,
             origin,
             dir,
             |p| p.mapped() && !p.hidden,
             |_, band| Class::from_band(band),
+            self.class_epsilon_m,
         ) else {
             return;
         };
@@ -215,6 +231,7 @@ impl Stage for HitStage {
         if self.prefs_gen != st.prefs.generation {
             self.prefs_gen = st.prefs.generation;
             self.magnetism = st.prefs.magnetism_enabled;
+            self.class_epsilon_m = st.prefs.hardware.hit_class_epsilon_m.max(0.0);
         }
         self.ticks += 1;
         if self.ticks % 60 == 0 {

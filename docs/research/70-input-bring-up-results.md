@@ -226,30 +226,36 @@ binary 6.4 + RADV 4.8 ≈ 19.4 MB.
 
 ## 5. Stand-ins and judgments recorded by the lanes (owner items, rule 4)
 
-Every number below is a stand-in with its source named in the file; none is measured on Mura's
-trackers. Listed so the owner can adjudicate or send them to the first-hardware list.
+Every number below was a stand-in with its source named in the file; none is measured on Mura's
+trackers. **Revised 2026-09-27 (settings Phase B, research/73):** each stand-in is now either a
+*preference* (`lib/contract/preferences.nix`, mutable, the wearer's) or a *calibration*
+(`lib/contract/input-calibration.nix`, `hardware.input.*`, immutable, the tracker's) on the
+settings artifact, or an unchanged judgment. Only the calibrations are the **first-hardware
+list** — the numbers to measure on Mura's trackers at M1; a preference is the wearer's to set and
+needs no measurement to ship.
 
-| where | stand-in / judgment | source and reason |
-|---|---|---|
-| `tier.rs` | controller > hand order when both target; only `Select` pins a commit; stale after 800 ms (= gaze fallback, symmetry) | WiVRn/xrdesktop have no expiry; **flagged** — and research/63 §1's "Transfer" line says hand-over-controller: the design corrects to the code or the code to the design (§6 item 1) |
-| `quality.rs` | gaze fallback 800 ms inside the design's 500–1500 band; return hysteresis = fallback; blink 100–400 ms; §9's fallback treated as the same ladder | no comparable states an eyes→head number |
-| `held.rs` | controller held for 2 s after last activity; motion 0.005 m | WiVRn never puts a controller down; invented, flagged |
-| `loss.rs` | pinch close 0.75 / open 0.5 (WiVRn `trigger_click_thd` + MRTK3 select progress); poke −1 cm down / 0 up | WiVRn `constants.h:42-49` |
-| `stabilize.rs` | 50 ms event-time compensation at the commit edge; MRTK3 select threshold | design §4 |
-| `hit.rs` | shell/affordance wins within 2 cm of ray depth over content | class-aware hit, design §4 |
-| `touch.rs` | contact ids Left 0 / Right 1 / other committer 2; pinch 0.75/0.25 edges; cancel (not up) on loss | smithay `touch/mod.rs:392-403`; no comparable numbers contacts |
-| `pointer.rs` | gain 1.0 px/unit; wheel detent = niri's px; mouse motion takes pointer ownership; head claims the pointer before the tier exists | niri `input/mod.rs:3542-3547` |
-| `cursor.rs` | the cursor layer's 64 px span subtends 1.5° (the client image at its theme pixel size inside it, ≈ 0.6° for a 24 px cursor); one lift 1 mm; fixed 64 px panel, grow-only; hidden while typing; **one element**: a mouse on a plane suppresses the ray's reticle (§9) | MRTK3 scales without an angle; kwin-vr lifts 15 mm, motorcar 10 mm, neither with a reason; the DRM cursor plane's fixed size; desktops hide on key; the one-element rule is the owner's 2026-09-27 ruling on §7's "as above" |
-| `emphasis.rs` | 700 ms ramp (design 500–1000); scale 1 + 0.15·e | HoloLens hover ramp |
-| `reserved.rs` | short < 400 ms, long ≥ 800 ms, double gap 300 ms, chord 1 s; reserved *before* a11y (KWin runs a11y first) | research/66 §11; the order is the design's §1a, flagged as a divergence from KWin |
-| `a11y.rs` | dwell onset 200 ms, dwell 750 ms, tolerance 2° / 20 px | KWin `dwellclicker.cpp:150-152`; research/42 §5 |
-| `activity.rs` | emulated (EI) input counts as activity by default | mutter/KWin spy path; flagged for a headset whose ladder also locks |
-| `bridge.rs` | pinch 1.0/1.5 cm, 8 cm (StereoKit); palm cone 35°, hold 300 ms; dominant hand = right | no platform publishes its cone; the Settings1 dominant-hand key does not exist yet |
-| `mode.rs` | keyboard samples pass the lock (the PAM conversation); everything else consumed | ADR 0007 I1 |
-| `text.rs` | physical-key OSK suppression 5 min (StereoKit); the Seat stage emits keys (`IM_EMITS_KEYS=false`) | `platform.cpp:258` |
-| `libinput.rs` | calloop priority above client sources — not set (calloop 0.14 has no priority API on this smithay); EIS socket path unscoped | flagged |
-| `theme.rs`, `main.rs` | cursor theme/size from `XCURSOR_*` env until a Settings1 key exists; the cursor as **one** quad layer from **one** fixed swapchain (§9; was two quads and a per-size swapchain in the first pass) rather than a panel re-pass per motion | KWin `cursor.cpp:117-126`; every desktop's cursor plane; Meta's merge-co-located-layers guidance (research/67 §1) |
-| `actions.rs` | one extra space locate per tick is folded into the batched call; `MNDX_system_buttons` *exposes* controller home buttons, it does not reserve them (§6 item 3) | Monado |
+| where | stand-in / judgment | source and reason | now |
+|---|---|---|---|
+| `tier.rs` | controller > hand order when both target; only `Select` pins a commit; stale after the gaze fallback (symmetry) | WiVRn/xrdesktop have no expiry; research/63 §1's "Transfer" line says hand-over-controller — the design corrects to the code or the code to the design (§6 item 1) | order: unchanged judgment (§6 item 1). Stale = `hardware.input.gaze.fallback_ms`. `input.targeting.source` pins the ladder (§13) |
+| `quality.rs` | gaze fallback 800 ms inside the design's 500–1500 band; return hysteresis = fallback; blink 100–400 ms | no comparable states an eyes→head number | **first hardware**: `hardware.input.gaze.{fallback_ms,return_ms}` |
+| `held.rs` | controller held for 2 s after last activity; motion 0.005 m; axis 0.01 | WiVRn never puts a controller down; invented | **first hardware**: `hardware.input.held.{timeout_ms,motion_m,axis}` |
+| `loss.rs`, `touch.rs` | pinch close 0.75 / open 0.5 — **one** ladder now (the touch transport's 0.75/0.25 and the tracker's 0.7/0.5 were research/73 D2's inconsistency); poke −1 cm down / 0 up | MRTK3 select threshold + sticky hover; WiVRn `constants.h:42-49` | **first hardware**: `hardware.input.hand.pinch.{close,open}`, `hardware.input.hand.poke.{down_m,up_m}`; the wearer's `input.hand.pinch.{close,open}` layer on the pinch (Q2 ruled) |
+| `stabilize.rs` | half-lives 10 / 50 ms, sticky 0.5, relaxation 0.5 ray / 0.1 gaze, pinch-closed 0.9; 50 ms event-time compensation at the commit edge | MRTK3 select threshold; design §4 | **first hardware**: `hardware.input.stabilize.*`; the compensation window is the wearer's `input.pointer.click_freeze_ms` (Q4, default = the calibration) |
+| `hit.rs` | shell/affordance wins within 2 cm of ray depth over content | class-aware hit, design §4 | **first hardware** (with WM affordance geometry): `hardware.input.hit.class_epsilon_m`. Poke magnetism: `input.magnetism.enabled`, MRTK3's 0.07 m |
+| `touch.rs` | contact ids Left 0 / Right 1 / other committer 2; cancel (not up) on loss | smithay `touch/mod.rs:392-403` | unchanged judgment |
+| `pointer.rs` | gain 1.0 px/unit; wheel detent = niri's px; mouse motion takes pointer ownership; head claims the pointer before the tier exists | niri `input/mod.rs:3542-3547` | `input.pointer.gain`, `input.scroll.factor`, `input.pointer.{warp,accel_profile,left_handed,stick_deadzone}`; ownership rules unchanged |
+| `cursor.rs` | the cursor layer's 64 px span subtends 1.5°; one lift 1 mm; fixed 64 px panel, grow-only; hidden while typing; **one element** (§9) | MRTK3 scales without an angle; kwin-vr lifts 15 mm, motorcar 10 mm; the DRM cursor plane's fixed size; desktops hide on key; the owner's 2026-09-27 ruling | `input.cursor.{ray,scale,angle_deg,hide_when_typing,hide_after_ms}`; the lift and the panel size are unchanged judgments |
+| `emphasis.rs` | 700 ms ramp (design 500–1000); scale 1 + 0.15·e | HoloLens hover ramp | `input.emphasis.{ramp_ms,strength}`, `ui.reduced_motion` |
+| `reserved.rs` | ~~short < 400 ms, long ≥ 800 ms~~ **one boundary at 500 ms** (Q8 ruled); double gap 300 ms; chord 1 s; reserved *before* a11y (KWin runs a11y first) | research/66 §11; native-openxr-apps §9; the order is the design's §1a, flagged as a divergence from KWin | `system.button.{long_press_ms,double_tap_ms,chord_hold_ms,double_press}`, `system.gesture.hold_ms`, `games.controller_system_button`; the stage order is an unchanged judgment |
+| `a11y.rs` | dwell onset 200 ms, dwell 750 ms, tolerance 2° / 20 px | KWin `dwellclicker.cpp:150-152`; research/42 §5 | `input.dwell.{enabled,onset_ms,complete_ms,tolerance_deg}`; the 20 px pointer tolerance is an unchanged stand-in |
+| `activity.rs` | emulated (EI) input counts as activity by default | mutter/KWin spy path; flagged for a headset whose ladder also locks | `session.idle.count_emulated_input` (Q5: default `true`, flagged) |
+| `bridge.rs` | pinch 1.0 / 1.5 cm, 8 cm (StereoKit); palm cone 35°; hold 300 ms; dominant hand = right; body model (Monado `ht_ctrl_emu` averages) | no platform publishes its cone | **first hardware**: `hardware.input.hand.pinch.{close_m,open_m,max_m}`, `hardware.input.palm.cone_deg` (retired with Monado's hand-interaction device, §10). The wearer's: `input.hand.dominant`, `input.body.*` (reclassified per-person, research/73 Q2), `system.gesture.hold_ms` |
+| `mode.rs` | keyboard samples pass the lock (the PAM conversation); everything else consumed | ADR 0007 I1 | unchanged; the lock machine's keys are `session.lock.*`, `session.idle.*`, `session.docked.*` (mode.rs names them) |
+| `text.rs` | physical-key OSK suppression 5 min (StereoKit); the Seat stage emits keys (`IM_EMITS_KEYS=false`) | `platform.cpp:258` | `input.osk.{enabled,suppress_after_key_s}`; the key-emission judgment unchanged |
+| `libinput.rs` | calloop priority above client sources — not set (calloop 0.14 has no priority API on this smithay); EIS socket path unscoped; `ZXR_HMD_BUTTONS` for the contract's roles | flagged | priority and EIS path unchanged; the roles are the artifact's `hardware.input.hmd.{buttons,select_role,back_role,system_role}` (the env is the harness's override); `input.pointer.accel_profile` (Q3 flat), `input.scroll.natural`, `input.touchpad.*` are device config |
+| `theme.rs`, `main.rs` | cursor theme/size from `XCURSOR_*`; the cursor as **one** quad layer from **one** fixed swapchain (§9) | KWin `cursor.cpp:117-126`; every desktop's cursor plane; Meta's merge-co-located-layers guidance (research/67 §1) | `input.cursor.{theme,size}` with the environment as the fallback; the one-layer shape unchanged |
+| `actions.rs` | one extra space locate per tick is folded into the batched call; `MNDX_system_buttons` *exposes* controller home buttons, it does not reserve them (§6 item 3) | Monado | unchanged |
+| `scene.rs` | 1.2 mm/px (8.3 px/cm), spawn 1.5 m, fan 0.9 m / 0.35 rad | R0 stand-ins | `wm.density_px_per_cm` (Q9: 8.3 seeded, 20 named), `wm.spawn.*` |
 
 ## 6. Open joins and corrections found while integrating
 

@@ -12,10 +12,11 @@
 #
 # Values are the stand-ins zxr's code carried until this file (research/70 §5), each with its
 # source; every one is on the first-hardware list — measured on Mura's trackers at M1, not here.
-{ lib, ... }:
+{ lib, config, ... }:
 let
   inherit (lib) mkOption types;
   inherit (import ../settings { inherit lib; }) mkSetting;
+  hw = config.mura.hardware.input;
   # An immutable build-fact key: `c schema key { type; default; description; range? }`.
   c = schema: key: args:
     mkSetting ((removeAttrs args [ "range" ]) // {
@@ -156,6 +157,36 @@ in
         type = types.float;
         default = 35.0;
         description = "Half-angle (degrees) of the palm-toward-face cone that gates the system gesture (spatial-input §10; no platform publishes its angle).";
+      };
+    };
+    # The HMD-body buttons and their roles (device-contract.md `hmdButtons`, `selectRole`,
+    # `backRole`; native-openxr-apps.md §6 `systemRole`) as artifact keys, so the compositor
+    # reads them from the artifact rather than `ZXR_HMD_BUTTONS` (the harness's override).
+    # `buttons` is the attrset flattened to `role=KEY_NAME,…`; the roles name keys of it.
+    hmd = {
+      buttons = c "hardware.input.hmd" "buttons" {
+        type = types.str;
+        default = lib.concatStringsSep "," (lib.mapAttrsToList (role: key: "${role}=${key}") hw.hmdButtons);
+        defaultText = lib.literalExpression "the contract's `hmdButtons`, flattened";
+        description = "The HMD-body buttons by role as evdev key names, `role=KEY,…` (device-contract.md `hmdButtons`). Consumer: zxr input/libinput.rs `HmdRoles`.";
+      };
+      selectRole = c "hardware.input.hmd" "select_role" {
+        type = types.str;
+        default = hw.selectRole;
+        defaultText = lib.literalExpression "config.mura.hardware.input.selectRole";
+        description = "The `buttons` role that is select at the input floor (device-contract.md `selectRole`). Consumer: zxr input/libinput.rs.";
+      };
+      backRole = c "hardware.input.hmd" "back_role" {
+        type = types.str;
+        default = if hw.backRole == null then "" else hw.backRole;
+        defaultText = lib.literalExpression "config.mura.hardware.input.backRole, or \"\"";
+        description = "The `buttons` role that is back/cancel at the floor; empty = none (device-contract.md `backRole`). Consumer: zxr input/libinput.rs.";
+      };
+      systemRole = c "hardware.input.hmd" "system_role" {
+        type = types.str;
+        default = if hw.systemRole == null then "" else hw.systemRole;
+        defaultText = lib.literalExpression "config.mura.hardware.input.systemRole, or \"\"";
+        description = "The `buttons` role that is the reserved system control on the HMD body; empty = none (native-openxr-apps.md §6). Consumer: zxr input/libinput.rs → input/reserved.rs.";
       };
     };
     stick = {
