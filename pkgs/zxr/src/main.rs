@@ -958,6 +958,17 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             },
             _ => format!("error unknown a11y setting {key}"),
         },
+        Cursor(key, val) => match (key.as_str(), cursor::RayCursor::parse(&val), cursor::Scale::parse(&val)) {
+            ("ray", Some(r), _) => {
+                st.input.cursor_ray = Some(r);
+                format!("cursor ray {val}")
+            }
+            ("scale", _, Some(s)) => {
+                st.input.cursor_scale = Some(s);
+                format!("cursor scale {val}")
+            }
+            _ => format!("error cursor {key} {val} (ray both|image|ring; scale angle|plane)"),
+        },
         Present(on) => {
             st.input.set_present(on);
             st.journal.input_presence_changes += 1;

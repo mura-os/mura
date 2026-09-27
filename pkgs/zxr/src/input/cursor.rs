@@ -23,7 +23,14 @@
 //! `VrKwinCursor.qml:20-41` is one node whose texture is rebuilt only on `currentCursorChanged`).
 //! While a **mouse** owns the pointer on a plane, no ray reticle is shown at all (the pointer is
 //! the targeting feedback; the head ray's look changes no focus, §6, and only decides where the
-//! pointer warps, §8) — the owner's ruling on §7's "as above".
+//! pointer warps, §8) — the owner's ruling on §7's "as above". Under **gaze** there is nothing
+//! to rule here: the pointer transport releases a ray-owned pointer when gaze takes the tier
+//! (§5, `pointer.rs` `release_for_gaze`) and the seat clears the reticle, so no plane and no
+//! hit resolve to no layer; a mouse-owned pointer is not released and keeps its cursor.
+//! Two per-user preferences (§14, `runtime`): [`RayCursor`] — what a ray that owns the pointer
+//! shows (ring around the image, image, or ring; default both) — and [`Scale`] — a constant
+//! visual angle or the plane's pixels (default angle). Both reach the seat through the control
+//! socket (`zxr ctl cursor ray|scale …`) until `org.mura.Settings1` carries them.
 //!
 //! This file is the **state**: what the one layer is this tick ([`Cursors::layer`]) — its world
 //! pose, its scale, its content and the key the frame procedure compares to redraw — and the one
@@ -97,6 +104,52 @@ impl Content {
     }
 }
 
+/// What a ray that owns the pointer shows (`input.cursor.ray`, spatial-input §14; the owner's
+/// ruling 2026-09-27: `both` by default, a per-user preference). Applies only while a ray owns
+/// the pointer; a mouse always shows the client's image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum RayCursor {
+    /// the ring composited around the client's image (§7's "reticle plus the client's cursor meaning")
+    #[default]
+    Both,
+    /// the client's image alone — the desktop look; typing or `Hidden` then leaves nothing
+    Image,
+    /// the ring alone
+    Ring,
+}
+
+impl RayCursor {
+    pub fn parse(s: &str) -> Option<RayCursor> {
+        Some(match s {
+            "both" => RayCursor::Both,
+            "image" => RayCursor::Image,
+            "ring" => RayCursor::Ring,
+            _ => return None,
+        })
+    }
+}
+
+/// How the cursor layer is scaled (`input.cursor.scale`, §14). `Angle`: `RETICLE_PX` px subtend
+/// `RETICLE_DEG` at the point's distance — constant apparent size (visionOS's dynamic scale
+/// [external]; MRTK3's reticle) — the default. `Plane`: the plane's own pixel scale (`M_PER_PX`),
+/// so the cursor is proportioned to the content and shrinks with the window's distance (kwin-vr
+/// `VrKwinCursor.qml:14,34`, the desktop model). Two shipping positions; a preference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Scale {
+    #[default]
+    Angle,
+    Plane,
+}
+
+impl Scale {
+    pub fn parse(s: &str) -> Option<Scale> {
+        Some(match s {
+            "angle" => Scale::Angle,
+            "plane" => Scale::Plane,
+            _ => return None,
+        })
+    }
+}
 /// The one cursor layer this tick.
 #[derive(Clone, Debug)]
 pub struct CursorLayer {
@@ -148,15 +201,19 @@ pub struct Cursors {
     reticle: Option<(xr::Posef, [f32; 2], f32)>,
     /// the logical pointer on a plane
     pointer: Option<PointerPoint>,
-    /// the tier's targeting kind this tick (`None` before the Tier stage has run)
+    /// the tier's targeting kind this tick (`None` before the Tier stage has run) — diagnostics
     targeting: Option<SourceKind>,
     client: CursorImageStatus,
     hidden_typing: bool,
+    /// `input.cursor.ray` / `input.cursor.scale` (§14) — pushed by the control socket until
+    /// `org.mura.Settings1` delivers them
+    ray_cursor: RayCursor,
+    scale: Scale,
 }
 
 impl Default for Cursors {
     fn default() -> Self {
-        Cursors { reticle: None, pointer: None, targeting: None, client: CursorImageStatus::default_named(), hidden_typing: false }
+        Cursors { reticle: None, pointer: None, targeting: None, client: CursorImageStatus::default_named(), hidden_typing: false, ray_cursor: RayCursor::default(), scale: Scale::default() }
     }
 }
 
@@ -202,10 +259,30 @@ impl Cursors {
         self.pointer = p;
     }
 
-    /// The tier's targeting kind this tick (§3). Gaze targeting draws nothing (§7): a ray-owned
-    /// pointer shows no cursor under it; a mouse on a plane keeps its own.
+    /// The tier's targeting kind this tick (§3), for diagnostics. Gaze needs no rule here: the
+    /// pointer transport releases a ray-owned pointer when gaze takes the tier (§5,
+    /// `PointerLogic::release_for_gaze`) and the seat clears the reticle, so no plane and no hit
+    /// means no layer.
     pub fn set_targeting(&mut self, t: Option<SourceKind>) {
         self.targeting = t;
+    }
+
+    /// `input.cursor.ray` — what a ray that owns the pointer shows.
+    pub fn set_ray_cursor(&mut self, r: RayCursor) {
+        self.ray_cursor = r;
+    }
+
+    /// `input.cursor.scale` — visual angle or the plane's pixels.
+    pub fn set_scale(&mut self, s: Scale) {
+        self.scale = s;
+    }
+
+    pub fn ray_cursor(&self) -> RayCursor {
+        self.ray_cursor
+    }
+
+    pub fn scale(&self) -> Scale {
+        self.scale
     }
 
     /// The client's cursor as smithay reported it (`SeatHandler::cursor_image`).
@@ -260,29 +337,30 @@ impl Cursors {
 
     /// The one layer this tick (the rule in the module doc), or nothing.
     pub fn layer(&self) -> Option<CursorLayer> {
+        let scale = self.scale;
         let at = |plane_world: xr::Posef, local: [f32; 2], distance: f32| {
             let p = math::pose_apply(plane_world, [local[0], local[1], CURSOR_LIFT_M]);
-            (xr::Posef { orientation: plane_world.orientation, position: xr::Vector3f { x: p[0], y: p[1], z: p[2] } }, m_per_px(distance))
+            let mpp = match scale {
+                Scale::Angle => m_per_px(distance),
+                Scale::Plane => crate::scene::M_PER_PX,
+            };
+            (xr::Posef { orientation: plane_world.orientation, position: xr::Vector3f { x: p[0], y: p[1], z: p[2] } }, mpp)
         };
         if let Some(pt) = self.pointer {
             let image = self.client_image();
             let ray_owner = pt.owner.map(is_ray).unwrap_or(false);
-            // gaze targets (§7 row 1: nothing): a ray-owned pointer shows no cursor under it; a
-            // mouse on a plane keeps its cursor (its position is the mouse's, not the gaze's)
-            if self.targeting == Some(SourceKind::Gaze) && ray_owner {
-                return None;
-            }
             let (pose, m_per_px) = at(pt.plane_world, pt.local, pt.distance);
-            return match (image, ray_owner) {
-                (Some(img), true) => Some(CursorLayer { pose, m_per_px, content: Content::RingAndImage, image: Some(img.clone()) }),
-                (Some(img), false) => Some(CursorLayer { pose, m_per_px, content: Content::Image, image: Some(img.clone()) }),
-                // the owning ray keeps its ring while the image is hidden — at its hit if it has one
-                (None, true) => {
-                    let (pose, m_per_px) = self.reticle.map(|(w, l, d)| at(w, l, d)).unwrap_or((pose, m_per_px));
-                    Some(CursorLayer { pose, m_per_px, content: Content::Ring, image: None })
-                }
-                // a mouse on a plane with nothing to show: no ray reticle either (the ruling)
-                (None, false) => None,
+            // the ring the owning ray keeps while its image is hidden — at its hit if it has one
+            let ring_alone = || {
+                let (pose, m_per_px) = self.reticle.map(|(w, l, d)| at(w, l, d)).unwrap_or((pose, m_per_px));
+                Some(CursorLayer { pose, m_per_px, content: Content::Ring, image: None })
+            };
+            return match (image, ray_owner, self.ray_cursor) {
+                (Some(img), true, RayCursor::Both) => Some(CursorLayer { pose, m_per_px, content: Content::RingAndImage, image: Some(img.clone()) }),
+                (Some(img), true, RayCursor::Image) | (Some(img), false, _) => Some(CursorLayer { pose, m_per_px, content: Content::Image, image: Some(img.clone()) }),
+                (Some(_), true, RayCursor::Ring) | (None, true, RayCursor::Both | RayCursor::Ring) => ring_alone(),
+                // a mouse, or a ray set to image-only, with nothing to show: no ray reticle either
+                (None, true, RayCursor::Image) | (None, false, _) => None,
             };
         }
         let (w, l, d) = self.reticle?;
@@ -419,12 +497,17 @@ mod tests {
         c.set_pointer(Some(PointerPoint { plane_world: plane(), local: [0.0, 0.0], distance: 1.0, owner: Some(SourceKind::Head) }));
         assert_eq!(c.layer().unwrap().content, Content::RingAndImage);
 
-        // gaze targets: a ray-owned pointer shows nothing; a mouse keeps its cursor
+        // gaze takes the tier: the transport releases the head-owned pointer (no plane) and the
+        // seat clears the reticle — no layer, with no gaze rule in here
         c.set_targeting(Some(SourceKind::Gaze));
-        assert!(c.layer().is_none(), "gaze: nothing for a head-owned pointer");
+        c.set_pointer(None);
+        c.clear_reticle();
+        assert!(c.layer().is_none(), "gaze: nothing");
+        // a mouse under gaze keeps its cursor (the transport does not release it)
         c.set_pointer(Some(PointerPoint { plane_world: plane(), local: [0.0, 0.0], distance: 1.0, owner: Some(SourceKind::Pointer) }));
         assert_eq!(c.layer().unwrap().content, Content::Image, "a mouse under gaze keeps its cursor");
         c.set_targeting(Some(SourceKind::Head));
+        c.set_reticle(plane(), [0.1, 0.0], 1.5);
         c.set_pointer(Some(PointerPoint { plane_world: plane(), local: [0.0, 0.0], distance: 1.0, owner: Some(SourceKind::Head) }));
 
         // pointer between planes: the ray's ring at its hit
@@ -432,5 +515,39 @@ mod tests {
         assert_eq!(c.layer().unwrap().content, Content::Ring);
         c.clear_reticle();
         assert!(c.layer().is_none());
+    }
+
+    #[test]
+    fn ray_cursor_and_scale_preferences() {
+        let mut c = Cursors::default();
+        assert_eq!(c.ray_cursor(), RayCursor::Both);
+        assert_eq!(c.scale(), Scale::Angle);
+        c.set_reticle(plane(), [0.1, 0.0], 1.5);
+        c.set_pointer(Some(PointerPoint { plane_world: plane(), local: [0.1, 0.0], distance: 1.5, owner: Some(SourceKind::Controller(Side::Left)) }));
+        // image only for a ray owner: the desktop look; hidden while typing → nothing, like a mouse
+        c.set_ray_cursor(RayCursor::Image);
+        assert_eq!(c.layer().unwrap().content, Content::Image);
+        c.on_key();
+        assert!(c.layer().is_none());
+        c.on_motion();
+        // ring only: the XR-shell look, unaffected by typing
+        c.set_ray_cursor(RayCursor::Ring);
+        assert_eq!(c.layer().unwrap().content, Content::Ring);
+        c.on_key();
+        assert_eq!(c.layer().unwrap().content, Content::Ring);
+        c.on_motion();
+        // the preference never touches a mouse
+        c.set_pointer(Some(PointerPoint { plane_world: plane(), local: [0.1, 0.0], distance: 1.5, owner: Some(SourceKind::Pointer) }));
+        assert_eq!(c.layer().unwrap().content, Content::Image);
+        // scale: angle vs the plane's pixels
+        let angle = c.layer().unwrap().m_per_px;
+        assert!((angle - m_per_px(1.5)).abs() < 1e-9);
+        c.set_scale(Scale::Plane);
+        assert!((c.layer().unwrap().m_per_px - crate::scene::M_PER_PX).abs() < 1e-9);
+        assert_eq!(RayCursor::parse("both"), Some(RayCursor::Both));
+        assert_eq!(RayCursor::parse("image"), Some(RayCursor::Image));
+        assert_eq!(RayCursor::parse("nope"), None);
+        assert_eq!(Scale::parse("plane"), Some(Scale::Plane));
+        assert_eq!(Scale::parse("angle"), Some(Scale::Angle));
     }
 }

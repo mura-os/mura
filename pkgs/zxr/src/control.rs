@@ -36,6 +36,9 @@ pub enum Command {
     Mode(String),
     /// `a11y dwell on|off` / `a11y gain <f>`: the a11y stage's settings (spatial-input §13–§14) from the harness
     A11y(String, String),
+    /// `cursor ray both|image|ring` / `cursor scale angle|plane`: the cursor preferences
+    /// (spatial-input §14 `input.cursor.*`) until `org.mura.Settings1` carries them
+    Cursor(String, String),
     Unknown(String),
 }
 
@@ -125,6 +128,7 @@ pub fn parse(line: &str) -> Command {
         (Some("present"), Some(v)) => Command::Present(v == "on" || v == "1"),
         (Some("mode"), Some(m)) => Command::Mode(m.to_string()),
         (Some("a11y"), Some(k)) => Command::A11y(k.to_string(), it.next().unwrap_or("").to_string()),
+        (Some("cursor"), Some(k)) => Command::Cursor(k.to_string(), it.next().unwrap_or("").to_string()),
         (Some("source"), Some(kind)) => parse_source(kind, it.collect::<Vec<_>>().as_slice()).map(Command::Source).unwrap_or_else(|| Command::Unknown(line.to_string())),
         _ => Command::Unknown(line.to_string()),
     }
@@ -219,6 +223,8 @@ mod tests {
         assert_eq!(parse("present off"), Command::Present(false));
         assert_eq!(parse("a11y dwell on"), Command::A11y("dwell".into(), "on".into()));
         assert_eq!(parse("a11y gain 1.5"), Command::A11y("gain".into(), "1.5".into()));
+        assert_eq!(parse("cursor ray image"), Command::Cursor("ray".into(), "image".into()));
+        assert_eq!(parse("cursor scale plane"), Command::Cursor("scale".into(), "plane".into()));
         assert!(matches!(parse("source hand-left pose 0 1"), Command::Unknown(_)));
         assert!(matches!(parse("source hand-left joints 1 2 3"), Command::Unknown(_)));
     }

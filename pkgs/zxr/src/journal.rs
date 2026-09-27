@@ -124,6 +124,8 @@ pub struct Journal {
     pub input_gaze_scrolls: u64,
     pub input_pointer_handoffs: u64,
     pub input_pointer_warps: u64,
+    /// ray-owned pointers released (`leave`) when gaze took the tier (spatial-input §5)
+    pub input_pointer_releases: u64,
     /// ticks a `cursor-shape-v1` name was the client cursor and went unrendered (§7 theme open)
     pub input_cursor_named_ticks: u64,
     /// the cursor (spatial-input §7; research/70 §9): cursor quad layers submitted (≤ 1 per
@@ -282,6 +284,7 @@ impl Journal {
         let _ = writeln!(s, "input_gaze_scrolls={}", self.input_gaze_scrolls);
         let _ = writeln!(s, "input_pointer_handoffs={}", self.input_pointer_handoffs);
         let _ = writeln!(s, "input_pointer_warps={}", self.input_pointer_warps);
+        let _ = writeln!(s, "input_pointer_releases={}", self.input_pointer_releases);
         let _ = writeln!(s, "input_cursor_named_ticks={}", self.input_cursor_named_ticks);
         let _ = writeln!(s, "cursor_layers={}", self.cursor_layers);
         let _ = writeln!(s, "cursor_layers_per_frame_x100={}", self.cursor_layers * 100 / f);

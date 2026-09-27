@@ -205,15 +205,37 @@ pub struct PointerLogic {
     on_surface: bool,
     pub gaze_scrolls: u64,
     pub warps: u64,
+    /// ray-owned pointers released (`leave`) because gaze took the tier (spatial-input §5)
+    pub releases: u64,
 }
 
 impl Default for PointerLogic {
     fn default() -> Self {
-        PointerLogic { owner: PointerOwner::default(), axis: AxisMap::default(), plane: None, gain: DEFAULT_GAIN, on_surface: false, gaze_scrolls: 0, warps: 0 }
+        PointerLogic { owner: PointerOwner::default(), axis: AxisMap::default(), plane: None, gain: DEFAULT_GAIN, on_surface: false, gaze_scrolls: 0, warps: 0, releases: 0 }
     }
 }
 
 impl PointerLogic {
+    /// Gaze took the tier (spatial-input §3) while a **ray** (head, controller) owns the pointer:
+    /// the ray no longer targets — with gaze present "gaze targets and the trigger commits" (ADR
+    /// 0013 amendment item 1) — so its hover ends: `leave`, no plane, until the ray retakes the
+    /// tier or a pointer-class device claims the pointer (owner kept). A mouse-owned pointer is
+    /// not touched: its position is the mouse's, and a pointer coexists with gaze (visionOS's
+    /// pointer "appears where you're looking" [external], research/63 §8). Never mid-gesture: the
+    /// tier does not change while a commit is in progress (§3), so no `leave` with a button down.
+    /// Returns whether it released.
+    pub fn release_for_gaze(&mut self, targeting: Option<SourceKind>, out: &mut Vec<PtrOp>) -> bool {
+        out.clear();
+        let ray_owner = matches!(self.owner.owner(), Some(SourceKind::Controller(_) | SourceKind::Head | SourceKind::Hand(_)));
+        if targeting == Some(SourceKind::Gaze) && ray_owner && self.plane.is_some() {
+            self.move_to(None, out);
+            out.push(PtrOp::Frame);
+            self.releases += 1;
+            return true;
+        }
+        false
+    }
+
     fn move_to(&mut self, p: Option<(MemberId, [f32; 2])>, out: &mut Vec<PtrOp>) {
         match p {
             Some((member, local)) => {
@@ -354,6 +376,15 @@ impl PointerTransport {
         PointerTransport { pointer, logic: PointerLogic::default(), ops: Vec::with_capacity(8), last_member: None, last_focus: None }
     }
 
+    /// Per tick: release a ray-owned pointer when gaze targets (`PointerLogic::release_for_gaze`).
+    pub fn tick(&mut self, targeting: Option<SourceKind>, now_ns: u64, st: &mut Zxr) {
+        let mut ops = std::mem::take(&mut self.ops);
+        if self.logic.release_for_gaze(targeting, &mut ops) {
+            self.deliver(&ops, InputTime::from_micros(now_ns / 1000), st);
+        }
+        self.ops = ops;
+    }
+
     /// Deliver one pointer-class sample.
     pub fn run(&mut self, s: &Sample, own: Option<&Hit>, look: Option<&Hit>, head: Option<&Hit>, targeting: Option<SourceKind>, st: &mut Zxr) -> Flow {
         let pt = |h: Option<&Hit>| h.map(|h| (h.member, h.local));
@@ -362,6 +393,13 @@ impl PointerTransport {
         let mut ops = std::mem::take(&mut self.ops);
         self.logic.plan(s, &cx, &mut ops);
         let time = InputTime::from_micros(s.time_ns / 1000);
+        let delivered = self.deliver(&ops, time, st);
+        self.ops = ops;
+        if delivered { Flow::Consumed } else { Flow::Continue }
+    }
+
+    /// Execute planned ops on the seat's `wl_pointer`; returns whether anything was sent.
+    fn deliver(&mut self, ops: &[PtrOp], time: InputTime, st: &mut Zxr) -> bool {
         let mut delivered = false;
         for op in ops.iter() {
             delivered = true;
@@ -413,8 +451,7 @@ impl PointerTransport {
                 PtrOp::Frame => self.pointer.frame(st),
             }
         }
-        self.ops = ops;
-        if delivered { Flow::Consumed } else { Flow::Continue }
+        delivered
     }
 }
 
@@ -474,6 +511,42 @@ mod tests {
         let _ = m.frame((0.0, 0.5), AxisSource::Continuous, t).unwrap();
         let f = m.frame((0.0, 0.0), AxisSource::Continuous, t).unwrap();
         assert_eq!(f.stop, (false, true));
+    }
+
+    #[test]
+    fn gaze_releases_a_ray_owned_pointer_but_not_a_mouse() {
+        let (a, _) = members();
+        let mut l = PointerLogic::default();
+        let mut out = Vec::new();
+        // the head owns the pointer on plane a (the floor)
+        assert!(l.owner.drives(SourceKind::Head));
+        l.move_to(Some((a, [0.1, 0.0])), &mut out);
+        assert!(l.plane.is_some());
+        // no gaze: nothing happens
+        assert!(!l.release_for_gaze(Some(SourceKind::Head), &mut out));
+        assert!(out.is_empty() && l.plane.is_some());
+        // gaze takes the tier: leave + frame, no plane, owner kept, counted once
+        assert!(l.release_for_gaze(Some(SourceKind::Gaze), &mut out));
+        assert_eq!(out, vec![PtrOp::Leave, PtrOp::Frame]);
+        assert!(l.plane.is_none());
+        assert_eq!(l.owner.owner(), Some(SourceKind::Head));
+        assert_eq!(l.releases, 1);
+        // already released: idempotent
+        assert!(!l.release_for_gaze(Some(SourceKind::Gaze), &mut out));
+        assert_eq!(l.releases, 1);
+        // the head retakes the tier: its next sample re-enters
+        let mut s = Sample::new(SourceKind::Head, 1).with_pose(math::pose_identity());
+        s.tracked = true;
+        let cx = Context { targeting: Some(SourceKind::Head), own: Some((a, [0.2, 0.0])), look: None, head: None, plane_half: None };
+        l.plan(&s, &cx, &mut out);
+        assert_eq!(out, vec![PtrOp::Move { member: a, local: [0.2, 0.0] }, PtrOp::Frame]);
+        // a mouse-owned pointer is untouched under gaze
+        let mut m = PointerLogic::default();
+        assert!(m.owner.commit(SourceKind::Pointer));
+        m.move_to(Some((a, [0.0, 0.0])), &mut out);
+        assert!(!m.release_for_gaze(Some(SourceKind::Gaze), &mut out));
+        assert!(m.plane.is_some() && out.is_empty());
+        assert_eq!(m.releases, 0);
     }
 
     #[test]

@@ -227,6 +227,15 @@ impl Stage for SeatStage {
         if let Some(c) = st.input.cursor_image.take() {
             self.cursors.set_client_cursor(c);
         }
+        if let Some(r) = st.input.cursor_ray.take() {
+            self.cursors.set_ray_cursor(r);
+        }
+        if let Some(s) = st.input.cursor_scale.take() {
+            self.cursors.set_scale(s);
+        }
+        // gaze took the tier: a ray-owned pointer leaves its plane (spatial-input §5; the ray
+        // no longer targets) — before the cursor is resolved, so no plane means no cursor
+        self.pointer.tick(st.input.tier.map(|t| t.targeting), now_ns, st);
         self.present(st);
         self.emphasis.tick(now_ns);
         // publish the one cursor layer for the frame procedure (main.rs steps 4–6) and the journal
@@ -238,6 +247,7 @@ impl Stage for SeatStage {
         st.journal.input_gaze_scrolls = self.pointer.logic.gaze_scrolls;
         st.journal.input_pointer_handoffs = self.pointer.logic.owner.handoffs;
         st.journal.input_pointer_warps = self.pointer.logic.warps;
+        st.journal.input_pointer_releases = self.pointer.logic.releases;
         st.journal.input_cursor_named_ticks = st.input.cursor_named_ticks;
     }
 }

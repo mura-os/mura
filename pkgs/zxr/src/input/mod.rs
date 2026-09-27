@@ -478,6 +478,10 @@ pub struct Input {
     /// §14); the A11y stage takes them at its next `tick`
     pub a11y_dwell: Option<bool>,
     pub a11y_gain: Option<f64>,
+    /// cursor preferences pushed from the control socket (later `org.mura.Settings1`
+    /// `input.cursor.ray` / `input.cursor.scale`, spatial-input §14); the seat stage takes them
+    pub cursor_ray: Option<cursor::RayCursor>,
+    pub cursor_scale: Option<cursor::Scale>,
     /// the client's cursor as `SeatHandler::cursor_image` last reported it (cursor-shape names and
     /// `set_cursor` surfaces alike); taken by the seat stage each tick (spatial-input §7)
     pub cursor_image: Option<smithay::input::pointer::CursorImageStatus>,
@@ -494,7 +498,7 @@ pub struct Input {
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, tick_event_count: 0, tick_event_time_sum_ns: 0, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_image: None, cursor_layer: None, cursor_inputs: None, cursor_named_ticks: 0, emphasis: None }
+        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, tick_event_count: 0, tick_event_time_sum_ns: 0, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_ray: None, cursor_scale: None, cursor_image: None, cursor_layer: None, cursor_inputs: None, cursor_named_ticks: 0, emphasis: None }
     }
 }
 
