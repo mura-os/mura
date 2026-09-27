@@ -676,7 +676,14 @@ yet and inherit the predicate when they land.
   design's call) — until then `background` surfaces are accepted and not composed (mapped,
   frame callbacks on the fallback cadence), which is what a wallpaper client tolerates.
 
-Rulings are recorded in the spec revision that follows (rev 3.11) and in §9 here.
+**Status of the owner items (2026-09-27):** put to the owner and **not ruled** (the question was
+skipped). To keep the workstream moving without laundering a decision (rule 4), the
+implementation takes **provisional** positions, each a one-value settings key so the ruling is a
+number change, and each marked *provisional* in spec rev 3.11 and shell-plane rev 0.2:
+Q1a → (b) a fixed rectangle, `shell.head.extent_deg` seeded 90×70 (the anchoring protocol's own
+example, `protocols/zxr-layer-anchoring-v1.xml:31-35`); Q1b → 0.5 m, `shell.head.distance_m`
+(the two XR comparables that state a number, WiVRn and WayVR, both say 0.5); Q2 → as proposed;
+Q3 → as proposed. **These remain open items with the owner as decider** (spec §14).
 
 ## 10. Sources
 
