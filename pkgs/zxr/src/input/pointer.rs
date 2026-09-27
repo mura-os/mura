@@ -72,15 +72,30 @@ pub fn button_code(b: Button) -> Option<u32> {
 /// to 0 after moving (smithay: "Using `AxisSource::Finger` requires a stop event to be sent",
 /// `input/pointer/mod.rs:1117-1124`; libinput guarantees the terminating 0 for finger,
 /// `backend/input/mod.rs:363-369`).
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct AxisMap {
     moving: (bool, bool),
+    /// `input.scroll.factor`: multiplies every axis value (GNOME touchpad `scroll-speed` "adjusts
+    /// the scroll delta", niri `scroll-factor`, Hyprland `scroll_factor` — research/73 row
+    /// pointer.wheel_px); the wheel's `v120` steps are the device's and are not scaled
+    pub scroll_factor: f64,
+    /// `input.pointer.stick_deadzone` (layered on `hardware.input.stick.deadzone`): a
+    /// `Continuous` sample whose magnitude is under it is a zero — the runtime's own deadzone
+    /// is upstream of this; 0 disables it
+    pub stick_deadzone: f64,
+}
+
+impl Default for AxisMap {
+    fn default() -> Self {
+        AxisMap { moving: (false, false), scroll_factor: 1.0, stick_deadzone: 0.0 }
+    }
 }
 
 impl AxisMap {
     /// The frame for one axis sample, or `None` when there is nothing to send (a 0 on an axis
     /// that was not moving).
     pub fn frame(&mut self, axis: (f64, f64), source: AxisSource, time: InputTime) -> Option<AxisFrame> {
+        let axis = if source == AxisSource::Continuous && self.stick_deadzone > 0.0 && axis.0.hypot(axis.1) < self.stick_deadzone { (0.0, 0.0) } else { axis };
         let mut f = AxisFrame::new(time).source(match source {
             AxisSource::Wheel => SmAxisSource::Wheel,
             AxisSource::Finger => SmAxisSource::Finger,
@@ -94,10 +109,10 @@ impl AxisMap {
                 any = true;
                 match source {
                     AxisSource::Wheel => {
-                        f = f.v120(a, (v * 120.0).round() as i32).value(a, v * WHEEL_PX_PER_DETENT);
+                        f = f.v120(a, (v * 120.0).round() as i32).value(a, v * WHEEL_PX_PER_DETENT * self.scroll_factor);
                     }
                     AxisSource::Finger | AxisSource::Continuous => {
-                        f = f.value(a, v);
+                        f = f.value(a, v * self.scroll_factor);
                         *moving = true;
                     }
                 }
@@ -193,6 +208,30 @@ pub struct Context {
     pub plane_half: Option<[f32; 2]>,
 }
 
+/// `input.pointer.warp` (spatial-input §8, §14): where the mouse pointer goes when the wearer's
+/// look has moved to another plane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Warp {
+    /// the looked-at plane at the gaze point, degrading to the head ray's hit (the §8 rule)
+    #[default]
+    Gaze,
+    /// the head ray's hit only — gaze is never consulted for the warp
+    Head,
+    /// never warp: the pointer stays on its plane until it leaves the bounds (§8's angular ray)
+    Off,
+}
+
+impl Warp {
+    pub fn parse(s: &str) -> Option<Warp> {
+        match s {
+            "gaze" => Some(Warp::Gaze),
+            "head" => Some(Warp::Head),
+            "off" => Some(Warp::Off),
+            _ => None,
+        }
+    }
+}
+
 /// The pure pointer planner: ownership, the pointer's plane position, the axis latch.
 #[derive(Debug)]
 pub struct PointerLogic {
@@ -202,6 +241,8 @@ pub struct PointerLogic {
     pub plane: Option<(MemberId, [f32; 2])>,
     /// logical px per device unit (`input.pointer.gain`)
     pub gain: f64,
+    /// `input.pointer.warp`
+    pub warp: Warp,
     on_surface: bool,
     pub gaze_scrolls: u64,
     pub warps: u64,
@@ -211,7 +252,7 @@ pub struct PointerLogic {
 
 impl Default for PointerLogic {
     fn default() -> Self {
-        PointerLogic { owner: PointerOwner::default(), axis: AxisMap::default(), plane: None, gain: DEFAULT_GAIN, on_surface: false, gaze_scrolls: 0, warps: 0, releases: 0 }
+        PointerLogic { owner: PointerOwner::default(), axis: AxisMap::default(), plane: None, gain: DEFAULT_GAIN, warp: Warp::default(), on_surface: false, gaze_scrolls: 0, warps: 0, releases: 0 }
     }
 }
 
@@ -277,8 +318,15 @@ impl PointerLogic {
             SourceKind::Pointer => {
                 if let Some((dx, dy)) = s.delta {
                     self.owner.commit(SourceKind::Pointer);
-                    // warp when the look has moved to another member (§8; ADR 0013 item 6)
-                    if let Some((lm, ll)) = cx.look {
+                    // warp when the look has moved to another member (§8; ADR 0013 item 6) —
+                    // `input.pointer.warp`: to the gaze point (degrading to head), to the head
+                    // ray's hit, or never
+                    let look = match self.warp {
+                        Warp::Gaze => cx.look,
+                        Warp::Head => cx.head,
+                        Warp::Off => None,
+                    };
+                    if let Some((lm, ll)) = look {
                         if self.plane.map(|(m, _)| m != lm).unwrap_or(false) {
                             self.plane = Some((lm, ll));
                             self.warps += 1;
@@ -663,6 +711,53 @@ mod tests {
         // the next motion lands at the head hit again
         l.plan(&mv, &cx_same, &mut ops);
         assert!(matches!(ops[0], PtrOp::Move { member, .. } if member == b));
+    }
+
+    #[test]
+    fn warp_setting_head_and_off() {
+        let (a, b) = members();
+        let mut mv = Sample::new(SourceKind::Pointer, 1);
+        mv.delta = Some((1.0, 0.0));
+        let on_a = Context { head: Some((a, [0.0, 0.0])), look: Some((a, [0.0, 0.0])), plane_half: Some([0.5, 0.5]), ..Default::default() };
+        // gaze looks at `b`, the head ray still hits `a`
+        let look_b = Context { head: Some((a, [0.0, 0.0])), look: Some((b, [0.3, 0.3])), plane_half: Some([0.5, 0.5]), ..Default::default() };
+        let mut ops = Vec::new();
+        // `head`: the gaze look does not warp; a head hit on another member does
+        let mut l = PointerLogic { warp: Warp::Head, ..Default::default() };
+        l.plan(&mv, &on_a, &mut ops);
+        l.plan(&mv, &look_b, &mut ops);
+        assert_eq!(l.warps, 0, "gaze alone never warps under `head`");
+        assert!(matches!(l.plane, Some((m, _)) if m == a));
+        let head_b = Context { head: Some((b, [0.3, 0.3])), look: Some((b, [0.3, 0.3])), plane_half: Some([0.5, 0.5]), ..Default::default() };
+        l.plan(&mv, &head_b, &mut ops);
+        assert_eq!(l.warps, 1);
+        // `off`: never
+        let mut l = PointerLogic { warp: Warp::Off, ..Default::default() };
+        l.plan(&mv, &on_a, &mut ops);
+        l.plan(&mv, &head_b, &mut ops);
+        assert_eq!(l.warps, 0);
+        assert!(matches!(l.plane, Some((m, _)) if m == a), "stays on its plane until it leaves the bounds");
+        assert_eq!(Warp::parse("gaze"), Some(Warp::Gaze));
+        assert_eq!(Warp::parse("nope"), None);
+    }
+
+    #[test]
+    fn scroll_factor_scales_values_and_the_stick_deadzone_zeroes_small_sticks() {
+        let t = InputTime::from_micros(1);
+        let mut m = AxisMap { scroll_factor: 2.0, ..Default::default() };
+        let f = m.frame((0.0, 1.0), AxisSource::Wheel, t).unwrap();
+        assert_eq!(f.v120, Some((0, 120)), "the detent count is the device's");
+        assert_eq!(f.axis, (0.0, WHEEL_PX_PER_DETENT * 2.0), "the value is scaled");
+        let f = m.frame((0.0, 3.0), AxisSource::Finger, t).unwrap();
+        assert_eq!(f.axis, (0.0, 6.0));
+        let mut m = AxisMap { stick_deadzone: 0.2, ..Default::default() };
+        assert!(m.frame((0.1, 0.1), AxisSource::Continuous, t).is_none(), "|0.14| < 0.2: nothing moved, nothing to send");
+        let f = m.frame((0.0, 0.5), AxisSource::Continuous, t).unwrap();
+        assert_eq!(f.axis, (0.0, 0.5));
+        let f = m.frame((0.1, 0.1), AxisSource::Continuous, t).unwrap();
+        assert!(f.stop.1, "back inside the deadzone: the axis stops");
+        let mut m = AxisMap::default();
+        assert!(m.frame((0.1, 0.1), AxisSource::Continuous, t).is_some(), "deadzone 0 = off (the calibration's default)");
     }
 
     #[test]

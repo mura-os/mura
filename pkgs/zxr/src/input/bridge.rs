@@ -43,8 +43,7 @@ use openxr as xr;
 use super::{Flags, Quality, Sample, Side, SourceKind};
 use crate::xr::math;
 
-/// Stand-in until `org.mura.Settings1` carries the dominant hand (spatial-input §14 lists no key
-/// yet — flagged in the lane report).
+/// `input.hand.dominant`'s default (preferences.nix); the runtime value is [`BridgeCfg::dominant`].
 pub const DOMINANT: Side = Side::Right;
 /// StereoKit `input_hand.cpp:400`: pinch activates at 1.0 cm tip distance …
 pub const PINCH_CLOSE_M: f32 = 0.010;
@@ -54,13 +53,37 @@ pub const PINCH_OPEN_M: f32 = 0.015;
 pub const PINCH_MAX_M: f32 = 0.08;
 /// cos 35°: the palm-toward-head cone (stand-in, no comparable publishes its angle).
 pub const PALM_FACING_COS: f32 = 0.819_152;
-/// the pinch-and-hold duration that completes the reserved gesture (stand-in).
+/// the pinch-and-hold duration that completes the reserved gesture (stand-in;
+/// `system.gesture.hold_ms`).
 pub const HOLD_NS: u64 = 300_000_000;
 
-/// Monado `ht_ctrl_emu.cpp:310-312`: body constants for the shoulder pivot.
+/// Monado `ht_ctrl_emu.cpp:310-312`: body constants for the shoulder pivot — the defaults of
+/// `input.body.*` (the wearer's, per the owner's reclassification in research/73 Q2).
 const SHOULDER_HALF_WIDTH_M: f32 = (39.0 / 2.0 - 4.0) * 0.01;
 const HEAD_LENGTH_M: f32 = 0.10;
 const NECK_LENGTH_M: f32 = 0.07;
+
+/// Everything the bridge reads from settings (settings.rs `Prefs::bridge_cfg`): the wearer's
+/// preferences (dominant hand, body model, gesture hold) and the tracker's calibrations (the
+/// metre ladder of the pinch, the palm cone — `hardware.input.*`, immutable).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BridgeCfg {
+    pub dominant: Side,
+    pub pinch_close_m: f32,
+    pub pinch_open_m: f32,
+    pub pinch_max_m: f32,
+    pub palm_facing_cos: f32,
+    pub hold_ns: u64,
+    pub shoulder_half_m: f32,
+    pub head_len_m: f32,
+    pub neck_len_m: f32,
+}
+
+impl Default for BridgeCfg {
+    fn default() -> Self {
+        BridgeCfg { dominant: DOMINANT, pinch_close_m: PINCH_CLOSE_M, pinch_open_m: PINCH_OPEN_M, pinch_max_m: PINCH_MAX_M, palm_facing_cos: PALM_FACING_COS, hold_ns: HOLD_NS, shoulder_half_m: SHOULDER_HALF_WIDTH_M, head_len_m: HEAD_LENGTH_M, neck_len_m: NECK_LENGTH_M }
+    }
+}
 
 pub const PALM: usize = 0;
 pub const WRIST: usize = 1;
@@ -163,21 +186,31 @@ pub fn palm_normal(palm: xr::Posef) -> [f32; 3] {
 
 /// Palm turned toward the head: normal · (head − palm) within the cone.
 pub fn palm_faces_head(palm: xr::Posef, head_pos: [f32; 3]) -> bool {
+    palm_faces_head_within(palm, head_pos, PALM_FACING_COS)
+}
+
+/// [`palm_faces_head`] with the cone from the calibration (`hardware.input.palm.cone_deg`).
+pub fn palm_faces_head_within(palm: xr::Posef, head_pos: [f32; 3], facing_cos: f32) -> bool {
     let to_head = norm(sub(head_pos, v3(palm.position)));
-    dot(palm_normal(palm), to_head) > PALM_FACING_COS
+    dot(palm_normal(palm), to_head) > facing_cos
 }
 
 /// The aim ray (`ht_ctrl_emu.cpp:308-359`): origin at the index knuckle, pointing from the
 /// same-side shoulder through it; up = world +Y.
 pub fn aim_pose(side: Side, joints: &Joints, head: xr::Posef) -> xr::Posef {
+    aim_pose_with(&BridgeCfg::default(), side, joints, head)
+}
+
+/// [`aim_pose`] with the wearer's body model (`input.body.*`).
+pub fn aim_pose_with(cfg: &BridgeCfg, side: Side, joints: &Joints, head: xr::Posef) -> xr::Posef {
     let head_pos = v3(head.position);
-    let chest = add(add(head_pos, math::rotate(head.orientation, [0.0, -HEAD_LENGTH_M, 0.0])), [0.0, -NECK_LENGTH_M, 0.0]);
+    let chest = add(add(head_pos, math::rotate(head.orientation, [0.0, -cfg.head_len_m, 0.0])), [0.0, -cfg.neck_len_m, 0.0]);
     let mut fwd = scale(norm(math::rotate(head.orientation, [0.0, 0.0, -1.0])), 2.0);
     fwd = add(fwd, norm(sub(v3(joints[WRIST].position), chest)));
     fwd[1] = 0.0;
     let fwd = norm(fwd);
     let right = norm(cross(fwd, [0.0, 1.0, 0.0]));
-    let shoulder = add(chest, scale(right, if side == Side::Right { SHOULDER_HALF_WIDTH_M } else { -SHOULDER_HALF_WIDTH_M }));
+    let shoulder = add(chest, scale(right, if side == Side::Right { cfg.shoulder_half_m } else { -cfg.shoulder_half_m }));
     let origin = v3(joints[INDEX_PROXIMAL].position);
     let dir = norm(sub(origin, shoulder));
     xr::Posef { orientation: look_rotation(dir, [0.0, 1.0, 0.0]), position: joints[INDEX_PROXIMAL].position }
@@ -186,14 +219,25 @@ pub fn aim_pose(side: Side, joints: &Joints, head: xr::Posef) -> xr::Posef {
 /// StereoKit's activation (`input_hand.cpp:395-407`): 1.0 at or under the activation distance,
 /// linear to 0.0 at [`PINCH_MAX_M`]; the activation distance is the hysteresis-side one.
 pub fn pinch_value(tip_distance_m: f32, was_pinched: bool) -> f32 {
-    let act = if was_pinched { PINCH_OPEN_M } else { PINCH_CLOSE_M };
-    (1.0 - (tip_distance_m - act) / (PINCH_MAX_M - act)).clamp(0.0, 1.0)
+    pinch_value_with(&BridgeCfg::default(), tip_distance_m, was_pinched)
+}
+
+/// [`pinch_value`] on the calibration's metre ladder (`hardware.input.hand.pinch.{close_m,open_m,max_m}`).
+pub fn pinch_value_with(cfg: &BridgeCfg, tip_distance_m: f32, was_pinched: bool) -> f32 {
+    let act = if was_pinched { cfg.pinch_open_m } else { cfg.pinch_close_m };
+    (1.0 - (tip_distance_m - act) / (cfg.pinch_max_m - act)).clamp(0.0, 1.0)
+}
+
+/// The full derivation for one hand this tick, on the default configuration (tests, the
+/// stateless helper); the runtime path is [`derive_with`].
+pub fn derive(side: Side, joints: &Joints, tracked: bool, head: xr::Posef, now_ns: u64, st: &mut State) -> Derived {
+    derive_with(&BridgeCfg::default(), side, joints, tracked, head, now_ns, st)
 }
 
 /// The full derivation for one hand this tick.
-pub fn derive(side: Side, joints: &Joints, tracked: bool, head: xr::Posef, now_ns: u64, st: &mut State) -> Derived {
+pub fn derive_with(cfg: &BridgeCfg, side: Side, joints: &Joints, tracked: bool, head: xr::Posef, now_ns: u64, st: &mut State) -> Derived {
     let mut flags = Flags::BRIDGED;
-    if side == DOMINANT {
+    if side == cfg.dominant {
         flags.insert(Flags::DOMINANT);
     }
     if !tracked {
@@ -202,18 +246,18 @@ pub fn derive(side: Side, joints: &Joints, tracked: bool, head: xr::Posef, now_n
         return Derived { aim: None, poke: None, pinch: 0.0, pinched: false, tracked: false, ready: false, flags };
     }
     let tip_dist = len(sub(v3(joints[THUMB_TIP].position), v3(joints[INDEX_TIP].position)));
-    let pinch = pinch_value(tip_dist, st.pinched);
-    let pinched = tip_dist <= if st.pinched { PINCH_OPEN_M } else { PINCH_CLOSE_M };
-    let facing = palm_faces_head(joints[PALM], v3(head.position));
+    let pinch = pinch_value_with(cfg, tip_dist, st.pinched);
+    let pinched = tip_dist <= if st.pinched { cfg.pinch_open_m } else { cfg.pinch_close_m };
+    let facing = palm_faces_head_within(joints[PALM], v3(head.position), cfg.palm_facing_cos);
 
     // the reserved gesture: posture-gated, deliberate (held), affordance only while held
     // (spatial-input §2 "The reserved system input")
     let mut menu = false;
     if facing && pinched {
         let since = *st.hold_since_ns.get_or_insert(now_ns);
-        st.gesture = now_ns.saturating_sub(since) >= HOLD_NS;
+        st.gesture = now_ns.saturating_sub(since) >= cfg.hold_ns;
     } else {
-        if st.gesture && !pinched && facing && side != DOMINANT {
+        if st.gesture && !pinched && facing && side != cfg.dominant {
             menu = true;
         }
         st.hold_since_ns = None;
@@ -226,7 +270,7 @@ pub fn derive(side: Side, joints: &Joints, tracked: bool, head: xr::Posef, now_n
     if menu {
         flags.insert(Flags::MENU_PRESSED);
     }
-    Derived { aim: Some(aim_pose(side, joints, head)), poke: Some(joints[INDEX_TIP]), pinch, pinched, tracked: true, ready: !facing, flags }
+    Derived { aim: Some(aim_pose_with(cfg, side, joints, head)), poke: Some(joints[INDEX_TIP]), pinch, pinched, tracked: true, ready: !facing, flags }
 }
 
 /// Write a derivation into a sample (the same fields the action path fills).
@@ -261,6 +305,11 @@ pub fn joints_from_floats(f: &[f32]) -> Option<Joints> {
 
 /// The injector's entry with state (hysteresis and the hold need memory between commands).
 pub fn bridge_from_joints_with(kind: SourceKind, joints: &[f32], head: xr::Posef, now_ns: u64, st: &mut State) -> Sample {
+    bridge_from_joints_cfg(&BridgeCfg::default(), kind, joints, head, now_ns, st)
+}
+
+/// [`bridge_from_joints_with`] on a configuration (the injector carries the settings').
+pub fn bridge_from_joints_cfg(cfg: &BridgeCfg, kind: SourceKind, joints: &[f32], head: xr::Posef, now_ns: u64, st: &mut State) -> Sample {
     let side = match kind {
         SourceKind::Hand(s) => s,
         _ => Side::Right,
@@ -268,9 +317,9 @@ pub fn bridge_from_joints_with(kind: SourceKind, joints: &[f32], head: xr::Posef
     let mut s = Sample::new(SourceKind::Hand(side), now_ns);
     s.flags.insert(Flags::SYNTHETIC);
     match joints_from_floats(joints) {
-        Some(j) => fill(s, &derive(side, &j, true, head, now_ns, st)),
+        Some(j) => fill(s, &derive_with(cfg, side, &j, true, head, now_ns, st)),
         None => {
-            let d = derive(side, &[xr::Posef::IDENTITY; xr::HAND_JOINT_COUNT], false, head, now_ns, st);
+            let d = derive_with(cfg, side, &[xr::Posef::IDENTITY; xr::HAND_JOINT_COUNT], false, head, now_ns, st);
             fill(s, &d)
         }
     }

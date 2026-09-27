@@ -248,6 +248,10 @@ pub struct Stabilize {
     compensators: [Compensator; KIND_COUNT],
     select_held: [bool; KIND_COUNT],
     previous_pinch: [f32; KIND_COUNT],
+    /// `input.pointer.click_freeze_ms` (layered on `hardware.input.stabilize.compensation_ms`):
+    /// how far before the commit edge the pose is taken from
+    pub compensation_ns: u64,
+    prefs_gen: u64,
 }
 
 impl Stabilize {
@@ -258,6 +262,8 @@ impl Stabilize {
             compensators: [Compensator::new(); KIND_COUNT],
             select_held: [false; KIND_COUNT],
             previous_pinch: [0.0; KIND_COUNT],
+            compensation_ns: COMPENSATION_NS,
+            prefs_gen: 0,
         }
     }
 }
@@ -271,6 +277,13 @@ impl Default for Stabilize {
 impl Stage for Stabilize {
     fn name(&self) -> &'static str {
         "stabilize:ray-lock-compensate"
+    }
+
+    fn tick(&mut self, st: &mut Zxr, _now_ns: u64) {
+        if self.prefs_gen != st.prefs.generation {
+            self.prefs_gen = st.prefs.generation;
+            self.compensation_ns = st.prefs.pointer_click_freeze_ms.saturating_mul(1_000_000);
+        }
     }
 
     fn run(&mut self, sample: &mut Sample, _st: &mut Zxr) -> Flow {
@@ -306,7 +319,7 @@ impl Stage for Stabilize {
             matches!(sample.kind, SourceKind::Hand(_)) && self.previous_pinch[i] < PINCH_CLOSED_THRESHOLD && sample.values.pinch >= PINCH_CLOSED_THRESHOLD;
         self.previous_pinch[i] = sample.values.pinch;
         if button_commit || pinch_commit {
-            let onset = sample.time_ns.saturating_sub(COMPENSATION_NS);
+            let onset = sample.time_ns.saturating_sub(self.compensation_ns);
             if let Some(pose) = self.compensators[i].pose_at(onset) {
                 sample.pose = Some(pose);
             }

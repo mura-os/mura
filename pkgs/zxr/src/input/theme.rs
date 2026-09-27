@@ -35,6 +35,7 @@ pub struct Loaded {
 
 pub struct Theme {
     theme: CursorTheme,
+    name: String,
     size: u32,
     cache: HashMap<&'static str, Option<std::rc::Rc<Loaded>>>,
     pub misses: u64,
@@ -42,12 +43,41 @@ pub struct Theme {
 
 impl Theme {
     /// From the environment (the freedesktop mechanism); never fails — a missing theme yields
-    /// misses, not an error.
+    /// misses, not an error. The settings' `input.cursor.{theme,size}` override it through
+    /// [`Theme::from_prefs`].
     pub fn from_env() -> Theme {
-        let name = std::env::var("XCURSOR_THEME").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "default".into());
-        let size = std::env::var("XCURSOR_SIZE").ok().and_then(|s| s.parse::<u32>().ok()).filter(|s| *s > 0).unwrap_or(DEFAULT_SIZE);
+        let (name, size) = env_theme();
         tracing::info!("cursor theme: {name} at {size} px (XCURSOR_THEME/XCURSOR_SIZE)");
-        Theme { theme: CursorTheme::load(&name), size, cache: HashMap::new(), misses: 0 }
+        Theme::new(&name, size)
+    }
+
+    /// From `input.cursor.{theme,size}` (settings.rs): the key's default `"default"` means the
+    /// environment's theme when one is set — the freedesktop mechanism stays the fallback
+    /// (cosmic-comp reads only the environment, `backend/render/cursor.rs:669-676`; niri takes
+    /// its config key and *exports* it as `XCURSOR_THEME`/`XCURSOR_SIZE` for its clients,
+    /// `cursor.rs:189-193` — that export is not done here: `set_var` races the loader's threads,
+    /// and the session's environment is the greeter's/systemd's to set).
+    pub fn from_prefs(name: &str, size: u32) -> Theme {
+        let (env_name, _) = env_theme();
+        let name = if name.is_empty() || name == "default" { env_name } else { name.to_string() };
+        let size = if size > 0 { size } else { DEFAULT_SIZE };
+        tracing::info!("cursor theme: {name} at {size} px (input.cursor.theme/size)");
+        Theme::new(&name, size)
+    }
+
+    pub fn new(name: &str, size: u32) -> Theme {
+        Theme { theme: CursorTheme::load(name), name: name.to_string(), size, cache: HashMap::new(), misses: 0 }
+    }
+
+    /// Whether this theme is already `(name, size)` as [`Theme::from_prefs`] would resolve them.
+    pub fn matches(&self, name: &str, size: u32) -> bool {
+        let (env_name, _) = env_theme();
+        let want = if name.is_empty() || name == "default" { env_name.as_str() } else { name };
+        self.name == want && self.size == size.max(1)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn size(&self) -> u32 {
@@ -82,9 +112,29 @@ impl Theme {
     }
 }
 
+/// `XCURSOR_THEME` / `XCURSOR_SIZE`, with Xcursor's own defaults.
+fn env_theme() -> (String, u32) {
+    let name = std::env::var("XCURSOR_THEME").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "default".into());
+    let size = std::env::var("XCURSOR_SIZE").ok().and_then(|s| s.parse::<u32>().ok()).filter(|s| *s > 0).unwrap_or(DEFAULT_SIZE);
+    (name, size)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prefs_override_the_environment_and_default_falls_back_to_it() {
+        std::env::set_var("XCURSOR_THEME", "env-theme");
+        std::env::set_var("XCURSOR_PATH", "/nonexistent");
+        let t = Theme::from_prefs("default", 24);
+        assert_eq!(t.name(), "env-theme", "the key's default is the environment's theme");
+        assert!(t.matches("default", 24));
+        let t = Theme::from_prefs("breeze_cursors", 32);
+        assert_eq!((t.name(), t.size()), ("breeze_cursors", 32));
+        assert!(!t.matches("default", 32));
+        assert!(t.matches("breeze_cursors", 32));
+    }
 
     #[test]
     fn missing_theme_counts_misses_and_caches_them() {

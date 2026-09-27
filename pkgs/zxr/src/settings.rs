@@ -394,6 +394,68 @@ impl Prefs {
             },
         }
     }
+
+    // -- the per-consumer views -----------------------------------------------------------------
+
+    /// `input.keyboard.xkb.*` as smithay's config; empty strings are xkbcommon's defaults
+    /// (`XkbConfig::default()`: rules/model/layout/variant from the environment or `us`).
+    pub fn xkb_config(&self) -> smithay::input::keyboard::XkbConfig<'_> {
+        smithay::input::keyboard::XkbConfig {
+            rules: "",
+            model: &self.xkb_model,
+            layout: &self.xkb_layout,
+            variant: &self.xkb_variant,
+            options: if self.xkb_options.is_empty() { None } else { Some(self.xkb_options.clone()) },
+        }
+    }
+
+    /// Whether the keymap-affecting keys differ between two pictures (a recompile is not free).
+    pub fn xkb_differs(&self, other: &Prefs) -> bool {
+        self.xkb_layout != other.xkb_layout || self.xkb_variant != other.xkb_variant || self.xkb_options != other.xkb_options || self.xkb_model != other.xkb_model
+    }
+
+    /// The joint bridge's configuration (`input.hand.dominant`, `input.body.*`,
+    /// `system.gesture.hold_ms`; the calibration's pinch metre ladder and palm cone).
+    pub fn bridge_cfg(&self) -> crate::input::bridge::BridgeCfg {
+        use crate::input::Side;
+        let h = &self.hardware;
+        crate::input::bridge::BridgeCfg {
+            dominant: if self.hand_dominant == "left" { Side::Left } else { Side::Right },
+            pinch_close_m: h.pinch_close_m,
+            pinch_open_m: h.pinch_open_m.max(h.pinch_close_m),
+            pinch_max_m: h.pinch_max_m.max(h.pinch_open_m + 0.001),
+            palm_facing_cos: h.palm_cone_deg.clamp(1.0, 90.0).to_radians().cos(),
+            hold_ns: self.system_gesture_hold_ms.saturating_mul(1_000_000),
+            shoulder_half_m: self.body_shoulder_half_m,
+            head_len_m: self.body_head_len_m,
+            neck_len_m: self.body_neck_len_m,
+        }
+    }
+
+    /// The reserved control's timings and choices (`system.button.*`, `games.controller_system_button`).
+    pub fn reserved_cfg(&self) -> crate::input::reserved::ReservedCfg {
+        use crate::input::reserved::{DoublePress, ReservedCfg};
+        ReservedCfg {
+            long_press_ns: self.system_long_press_ms.saturating_mul(1_000_000),
+            double_ns: self.system_double_tap_ms.saturating_mul(1_000_000),
+            chord_ns: self.system_chord_hold_ms.saturating_mul(1_000_000),
+            double_press: DoublePress::parse(&self.system_double_press).unwrap_or_default(),
+            controller_system_button: self.games_controller_system_button,
+        }
+    }
+
+    /// The libinput per-device configuration (`input.pointer.*`, `input.scroll.natural`,
+    /// `input.touchpad.*`).
+    pub fn device_config(&self) -> crate::input::libinput::DeviceConfig {
+        crate::input::libinput::DeviceConfig {
+            accel_profile: self.pointer_accel_profile.clone(),
+            left_handed: self.pointer_left_handed,
+            natural_scroll: self.scroll_natural,
+            tap: self.touchpad_tap,
+            disable_while_typing: self.touchpad_dwt,
+            click_method: self.touchpad_click_method.clone(),
+        }
+    }
 }
 
 /// The schemas zxr reads: the resolution lists only these prefixes.
@@ -452,15 +514,62 @@ impl Settings {
 /// settings path meet in one place). Stages with their own `*Cfg` re-derive from `st.prefs` when
 /// `generation` moves.
 pub fn apply(st: &mut Zxr, mut prefs: Prefs) {
+    let first = st.prefs.generation == 0;
     prefs.generation = st.prefs.generation + 1;
-    if let Some(r) = crate::input::cursor::RayCursor::parse(&prefs.cursor_ray) {
-        st.input.cursor_ray = Some(r);
+
+    // the seat's keyboard: keymap (only when its keys moved — a recompile), repeat, num lock
+    if let Some(kb) = st.seat.get_keyboard() {
+        let xkb_default = prefs.xkb_layout.is_empty() && prefs.xkb_variant.is_empty() && prefs.xkb_options.is_empty() && prefs.xkb_model.is_empty();
+        // the keymap `Zxr::new` compiled is `XkbConfig::default()`: at the first apply only a
+        // non-default picture needs a recompile
+        if (first && !xkb_default) || (!first && prefs.xkb_differs(&st.prefs)) {
+            let cfg = prefs.xkb_config();
+            let described = format!("{}/{}/{}/{}", cfg.layout, cfg.variant, cfg.model, cfg.options.clone().unwrap_or_default());
+            // `XkbConfig::default()` when every key is empty: xkbcommon's own defaults
+            let cfg = if xkb_default { smithay::input::keyboard::XkbConfig::default() } else { cfg };
+            match kb.set_xkb_config(st, cfg) {
+                Ok(()) => tracing::info!(xkb = %described, "keyboard: keymap from input.keyboard.xkb.*"),
+                Err(e) => tracing::warn!(xkb = %described, "keyboard: keymap rejected ({e:?}); keeping the previous one"),
+            }
+        }
+        if first || prefs.repeat_delay_ms != st.prefs.repeat_delay_ms || prefs.repeat_rate_hz != st.prefs.repeat_rate_hz {
+            kb.change_repeat_info(prefs.repeat_rate_hz as i32, prefs.repeat_delay_ms as i32);
+        }
+        if first {
+            // `input.keyboard.numlock`: on / off at start (niri `niri.rs:2536-2540`), or the
+            // state remembered from the last session (cosmic-comp's `LastBoot`); the seat stage
+            // writes the state file on change
+            let want = match prefs.numlock.as_str() {
+                "on" => Some(true),
+                "off" => Some(false),
+                _ => crate::input::seat::read_remembered_numlock(),
+            };
+            if let Some(on) = want {
+                let mut mods = kb.modifier_state();
+                if mods.num_lock != on {
+                    mods.num_lock = on;
+                    kb.set_modifier_state(mods);
+                }
+            }
+        }
     }
-    if let Some(s) = crate::input::cursor::Scale::parse(&prefs.cursor_scale) {
-        st.input.cursor_scale = Some(s);
+
+    // the cursor theme (`input.cursor.{theme,size}`; the environment is the fallback)
+    if first || !st.cursor_theme.matches(&prefs.cursor_theme, prefs.cursor_size) {
+        st.cursor_theme = crate::input::theme::Theme::from_prefs(&prefs.cursor_theme, prefs.cursor_size);
     }
-    st.input.a11y_dwell = Some(prefs.dwell_enabled);
-    st.input.a11y_gain = Some(prefs.pointer_gain);
+
+    // the libinput devices (`input.pointer.*`, `input.scroll.natural`, `input.touchpad.*`)
+    crate::input::libinput::reconfigure(st, prefs.device_config());
+
+    // the joint bridge, on the runtime's path and the injector's
+    let bridge = prefs.bridge_cfg();
+    if let Some(a) = st.xr.actions.as_mut() {
+        a.bridge_cfg = bridge;
+    }
+    st.input.injector.bridge_cfg = bridge;
+
+    // everything else is a stage's: they compare `prefs.generation` at their next tick
     st.journal.settings_generation = prefs.generation;
     st.prefs = prefs;
 }

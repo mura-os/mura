@@ -559,6 +559,18 @@ pub fn ray_plane(origin: [f32; 3], dir: [f32; 3], pose: xr::Posef, half: [f32; 2
     }
 }
 
+/// The point of the plane `z = 0` of `pose` (extents `half`) nearest to a world point — the
+/// projection clamped to the extents — with the distance between them. Poke magnetism
+/// (`input.magnetism.enabled`, MRTK3 `ReticleMagnetism.cs:37` `magnetRange`): a fingertip
+/// near a plane but not over it is drawn to the nearest point of it.
+pub fn nearest_point_on_plane(point: [f32; 3], pose: xr::Posef, half: [f32; 2]) -> (f32, [f32; 2]) {
+    let inv = math::pose_inverse(pose);
+    let p = math::pose_apply(inv, point);
+    let local = [p[0].clamp(-half[0], half[0]), p[1].clamp(-half[1], half[1])];
+    let d = [p[0] - local[0], p[1] - local[1], p[2]];
+    ((d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(), local)
+}
+
 /// A plane-local point (metres, y up) → logical surface coordinates of a `w × h` geometry with
 /// origin `(gx, gy)`, for a plane of extents `size` metres.
 pub fn local_to_logical(local: [f32; 2], size: [f32; 2], geo: (i32, i32, i32, i32)) -> (f64, f64) {
@@ -583,6 +595,24 @@ mod tests {
 
     fn plane(w: f32, h: f32) -> Shape {
         Shape::Plane { size: [w, h] }
+    }
+
+    #[test]
+    fn nearest_point_on_plane_clamps_to_the_extents() {
+        let pose = math::pose_yaw([0.0, 0.0, -1.0], 0.0);
+        // a fingertip 5 cm in front of the plane, over it: the projection, 5 cm away
+        let (d, local) = nearest_point_on_plane([0.1, 0.2, -0.95], pose, [0.5, 0.5]);
+        assert!((d - 0.05).abs() < 1e-6);
+        assert!((local[0] - 0.1).abs() < 1e-6 && (local[1] - 0.2).abs() < 1e-6);
+        // beside the plane: the nearest edge point, at the in-plane gap
+        let (d, local) = nearest_point_on_plane([0.6, 0.0, -1.0], pose, [0.5, 0.5]);
+        assert!((d - 0.1).abs() < 1e-6);
+        assert!((local[0] - 0.5).abs() < 1e-6);
+        // MRTK3's range: 7 cm beside it is in, 8 cm is out
+        let (d, _) = nearest_point_on_plane([0.57, 0.0, -1.0], pose, [0.5, 0.5]);
+        assert!(d <= crate::input::hit::MAGNET_RANGE_M + 1e-6);
+        let (d, _) = nearest_point_on_plane([0.58, 0.0, -1.0], pose, [0.5, 0.5]);
+        assert!(d > crate::input::hit::MAGNET_RANGE_M);
     }
 
     #[test]

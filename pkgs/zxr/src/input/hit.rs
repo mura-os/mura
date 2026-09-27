@@ -98,15 +98,48 @@ fn xr_kind(kind: SourceKind) -> bool {
     matches!(kind, SourceKind::Head | SourceKind::Gaze | SourceKind::Hand(_) | SourceKind::Controller(_))
 }
 
+/// MRTK3's poke reticle magnetism range (`ReticleMagnetism.cs:37-40` `magnetRange = 0.07f`):
+/// the reference shape spatial-input §4 names for `input.magnetism.enabled`.
+pub const MAGNET_RANGE_M: f32 = 0.07;
+
 pub struct HitStage {
     /// Total member hits emitted since stage construction; logged every 60 ticks.
     pub hit_count: u64,
     ticks: u64,
+    /// `input.magnetism.enabled` (settings.rs; off by default, spatial-input §4)
+    pub magnetism: bool,
+    /// poke hits produced by magnetism rather than the ray
+    pub magnetised: u64,
+    prefs_gen: u64,
 }
 
 impl HitStage {
     pub const fn new() -> Self {
-        Self { hit_count: 0, ticks: 0 }
+        Self { hit_count: 0, ticks: 0, magnetism: false, magnetised: 0, prefs_gen: 0 }
+    }
+
+    /// Poke magnetism: the fingertip's ray missed every plane; if a mapped plane's nearest point
+    /// is within [`MAGNET_RANGE_M`], that point is the poke's hit (MRTK3 `ReticleMagnetism`:
+    /// the reticle moves to the collider's closest point inside the range, `:162-200`).
+    fn magnetise(&mut self, kind: SourceKind, tip: xr::Posef, time_ns: u64, st: &mut Zxr) {
+        let p = [tip.position.x, tip.position.y, tip.position.z];
+        let mut best: Option<(f32, MemberId, [f32; 2])> = None;
+        for (id, member) in st.scene.iter() {
+            if !(member.m.mapped() && !member.m.hidden) {
+                continue;
+            }
+            let Shape::Plane { size } = member.shape else { continue };
+            let Some(world) = st.scene.world_pose(id) else { continue };
+            let (d, local) = scene::nearest_point_on_plane(p, world, [size[0] * 0.5, size[1] * 0.5]);
+            if d <= MAGNET_RANGE_M && best.map(|b| d < b.0).unwrap_or(true) {
+                best = Some((d, id, local));
+            }
+        }
+        if let Some((distance, member, local)) = best {
+            st.input.hits.push(Hit { kind, member, local, distance, time_ns });
+            self.hit_count += 1;
+            self.magnetised += 1;
+        }
     }
 
     fn cast(&mut self, kind: SourceKind, pose: xr::Posef, time_ns: u64, st: &mut Zxr) {
@@ -168,13 +201,21 @@ impl Stage for HitStage {
         // touch band without this stage suppressing either observation.
         if matches!(sample.kind, SourceKind::Hand(Side::Left | Side::Right)) {
             if let Some(pose) = sample.poke_pose {
+                let before = st.input.hits.len();
                 self.cast(sample.kind, pose, sample.time_ns, st);
+                if self.magnetism && st.input.hits.len() == before {
+                    self.magnetise(sample.kind, pose, sample.time_ns, st);
+                }
             }
         }
         Flow::Continue
     }
 
-    fn tick(&mut self, _st: &mut Zxr, _time_ns: u64) {
+    fn tick(&mut self, st: &mut Zxr, _time_ns: u64) {
+        if self.prefs_gen != st.prefs.generation {
+            self.prefs_gen = st.prefs.generation;
+            self.magnetism = st.prefs.magnetism_enabled;
+        }
         self.ticks += 1;
         if self.ticks % 60 == 0 {
             tracing::debug!(hits = self.hit_count, ticks = self.ticks, "input hit-stage counter");

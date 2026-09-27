@@ -120,6 +120,27 @@ pub struct SeatStage {
     /// the Hit stage has produced a hit at least once: the R0 floor is retired
     hits_seen: bool,
     pub keys: u64,
+    /// the `Prefs::generation` last taken (settings.rs)
+    prefs_gen: u64,
+    /// `input.keyboard.numlock = remember`: the num-lock state last written to the state file
+    numlock_remembered: Option<bool>,
+}
+
+/// `input.keyboard.numlock = remember`: where the last state lives (cosmic-comp keeps
+/// `cosmic-comp/numlock.ron` under `XDG_STATE_HOME`, `config/mod.rs:344`).
+pub fn numlock_state_path() -> Option<std::path::PathBuf> {
+    let root = std::env::var_os("XDG_STATE_HOME").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state")))?;
+    Some(root.join("mura/zxr/numlock"))
+}
+
+/// The remembered num-lock state, if any was written.
+pub fn read_remembered_numlock() -> Option<bool> {
+    let p = numlock_state_path()?;
+    match std::fs::read_to_string(p).ok()?.trim() {
+        "on" => Some(true),
+        "off" => Some(false),
+        _ => None,
+    }
 }
 
 impl SeatStage {
@@ -135,9 +156,54 @@ impl SeatStage {
             _gestures: PointerGesturesState::new::<Zxr>(&dh),
             hits_seen: false,
             keys: 0,
+            prefs_gen: 0,
+            numlock_remembered: None,
         };
         tracing::info!("seat stage: wl_touch + wl_pointer transports; relative-pointer, pointer-constraints, pointer-gestures served");
         stage
+    }
+
+    /// The seat's share of the preferences (settings.rs): cursor, pointer, scroll, touch pinch,
+    /// emphasis. The a11y gain is the A11y stage's; the keyboard's are applied on `Zxr` directly.
+    fn take_prefs(&mut self, p: &crate::settings::Prefs) {
+        use super::cursor::{RayCursor, Scale};
+        use super::pointer::Warp;
+        if let Some(r) = RayCursor::parse(&p.cursor_ray) {
+            self.cursors.set_ray_cursor(r);
+        }
+        if let Some(s) = Scale::parse(&p.cursor_scale) {
+            self.cursors.set_scale(s);
+        }
+        self.cursors.set_prefs(p.cursor_angle_deg, p.cursor_hide_when_typing, p.cursor_hide_after_ms);
+        if let Some(w) = Warp::parse(&p.pointer_warp) {
+            self.pointer.logic.warp = w;
+        }
+        self.pointer.logic.axis.scroll_factor = if p.scroll_factor > 0.0 { p.scroll_factor } else { 1.0 };
+        self.pointer.logic.axis.stick_deadzone = p.pointer_stick_deadzone.clamp(0.0, 0.99) as f64;
+        self.touch.logic.set_pinch(p.hand_pinch_close, p.hand_pinch_open);
+        self.emphasis.set_ramp(p.emphasis_ramp_ms, p.ui_reduced_motion);
+    }
+
+    /// `input.keyboard.numlock = remember`: after a key, persist a changed num-lock state
+    /// (cosmic-comp writes its `numlock.ron` on the change, `input/mod.rs:315-327`).
+    fn remember_numlock(&mut self, st: &Zxr) {
+        if st.prefs.numlock != "remember" {
+            return;
+        }
+        let Some(kb) = st.seat.get_keyboard() else { return };
+        let on = kb.modifier_state().num_lock;
+        if self.numlock_remembered == Some(on) {
+            return;
+        }
+        self.numlock_remembered = Some(on);
+        if let Some(p) = numlock_state_path() {
+            if let Some(dir) = p.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Err(e) = std::fs::write(&p, if on { "on\n" } else { "off\n" }) {
+                tracing::debug!("numlock state not written to {}: {e}", p.display());
+            }
+        }
     }
 
     /// Per-tick presentation state from the tier and this tick's hits: the targeting ray's hit
@@ -194,6 +260,7 @@ impl Stage for SeatStage {
                 st.send_key(code, pressed);
                 self.cursors.on_key();
                 self.keys += 1;
+                self.remember_numlock(st);
                 Flow::Consumed
             }
             Route::HeadFloor => {
@@ -216,7 +283,7 @@ impl Stage for SeatStage {
                 let flow = self.pointer.run(s, own, look, head, tier.map(|t| t.targeting), st);
                 st.input.hits = hits;
                 if flow == Flow::Consumed && (s.delta.is_some() || s.pose.is_some()) {
-                    self.cursors.on_motion();
+                    self.cursors.on_motion_at(s.time_ns);
                 }
                 flow
             }
@@ -224,15 +291,22 @@ impl Stage for SeatStage {
     }
 
     fn tick(&mut self, st: &mut Zxr, now_ns: u64) {
+        // the resolved preferences, when their generation moved (settings.rs `apply`)
+        if self.prefs_gen != st.prefs.generation {
+            self.prefs_gen = st.prefs.generation;
+            self.take_prefs(&st.prefs);
+        }
         if let Some(c) = st.input.cursor_image.take() {
             self.cursors.set_client_cursor(c);
         }
+        // the control socket's direct pushes (the harness's path) win over the resolved value
         if let Some(r) = st.input.cursor_ray.take() {
             self.cursors.set_ray_cursor(r);
         }
         if let Some(s) = st.input.cursor_scale.take() {
             self.cursors.set_scale(s);
         }
+        self.cursors.tick(now_ns);
         // gaze took the tier: a ray-owned pointer leaves its plane (spatial-input §5; the ray
         // no longer targets) — before the cursor is resolved, so no plane means no cursor
         self.pointer.tick(st.input.tier.map(|t| t.targeting), now_ns, st);

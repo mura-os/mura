@@ -375,7 +375,10 @@ impl Zxr {
         // ---- seat: keyboard + pointer (the gaze ray drives the pointer at R0, §8)
         let mut seat_state = SeatState::new();
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
-        seat.add_keyboard(Default::default(), 200, 25).map_err(|e| e.to_string())?;
+        // the repeat the settings declare as default (`input.keyboard.repeat.{delay_ms,rate_hz}`
+        // 600 / 25 — Hyprland's and COSMIC's, as preferences.nix records; GNOME's are 500 / 33); the
+        // wearer's values arrive through settings.rs `apply` at start and live
+        seat.add_keyboard(Default::default(), 600, 25).map_err(|e| e.to_string())?;
         seat.add_pointer();
 
         // ---- the one wl_output: a virtual panel (§10 notes; sized to the view)
@@ -518,7 +521,8 @@ impl Zxr {
     /// on-screen keyboard down (`text.rs` for what smithay lets the compositor do about it).
     #[allow(dead_code)] // read by the shell protocol / `zxr ctl` once they carry it
     pub fn osk_suppressed(&self) -> bool {
-        self.text.suppressed(now_ns())
+        // `input.osk.enabled = false` is a permanent suppression: the wearer has said no OSK
+        !self.prefs.osk_enabled || self.text.suppressed(now_ns())
     }
 
     fn client_is_satellite(&self, surface: &WlSurface) -> bool {

@@ -166,6 +166,41 @@ pub struct Arbiter {
     now_ns: u64,
     /// ticks a pending release has survived (see `loss::expire_pending`)
     pending_ticks: u8,
+    /// `input.targeting.source`: the wearer's ceiling on the ladder (spatial-input §13)
+    pin: Pin,
+}
+
+/// `input.targeting.source` (spatial-input §13: "a wearer may pin the targeting source below
+/// the precision the hardware allows"; visionOS Pointer Control's eyes / head / wrist / finger
+/// [external]). A pin is a *ceiling* on the ladder, not a demand: the rungs above it are skipped,
+/// the pinned rung is taken when its source is present and ready, and the ladder continues
+/// below it otherwise — the head ray stays the floor. Direct touch (a hand in the near band) is
+/// not aiming and is never pinned away: HoloLens' "use head to aim rather than eyes" keeps hands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Pin {
+    #[default]
+    Auto,
+    /// gaze, then the rest — the same as `Auto` on hardware with eyes
+    Eyes,
+    /// no gaze: a held controller, a ready hand, the head
+    Controller,
+    /// no gaze, no controller: a ready hand, the head
+    Hand,
+    /// the head ray only
+    Head,
+}
+
+impl Pin {
+    pub fn parse(s: &str) -> Option<Pin> {
+        match s {
+            "auto" => Some(Pin::Auto),
+            "eyes" => Some(Pin::Eyes),
+            "controller" => Some(Pin::Controller),
+            "hand" => Some(Pin::Hand),
+            "head" => Some(Pin::Head),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Arbiter {
@@ -206,7 +241,20 @@ impl Arbiter {
             hand_side: Side::Right,
             now_ns: 0,
             pending_ticks: 0,
+            pin: Pin::Auto,
         }
+    }
+
+    /// `input.targeting.source` (spatial-input §13, §14).
+    pub fn set_pin(&mut self, pin: Pin) {
+        self.pin = pin;
+    }
+
+    /// `input.hand.pinch.{close,open}` (layered on the calibration): the commit ladder the loss
+    /// tracker judges gestures on — one ladder with the touch transport's (research/73 D2).
+    pub fn set_pinch(&mut self, close: f32, open: f32) {
+        self.loss.cfg.pinch_close = close;
+        self.loss.cfg.pinch_open = open.min(close);
     }
 
     // -- the published answer ------------------------------------------------------------------
@@ -400,14 +448,25 @@ impl Arbiter {
         if let Some(side) = self.direct_hand(now) {
             return (SourceKind::Hand(side), true);
         }
-        if self.gaze_targets(now) {
+        // the pin (`input.targeting.source`) skips the rungs above the wearer's ceiling
+        let ceiling = match self.pin {
+            Pin::Auto | Pin::Eyes => 0,
+            Pin::Controller => 1,
+            Pin::Hand => 2,
+            Pin::Head => 3,
+        };
+        if ceiling <= 0 && self.gaze_targets(now) {
             return (SourceKind::Gaze, false);
         }
-        if let Some(side) = self.held_controller(now) {
-            return (SourceKind::Controller(side), false);
+        if ceiling <= 1 {
+            if let Some(side) = self.held_controller(now) {
+                return (SourceKind::Controller(side), false);
+            }
         }
-        if let Some(side) = self.ready_hand(now) {
-            return (SourceKind::Hand(side), false);
+        if ceiling <= 2 {
+            if let Some(side) = self.ready_hand(now) {
+                return (SourceKind::Hand(side), false);
+            }
         }
         (SourceKind::Head, false)
     }
@@ -454,11 +513,13 @@ impl Arbiter {
 #[derive(Default)]
 pub struct TierStage {
     pub arbiter: Arbiter,
+    /// the `Prefs::generation` last taken (settings.rs)
+    prefs_gen: u64,
 }
 
 impl TierStage {
     pub fn new() -> TierStage {
-        TierStage { arbiter: Arbiter::default() }
+        TierStage { arbiter: Arbiter::default(), prefs_gen: 0 }
     }
 
     /// The published answer, for lanes B and C (the hit test and the transports).
@@ -496,6 +557,14 @@ impl Stage for TierStage {
     }
 
     fn tick(&mut self, st: &mut Zxr, now_ns: u64) {
+        if self.prefs_gen != st.prefs.generation {
+            self.prefs_gen = st.prefs.generation;
+            let p = &st.prefs;
+            if let Some(pin) = Pin::parse(&p.targeting_source) {
+                self.arbiter.set_pin(pin);
+            }
+            self.arbiter.set_pinch(p.hand_pinch_close, p.hand_pinch_open);
+        }
         let out = self.arbiter.tick(now_ns);
         if out.changed {
             tracing::debug!(targeting = ?out.selection.targeting, class = ?out.selection.class, "input tier: change (timeout)");
@@ -564,6 +633,42 @@ mod tests {
         assert_eq!(a.current().targeting, SourceKind::Head);
         assert_eq!(a.current().class, Class::Pointer);
         assert_eq!(a.would_choose(0), (SourceKind::Head, false));
+    }
+
+    /// `input.targeting.source` (§13): a ceiling on the ladder, never a demand.
+    #[test]
+    fn the_pin_is_a_ceiling_on_the_ladder() {
+        let mut a = Arbiter::default();
+        let mut now = 0;
+        // everything present: gaze nominal for the return window, a held controller, a hand
+        let mut c = state(SourceKind::Controller(Side::Right), now, true);
+        c.button = Some((Button::Menu, true));
+        a.observe(&c);
+        for step in 0..=8 {
+            now = step * 100 * MS;
+            keep(&mut a, &[SourceKind::Controller(Side::Right), SourceKind::Hand(Side::Right)], now);
+            a.observe(&gaze(now, Quality::Nominal));
+        }
+        assert_eq!(a.would_choose(now), (SourceKind::Gaze, false), "auto: the eyes");
+        a.set_pin(Pin::Eyes);
+        assert_eq!(a.would_choose(now).0, SourceKind::Gaze, "eyes = auto on hardware with eyes");
+        a.set_pin(Pin::Controller);
+        assert_eq!(a.would_choose(now).0, SourceKind::Controller(Side::Right), "no gaze: the held controller");
+        a.set_pin(Pin::Hand);
+        assert_eq!(a.would_choose(now).0, SourceKind::Hand(Side::Right), "no gaze, no controller: the ready hand");
+        a.set_pin(Pin::Head);
+        assert_eq!(a.would_choose(now).0, SourceKind::Head, "the head ray only");
+        // the pinned rung absent: the ladder continues below it (the head stays the floor)
+        let mut b = Arbiter::default();
+        b.set_pin(Pin::Controller);
+        b.observe(&hand(Side::Left, 0, 1.0));
+        assert_eq!(b.would_choose(0).0, SourceKind::Hand(Side::Left), "pinned to a controller that is not there: the hand");
+        // direct touch is not aiming and is never pinned away
+        b.set_pin(Pin::Head);
+        b.observe(&hand(Side::Left, 0, 0.1));
+        assert_eq!(b.would_choose(0), (SourceKind::Hand(Side::Left), true));
+        assert_eq!(Pin::parse("controller"), Some(Pin::Controller));
+        assert_eq!(Pin::parse("wrist"), None);
     }
 
     /// §3's ladder, walked from the floor up and back down.

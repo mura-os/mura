@@ -228,6 +228,70 @@ pub fn sample_of(raw: Raw, time_ns: u64, roles: &HmdRoles, flags: Flags) -> Samp
     s
 }
 
+/// The per-device libinput configuration the settings carry (`input.pointer.{accel_profile,
+/// left_handed}`, `input.scroll.natural`, `input.touchpad.{tap,disable_while_typing,
+/// click_method}`) — applied to a device when it appears and to every known device when a key
+/// changes (niri `apply_libinput_settings`, `src/input/mod.rs:4903`, re-run over `niri.devices`
+/// on a config reload, `src/niri.rs:1774-1775`; cosmic-comp likewise).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeviceConfig {
+    /// `flat` | `adaptive` — flat by the owner's Q3 ruling (spatial-input §8 line 326)
+    pub accel_profile: String,
+    pub left_handed: bool,
+    pub natural_scroll: bool,
+    pub tap: bool,
+    pub disable_while_typing: bool,
+    /// `default` | `button_areas` | `clickfinger`
+    pub click_method: String,
+}
+
+impl Default for DeviceConfig {
+    fn default() -> Self {
+        DeviceConfig { accel_profile: "flat".into(), left_handed: false, natural_scroll: false, tap: true, disable_while_typing: true, click_method: "default".into() }
+    }
+}
+
+impl DeviceConfig {
+    /// Apply to one device: every `config_*` call is best-effort — a device without the
+    /// capability rejects it and that is fine (niri ignores the results the same way).
+    pub fn apply(&self, device: &mut smithay::reexports::input::Device) {
+        use smithay::reexports::input::{AccelProfile, ClickMethod, DeviceCapability};
+        if device.has_capability(DeviceCapability::Pointer) {
+            if device.config_accel_is_available() {
+                let profile = match self.accel_profile.as_str() {
+                    "adaptive" => AccelProfile::Adaptive,
+                    _ => AccelProfile::Flat,
+                };
+                let _ = device.config_accel_set_profile(profile);
+            }
+            if device.config_left_handed_is_available() {
+                let _ = device.config_left_handed_set(self.left_handed);
+            }
+            if device.config_scroll_has_natural_scroll() {
+                let _ = device.config_scroll_set_natural_scroll_enabled(self.natural_scroll);
+            }
+        }
+        // a touchpad: libinput's tap finger count is > 0 only for touchpads (niri's test)
+        if device.config_tap_finger_count() > 0 {
+            let _ = device.config_tap_set_enabled(self.tap);
+            let _ = device.config_dwt_set_enabled(self.disable_while_typing);
+            match self.click_method.as_str() {
+                "button_areas" => {
+                    let _ = device.config_click_set_method(ClickMethod::ButtonAreas);
+                }
+                "clickfinger" => {
+                    let _ = device.config_click_set_method(ClickMethod::Clickfinger);
+                }
+                _ => {
+                    if let Some(default) = device.config_click_default_method() {
+                        let _ = device.config_click_set_method(default);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The libinput intake's state on `Zxr`.
 #[derive(Default)]
 pub struct Peripherals {
@@ -236,10 +300,28 @@ pub struct Peripherals {
     pub active: bool,
     pub seat_name: Option<String>,
     pub devices: u32,
+    /// the devices present, so a settings change can be applied to them (niri `Niri::devices`)
+    pub known: Vec<smithay::reexports::input::Device>,
+    /// the configuration in force (settings.rs `apply` replaces it and calls [`reconfigure`])
+    pub config: DeviceConfig,
     /// counters (journal patch in the lane report)
     pub events: u64,
     pub events_unmapped: u64,
     pub hmd_buttons: u64,
+}
+
+/// The settings changed a device key: apply the new configuration to every known device.
+pub fn reconfigure(st: &mut Zxr, config: DeviceConfig) {
+    if st.peripherals.config == config {
+        return;
+    }
+    st.peripherals.config = config;
+    let mut devices = std::mem::take(&mut st.peripherals.known);
+    for d in devices.iter_mut() {
+        st.peripherals.config.apply(d);
+    }
+    st.peripherals.known = devices;
+    tracing::info!(devices = st.peripherals.known.len(), ?st.peripherals.config, "libinput devices reconfigured (input.pointer/scroll/touchpad keys)");
 }
 
 /// Open the libseat session and register libinput on the loop. `Ok(false)` = no session (nested
@@ -248,7 +330,7 @@ pub fn start(st: &mut Zxr, handle: &LoopHandle<'static, Zxr>) -> Result<bool, St
     use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
     use smithay::backend::session::libseat::LibSeatSession;
     use smithay::backend::session::{Event as SessionEvent, Session};
-    use smithay::reexports::input::{AccelProfile, DeviceCapability, Libinput};
+    use smithay::reexports::input::{DeviceCapability, Libinput};
 
     st.peripherals.roles = HmdRoles::from_env();
     if st.peripherals.roles.any() {
@@ -278,10 +360,10 @@ pub fn start(st: &mut Zxr, handle: &LoopHandle<'static, Zxr>) -> Result<bool, St
             match &mut event {
                 InputEvent::DeviceAdded { device } => {
                     st.peripherals.devices += 1;
-                    if device.has_capability(DeviceCapability::Pointer) && device.config_accel_is_available() {
-                        // spatial-input §8 line 326: flat profile, the compositor applies the gain
-                        let _ = device.config_accel_set_profile(AccelProfile::Flat);
-                    }
+                    // spatial-input §8 line 326: the flat profile by default, the compositor
+                    // applies the gain; the rest of the device keys with it (`DeviceConfig`)
+                    st.peripherals.config.apply(device);
+                    st.peripherals.known.push(device.clone());
                     if device.has_capability(DeviceCapability::Keyboard) {
                         if let Some(leds) = st.seat.get_keyboard().map(|k| k.led_state()) {
                             device.led_update(leds.into());
@@ -292,6 +374,7 @@ pub fn start(st: &mut Zxr, handle: &LoopHandle<'static, Zxr>) -> Result<bool, St
                 }
                 InputEvent::DeviceRemoved { device } => {
                     st.peripherals.devices = st.peripherals.devices.saturating_sub(1);
+                    st.peripherals.known.retain(|d| d != device);
                     tracing::info!(name = %device.name(), "libinput device removed");
                     return;
                 }

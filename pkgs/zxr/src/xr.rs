@@ -172,6 +172,9 @@ pub struct Actions {
     /// `xrGetCurrentInteractionProfile` are client-side there; `xrLocateHandJointsEXT` is one RPC
     pub sync_actions_lat: Lat,
     pub get_action_state_lat: Lat,
+    /// the joint bridge's configuration (settings.rs `Prefs::bridge_cfg`; `input.hand.dominant`,
+    /// `input.body.*`, `system.gesture.hold_ms`, the pinch metre ladder)
+    pub bridge_cfg: bridge::BridgeCfg,
     pub hand_joints_lat: Lat,
 }
 
@@ -694,7 +697,7 @@ impl XrCore {
 
     /// `xrEndFrame` with an optional projection layer plus quad layers (spec §7 rev 3).
     /// Quad layers are submitted in the given order (painter's order, `rendering.adoc:1143-1147`).
-    pub fn end_frame_with_quads(&mut self, time: xr::Time, views: Option<&[xr::View]>, quads: &[QuadLayer<'_>]) -> Result<(), String> {
+    pub fn end_frame_with_quads(&mut self, time: xr::Time, views: Option<&[xr::View]>, quads: &[QuadLayer<'_>], emphasis_strength: f32) -> Result<(), String> {
         let mut pv: Vec<xr::CompositionLayerProjectionView<xr::Vulkan>> = Vec::new();
         if let Some(views) = views {
             for (i, v) in views.iter().enumerate() {
@@ -709,12 +712,12 @@ impl XrCore {
         }
         let projection = views.map(|_| xr::CompositionLayerProjection::new().space(&self.space).views(&pv));
         // one colour scale/bias struct per quad, chained on `next` for the emphasised ones only
-        // (spatial-input §4; stand-in: scale 1 + 0.15·e, flagged). `biases` outlives `quad_layers`
+        // (spatial-input §4; scale 1 + strength·e, `input.emphasis.strength`, default 0.15). `biases` outlives `quad_layers`
         // and the `end` call below, so the raw pointer stays valid.
         let biases: Vec<xr::sys::CompositionLayerColorScaleBiasKHR> = quads
             .iter()
             .map(|q| {
-                let s = 1.0 + 0.15 * q.emphasis.clamp(0.0, 1.0);
+                let s = 1.0 + emphasis_strength.max(0.0) * q.emphasis.clamp(0.0, 1.0);
                 xr::sys::CompositionLayerColorScaleBiasKHR { ty: xr::sys::CompositionLayerColorScaleBiasKHR::TYPE, next: std::ptr::null(), color_scale: xr::Color4f { r: s, g: s, b: s, a: 1.0 }, color_bias: xr::Color4f { r: 0.0, g: 0.0, b: 0.0, a: 0.0 } }
             })
             .collect();
@@ -912,6 +915,7 @@ impl Actions {
             sync_failed: false,
             sync_actions_lat: Lat::default(),
             get_action_state_lat: Lat::default(),
+            bridge_cfg: bridge::BridgeCfg::default(),
             hand_joints_lat: Lat::default(),
         })
     }
@@ -1004,7 +1008,7 @@ impl Actions {
         s.values.pinch = f(&self.pinch, lat);
         s.values.aim_activate = f(&self.aim_activate, lat);
         s.values.grasp = f(&self.grasp, lat);
-        if side == bridge::DOMINANT {
+        if side == self.bridge_cfg.dominant {
             s.flags.insert(Flags::DOMINANT);
         }
         out.push(s);
@@ -1036,7 +1040,7 @@ impl Actions {
                 self.hands[i].bridge_live = false;
             }
         }
-        let d = bridge::derive(side, &poses, tracked, head, now_ns, &mut self.hands[i].bridge);
+        let d = bridge::derive_with(&self.bridge_cfg, side, &poses, tracked, head, now_ns, &mut self.hands[i].bridge);
         let mut s = Sample::new(SourceKind::Hand(side), now_ns);
         s.xr_time = Some(time);
         out.push(bridge::fill(s, &d));

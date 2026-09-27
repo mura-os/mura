@@ -45,6 +45,18 @@ impl Emphasis {
         Emphasis { ramp_ns: ramp_ns.max(1), ..Emphasis::new() }
     }
 
+    /// `input.emphasis.ramp_ms` and `ui.reduced_motion` (settings.rs): reduced motion makes the
+    /// ramp a step — the emphasis still shows, it no longer animates (GNOME's
+    /// `enable-animations = false` and KDE's `AnimationDurationFactor = 0` both keep the state
+    /// change and drop the transition).
+    pub fn set_ramp(&mut self, ramp_ms: u64, reduced_motion: bool) {
+        self.ramp_ns = if reduced_motion { 1 } else { ramp_ms.saturating_mul(1_000_000).max(1) };
+    }
+
+    pub fn ramp_ns(&self) -> u64 {
+        self.ramp_ns
+    }
+
     /// The member currently targeted by the touch-class targeting source, or none.
     pub fn target(&self) -> Option<MemberId> {
         self.current.map(|l| l.member)

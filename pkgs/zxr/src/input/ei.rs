@@ -100,9 +100,10 @@ fn accept(st: &mut Zxr, handle: &LoopHandle<'static, Zxr>, context: eis::Context
         EiInputEvent::Connected => {
             st.ei.clients += 1;
             let seat = connection.add_seat("default");
-            // the seat's keymap: smithay's default xkb config, the same the wl_keyboard was
-            // created with (`Zxr::new`: `add_keyboard(Default::default(), …)`)
-            if let Err(e) = seat.add_keyboard("zxr virtual keyboard", XkbConfig::default()) {
+            // the seat's keymap: the wearer's `input.keyboard.xkb.*` (settings.rs), the same the
+            // wl_keyboard runs on after `apply` — an EI client types into the same layout
+            let xkb: XkbConfig<'_> = st.prefs.xkb_config();
+            if let Err(e) = seat.add_keyboard("zxr virtual keyboard", xkb) {
                 tracing::warn!("EI keyboard device: {e:?}");
             }
             seat.add_pointer("zxr virtual pointer");

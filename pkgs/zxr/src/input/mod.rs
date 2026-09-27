@@ -602,6 +602,9 @@ pub struct Injector {
     latched: Vec<(SourceKind, Sample)>,
     /// the joint bridge's per-hand state for `source <hand> joints …` (hysteresis, hold)
     bridge: [bridge::State; 2],
+    /// the bridge's configuration — the settings' (settings.rs `apply`), so the harness's joints
+    /// are judged as the runtime's would be
+    pub bridge_cfg: bridge::BridgeCfg,
 }
 
 impl Injector {
@@ -716,7 +719,7 @@ impl Injector {
                 // the §10 joint bridge, driven by the harness (no simulated hands exist)
                 let SourceKind::Hand(side) = k else { return Err(format!("joints need a hand kind, got {k:?}")) };
                 let i = if side == Side::Left { 0 } else { 1 };
-                let s = bridge::bridge_from_joints_with(k, joints, head.unwrap_or(xr::Posef::IDENTITY), now_ns, &mut self.bridge[i]);
+                let s = bridge::bridge_from_joints_cfg(&self.bridge_cfg, k, joints, head.unwrap_or(xr::Posef::IDENTITY), now_ns, &mut self.bridge[i]);
                 *self.latch(k, now_ns) = s; // a later `press` carries the bridged aim
                 reply = format!("{k:?} joints pinch={:.2} flags={:?}", s.values.pinch, s.flags);
                 s

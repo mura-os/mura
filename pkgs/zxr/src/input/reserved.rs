@@ -44,13 +44,11 @@ use crate::state::Zxr;
 // the caller supplies, so the boundaries are testable without a runtime.
 // -------------------------------------------------------------------------------------------
 
-/// short press — summon/dismiss. **Stand-in:** the design says "< ~500 ms" (§6 line 231) and
-/// Horizon's own boundary is 500 ms; 400 ms is this lane's number, chosen so the short/long
-/// window has a dead band rather than a shared edge. Flagged: not measured, not a comparable's.
-pub const SHORT_MAX_NS: u64 = 400_000_000;
-/// long press — recenter (§6 line 233: "long = recenter"). **Stand-in:** between Meta's
-/// > 500 ms and PICO's 1 s (research/66 §11); 800 ms is this lane's pick. Flagged.
-pub const LONG_NS: u64 = 800_000_000;
+/// short press — summon/dismiss — is a release before `long_press_ms`; a hold to it is the
+/// long press — recenter (§6 lines 231-233). One boundary (the owner's Q8 ruling, research/73):
+/// the design's "< ~500 ms" and Horizon's 500 ms [external, research/66 §11]; the earlier
+/// 400 / 800 ms dead band of this lane is retired. `system.button.long_press_ms`.
+pub const LONG_PRESS_NS: u64 = 500_000_000;
 /// the gap from the first release to the second press that makes two shorts a double (§6 line
 /// 234). **Stand-in:** 300 ms, the double-click order of the desktops; no XR comparable gives a
 /// number. Flagged.
@@ -58,6 +56,50 @@ pub const DOUBLE_NS: u64 = 300_000_000;
 /// system + select held together — force quit (§6 line 235). **Stand-in:** 1 s; the comparables
 /// state the chord (Apple Crown + top button, Deck Steam+B long) but not its hold. Flagged.
 pub const CHORD_NS: u64 = 1_000_000_000;
+
+/// `system.button.double_press` (native-openxr-apps §6 line 234): what two short presses do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DoublePress {
+    #[default]
+    ShowHidePlanes,
+    /// on tiers with a dedicated passthrough button this is the runtime's; here it is logged
+    /// as the passthrough request until the passthrough design's hook lands
+    Passthrough,
+    None,
+}
+
+impl DoublePress {
+    pub fn parse(s: &str) -> Option<DoublePress> {
+        match s {
+            "show_hide_planes" => Some(DoublePress::ShowHidePlanes),
+            "passthrough" => Some(DoublePress::Passthrough),
+            "none" => Some(DoublePress::None),
+            _ => None,
+        }
+    }
+}
+
+/// The press map's timings and choices — `system.button.*` and `games.controller_system_button`
+/// (settings.rs `Prefs::reserved_cfg`). The owner's Q8 ruling (research/73): one boundary at
+/// `long_press_ms` (500, native-openxr-apps §9's "< ~500 ms" and Horizon's 500) — a release
+/// before it is the short press, a hold to it is the long; the 400/800 dead band is retired.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReservedCfg {
+    pub long_press_ns: u64,
+    pub double_ns: u64,
+    pub chord_ns: u64,
+    pub double_press: DoublePress,
+    /// `games.controller_system_button`: while a native app is primary, a *controller's* system
+    /// button is still the compositor's (true) or the game's (false); the HMD-body control is
+    /// always the compositor's (native-openxr-apps §6: the floor)
+    pub controller_system_button: bool,
+}
+
+impl Default for ReservedCfg {
+    fn default() -> Self {
+        ReservedCfg { long_press_ns: LONG_PRESS_NS, double_ns: DOUBLE_NS, chord_ns: CHORD_NS, double_press: DoublePress::default(), controller_system_button: true }
+    }
+}
 
 /// What the reserved control asked for. The compositor's, never a client's.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -77,6 +119,7 @@ pub enum SystemAction {
 /// this one map rather than two.
 #[derive(Default)]
 pub struct PressMap {
+    pub cfg: ReservedCfg,
     down_since: Option<u64>,
     /// select was down at some point during this system hold: the chord claims the press, so
     /// neither the short nor the long action may fire from it
@@ -98,7 +141,7 @@ impl PressMap {
                 // level-triggered sources repeat the press; only the edge counts
                 return None;
             }
-            self.doubling = matches!(self.pending_short, Some(prev) if now_ns.saturating_sub(prev) <= DOUBLE_NS);
+            self.doubling = matches!(self.pending_short, Some(prev) if now_ns.saturating_sub(prev) <= self.cfg.double_ns);
             self.pending_short = None;
             self.down_since = Some(now_ns);
             self.chorded = self.select_since.is_some();
@@ -115,12 +158,16 @@ impl PressMap {
                 self.pending_short = None;
                 return None;
             }
-            if held >= SHORT_MAX_NS {
-                // between short and long the platforms' split has no action
+            if held >= self.cfg.long_press_ns {
+                // held to the long boundary: the long action fired from `tick` (or is about to
+                // on a level source); the release itself is nothing
                 return None;
             }
             if doubling {
-                Some(SystemAction::Toggle)
+                match self.cfg.double_press {
+                    DoublePress::None => None,
+                    _ => Some(SystemAction::Toggle),
+                }
             } else {
                 self.pending_short = Some(now_ns);
                 None
@@ -152,7 +199,7 @@ impl PressMap {
                 return None;
             }
             if let Some(sel) = self.select_since {
-                if now_ns.saturating_sub(since.max(sel)) >= CHORD_NS {
+                if now_ns.saturating_sub(since.max(sel)) >= self.cfg.chord_ns {
                     self.fired = true;
                     return Some(SystemAction::Quit);
                 }
@@ -162,14 +209,14 @@ impl PressMap {
                 // select was held during this press and let go: a failed chord, not a long press
                 return None;
             }
-            if now_ns.saturating_sub(since) >= LONG_NS {
+            if now_ns.saturating_sub(since) >= self.cfg.long_press_ns {
                 self.fired = true;
                 return Some(SystemAction::Recenter);
             }
             return None;
         }
         if let Some(prev) = self.pending_short {
-            if now_ns.saturating_sub(prev) > DOUBLE_NS {
+            if now_ns.saturating_sub(prev) > self.cfg.double_ns {
                 self.pending_short = None;
                 return Some(SystemAction::Summon);
             }
@@ -220,7 +267,17 @@ pub struct Recogniser {
 
 impl Recogniser {
     pub fn sample(&mut self, s: &Sample) -> Verdict {
+        self.sample_with(s, false)
+    }
+
+    /// `native_primary`: a native OpenXR app is primary (quiet mode) — with
+    /// `games.controller_system_button = false` a controller's system button is then the game's
+    /// (native-openxr-apps §9's key), and this stage forwards it untouched.
+    pub fn sample_with(&mut self, s: &Sample, native_primary: bool) -> Verdict {
         let i = kind_index(s.kind);
+        if native_primary && !self.map.cfg.controller_system_button && matches!(s.kind, SourceKind::Controller(_)) && matches!(s.button, Some((Button::System, _))) {
+            return Verdict { reserve: Reserve::None, flow: Flow::Continue, action: None };
+        }
         // The palm gesture is level-triggered on the hand data, `FB_hand_tracking_aim`'s shape:
         // every sample carrying the bit is consumed, which *is* the platforms' "suspend your own
         // gesture processing" in Wayland terms (research/68 §3.5) — the client sees nothing of
@@ -295,6 +352,8 @@ pub struct Reserved {
     pub quits: u64,
     /// hands whose open contacts were cancelled by a gesture onset
     pub gesture_cancels: u64,
+    /// the `Prefs::generation` last taken (settings.rs)
+    prefs_gen: u64,
 }
 
 impl Reserved {
@@ -318,11 +377,20 @@ impl Reserved {
             }
             SystemAction::Toggle => {
                 self.toggles += 1;
-                let was_quiet = st.quiet;
-                if was_quiet {
-                    st.set_quiet(false);
+                match self.rec.map.cfg.double_press {
+                    DoublePress::Passthrough => {
+                        // the passthrough request: the perception design's hook (research/73 row
+                        // system.double_press); nothing to toggle in the compositor yet
+                        tracing::info!("reserved: double press — passthrough (system.button.double_press); runtime hook pending");
+                    }
+                    _ => {
+                        let was_quiet = st.quiet;
+                        if was_quiet {
+                            st.set_quiet(false);
+                        }
+                        tracing::info!(was_quiet, "reserved: toggle — show/hide planes (§6 double press)");
+                    }
                 }
-                tracing::info!(was_quiet, "reserved: toggle — show/hide planes or passthrough (§6 double press)");
             }
             SystemAction::Recenter => {
                 self.recenters += 1;
@@ -351,7 +419,7 @@ impl Stage for Reserved {
     }
 
     fn run(&mut self, s: &mut Sample, st: &mut Zxr) -> Flow {
-        let v = self.rec.sample(s);
+        let v = self.rec.sample_with(s, st.quiet);
         if let Reserve::Gesture { onset: true } = v.reserve {
             st.input.queue.push(cancel_sample(s.kind, s.time_ns));
             self.gesture_cancels += 1;
@@ -369,6 +437,10 @@ impl Stage for Reserved {
     }
 
     fn tick(&mut self, st: &mut Zxr, now_ns: u64) {
+        if self.prefs_gen != st.prefs.generation {
+            self.prefs_gen = st.prefs.generation;
+            self.rec.map.cfg = st.prefs.reserved_cfg();
+        }
         if let Some(a) = self.rec.map.tick(now_ns) {
             self.apply(a, st);
         }
@@ -411,10 +483,17 @@ mod tests {
     }
 
     #[test]
-    fn a_press_between_short_and_long_does_nothing() {
+    fn one_boundary_a_release_just_before_it_is_short_and_a_hold_to_it_is_long() {
+        // the Q8 ruling: no dead band — 499 ms is a short press, 500 ms is the long one
         let mut m = PressMap::default();
         m.system(true, 0);
-        assert_eq!(m.system(false, 500 * MS), None);
+        assert_eq!(m.tick(499 * MS), None);
+        assert_eq!(m.system(false, 499 * MS), None, "a short press waits out the double window");
+        assert_eq!(m.tick(499 * MS + DOUBLE_NS + 1), Some(SystemAction::Summon));
+        let mut m = PressMap::default();
+        m.system(true, 0);
+        assert_eq!(m.tick(500 * MS), Some(SystemAction::Recenter));
+        assert_eq!(m.system(false, 501 * MS), None, "the release after the long action is silent");
         assert_eq!(m.tick(2_000 * MS), None);
     }
 
@@ -422,11 +501,47 @@ mod tests {
     fn long_press_recenters_while_still_held_and_the_release_is_silent() {
         let mut m = PressMap::default();
         m.system(true, 0);
-        assert_eq!(m.tick(799 * MS), None, "799 ms is not long yet");
-        assert_eq!(m.tick(800 * MS), Some(SystemAction::Recenter));
+        assert_eq!(m.tick(499 * MS), None, "499 ms is not long yet");
+        assert_eq!(m.tick(500 * MS), Some(SystemAction::Recenter));
         assert_eq!(m.tick(1_500 * MS), None, "once per hold");
         assert_eq!(m.system(false, 1_600 * MS), None);
         assert_eq!(m.tick(2_000 * MS), None, "and no summon after it");
+    }
+
+    #[test]
+    fn the_boundary_is_the_setting() {
+        // `system.button.long_press_ms = 800`: the old number, as a preference
+        let mut m = PressMap::default();
+        m.cfg.long_press_ns = 800 * MS;
+        m.system(true, 0);
+        assert_eq!(m.tick(799 * MS), None);
+        assert_eq!(m.tick(800 * MS), Some(SystemAction::Recenter));
+    }
+
+    #[test]
+    fn double_press_none_makes_two_shorts_nothing() {
+        let mut m = PressMap::default();
+        m.cfg.double_press = DoublePress::None;
+        m.system(true, 0);
+        m.system(false, 100 * MS);
+        m.system(true, 300 * MS);
+        assert_eq!(m.system(false, 380 * MS), None, "no toggle");
+        assert_eq!(m.tick(1_000 * MS), None, "and the first short was still claimed by the double");
+    }
+
+    #[test]
+    fn a_games_controller_system_button_is_forwarded_when_the_key_says_so() {
+        let mut r = Recogniser::default();
+        r.map.cfg.controller_system_button = false;
+        let v = r.sample_with(&system(0, true), true);
+        assert_eq!((v.reserve, v.flow), (Reserve::None, Flow::Continue), "the game's, while it is primary");
+        let v = r.sample_with(&system(0, true), false);
+        assert_eq!(v.reserve, Reserve::System(true), "the compositor's when no game is primary");
+        // the HMD-body control is always the compositor's
+        let mut r = Recogniser::default();
+        r.map.cfg.controller_system_button = false;
+        let hmd = Sample::new(SourceKind::Head, 0).with_button(Button::System, true);
+        assert_eq!(r.sample_with(&hmd, true).reserve, Reserve::System(true));
     }
 
     #[test]

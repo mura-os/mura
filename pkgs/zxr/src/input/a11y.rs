@@ -75,7 +75,6 @@ enum Anchor {
 /// The dwell state machine, pure: one targeting source at a time (the tier rule guarantees that,
 /// §3), a settle anchor, and the two intervals. Fires once per settle and rearms only on movement
 /// past the tolerance — KWin's `start()`/`stop()` pair (`dwellclicker.cpp:163-183`).
-#[derive(Default)]
 pub struct Dwell {
     kind: Option<SourceKind>,
     anchor: Option<Anchor>,
@@ -83,9 +82,26 @@ pub struct Dwell {
     px: (f64, f64),
     settled_at: u64,
     fired: bool,
+    /// `input.dwell.{onset_ms,complete_ms,tolerance_deg}` (settings.rs); the consts are the defaults
+    onset_ns: u64,
+    dwell_ns: u64,
+    tolerance_cos: f32,
+}
+
+impl Default for Dwell {
+    fn default() -> Self {
+        Dwell { kind: None, anchor: None, px: (0.0, 0.0), settled_at: 0, fired: false, onset_ns: ONSET_NS, dwell_ns: DWELL_NS, tolerance_cos: TOLERANCE_COS }
+    }
 }
 
 impl Dwell {
+    /// `input.dwell.{onset_ms,complete_ms,tolerance_deg}`.
+    pub fn set_timing(&mut self, onset_ms: u64, complete_ms: u64, tolerance_deg: f32) {
+        self.onset_ns = onset_ms.saturating_mul(1_000_000);
+        self.dwell_ns = complete_ms.saturating_mul(1_000_000);
+        self.tolerance_cos = tolerance_deg.max(0.0).to_radians().cos();
+    }
+
     fn rearm(&mut self, a: Anchor, now_ns: u64) {
         self.anchor = Some(a);
         self.settled_at = now_ns;
@@ -124,7 +140,7 @@ impl Dwell {
             return false;
         }
         let moved = match (self.anchor, here) {
-            (Some(Anchor::Dir(a)), Anchor::Dir(b)) => dot(a, b) < TOLERANCE_COS,
+            (Some(Anchor::Dir(a)), Anchor::Dir(b)) => dot(a, b) < self.tolerance_cos,
             (Some(Anchor::Px(ax, ay)), Anchor::Px(bx, by)) => (bx - ax).hypot(by - ay) > TOLERANCE_PX,
             _ => true,
         };
@@ -132,7 +148,7 @@ impl Dwell {
             self.rearm(here, now_ns);
             return false;
         }
-        if !self.fired && now_ns.saturating_sub(self.settled_at) >= ONSET_NS + DWELL_NS {
+        if !self.fired && now_ns.saturating_sub(self.settled_at) >= self.onset_ns + self.dwell_ns {
             self.fired = true;
             return true;
         }
@@ -162,11 +178,13 @@ pub struct A11y {
     pub gain: f64,
     dwell: Dwell,
     pub dwell_commits: u64,
+    /// the `Prefs::generation` last taken (settings.rs)
+    prefs_gen: u64,
 }
 
 impl Default for A11y {
     fn default() -> Self {
-        A11y { enabled: false, gain: 1.0, dwell: Dwell::default(), dwell_commits: 0 }
+        A11y { enabled: false, gain: 1.0, dwell: Dwell::default(), dwell_commits: 0, prefs_gen: 0 }
     }
 }
 
@@ -211,9 +229,21 @@ impl Stage for A11y {
         Flow::Continue
     }
 
-    /// Settings pushed through `Input` (the control socket now; `org.mura.Settings1` later,
-    /// spatial-input §14) are taken here, once per tick.
+    /// Settings are taken here, once per tick: the resolved preferences when their generation
+    /// moved (settings.rs `apply`; `input.dwell.*`, `input.pointer.gain`), and the control
+    /// socket's direct pushes through `Input` (the harness's path, spatial-input §14).
     fn tick(&mut self, st: &mut Zxr, _now_ns: u64) {
+        if self.prefs_gen != st.prefs.generation {
+            self.prefs_gen = st.prefs.generation;
+            let p = &st.prefs;
+            self.dwell.set_timing(p.dwell_onset_ms, p.dwell_complete_ms, p.dwell_tolerance_deg);
+            if self.enabled != p.dwell_enabled {
+                self.set_dwell(p.dwell_enabled);
+            }
+            if self.gain != p.pointer_gain.max(0.0) {
+                self.set_gain(p.pointer_gain);
+            }
+        }
         if let Some(on) = st.input.a11y_dwell.take() {
             self.set_dwell(on);
         }
@@ -275,6 +305,17 @@ mod tests {
         assert!(!d.step(&gaze(900, 5.0), 900 * MS), "rearmed at 900 ms");
         assert!(!d.step(&gaze(900 + FIRE_MS - 11, 5.0), (900 + FIRE_MS - 11) * MS));
         assert!(d.step(&gaze(900 + FIRE_MS, 5.0), (900 + FIRE_MS) * MS), "fires 950 ms after the rearm");
+    }
+
+    #[test]
+    fn the_intervals_and_tolerance_are_the_settings() {
+        // `input.dwell.{onset_ms,complete_ms,tolerance_deg}` = 150 / 650 / 6: fires at 800 ms,
+        // and a 5° move stays inside the tolerance that 2° would have broken
+        let mut d = Dwell::default();
+        d.set_timing(150, 650, 6.0);
+        d.step(&gaze(0, 0.0), 0);
+        assert!(!d.step(&gaze(799, 5.0), 799 * MS), "5° inside 6°: still settled, not yet due");
+        assert!(d.step(&gaze(800, 5.0), 800 * MS), "fires at onset + complete");
     }
 
     #[test]

@@ -205,15 +205,24 @@ pub struct Cursors {
     targeting: Option<SourceKind>,
     client: CursorImageStatus,
     hidden_typing: bool,
-    /// `input.cursor.ray` / `input.cursor.scale` (§14) — pushed by the control socket until
-    /// `org.mura.Settings1` delivers them
+    /// `input.cursor.ray` / `input.cursor.scale` (§14) — the settings' (settings.rs), or the
+    /// control socket's direct path
     ray_cursor: RayCursor,
     scale: Scale,
+    /// `input.cursor.angle_deg`: the visual angle the layer subtends under `Scale::Angle`
+    angle_deg: f32,
+    /// `input.cursor.hide_when_typing`: a key hides the pointer-class image (GNOME/KDE's setting)
+    hide_when_typing: bool,
+    /// `input.cursor.hide_after_ms` as ns; 0 = never (sway `seat hide_cursor <ms>`, Hyprland
+    /// `cursor:inactive_timeout`) — the image only; a ray's ring is targeting feedback, not idle
+    hide_after_ns: u64,
+    last_motion_ns: Option<u64>,
+    hidden_idle: bool,
 }
 
 impl Default for Cursors {
     fn default() -> Self {
-        Cursors { reticle: None, pointer: None, targeting: None, client: CursorImageStatus::default_named(), hidden_typing: false, ray_cursor: RayCursor::default(), scale: Scale::default() }
+        Cursors { reticle: None, pointer: None, targeting: None, client: CursorImageStatus::default_named(), hidden_typing: false, ray_cursor: RayCursor::default(), scale: Scale::default(), angle_deg: RETICLE_DEG, hide_when_typing: true, hide_after_ns: 0, last_motion_ns: None, hidden_idle: false }
     }
 }
 
@@ -224,7 +233,13 @@ pub fn size_for_angle(deg: f32, distance: f32) -> f32 {
 
 /// Metres per panel pixel so that `RETICLE_PX` pixels subtend `RETICLE_DEG` at `distance`.
 pub fn m_per_px(distance: f32) -> f32 {
-    size_for_angle(RETICLE_DEG, distance) / RETICLE_PX as f32
+    m_per_px_for(RETICLE_DEG, distance)
+}
+
+/// Metres per panel pixel so that `RETICLE_PX` pixels subtend `deg` at `distance`
+/// (`input.cursor.angle_deg`).
+pub fn m_per_px_for(deg: f32, distance: f32) -> f32 {
+    size_for_angle(deg, distance) / RETICLE_PX as f32
 }
 
 /// Whether a kind is a ray whose targeting feedback is the ring (§7: hand, head, controller).
@@ -290,18 +305,58 @@ impl Cursors {
         self.client = status;
     }
 
-    /// A key was pressed: the pointer-class cursor hides until the pointer moves (§8).
+    /// A key was pressed: the pointer-class cursor hides until the pointer moves (§8), when
+    /// `input.cursor.hide_when_typing` says so.
     pub fn on_key(&mut self) {
-        self.hidden_typing = true;
+        if self.hide_when_typing {
+            self.hidden_typing = true;
+        }
     }
 
     /// The pointer moved: the cursor shows again.
     pub fn on_motion(&mut self) {
         self.hidden_typing = false;
+        self.hidden_idle = false;
+    }
+
+    /// The pointer moved at `now_ns` — [`on_motion`](Self::on_motion) plus the idle timer's anchor.
+    pub fn on_motion_at(&mut self, now_ns: u64) {
+        self.on_motion();
+        self.last_motion_ns = Some(now_ns);
+    }
+
+    /// Once per tick: the idle hide (`input.cursor.hide_after_ms`) — the pointer-class image
+    /// goes away after the timeout without motion; a ray's ring is targeting feedback and stays.
+    pub fn tick(&mut self, now_ns: u64) {
+        if self.hide_after_ns == 0 || self.hidden_idle {
+            return;
+        }
+        if let Some(last) = self.last_motion_ns {
+            if now_ns.saturating_sub(last) >= self.hide_after_ns {
+                self.hidden_idle = true;
+            }
+        }
     }
 
     pub fn hidden_for_typing(&self) -> bool {
         self.hidden_typing
+    }
+
+    pub fn hidden_for_idle(&self) -> bool {
+        self.hidden_idle
+    }
+
+    /// `input.cursor.{angle_deg,hide_when_typing,hide_after_ms}` (settings.rs `apply`).
+    pub fn set_prefs(&mut self, angle_deg: f32, hide_when_typing: bool, hide_after_ms: u64) {
+        self.angle_deg = if angle_deg > 0.0 { angle_deg } else { RETICLE_DEG };
+        self.hide_when_typing = hide_when_typing;
+        if !hide_when_typing {
+            self.hidden_typing = false;
+        }
+        self.hide_after_ns = hide_after_ms.saturating_mul(1_000_000);
+        if self.hide_after_ns == 0 {
+            self.hidden_idle = false;
+        }
     }
 
     pub fn inputs(&self) -> Inputs {
@@ -326,7 +381,7 @@ impl Cursors {
     /// The client image, when it is drawable: not while typing, not when the client asked
     /// `Hidden`.
     fn client_image(&self) -> Option<&CursorImageStatus> {
-        if self.hidden_typing {
+        if self.hidden_typing || self.hidden_idle {
             return None;
         }
         match &self.client {
@@ -338,10 +393,11 @@ impl Cursors {
     /// The one layer this tick (the rule in the module doc), or nothing.
     pub fn layer(&self) -> Option<CursorLayer> {
         let scale = self.scale;
+        let angle_deg = self.angle_deg;
         let at = |plane_world: xr::Posef, local: [f32; 2], distance: f32| {
             let p = math::pose_apply(plane_world, [local[0], local[1], CURSOR_LIFT_M]);
             let mpp = match scale {
-                Scale::Angle => m_per_px(distance),
+                Scale::Angle => m_per_px_for(angle_deg, distance),
                 Scale::Plane => crate::scene::M_PER_PX,
             };
             (xr::Posef { orientation: plane_world.orientation, position: xr::Vector3f { x: p[0], y: p[1], z: p[2] } }, mpp)
@@ -443,6 +499,42 @@ mod tests {
         assert_eq!(panel_side_for(100, 20, 50, 10), 100);
         assert_eq!(panel_side_for(50, 50, 25, 25), CURSOR_PX);
         assert_eq!(panel_side_for(33, 33, 0, 0), 66, "even");
+    }
+
+    #[test]
+    fn angle_hide_when_typing_and_idle_hide_are_the_settings() {
+        let mut c = Cursors::default();
+        // `input.cursor.angle_deg`: a 3° reticle is twice the 1.5° one at the same distance
+        c.set_reticle(plane(), [0.0, 0.0], 1.5);
+        let base = c.layer().unwrap().m_per_px;
+        c.set_prefs(3.0, true, 0);
+        assert!((c.layer().unwrap().m_per_px - base * 2.0).abs() < 1e-6);
+        c.set_prefs(0.0, true, 0);
+        assert!((c.layer().unwrap().m_per_px - base).abs() < 1e-9, "0 is not an angle: the default");
+        // `hide_when_typing = false`: a key leaves the mouse cursor alone
+        c.set_pointer(Some(PointerPoint { plane_world: plane(), local: [0.0, 0.0], distance: 1.0, owner: Some(SourceKind::Pointer) }));
+        c.set_prefs(1.5, false, 0);
+        c.on_key();
+        assert!(c.layer().is_some(), "not hidden");
+        c.set_prefs(1.5, true, 0);
+        c.on_key();
+        assert!(c.layer().is_none());
+        c.on_motion_at(0);
+        // `hide_after_ms = 100`: the image goes after 100 ms without motion, motion brings it back
+        c.set_prefs(1.5, true, 100);
+        c.tick(50_000_000);
+        assert!(c.layer().is_some());
+        c.tick(100_000_000);
+        assert!(c.layer().is_none(), "idle: hidden");
+        assert!(c.hidden_for_idle());
+        c.on_motion_at(100_000_000);
+        assert!(c.layer().is_some());
+        // a ray owner keeps its ring while the image is idle-hidden
+        c.set_pointer(Some(PointerPoint { plane_world: plane(), local: [0.0, 0.0], distance: 1.0, owner: Some(SourceKind::Controller(Side::Right)) }));
+        c.tick(300_000_000);
+        assert_eq!(c.layer().unwrap().content, Content::Ring);
+        c.set_prefs(1.5, true, 0);
+        assert!(!c.hidden_for_idle(), "0 = never: an idle hide is lifted");
     }
 
     #[test]

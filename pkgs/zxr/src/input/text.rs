@@ -133,7 +133,9 @@ impl Stage for ImStage {
         if is_physical_key(s) {
             st.text.physical_keys += 1;
             if pressed {
-                st.text.osk_suppressed_until_ns = s.time_ns.saturating_add(OSK_SUPPRESS_NS);
+                // `input.osk.suppress_after_key_s` (the module doc's 5 min is its default)
+                let window = st.prefs.osk_suppress_after_key_s.saturating_mul(1_000_000_000);
+                st.text.osk_suppressed_until_ns = s.time_ns.saturating_add(window);
             }
         } else {
             st.text.emulated_keys += 1;

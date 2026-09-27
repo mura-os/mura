@@ -720,6 +720,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     //    (band ascending, nearest last — painter's order, `rendering.adoc:1143-1147`)
     {
         let emphasis = st.input.emphasis;
+        // `input.emphasis.strength` (spatial-input §4; the 0.15 stand-in is its default)
+        let emphasis_strength = st.prefs.emphasis_strength;
         let cursor = st.input.cursor_layer.as_ref().map(|l| (l.pose, l.m_per_px));
         let Zxr { xr, scene, cursor_panel, journal, .. } = &mut *st;
         let mut quads: Vec<QuadLayer<'_>> = Vec::with_capacity(submit.quads.len());
@@ -754,7 +756,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 journal.cursor_layers += 1;
             }
         }
-        xr.end_frame_with_quads(time, if depth { Some(&views) } else { None }, &quads)?;
+        xr.end_frame_with_quads(time, if depth { Some(&views) } else { None }, &quads, emphasis_strength)?;
     }
     close_event_latency(st);
 
@@ -929,7 +931,7 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             s.push_str(&format!("cursor: layer={content} panel={panel} swapchains_created={} layers_submitted={} {inputs}\n", st.journal.cursor_swapchains_created, st.journal.cursor_layers));
             // the settings picture (settings.rs): where it came from and how often it moved
             s.push_str(&format!(
-                "settings: artifact={} keys={} generation={} reloads={} invalid={} cursor.ray={} pointer.gain={} dwell={} density_px_per_cm={:.1}\n",
+                "settings: artifact={} keys={} generation={} reloads={} invalid={} cursor.ray={} pointer.gain={} dwell={} density_px_per_cm={:.1} targeting={} dominant={} xkb={}/{} repeat={}/{} theme={}@{} warp={} long_press_ms={}\n",
                 if st.settings.is_some() { st.prefs.artifact_generation.as_str() } else { "none (built-in defaults)" },
                 st.journal.settings_keys,
                 st.prefs.generation,
@@ -938,7 +940,17 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
                 st.prefs.cursor_ray,
                 st.prefs.pointer_gain,
                 st.prefs.dwell_enabled,
-                st.prefs.wm_density_px_per_cm
+                st.prefs.wm_density_px_per_cm,
+                st.prefs.targeting_source,
+                st.prefs.hand_dominant,
+                if st.prefs.xkb_layout.is_empty() { "default" } else { st.prefs.xkb_layout.as_str() },
+                st.prefs.xkb_variant,
+                st.prefs.repeat_delay_ms,
+                st.prefs.repeat_rate_hz,
+                st.cursor_theme.name(),
+                st.cursor_theme.size(),
+                st.prefs.pointer_warp,
+                st.prefs.system_long_press_ms
             ));
             s.trim_end().to_string()
         }

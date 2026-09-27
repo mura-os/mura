@@ -100,7 +100,7 @@ impl ContactIds {
 
     /// The commit edge a sample carries: `Some(true)` = commit, `Some(false)` = release. The
     /// `Select` button edge wins when present; else the pinch value's hysteresis.
-    pub fn commit_edge(&mut self, s: &Sample) -> Option<bool> {
+    pub fn commit_edge(&mut self, s: &Sample, pinch: (f32, f32)) -> Option<bool> {
         if let Some((Button::Select, pressed)) = s.button {
             return Some(pressed);
         }
@@ -109,11 +109,11 @@ impl ContactIds {
         }
         let i = kind_index(s.kind);
         let closed = self.pinch_closed[i];
-        if !closed && s.values.pinch >= PINCH_CLOSE {
+        if !closed && s.values.pinch >= pinch.0 {
             self.pinch_closed[i] = true;
             return Some(true);
         }
-        if closed && s.values.pinch <= PINCH_OPEN {
+        if closed && s.values.pinch <= pinch.1 {
             self.pinch_closed[i] = false;
             return Some(false);
         }
@@ -133,14 +133,28 @@ pub enum TouchOp {
 }
 
 /// The pure per-sample planner over the contact table.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TouchLogic {
     pub contacts: ContactIds,
     pub downs: u64,
     pub cancels: u64,
+    /// `input.hand.pinch.{close,open}` — the one commit ladder (with the tier's loss tracker,
+    /// research/73 D2); the consts above are its defaults
+    pub pinch: (f32, f32),
+}
+
+impl Default for TouchLogic {
+    fn default() -> Self {
+        TouchLogic { contacts: ContactIds::default(), downs: 0, cancels: 0, pinch: (PINCH_CLOSE, PINCH_OPEN) }
+    }
 }
 
 impl TouchLogic {
+    /// `input.hand.pinch.{close,open}` (settings.rs).
+    pub fn set_pinch(&mut self, close: f32, open: f32) {
+        self.pinch = (close, open.min(close));
+    }
+
     /// Plan the ops for one sample given the hit to commit or drag at (already resolved to a
     /// point a surface exists under — a hit with no surface is no hit).
     pub fn plan(&mut self, s: &Sample, hit: Option<(MemberId, [f32; 2])>, out: &mut Vec<TouchOp>) {
@@ -165,7 +179,7 @@ impl TouchLogic {
                     self.cancels += 1;
                     return;
                 }
-                match self.contacts.commit_edge(s) {
+                match self.contacts.commit_edge(s, self.pinch) {
                     Some(false) => {
                         out.push(TouchOp::Up { id });
                         out.push(TouchOp::Frame);
@@ -185,11 +199,11 @@ impl TouchLogic {
             Some(_) => {
                 // another kind holds this id (a second committer at the gaze target): its edges
                 // still advance the pinch latch so a later release is not misread as a commit
-                let _ = self.contacts.commit_edge(s);
+                let _ = self.contacts.commit_edge(s, self.pinch);
             }
             None => {
                 // nothing before `down` (spatial-input §5/§9): only a commit edge with a hit
-                if self.contacts.commit_edge(s) == Some(true) {
+                if self.contacts.commit_edge(s, self.pinch) == Some(true) {
                     if let Some((member, local)) = hit {
                         if s.tracked && s.ready {
                             out.push(TouchOp::Down { id, member, local });
