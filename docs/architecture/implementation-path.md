@@ -9,7 +9,7 @@ groundwork with no compositor dependency, verified in the rung-2 VM with stand-i
 by dependency class; G2 reduced to a recorded swap; the pre-groundwork specifications named in
 §5.1; **rev 4.1 same day — F2/F3/D2/D3 absorb first-run rev 2.5 / ADR 0017 rev 2.4: sshd
 upstream on every profile, `mura-setup` one program in two instances, the `setup-complete`
-marker, Cockpit dropped**; **rev 4.2, 2026-09-27 — G1 rewritten for ADR 0007's amendment: the auth scene is a trusted client (the greeter program, its toolkit a prerequisite research pass), zxr `--greeter` composes it over a socketpair and draws no UI**; **rev 4.3, same day — the shell-plane research and design (research/75, shell-plane.md) recorded as done in §3 G1's prerequisites and §5**; **rev 4.4, same day — M1's window-management floor and the seam recorded as landed** (§3 M1 status; §5 "The window manager": the floor, the grab and `zxr_window_management_v1` rev 1 built and gated; the shipped external managers remain ordered after the shell clients that need them).
+marker, Cockpit dropped**; **rev 4.2, 2026-09-27 — G1 rewritten for ADR 0007's amendment: the auth scene is a trusted client (the greeter program, its toolkit a prerequisite research pass), zxr `--greeter` composes it over a socketpair and draws no UI**; **rev 4.3, same day — the shell-plane research and design (research/75, shell-plane.md) recorded as done in §3 G1's prerequisites and §5**; **rev 4.4, same day — M1's window-management floor and the seam recorded as landed** (§3 M1 status; §5 "The window manager": the floor, the grab and `zxr_window_management_v1` rev 1 built and gated; the shipped external managers remain ordered after the shell clients that need them).; **rev 4.5, same day — the shell-layer mechanics study (research/77) recorded and zxr's shell-layer half ordered with its nested gate** (§5 "The shell plane": arrangement per frame, the placement table, the trusted connection, the filter; the gate = squeekboard and mako mapping on zxr unmodified, spec §12 gate 8).
 **What this is:** the ordered build path from power-on to a zxr session, derived from the
 dependency graph ([desktop-environment.md §6](desktop-environment.md)) — not a replacement for
 it. Rungs are ordered only where a hard dependency exists; everything else is a parallel track.
@@ -674,7 +674,15 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   `zxr-layer-anchoring-v1` (bands 2/4/5, exclusive angular bands, head-frame default), the
   per-connection binding filter, the socketpair admission of §2.3, the still-pointer motion
   dedupe (research/75 D3) — because no shipping OSK or panel can map on zxr without it
-  (research/75 D2); then the **greeter program** (`mura-greeter`, Slint) and G1's restricted mode
+  (research/75 D2). *Its mechanics are research/77 (rev 4.5): arrangement per frame in
+  frame-pixel space, the initial configure after arrange, the focus override / stack rules, the
+  wearer's placement table `shell.place:<namespace>` (owner ruling), the trusted connection as the
+  gate's exception, the filter as `ClientData` bits at insert; spec §4/§8/§9/§10 rev 3.12 are
+  normative. **Its gate** is spec §12 gate 8: unmodified squeekboard and mako (and a
+  gtk-layer-shell client) map and behave on nested zxr, the security-context filter and the
+  socketpair admission are proven, a still pointer sends nothing, the tick budget is recorded.
+  Grab-to-place on a shell plane reuses the landed grab mechanics (research/76) and follows.*
+  Then the **greeter program** (`mura-greeter`, Slint) and G1's restricted mode
   composing it; then **squeekboard carried** over the socketpair as the greeter's keyboard path;
   then G2/G3. The session components (panel + tray host, OSD + polkit agent, launcher, mako
   carried) land after M1's window floor gives them windows to show; `mura-overview` after places.

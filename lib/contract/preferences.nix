@@ -474,6 +474,35 @@ in
       };
     };
 
+    ## shell.* — shell-plane.md §2.6 (the compositor's shell-layer half reads every key) --------
+    # The head frame's rectangle: the fallback placement for a layer surface whose namespace has
+    # no `shell.place:<namespace>` row and no anchoring request, and the home of head-locked
+    # transients (OSD, the lock scene). Owner ruling 2026-09-27 (research/77 §9): where a shell
+    # surface sits is the wearer's — the placement table decides; these are only the fallback.
+    # Nix path `shellPlane` (`mura.xr.shell` is the enum naming the shell); schema `shell.head`.
+    shellPlane = {
+      head = {
+        extentHDeg = k "shell.head" "extent_h_deg" {
+          type = types.float;
+          default = 90.0;
+          range = { min = 20.0; max = 180.0; };
+          description = "Horizontal extent in degrees of the head frame's angular rectangle — the 'output edge' unaware layer-shell clients are arranged against (zxr-layer-anchoring-v1's own example, 90×70). Consumer: zxr shell/mod.rs.";
+        };
+        extentVDeg = k "shell.head" "extent_v_deg" {
+          type = types.float;
+          default = 70.0;
+          range = { min = 20.0; max = 180.0; };
+          description = "Vertical extent in degrees of the head frame's angular rectangle. Consumer: zxr shell/mod.rs.";
+        };
+        distanceM = k "shell.head" "distance_m" {
+          type = types.float;
+          default = 0.5;
+          range = { min = 0.2; max = 3.0; };
+          description = "Canonical presentation distance of the head frame in metres (margins convert to angle at it). WiVRn's lobby GUI 0.5 m (client/constants.h:103), WayVR's keyboard z 0.5 m. Consumer: zxr shell/mod.rs.";
+        };
+      };
+    };
+
     ## ui.* -------------------------------------------------------------------------------
     ui = {
       reducedMotion = k "ui" "reduced_motion" {

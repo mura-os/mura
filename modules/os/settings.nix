@@ -84,6 +84,25 @@ in
       };
     };
 
+    # The shell placement table (shell-plane.md §2.6; owner ruling 2026-09-27, research/77 §3.3a):
+    # `shell.place:<namespace>` instances, one per layer-shell namespace (`osk`, `notifications`,
+    # `waybar`, …), written by the wearer's grab on a shell plane or by hand. A row wins over the
+    # client's zxr-layer-anchoring request; without a row the request applies; without either the
+    # head fallback (`shell.head.*`). Hyprland's layer rules by namespace are the precedent. The
+    # template's defaults are the head fallback; zxr's seed rows for the carried components'
+    # namespaces (research/77 §3.3a) apply to an instance with no stored value. Class `state`:
+    # remembered placement, not intent (settings-schema.md §2).
+    mura.settings.templates."shell.place" = {
+      keys = {
+        frame = { type = "enum"; values = [ "head" "body" "hand_left" "hand_right" "world" "docked" ]; default = "head"; class = "state"; description = "The anchoring frame (zxr-layer-anchoring-v1's enum). An unavailable frame falls back per the protocol (hand → body, docked → head)."; };
+        azimuth_deg = { type = "double"; default = 0.0; range = { min = -180.0; max = 180.0; }; class = "state"; description = "Centre azimuth in the frame, degrees (positive = right)."; };
+        elevation_deg = { type = "double"; default = 0.0; range = { min = -90.0; max = 90.0; }; class = "state"; description = "Centre elevation in the frame, degrees (positive = up)."; };
+        distance_m = { type = "double"; default = 0.5; range = { min = 0.2; max = 5.0; }; class = "state"; description = "Presentation distance from the frame origin, metres."; };
+        pitch_deg = { type = "double"; default = 0.0; range = { min = -90.0; max = 90.0; }; class = "state"; description = "Pitch of the plane about its horizontal axis, degrees (negative = tilted toward a wearer looking down at it — WayVR's keyboard −10)."; };
+        width_deg = { type = "double"; default = 0.0; range = { min = 0.0; max = 180.0; }; class = "state"; description = "Horizontal angular size, degrees; 0 = the compositor's choice (the arranged pixel size at the frame's pixels-per-degree)."; };
+      };
+    };
+
     assertions = [
       {
         assertion = deviceKeys == [ ];
