@@ -272,8 +272,18 @@ buttons, dwell where a button is unusable. Declared facts:
   to name an existing button when set. Null on targets with no HMD-body candidate (Quest-class:
   power and volume only). The controller system button carries the same role with identical
   semantics wherever one exists, and the posture-gated palm gesture carries it on every tier —
-  so the role is never absent, only its HMD-body carrier. Not yet in `lib/contract` — lands with
-  the M1 policy that reads it.
+  so the role is never absent, only its HMD-body carrier. In `lib/contract` since 2026-09-27
+  (`mura.hardware.input.systemRole`, asserted; the Steam Frame declares `select`).
+- **How the input facts reach the compositor (2026-09-27, research/73):** `hmdButtons`,
+  `selectRole`, `backRole` and `systemRole` are placed on the settings artifact as immutable
+  build facts — `hardware.input.hmd.{buttons,select_role,back_role,system_role}` — beside the
+  **input calibrations** the same file declares (`lib/contract/input-calibration.nix`,
+  `mura.hardware.input.{hand.pinch,hand.poke,near_band,gaze,held,stabilize,hit,palm,stick}.*`:
+  the tracker's thresholds, stand-ins from the code until measured at M1; spatial-input.md §14
+  lists them). zxr reads them from the artifact (`ZXR_HMD_BUTTONS` is the nested harness's
+  override only), so a device file's numbers are the compositor's without an environment. Where
+  the owner ruled a wearer knob on top (pinch threshold, stick deadzone, click-freeze — research/73
+  Q2), the preference's Nix default *is* the calibration, so `Reset` returns to the device's value.
 - `controllers` ∈ `none | imu-3dof | optical-6dof` — the controller class available before
   cameras are up (`optical-6dof` counts as `imu-3dof` pre-login).
 - `bluetooth` — adapter present; gates the pre-login pairing agent and the `pairing/` state

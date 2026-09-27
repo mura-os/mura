@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 3.7 (2026-09-27; rev 3.6 + research/70 §9.2 — §8 a ray-owned pointer released when gaze takes the tier, the `input.cursor.ray` / `input.cursor.scale` preferences, §11 `input_pointer_releases`; rev 3.6 = same day; rev 3.5 + research/70 §9 — §8 the cursor as one composition layer in one fixed-size swapchain (ruled: one cursor element, the client's cursor over the ray's reticle, nothing under gaze), §11 cursor counters, §12 the cursor gate row; rev 3.5 = 2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3.8 (2026-09-27; rev 3.7 + research/73 settings Phase B — §3 `mura-settingsd` as a library and no `zbus` in the compositor, §8 "Settings": the in-process consumer (Engine + one inotify fd on the state loop, `Prefs` by generation, every threshold a preference or a calibration key), §11 settings counters, §12 the settings gate row; rev 3.7 = same day; rev 3.6 + research/70 §9.2 — §8 a ray-owned pointer released when gaze takes the tier, the `input.cursor.ray` / `input.cursor.scale` preferences, §11 `input_pointer_releases`; rev 3.6 = same day; rev 3.5 + research/70 §9 — §8 the cursor as one composition layer in one fixed-size swapchain (ruled: one cursor element, the client's cursor over the ray's reticle, nothing under gaze), §11 cursor counters, §12 the cursor gate row; rev 3.5 = 2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -87,8 +87,11 @@ flowchart LR
 Crate shape: one binary, modules as Rust modules; `libc` where it counts; dependencies: smithay
 (git rev, `default-features = false`, features `wayland_frontend backend_drm backend_vulkan
 desktop`; `xwayland` off — satellite), `openxr` (openxrs), `ash`, `calloop`, `serde`/`serde_json`
-(the artifact, `recovery.json`-style config), `zbus` only if the settings client needs it (the
-CLI's `--direct` reader is the alternative for a first read; signals need the bus). No tokio.
+(the artifact), and **`mura-settingsd` as a library** (path dependency, `default-features =
+false`: the artifact, store and engine modules without `zbus` or the bins — the daemon's `bus`
+cargo feature). **No `zbus` in the compositor** (ruled 2026-09-27, research/73 §5 Q7 / §6 option
+b): zxr resolves its keys in-process with the same `Engine` the daemon serves and watches the
+per-user store directory with one inotify fd on the state loop (§8 "Settings"). No tokio.
 
 ## 4. The layer model (research/60 §1)
 
@@ -482,17 +485,18 @@ stand-ins' values and sources are research/70 §5, the first-hardware list.
   focus, §6, and only places the pointer's warp, §8). Under gaze the *transport* does the work
   (rev 3.7): a ray-owned `wl_pointer` is released — `leave`, no plane, owner kept — when gaze
   takes the tier and re-enters when the ray retakes it; a mouse-owned pointer is not released;
-  the cursor has no gaze rule of its own. Two per-user preferences (spatial-input §14):
-  `input.cursor.ray` (both | image | ring, what a ray owner shows; default both) and
-  `input.cursor.scale` (angle | plane; default angle), via `zxr ctl cursor` until
-  `org.mura.Settings1` carries them. **As built:** one band-5 quad from one
+  the cursor has no gaze rule of its own. Its preferences (spatial-input §14): `input.cursor.ray`
+  (both | image | ring, what a ray owner shows; default both), `input.cursor.scale` (angle |
+  plane; default angle), `input.cursor.{angle_deg,hide_when_typing,hide_after_ms}`, and the
+  theme and size — resolved by the settings consumer below; `zxr ctl cursor` is the harness's
+  direct path. **As built:** one band-5 quad from one
   fixed 64×64 swapchain (grown only around a larger `set_cursor` image, never shrunk; the DRM
   cursor plane's shape), drawn into only when its content changes — the ring once, a
   `set_cursor` surface on its commits, a name when the name changes — never a pass per pointer
   motion; the hotspot is the panel's centre, the quad is centred on the point and sized so the 64
-  px span subtends 1.5° at the point's distance, lifted 1 mm. The theme comes from
-  `XCURSOR_THEME`/`XCURSOR_SIZE`/`XCURSOR_PATH` (KWin's first step) until settings-schema names
-  the key (open, §14).
+  px span subtends `input.cursor.angle_deg` (1.5°) at the point's distance, lifted 1 mm. The
+  theme is `input.cursor.{theme,size}`, whose default `"default"` is the environment's
+  `XCURSOR_THEME`/`XCURSOR_SIZE` on `XCURSOR_PATH` (KWin's first step; the freedesktop fallback).
 - **The mouse pointer** lives on a plane in plane-local coordinates (libinput flat profile +
   compositor gain); warps to the looked-at plane when the look has moved (gaze, degrading to
   head); leaving a plane without a look change it becomes an angular ray from the head until it
@@ -506,12 +510,31 @@ stand-ins' values and sources are research/70 §5, the first-hardware list.
   `input-method-v2`; `pointer-warp-v1` is honoured per its own rule (focus + valid enter serial).
 - **3D clients (M2)**: `zxr-shell-v2` input takes `XR_EXT_hand_interaction`'s shape (poses,
   values, `ready`) with exclusive capture; gaze not delivered by default (permission model open).
-- **Stand-ins** (the first-hardware list; research/70 §5 has every value and its source): pinch
-  0.75/0.5 and 1.0/1.5 cm, emphasis ramp 700 ms, near band 0.18/0.22 m, dwell 200 + 750 ms,
-  eyes→head 800 ms, controller held 2 s, reserved press windows 400/800/300/1000 ms, reticle
-  1.5° (the cursor layer's 64 px span; the client image at its theme pixel size inside it),
-  cursor panel 64 px, cursor lift 1 mm, pointer gain 1.0. None is measured on trackers; the
-  nested gate measured the architecture, not the thresholds.
+- **Settings (rev 3.8, 2026-09-27 — research/73; spatial-input §14 is the key table).** Every
+  threshold above is a key on the settings artifact, of one of two kinds. The wearer's
+  **preferences** (`input.*`, `wm.*`, `system.*`, `games.*`, `ui.reduced_motion`,
+  `session.idle.count_emulated_input`; `mutability = mutable`) and the tracker's
+  **calibrations** (`hardware.input.*`; immutable, `locked`, build facts). `settings.rs` opens
+  the daemon's `Engine` on `/etc/mura/settings-schema.json` (`MURA_SETTINGS_SCHEMA` for the
+  nested harness) and the XDG roots, resolves the prefixes zxr owns into one typed `Prefs`
+  (defaults = the former constants, so an artifact without a key changes nothing), applies the
+  `Zxr`-level ones directly (keyboard keymap/repeat/num-lock, cursor theme, libinput device
+  configuration on every known device, the joint bridge's configuration, the scene `Layout` with
+  a plane rescale, the activity flag), and bumps `Prefs::generation`; **every stage compares the
+  generation at its tick** and takes its share (`*Cfg` structs rebuilt from `Prefs`: `TierCfg`,
+  `GazeCfg`, `HeldCfg`, `GestureCfg`, `StabilizeCfg`, `ReservedCfg`, `BridgeCfg`, `DeviceConfig`,
+  `Layout`, the cursor's, the dwell's, the hit stage's). The watch is one inotify fd on the store
+  directory (`IN_MOVED_TO | IN_CLOSE_WRITE | IN_DELETE`; the daemon writes fsync + rename) as a
+  calloop `Generic` source — a change is re-resolved and applied within one tick; **zero
+  threads, no bus** (cosmic-comp `ConfigWatchSource`'s shape). A locked key resolves from the
+  artifact whatever a store file says (settings-schema.md §7); a stored value the engine rejects
+  (type, range, enum) is counted and falls to the default. Without an artifact zxr runs on the
+  built-in defaults and says so. `zxr ctl a11y|cursor …` remain the harness's direct pushes and
+  win until the next change. Layered keys (`input.hand.pinch.*`, `input.pointer.{click_freeze_ms,
+  stick_deadzone}`) default to the calibration in Nix, so `Reset` returns to it.
+- **The first-hardware list** is the calibrations: research/70 §5 records each value, its source,
+  and its key. None is measured on trackers; the nested gate measured the architecture, not the
+  thresholds.
 
 ## 9. Modes, unit, restart (ADR 0007; session-bootstrap rev 3)
 
@@ -595,7 +618,14 @@ counters** (research/70 §9): `cursor_layers` and `cursor_layers_per_frame_x100`
 submitted — ≤ 1 per frame is the one-element rule), `cursor_passes` (passes into the cursor
 panel — content changes only, never motion), `cursor_swapchains_created` (1 per session unless
 a client image outgrows the fixed panel); `zxr ctl list` ends with a `cursor:` line naming the
-layer's content, position, size, panel and the inputs it was resolved from.
+layer's content, position, size, panel and the inputs it was resolved from. **Rev 3.8 — the
+settings counters** (research/73): `settings_keys` (keys resolved from the artifact),
+`settings_reloads` (store changes re-resolved), `settings_invalid` (stored values the engine
+rejected, fallen to the default), `settings_generation` (the `Prefs` generation the stages
+compare); `zxr ctl list` adds a `settings:` line — the artifact's generation, the counters and
+the resolved value of the keys the harness checks (cursor ray, gain, dwell, density, targeting
+pin, dominant hand, xkb, repeat, theme, warp, long press). `zxr ctl primary on|off` drives
+`Zxr::primary_changed` (the M1 observer's hook) so `games.keep_planes` is testable nested.
 
 ## 12. Conformance — the R0 gates (research/39 §5, measured)
 
@@ -652,6 +682,23 @@ headset). Each gate is a written result with numbers in
    pointer events at 1 kHz); `cursor_swapchains_created = 1` per session. **Measured (host):**
    1.00 / 1.00 / 1.00 / 1.00 layers per frame (crossing, 1 kHz stream, head only, beside
    xrgears), 0 under gaze; 20 / 0 / 0 / 0 passes; 1 swapchain; 0 missed.
+6. **The settings gate (rev 3.8, research/73).** Nested (Monado + zxr + `mura-settingsd` on a
+   private session bus, `MURA_SETTINGS_SCHEMA` = the virtual-headset configuration's artifact):
+   (a) `mura-settings set input.cursor.ray image` → `zxr ctl list` shows `cursor.ray=image`
+   within one tick, `settings_reloads` +1; `set input.pointer.gain 2` → `pointer.gain=2`;
+   `reset` returns the default; (b) `set hardware.input.hand.pinch.close 0.1` is refused by the
+   daemon (`Locked`), and a tampered locked store file is re-resolved to the artifact's value
+   with `settings_invalid` unchanged; an out-of-range value written behind the daemon's back is
+   counted invalid and the default used; (c) the keyboard keymap changes live
+   (`input.keyboard.xkb.layout de`) and a bad layout is rejected with the previous keymap kept;
+   theme and size, targeting pin, dominant hand, warp, long-press boundary, density (planes
+   rescaled) and `games.keep_planes` (`ctl primary on` leaves quiet off) all reach zxr within a
+   tick; (d) the process keeps ≤ 4 threads and no bus connection. **Measured (host, 2026-09-27):**
+   every line a pass; 17 reloads for 17 writes, 1 invalid for the one out-of-range write; 4
+   threads; keymap `de///` applied live, `no-such-layout-xyz` rejected (`BadKeymap`); 103–107
+   keys resolved from the artifact. **Budget:** the release binary 6.46 → 6.82 MB (+0.36 MB:
+   serde/serde_json and the settings library; the plan estimated +0.25), closure +0.4 MB, RSS
+   not re-measured (one fd, no thread, no bus); the §12 fence (≤ 40 MB binary) holds.
 
 Plus the fence (budget impact above) and the unit contract items already verified for sway by
 D4 (readiness, restart in the same session), re-run with zxr in the slot behind a flag.
@@ -702,8 +749,8 @@ attachment (§7); the compositor's scheduling request through the unit (minimum 
 `RESET_ON_FORK`; §9); no depth-layer submission while the runtime does not read it (§7);
 multiview for the projection pass once it carries 3D content (M2); display refresh rate as a
 user setting (settings-schema).
-**Open from the input floor (rev 3.5, research/70 §5–§6; decider: the owner):** the cursor
-theme and size key in settings-schema (the code reads `XCURSOR_THEME`/`XCURSOR_SIZE` until then);
+**Open from the input floor (rev 3.5, research/70 §5–§6; decider: the owner):** ~~the cursor
+theme and size key~~ (`input.cursor.{theme,size}`, rev 3.8);
 whether a held controller outranks a hand ray when both target (spatial-input §3 says so and the
 code follows it; research/63 §1's "Transfer" line said the reverse); the `Head` kind's class
 label (pointer in the code, touch-class "whatever commits" in §3); every stand-in in research/70

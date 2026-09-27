@@ -1,6 +1,6 @@
 # specs/settings-schema: the generated schema artifact, strata, and reconciliation
 
-**Status:** rev 4 (2026-09-27) — rev 3 + the per-key axis renamed from `ownership = declarative | runtime` to **`mutability = mutable | immutable`** (§3): the old names implied the wrong thing in both directions — both kinds are declared in Nix, and a `mutable` key is not runtime-only (Nix owns its default, `Reset` returns to it). The words are the comparables' own: NixOS `users.mutableUsers`, KConfig's `[$i]` immutable entries. Field, values, the bus error (`ERR_IMMUTABLE`) and the artifact key change together; per-user stores carry no ownership, so nothing migrates. Rev 3 (2026-09-25) — the rev 2 contract re-derived from the stores' source under
+**Status:** rev 4.1 (2026-09-27) — rev 4 + §6: the compositor is an in-process consumer of the store (research/73 Q7 ruled), not a bus client; rev 4 (2026-09-27) — rev 3 + the per-key axis renamed from `ownership = declarative | runtime` to **`mutability = mutable | immutable`** (§3): the old names implied the wrong thing in both directions — both kinds are declared in Nix, and a `mutable` key is not runtime-only (Nix owns its default, `Reset` returns to it). The words are the comparables' own: NixOS `users.mutableUsers`, KConfig's `[$i]` immutable entries. Field, values, the bus error (`ERR_IMMUTABLE`) and the artifact key change together; per-user stores carry no ownership, so nothing migrates. Rev 3 (2026-09-25) — the rev 2 contract re-derived from the stores' source under
 AGENTS rules 7/8 ([research/58](../docs/research/58-settings-stores-from-comparables.md)).
 Kept, with comparables: the compiled-schema artifact, sparse XDG stores with a state root,
 Set-always-writes/Reset/provenance, relocatable instances, locks as system-layer facts, a single
@@ -158,7 +158,7 @@ later migration declared after every shipped generation can read the new key.
 
 `apply` is a **label** in the artifact — `live`, `restart:<unit>`, `relogin`, `reboot` — telling
 a UI what a key needs (the KCM's "takes effect after restart"). The daemon signals; **the owner
-of the effect applies** (the compositor reloads on `Changed`; a domain daemon reloads itself as
+of the effect applies** (the compositor re-resolves on the store's change — it links the daemon's engine and watches the store directory rather than holding a bus connection, ruled 2026-09-27, research/73 Q7, zxr-core rev 3.8 §8; a bus client would reload on `Changed`; a domain daemon reloads itself as
 `localed` reloads PID 1; the switch restarts units whose definitions changed; a device key's
 handler applies inside the system mode). Nothing tracks pending/applied status and nothing in the
 settings daemon restarts other units — no settings store does. Device keys whose effect can hurt

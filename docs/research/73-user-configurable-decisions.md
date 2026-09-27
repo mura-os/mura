@@ -346,10 +346,14 @@ MRTK3/StereoKit/WiVRn ship them as constants; xrdesktop exposes `grab-window-thr
 *and* a per-user key layered on it, the key's Nix default derived from the contract value so
 `Reset` returns to the calibration. *Ruling:* (b) — "not a bad idea". One source of truth for the
 number (the contract), one override on top; `mkSetting`'s `default` is computed from
-`mura.hardware.*` at eval. **Open sub-question (owner):** apply the layering to all 16
-calibrations of §2.5, or only to those with an exposure precedent — pinch/grab threshold
-(xrdesktop), stick deadzone (xrdesktop, WiVRn), click-freeze (three shells)? My read: the latter,
-so half-lives and body-model lengths do not become a settings UI no platform ships.
+`mura.hardware.*` at eval. **Sub-question — RULED 2026-09-27: precedent-only.** The layering
+applies to the three calibrations with an exposure precedent — pinch/grab threshold
+(xrdesktop), stick deadzone (xrdesktop, WiVRn), click-freeze (three shells) — not to the
+half-lives and windows no platform ships a UI for. **And the owner reclassified the body model:**
+`bridge.rs:60-63` (shoulder half-width, head length, neck length — Monado `ht_ctrl_emu`'s
+averages) is the *wearer's*, not the tracker's ("I would have said A, but then you put body
+model in B"), so it is a per-user preference `input.body.*` with the averages as Nix defaults —
+not a calibration, not layered. Implemented in `lib/contract/{preferences,input-calibration}.nix`.
 
 **Q3 — Pointer acceleration profile — RULED 2026-09-27: a key, default `flat`.** *Why it was a
 decision:* every comparable exposes `accel-profile` (GNOME `:188-207`, Hyprland, COSMIC, wayvr's
@@ -375,7 +379,9 @@ angle: the owner's.
 **Q6 — Controller versus hand when both target** (carried from research/70 §6.1). *Options:*
 §3's order (controller) or research/63 §1's Transfer line (hand). Unchanged; listed for completeness.
 
-**Q7 — How zxr consumes settings** (§6). *Options:* (a) a session-bus client (mutter, KWin,
+**Q7 — How zxr consumes settings — RULED 2026-09-27: (b), the in-process engine** (built as
+`pkgs/zxr/src/settings.rs`; the daemon gained a `bus` cargo feature so the compositor links the
+library without `zbus`; spec zxr-core rev 3.8 §3/§8). *Options were:* (a) a session-bus client (mutter, KWin,
 xrdesktop; `zbus` `blocking-api`, one extra thread) or (b) the in-process `Engine` over the store
 files with an inotify calloop source (cosmic-comp's `ConfigWatchSource`; zero threads, no bus).
 *Consequence:* (a) follows spec §6's "the compositor reloads on `Changed`" literally and gets
@@ -457,6 +463,43 @@ does by construction and option (a) must do in addition.
   options every Wayland compositor passes through; they cost keys, not mechanisms.
 - **D4 — the click-freeze family is the one XR-consensus knob Mura has no key for,** and its
   mechanism already exists (the stabiliser); Q4 decides only whether the wearer sees it.
+
+**Phase B (2026-09-27) — what was built on these determinations and rulings**, for the record
+(the plan `settings_phase_b_enablement`; commits on `zxr/settings`):
+
+- **Declared** (`lib/contract/preferences.nix`, `lib/contract/input-calibration.nix`): 107 keys on
+  the artifact — every `input.*`, `wm.*`, `system.*`, `games.*`, `session.*`, `ui.reduced_motion`
+  preference of §4/§7 as `mutable` (Q1), the 24 `hardware.input.*` calibrations as immutable
+  build facts, the three layered keys (Q2, precedent-only) with the calibration as their Nix
+  default, `input.body.*` per-user (the owner's reclassification), `input.pointer.accel_profile`
+  default `flat` (Q3), `hmdButtons`/`selectRole`/`backRole`/`systemRole` as
+  `hardware.input.hmd.*` (the contract gained `systemRole`, native-openxr-apps §6). The designed
+  wm keys whose consumer is the not-yet-built policy module (`wm.{engine,external_manager,
+  minimize}`, `wm.follow.*`, `wm.move.billboard`) are declared with that said; keys the design
+  gives no value for (`wm.size.*`, `wm.focus.{dim,sibling_alpha}`, `wm.spawn.overlap`) and the
+  toolkit-side pointer keys are not.
+- **Consumed** (Q7, option b): `settings.rs` — `Engine` + one inotify fd on the state loop, one
+  typed `Prefs` (defaults = the former constants), `apply()` at every store change, every stage
+  taking its share by generation. Zero threads, no bus; measured nested: a write applied within
+  one tick, a locked key immune to a tampered file, an invalid value counted and defaulted.
+- **Wired:** every row of the plan's key → consumer map; D2's two inconsistencies fixed (one pinch
+  ladder at the calibration's 0.75/0.5; the reserved boundary one number at 500 ms — **Q8 taken
+  as (a)**, flagged); research/70 §5 rewritten with each stand-in's disposition.
+- **Carried as flagged defaults, not rulings** (the owner's to change; each a one-number or
+  one-enum flip in `preferences.nix`): Q4 `input.pointer.click_freeze_ms` layered on the
+  calibration's 50 ms; Q5 `session.idle.count_emulated_input = true`; Q8 `long_press_ms = 500`;
+  Q9 `wm.density_px_per_cm = 8.3` (20 named in the description); Q10 `wm.focus.mode` not declared;
+  Q11 `updates.*` left to the images design; Q6 unchanged.
+- **Judgments made in the wiring (rule 4):** the targeting pin is a *ceiling* on the ladder, and
+  direct touch is never pinned away; the idle cursor hide hides the pointer-class image only (a
+  ray's ring is targeting feedback); `wm.focus.raise_on_commit = false` still focuses, it only
+  stops the raise; `games.controller_system_button = false` forwards a controller's system button
+  only while a native app is primary and never the HMD-body control; `input.keyboard.numlock =
+  remember` persists to `$XDG_STATE_HOME/mura/zxr/numlock` (cosmic-comp's shape); the
+  `"default"` cursor theme means the environment's; the zxr Nix package's source is a fileset
+  union of the two crates rather than a third `mura-settings-core` crate (repo-structure would
+  have to change for that); `M_PER_PX` became exactly `1/830` so the code's default equals the
+  declared 8.3 px/cm.
 
 ## 8. Sources
 

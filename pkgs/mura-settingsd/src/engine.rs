@@ -339,7 +339,11 @@ mod tests {
     use std::fs;
 
     fn engine(mode: Mode) -> (Engine, PathBuf) {
-        let d = std::env::temp_dir().join(format!("mura-engine-{}-{:?}", std::process::id(), std::time::SystemTime::now()));
+        // pid + a per-process counter: two test threads starting in the same clock tick must
+        // not share a directory (seen once as a flaky failure under back-to-back runs)
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("mura-engine-{}-{n}-{:?}", std::process::id(), std::time::SystemTime::now()));
         fs::create_dir_all(&d).unwrap();
         (Engine::new(fixture(), "g1".into(), mode, d.join("config"), d.join("state")), d)
     }

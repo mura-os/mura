@@ -385,8 +385,9 @@ texture every frame: Simula `CanvasBase.hs:162-163,773-796`, wayvr `overlays/scr
 the structural precedent. Names resolve through the Xcursor theme named by
 `XCURSOR_THEME`/`XCURSOR_SIZE` on `XCURSOR_PATH` — KWin's first step before its own config
 (`kwin/src/cursor.cpp:117-126`), wlroots' path search (`xcursor/xcursor.c:515-563`), niri sets
-the same variables for clients (`niri/src/cursor.rs:189-193`) — until settings-schema names
-the theme and size key (§15). A name the theme lacks draws nothing and is counted
+the same variables for clients (`niri/src/cursor.rs:189-193`) — with `input.cursor.{theme,size}`
+(§14) overriding them when set; the key's default `"default"` *is* the environment's theme. A
+name the theme lacks draws nothing and is counted
 (`input_cursor_named_ticks`); a ray owner's ring stays. The poke indicator and the ray line are
 not drawn yet (hardware-deferred with the trackers). Stand-ins (§15): the 1.5° span, the 64 px
 panel, the 1 mm lift (kwin-vr 15 mm, motorcar 10 mm — no comparable states a reason), the client
@@ -509,26 +510,77 @@ desktop gives an a11y source a seat or a process of its own, and neither does th
 
 ## 14. Settings (through `org.mura.Settings1`, settings-schema.md)
 
-`input.targeting.source` (auto | eyes | hand | controller | head), `input.dwell.enabled`,
-`input.dwell.onset_ms`, `input.dwell.complete_ms`, `input.pointer.gain`, `input.pointer.warp`
-(gaze | head | off), `input.magnetism.enabled`, `input.hand.pinch.{close,open}` (the stand-ins,
-exposed because the design says they are stand-ins). **Cursor (§7; ruled 2026-09-27, per-user
-`preference`, `runtime`, `apply = live`):** `input.cursor.ray` (both | image | ring — what a ray
-that owns the pointer shows; default `both`; a mouse always shows the image, a non-owning ray
-always the ring; with `image`, typing hides the cursor entirely as for a mouse), `input.cursor.scale`
-(angle | plane — a constant visual angle, the §7 dynamic-scale rule, or the plane's pixel scale,
-kwin-vr's; default `angle`), and the theme and size keys (§15, open — the code reads
-`XCURSOR_THEME`/`XCURSOR_SIZE`). Until the daemon carries them the two ruled keys reach zxr
-through the control socket (`zxr ctl cursor ray|scale …`). Preferences, not policy: none of them
-can make gaze reach a client.
+**Normative (rev 2026-09-27, settings Phase B — research/73).** Two kinds of key reach the
+compositor on one artifact: the wearer's **preferences** (`lib/contract/preferences.nix`,
+`mutability = mutable`, per-user store, `apply = live` unless stated) and the tracker's
+**calibrations** (`lib/contract/input-calibration.nix`, `hardware.input.*`, `mutability =
+immutable`, `locked`, build facts). zxr resolves both in-process (`settings.rs`, spec zxr-core §8)
+and every stage takes its share when the generation moves. Preferences, not policy: none of them
+can make gaze reach a client (§9).
+
+**Preferences** — `input.*` (this document's), plus `ui.reduced_motion` (the shell's, read here):
+
+| key | type · default | consumer | comparable / reason |
+|---|---|---|---|
+| `input.cursor.theme`, `.size` | string · `"default"`; int [16, 96] · 24 | `input/theme.rs` `Theme::from_prefs` — `"default"` means the environment's `XCURSOR_THEME` (the freedesktop fallback) | cosmic-comp reads the env only; niri exports its key to the env (§7, §15) |
+| `input.cursor.ray` | enum `both` \| `image` \| `ring` · `both` | `input/cursor.rs` — what a ray that owns the pointer shows; a mouse always shows the image, a non-owning ray the ring; with `image`, typing hides the cursor entirely | ruled 2026-09-27 (§7; research/70 §9) |
+| `input.cursor.scale` | enum `angle` \| `plane` · `angle` | `cursor.rs` — a constant visual angle (§7's dynamic-scale rule) or the plane's pixel scale (kwin-vr's) | ruled 2026-09-27 |
+| `input.cursor.angle_deg` | double [0.5, 5] · 1.5 | `cursor.rs` — the angle the layer subtends under `angle` | §7; HoloLens ≥ 2° target size [external] |
+| `input.cursor.hide_when_typing` | bool · true | `cursor.rs` `on_key` | GNOME/KDE hide-on-key (§8) |
+| `input.cursor.hide_after_ms` | int · 0 (never) | `cursor.rs` idle hide of the pointer-class image; a ray's ring is targeting feedback and stays | sway `seat hide_cursor`, Hyprland `cursor:inactive_timeout` — both off by default |
+| `input.pointer.gain` | double [0.25, 4] · 1.0 | `input/a11y.rs` — logical px per device unit on the flat profile | §8 line 326 |
+| `input.pointer.accel_profile` | enum `flat` \| `adaptive` · `flat` | `input/libinput.rs` `DeviceConfig` on add and change | §8: no screen for adaptive to refer to; **flat by the owner's ruling** (research/73 Q3) |
+| `input.pointer.left_handed`, `input.scroll.natural`, `input.touchpad.{tap,disable_while_typing,click_method}` | bool · false; bool · false; bool · true, bool · true, enum `default` \| `button_areas` \| `clickfinger` · `default` | `libinput.rs` `DeviceConfig` — libinput's own options passed through | every Wayland compositor passes them through (research/73 D3); niri `apply_libinput_settings` |
+| `input.scroll.factor` | double [0.1, 10] · 1.0 | `input/pointer.rs` `AxisMap` — scales every axis value; the wheel's `v120` steps are the device's | GNOME touchpad `scroll-speed`, niri `scroll-factor` |
+| `input.pointer.warp` | enum `gaze` \| `head` \| `off` · `gaze` | `pointer.rs` `plan()` — where the mouse pointer goes when the look moved to another plane | §8; ADR 0013 item 6 |
+| `input.pointer.click_freeze_ms` | int · **= `hardware.input.stabilize.compensation_ms`** (layered) | `input/stabilize.rs` `StabilizeCfg::compensation_ns` — the event-time compensation window | §4; Q2 ruled layered (research/73 D4); Q4 default = the calibration |
+| `input.pointer.stick_deadzone` | double [0, 0.9] · **= `hardware.input.stick.deadzone`** (layered) | `pointer.rs` `AxisMap` — a `Continuous` sample under it is a zero (the runtime's deadzone is upstream) | xrdesktop `analog-threshold`, WiVRn stick deadzone; Q2 ruled layered |
+| `input.keyboard.xkb.{layout,variant,options,model}` | string · `""` (xkbcommon's defaults) | `settings.rs` `apply` → `KeyboardHandle::set_xkb_config` live (a rejected keymap keeps the previous one); EI seats take the same config | every compositor; `locale1` is the system's seed (§8) |
+| `input.keyboard.repeat.{delay_ms,rate_hz}` | int [100, 2000] · 600; int [1, 100] · 25 | `apply` → `change_repeat_info`; the seat's default is the same | Hyprland/COSMIC 600/25; GNOME 500/33 |
+| `input.keyboard.numlock` | enum `off` \| `on` \| `remember` · `remember` | `apply` at start (`on`/`off`: niri's shape; `remember`: the state file under `XDG_STATE_HOME/mura/zxr/numlock`, cosmic-comp's `LastBoot`), `input/seat.rs` writes it on change | niri `numlock`, cosmic-comp `numlock_state` |
+| `input.osk.enabled`, `.suppress_after_key_s` | bool · true; int · 300 | `state.rs` `osk_suppressed` (disabled = permanent suppression); `input/text.rs` the window after a physical key | §12; StereoKit `platform.cpp:258` 5 min |
+| `input.dwell.{enabled,onset_ms,complete_ms,tolerance_deg}` | bool · false; int [50, 1000] · 200; int [200, 3000] · 750; double · 2.0 | `input/a11y.rs` `Dwell` | §13 (HoloLens 150–250 / 650–850 ms); KWin `dwellclicker.cpp:150-152` |
+| `input.targeting.source` | enum `auto` \| `eyes` \| `hand` \| `controller` \| `head` · `auto` | `input/tier.rs` `Pin` — a **ceiling** on the §3 ladder: rungs above it are skipped, the ladder continues below it, the head stays the floor; direct touch is not aiming and is never pinned away | §13; visionOS Pointer Control [external]; HoloLens "head to aim rather than eyes" |
+| `input.magnetism.enabled` | bool · false | `input/hit.rs` — a poke whose ray misses is drawn to the nearest plane point within 0.07 m | §4; MRTK3 `ReticleMagnetism.cs:37` |
+| `input.hand.dominant` | enum `left` \| `right` · `right` | `input/bridge.rs` `BridgeCfg` (`Flags::DOMINANT`, the menu gesture's hand) | §10 |
+| `input.hand.pinch.{close,open}` | double · **= `hardware.input.hand.pinch.{close,open}`** (layered) | **one** commit ladder: `input/touch.rs` `TouchLogic::pinch` and the tier's `loss::GestureCfg` (research/73 D2) | §10; Q2 ruled layered |
+| `input.body.{shoulder_half_m,head_len_m,neck_len_m}` | double · 0.155, 0.10, 0.07 | `bridge.rs` `aim_pose_with` — the shoulder pivot of the §10 aim ray | Monado `ht_ctrl_emu.cpp:310-312` averages; **the wearer's**, not the tracker's (research/73 Q2, owner's reclassification) |
+| `input.emphasis.{ramp_ms,strength}` | int [0, 3000] · 700; double · 0.15 | `input/emphasis.rs` `set_ramp`; `xr.rs` colour scale `1 + strength·e` | §4 (500–1000 ms; HoloLens hover ramp) |
+| `ui.reduced_motion` | bool · false | `emphasis.rs` — the ramp becomes a step | GNOME `enable-animations`, KDE `AnimationDurationFactor` |
+| `session.idle.count_emulated_input` | bool · true | `input/activity.rs` `count_emulated` | mutter/KWin's activity spy counts EI input; **Q5 flagged** (research/73) |
+
+`system.*` and `games.*` are native-openxr-apps.md §9's; `wm.*` are window-workspace-management.md
+§12's; `session.lock.*`, `session.idle.*`, `session.docked.*` are the lock machine's (ADR 0007;
+`input/mode.rs` names them). Not declared: `input.pointer.{double_click_ms,drag_threshold_px,
+middle_emulation}` (toolkit-side, no compositor consumer).
+
+**Calibrations** — `hardware.input.*`, the tracker's (the first-hardware list of research/70 §5;
+values are the code's stand-ins until measured at M1): `hand.pinch.{close 0.75, open 0.5,
+close_m 0.010, open_m 0.015, max_m 0.08}`, `hand.poke.{down_m −0.01, up_m 0}`,
+`near_band.{enter_m 0.18, leave_m 0.22}`, `gaze.{fallback_ms 800, return_ms 800}`,
+`held.{timeout_ms 2000, motion_m 0.005, axis 0.01}`, `stabilize.{position_half_life_s 0.01,
+direction_half_life_s 0.05, sticky 0.5, relaxation_ray 0.5, relaxation_gaze 0.1, pinch_closed 0.9,
+compensation_ms 50}`, `hit.class_epsilon_m 0.02`, `palm.cone_deg 35`, `stick.deadzone 0`, and
+`hmd.{buttons,select_role,back_role,system_role}` (device-contract.md). Consumers: `tier.rs`
+`TierCfg`/`GazeCfg`/`HeldCfg`, `loss.rs` `GestureCfg`, `stabilize.rs` `StabilizeCfg`, `hit.rs`,
+`bridge.rs` `BridgeCfg`, `libinput.rs` `HmdRoles` — all rebuilt from `Prefs::hardware` at every
+settings generation (`settings.rs`).
+
+**Mechanism.** zxr links `mura-settingsd` as a library (no bus), resolves its prefixes through
+the daemon's `Engine` and watches the per-user store directory with one inotify fd on the state
+loop (cosmic-comp `ConfigWatchSource`'s shape; research/73 §6 option b, the owner's Q7 ruling) —
+a change written by the daemon is applied within one tick; a locked key resolves from the
+artifact by construction (settings-schema.md §7). `zxr ctl cursor|a11y …` remain the harness's
+direct path and win over the resolved value until the next change.
 
 ## 15. Open items (deciders named)
 
-- The stand-in thresholds (§3, §4, §10, §13) — measured on Mura's trackers at M1; the nested M1
+- The calibrations (§14 `hardware.input.*`) — measured on Mura's trackers at M1; the nested M1
   gate measured the architecture, not the thresholds — research/70 §5 lists every value the code
-  carries and its source, for the first-hardware list.
-- The cursor theme and size key in settings-schema (§7 reads `XCURSOR_THEME`/`XCURSOR_SIZE` until
-  then) — the owner.
+  carries, its source, and whether it is now a preference or a calibration (the first-hardware
+  list is the calibrations).
+- ~~The cursor theme and size key~~ — `input.cursor.{theme,size}` (§14, 2026-09-27); the
+  environment stays the fallback.
 - The second controller's drawn ray while the first owns the pointer (§5): a second cursor
   element by design, outside §7's one-layer rule as built (research/70 §9) — the owner, with two
   controllers in hand. The cursor stand-ins (64 px panel, 1 mm lift, the client image at theme

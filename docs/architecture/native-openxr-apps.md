@@ -267,11 +267,26 @@ component in both.
 
 ## 9. Settings
 
-`system.button.longPressMs` (stand-in 500 — Meta's threshold; Apple/PICO unpublished/1 s),
-`system.doubleTapMs`, `system.doublePress` ∈ `show_hide_planes | passthrough | none`,
-`quit.timeout` (stand-in from OpenVR's kill timeout once read), `games.keepPlanes` (Q-D's opt-in,
-per window), `games.controllerSystemButton` (best-effort until the runtime reserves it). All
-`mutability = mutable` (settings-schema.md rev 4 §3), seeded from the device contract: the wearer may change them live, `Reset` returns to the seed — ruled 2026-09-27 (research/73 §5 Q1; this section said `declarative` before the rename and the ruling).
+The keys this document owns, as declared in `lib/contract/preferences.nix` (the artifact's
+names; settings-schema.md rev 4). All are `mutability = mutable` — Nix seeds the default, the
+wearer may change them live, `Reset` returns to the seed (ruled 2026-09-27, research/73 §5 Q1;
+this section said `declarative` before the rename and the ruling).
+
+| key | type · default | apply | consumer | source of the default |
+|---|---|---|---|---|
+| `system.button.long_press_ms` | int [300, 1500] · **500** | live | zxr `input/reserved.rs` `ReservedCfg` — a release before it is the short press (summon), a hold to it is the long (recenter); one boundary, no dead band (research/73 Q8 ruled) | §6 "< ~500 ms"; Horizon 500 ms [external]; Apple unpublished, PICO 1 s (research/66 §11) |
+| `system.button.double_tap_ms` | int [100, 800] · 300 | live | `reserved.rs` — the gap from a short release to the next press that makes a double | the desktops' double-click order; no XR comparable states one (stand-in) |
+| `system.button.chord_hold_ms` | int [500, 3000] · 1000 | live | `reserved.rs` — system + select held this long is the force-quit chord | the comparables state the chord, not its hold (stand-in) |
+| `system.button.double_press` | enum `show_hide_planes` \| `passthrough` \| `none` · `show_hide_planes` | live | `reserved.rs` — `passthrough` is logged as the request until the passthrough hook exists | §6 line 234 |
+| `system.gesture.hold_ms` | int [100, 2000] · 300 | live | zxr `input/bridge.rs` `BridgeCfg::hold_ns` — the palm-pinch hold that completes the reserved gesture | stand-in (no platform publishes its hold) |
+| `system.quit_timeout_s` | int [1, 60] · 5 | live | the launcher's scope kill (§3 "Launch, primary, close"): **declared ahead of it** — zxr's reserved stage recognises the chord only | OpenVR's kill-timeout shape; read its value at first use (stand-in) |
+| `games.keep_planes` | bool · false | live | zxr `state.rs` `Zxr::primary_changed` — quiet mode follows a primary native app unless the planes are kept (Q-D's opt-in; the per-window keep is the window's own state) | §4; HoloLens Follow-me [external] |
+| `games.controller_system_button` | bool · true | live | `reserved.rs` `Recogniser::sample_with` — `false` forwards a *controller's* system button to a primary game; the HMD-body control (`hmdButtons.systemRole`) is always the compositor's | §6 (best-effort until the runtime reserves it; `XR_MNDX_system_buttons` exposes, zxr reserves) |
+
+The HMD-body control itself is a **build fact**, not a preference: `hardware.input.hmd.{buttons,
+select_role,back_role,system_role}` on the artifact (device-contract.md `hmdButtons`, `selectRole`,
+`backRole`, and `systemRole` — §6 above), immutable and `locked`; zxr's `HmdRoles` is composed from
+them (`ZXR_HMD_BUTTONS` remains the harness's override).
 
 ## 10. Rulings (2026-09-26; research/66 §13 has the full positions)
 

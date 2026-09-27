@@ -334,7 +334,7 @@ in
       quitTimeoutS = k "system" "quit_timeout_s" {
         type = types.ints.between 1 60;
         default = 5;
-        description = "Seconds after the quit request before a native app's scope is killed (native-openxr-apps §3.4; OpenVR's kill timeout shape). Stand-in 5 s — read OpenVR's value at first use. Consumer: zxr main.rs quit path.";
+        description = "Seconds after the quit request before a native app's scope is killed (native-openxr-apps §3.4; OpenVR's kill timeout shape). Stand-in 5 s — read OpenVR's value at first use. Consumer: the launcher's scope kill (§3) when it lands — declared ahead of it; zxr's reserved stage recognises the chord only.";
       };
     };
 

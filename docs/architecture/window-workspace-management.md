@@ -297,13 +297,31 @@ configured WM client, spawned by the session like any shell component); a second
 
 ## 12. Settings
 
-Schema keys this document owns (defaults from the device contract; every key a stand-in until
-M1 measurement): `wm.spawn.distance`, `wm.spawn.elevation`, `wm.spawn.overlap`,
-`wm.spawn.sibling_offset`, `wm.density.px_per_cm`, `wm.size.min`, `wm.size.max`,
-`wm.size.maximized`, `wm.engine.default` (Q2), `wm.minimize` (Q1), `wm.follow.threshold`,
-`wm.follow.delay`, `wm.follow.rate`, `wm.follow.stop`, `wm.focus.dim`,
-`wm.focus.sibling_alpha`, `wm.external_manager` (the executable of an external manager, empty =
-in-process default). Each is `mutability = mutable` (settings-schema.md rev 4 §3): Nix seeds the default from the contract, the wearer may override it live and the override survives rebuilds, `Reset` returns to the seed — ruled 2026-09-27 (research/73 §5 Q1; rev 0.x of this document said "declarative by default", which in rev 3's vocabulary meant Nix-only).
+The keys this document owns, as declared in `lib/contract/preferences.nix` (the artifact's names,
+settings-schema.md rev 4; rev 2026-09-27, settings Phase B — research/73). Each is `mutability =
+mutable`: Nix seeds the default, the wearer may override it live and the override survives
+rebuilds, `Reset` returns to the seed — ruled 2026-09-27 (research/73 §5 Q1; rev 0.x of this
+document said "declarative by default", which in rev 3's vocabulary meant Nix-only). Every value
+is a stand-in until M1 measurement.
+
+| key | type · default | apply | consumer | comparable / reason |
+|---|---|---|---|---|
+| `wm.spawn.distance_m` | double [0.5, 3] · 1.5 | live (next window) | zxr `scene.rs` `Layout::spawn_distance_m` (`Scene::add_fanned`) | kwin-vr `distance` 100 cm; Horizon/visionOS 1–2 m [external] (§3) |
+| `wm.spawn.elevation_deg` | double [−30, 30] · 0 | live (next window) | `Layout::spawn_elevation_deg` | Android XR ~5° below [external] |
+| `wm.spawn.sibling_offset_m`, `.sibling_yaw_rad` | double [0.2, 2] · 0.9; double [0, 1] · 0.35 | live (next window) | `Layout` — R0's fan | kwin-vr `minTransientNormalSpacing`; WayVR spread |
+| `wm.density_px_per_cm` | double [5, 40] · **8.3** | live — every plane re-derived (`Zxr::rescale_planes`) | `Layout::m_per_px` at every use (frame passes, plane extents, the pointer's px→m, the cursor's plane scale) | §3; GNOME `text-scaling-factor`, kwin-vr `ppu` 20, WiVRn `resolution_scale`. **Q9 flagged**: 8.3 is the code's, 20 kwin-vr's — a one-number flip |
+| `wm.focus.new_windows` | enum `smart` \| `strict` · `smart` | live | zxr `input/focus.rs` `new_window_rule` — smart is mutter's intervening-user-event rule; strict marks urgent instead | GNOME `focus-new-windows`, niri `Smart`, COSMIC `activation_policy` |
+| `wm.focus.raise_on_commit` | bool · true | live | `focus.rs` `commit_focus` — the commit focuses either way; raising to the front of the stack is the preference | GNOME `raise-on-click`, KWin `ClickRaise` (spatial-input §6) |
+| `wm.engine` | string · `"free"` | relogin | the wm policy module (§4; Q2 ruled: the compositor carries `free` only) — **declared ahead of it** | — |
+| `wm.external_manager` | string · `""` (in-process) | relogin | the session's manager launcher (§4, §11) — declared ahead of it | Hyprland/river shape |
+| `wm.minimize` | enum `dock` \| `close` · `dock` | live | the wm policy module (§5; Q1 ruled) — declared ahead of it | — |
+| `wm.follow.default` | bool · false | live | the wm policy module (§7; Q6 ruled: never by default, opt-in per window) — declared ahead of it | kwin-vr `followEnabled` true (`kwinvr.kcfg:37-41`) is the dissent |
+| `wm.follow.threshold_deg`, `.delay_ms`, `.rate`, `.stop_deg` | double [5, 90] · 40; int [0, 5000] · 500; double [0.1, 10] · 2.0; double [0, 45] · 4 | live | the wm policy module — declared ahead of it | kwin-vr `followFovH` 40, `followDelay` 0.5 s, `followSpeed` 2.0, `followStopFovH` 4 (`kwinvr.kcfg:43-61`); Breezy 15° / 1 s [external] |
+| `wm.move.billboard` | bool · true | live | the wm policy module (§7) — declared ahead of it | kwin-vr `followWorldUpAlignment` (the world-up variant); wayvr `snap_angle_deg` |
+
+Not declared, until the design gives a value: `wm.spawn.overlap`, `wm.size.{min,max,maximized}`
+("seed from the contract" — no contract field exists yet), `wm.focus.{dim,sibling_alpha}`
+(Horizon/visionOS recession [external], no number). `wm.focus.mode` waits on research/73 Q10.
 
 ## 13. Rulings and open items (research/64 §15 has the full positions)
 
