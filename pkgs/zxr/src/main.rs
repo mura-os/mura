@@ -967,7 +967,7 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
                 let band = st.scene.band(id).unwrap_or(0);
                 let panel = m.m.panel.as_ref().map(|p| format!("{}x{}", p.sc.extent.width, p.sc.extent.height)).unwrap_or_else(|| "-".into());
                 s.push_str(&format!(
-                    "{}{} band={band} place={} {}x{} pos=({:.2},{:.2},{:.2}) mapped={} dirty={} urgent={} panel={panel} {title}\n",
+                    "{}{} band={band} place={} {}x{} pos=({:.2},{:.2},{:.2}) mapped={} dirty={} urgent={} hidden={} panel={panel} {title}\n",
                     id.0.index(),
                     if Some(id) == st.scene.focused { "*" } else { " " },
                     m.place.0.index(),
@@ -979,7 +979,8 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
                     m.m.mapped(),
                     m.m.dirty
 ,
-                    m.m.urgent
+                    m.m.urgent,
+                    m.m.hidden
                 ));
             }
             // the one cursor layer (spatial-input §7; research/70 §9): content, panel, passes
@@ -988,6 +989,8 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             let inputs = st.input.cursor_inputs.map(|i| format!("targeting={:?} owner={:?} on_plane={} reticle={} typing={} client={}", i.targeting, i.owner, i.pointer_on_plane, i.reticle, i.hidden_typing, i.client_name)).unwrap_or_default();
             s.push_str(&format!("cursor: layer={content} panel={panel} swapchains_created={} layers_submitted={} {inputs}\n", st.journal.cursor_swapchains_created, st.journal.cursor_layers));
             s.push_str(&policy::describe(st));
+            s.push('\n');
+            s.push_str(&policy::seam::describe(st));
             s.push('\n');
             // the settings picture (settings.rs): where it came from and how often it moved
             s.push_str(&format!(

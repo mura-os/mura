@@ -25,6 +25,15 @@
     workspace is a place, a workspace group is a frame. This protocol adds
     no place lifecycle of its own.
 
+    Rev 1 (2026-09-27, implementation-forced — see zxr_window_manager_v1.place):
+    until the compositor serves ext_workspace_v1, places are announced by the
+    compositor through the place event and referenced as zxr_managed_place_v1
+    objects; get_place returns when ext_workspace_v1 exists. Windows are
+    presented as soon as the compositor's own policy has placed them; a
+    manager's assign and set_pose move them within the following sequences
+    rather than gating their first presentation (the compositor's floor is
+    always live, so a manager's absence or death changes nothing on screen).
+
     The key words "must", "must not", "required", "shall", "shall not",
     "should", "should not", "recommended", "may", and "optional" in this
     document are to be interpreted as described in IETF RFC 2119.
@@ -211,24 +220,23 @@
 
     <event name="window">
       <description summary="new managed window">
-        This event announces a toplevel window that has requested to be
-        mapped. The window is not presented until the window manager has
-        assigned it to a place, the compositor has sent its first dimensions
-        event, and a render sequence has finished.
+        This event announces a toplevel window that has been mapped. Rev 1:
+        the window is already presented at the pose the compositor's own
+        policy gave it; the window manager may reassign and re-pose it in
+        the sequences that follow.
       </description>
       <arg name="id" type="new_id" interface="zxr_managed_window_v1"/>
     </event>
 
-    <request name="get_place">
-      <description summary="obtain the management extension of a place">
-        Create a zxr_managed_place_v1 object for an ext_workspace_handle_v1.
-        A place has at most one such object; creating a second raises the
-        already_managed error on the new object's interface.
+    <event name="place">
+      <description summary="a place exists">
+        Rev 1: announces a place as a zxr_managed_place_v1 object, before the
+        first manage_start that includes it and whenever a place is created.
+        Replaces get_place until the compositor serves ext_workspace_v1, at
+        which point get_place returns and this event is retired.
       </description>
       <arg name="id" type="new_id" interface="zxr_managed_place_v1"/>
-      <arg name="place" type="object" interface="ext_workspace_handle_v1"
-           summary="the place to manage"/>
-    </request>
+    </event>
   </interface>
 
   <interface name="zxr_managed_window_v1" version="1">
@@ -344,7 +352,7 @@
         a manage sequence before manage_start whenever the applied state
         differs from the last reported one.
       </description>
-      <arg name="place" type="object" interface="ext_workspace_handle_v1"
+      <arg name="place" type="object" interface="zxr_managed_place_v1"
            allow-null="true" summary="the window's place or null"/>
       <arg name="pose" type="array"
            summary="16 binary32 values, column-major, native endianness"/>
@@ -421,7 +429,7 @@
         This request modifies management state and may only be made as part
         of a manage sequence.
       </description>
-      <arg name="place" type="object" interface="ext_workspace_handle_v1"
+      <arg name="place" type="object" interface="zxr_managed_place_v1"
            allow-null="true" summary="the place or null"/>
     </request>
 

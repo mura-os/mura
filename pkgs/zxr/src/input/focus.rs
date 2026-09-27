@@ -176,6 +176,9 @@ pub fn commit_focus(st: &mut Zxr, member: MemberId, serial: Serial) {
     st.focus.commits += 1;
     set_urgent(st, member, false);
     st.focus_window(Some(member));
+    // the manager hears every commit's serial (`interaction`) and may `focus` with it — the
+    // serial rule stays the compositor's (window-workspace-management §11, Q5-focus)
+    crate::policy::seam::interaction(st, member, serial);
 }
 
 /// Mark / clear urgency on a member (§6: "a state on the member the shell presents"). Nothing

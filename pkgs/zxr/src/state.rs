@@ -172,6 +172,8 @@ pub struct Zxr {
     pub prefs: crate::settings::Prefs,
     /// the window-management floor (policy/, window-workspace-management §2–§8)
     pub policy: crate::policy::Policy,
+    /// the window-management seam (policy/seam.rs, wm §11)
+    pub seam: crate::policy::seam::Seam,
     /// the open settings engine and its watch state, when an artifact exists
     pub settings: Option<crate::settings::Settings>,
     pub children: Vec<Child>,
@@ -425,7 +427,7 @@ impl Zxr {
         journal.started_at_ns = now_ns();
 
         Ok(Zxr {
-            dh,
+            dh: dh.clone(),
             loop_handle,
             loop_signal,
             socket_name,
@@ -480,6 +482,7 @@ impl Zxr {
             journal_path: None,
             prefs: crate::settings::Prefs::default(),
             policy: crate::policy::Policy::default(),
+            seam: crate::policy::seam::serve(&dh),
             settings: None,
             children: Vec::new(),
             satellite_pid: None,
@@ -1110,6 +1113,7 @@ impl CompositorHandler for Zxr {
                         // (window-workspace-management §3; policy::placed_at_map)
                         let parent = window.toplevel().and_then(|t| t.parent()).and_then(|p| self.member_for_root(&p));
                         crate::policy::placed_at_map(self, id, parent);
+                        crate::policy::seam::window_mapped(self, id);
                         let (at_request, pending) = match self.scene.get_mut(id) {
                             Some(m) => {
                                 m.m.mapped_at = self.frame_id.max(1);
@@ -1226,6 +1230,7 @@ impl XdgShellHandler for Zxr {
         if matches!(self.policy.state(id).life, crate::policy::Life::Fullscreen(_)) {
             crate::policy::lifecycle::fullscreen(self, id, false);
         }
+        crate::policy::seam::window_closed(self, id);
         crate::policy::removed(self, id);
         if let Some(member) = self.scene.remove(id) {
             if member.m.mapped() {
@@ -1267,33 +1272,46 @@ impl XdgShellHandler for Zxr {
     /// with no external manager the floor is the manager).
     fn maximize_request(&mut self, surface: ToplevelSurface) {
         if let Some(id) = self.member_for_root(surface.wl_surface()) {
-            crate::policy::lifecycle::maximize(self, id, true);
+            // a connected manager decides (the request is re-emitted to it, wm §11); the floor
+            // decides when none is
+            if !crate::policy::seam::client_request(self, id, crate::policy::seam::ClientRequest::Maximize(true)) {
+                crate::policy::lifecycle::maximize(self, id, true);
+            }
         }
     }
 
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {
         if let Some(id) = self.member_for_root(surface.wl_surface()) {
-            crate::policy::lifecycle::maximize(self, id, false);
+            if !crate::policy::seam::client_request(self, id, crate::policy::seam::ClientRequest::Maximize(false)) {
+                crate::policy::lifecycle::maximize(self, id, false);
+            }
         }
     }
 
     fn fullscreen_request(&mut self, surface: ToplevelSurface, _output: Option<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>) {
         if let Some(id) = self.member_for_root(surface.wl_surface()) {
-            crate::policy::lifecycle::fullscreen(self, id, true);
+            if !crate::policy::seam::client_request(self, id, crate::policy::seam::ClientRequest::Fullscreen(true)) {
+                crate::policy::lifecycle::fullscreen(self, id, true);
+            }
         }
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
         if let Some(id) = self.member_for_root(surface.wl_surface()) {
-            crate::policy::lifecycle::fullscreen(self, id, false);
+            if !crate::policy::seam::client_request(self, id, crate::policy::seam::ClientRequest::Fullscreen(false)) {
+                crate::policy::lifecycle::fullscreen(self, id, false);
+            }
         }
     }
 
     /// `set_minimized`: never applied as a compositor state (wm §5); the floor's minimize verb
-    /// decides — dock indicator when a dock client exists, else close (Q1 ruled).
+    /// decides — dock indicator when a dock client exists, else close (Q1 ruled) — or the
+    /// connected manager's.
     fn minimize_request(&mut self, surface: ToplevelSurface) {
         if let Some(id) = self.member_for_root(surface.wl_surface()) {
-            crate::policy::lifecycle::minimize(self, id);
+            if !crate::policy::seam::client_request(self, id, crate::policy::seam::ClientRequest::Minimize) {
+                crate::policy::lifecycle::minimize(self, id);
+            }
         }
     }
 
@@ -1304,6 +1322,8 @@ impl XdgShellHandler for Zxr {
         if let Some(member) = self.member_for_root(surface.wl_surface()) {
             self.input.grab_request = Some(crate::input::grabs::GrabRequest { member, op: crate::input::grabs::Op::Move, serial, at_ns: now_ns() });
             self.journal.grab_requests += 1;
+            // the manager hears of it too (wm §11); the grab is the compositor's either way
+            crate::policy::seam::client_request(self, member, crate::policy::seam::ClientRequest::Move(serial));
         }
     }
 
@@ -1328,6 +1348,8 @@ impl XdgShellHandler for Zxr {
         let start_px = self.logical_size(member).unwrap_or((800, 600));
         self.input.grab_request = Some(GrabRequest { member, op: Op::Resize { edges: e, start_px }, serial, at_ns: now_ns() });
         self.journal.grab_requests += 1;
+        let bits = (e.top as u32) | ((e.bottom as u32) << 1) | ((e.left as u32) << 2) | ((e.right as u32) << 3);
+        crate::policy::seam::client_request(self, member, crate::policy::seam::ClientRequest::Resize(serial, bits));
     }
 }
 

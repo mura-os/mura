@@ -28,7 +28,21 @@ xcursor = "0.3"
 # the engine's value type; both are already in the closure through the daemon.
 mura-settingsd = { path = "../mura-settingsd", default-features = false }
 serde_json = "1"
+# The window-management seam (protocols/zxr-window-management-v1.xml) is generated at build time
+# from the XML, as cosmic-comp does for its protocols; the versions are the ones smithay pins.
+wayland-scanner = "0.31"
+wayland-backend = "0.3"
+bitflags = "2" # the generated bitfield enums (`capability`, `flags`, `resize_edge`)
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
+# The seam's proof client (src/bin/zxr-test-manager.rs) only; never in the product closure.
+wayland-client = { version = "0.31", optional = true }
+
+[features]
+test-manager = ["wayland-client"]
+
+[[bin]]
+name = "zxr-test-manager"
+required-features = ["test-manager"]
 
 [profile.release]
 opt-level = 2

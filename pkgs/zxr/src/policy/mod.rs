@@ -24,6 +24,7 @@
 pub mod follow;
 pub mod free;
 pub mod lifecycle;
+pub mod seam;
 
 use std::collections::HashMap;
 
@@ -74,7 +75,6 @@ impl Limits {
 }
 
 /// Which engine places a place's members (§4).
-#[allow(dead_code)] // `Custom`, `set_engine`, `mru`: the seam's (policy/seam.rs, Phase 3)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Engine {
     /// the floor: head-relative spawn into a free angular slot, one-shot tidy
@@ -141,7 +141,6 @@ impl Policy {
         self.engines.get(&place).copied().unwrap_or_default()
     }
 
-    #[allow(dead_code)] // the seam's (Phase 3)
     pub fn set_engine(&mut self, place: PlaceId, engine: Engine) {
         self.engines.insert(place, engine);
     }
@@ -165,7 +164,6 @@ impl Policy {
         self.mru.retain(|m| *m != member);
     }
 
-    #[allow(dead_code)] // the seam's (Phase 3)
     pub fn mru(&self) -> &[MemberId] {
         &self.mru
     }
@@ -270,7 +268,10 @@ fn add_world(st: &mut Zxr, place: PlaceId, world: xr::Posef, shape: Shape, flags
 /// a 1×1 px geometry — xdg-shell's size is the client's first commit). Only a member still at its
 /// engine slot moves; one a manager or the wearer already placed stays.
 pub fn placed_at_map(st: &mut Zxr, member: MemberId, parent: Option<MemberId>) {
-    if !st.policy.state(member).at_spawn || st.policy.manager_connected {
+    // a place a manager arranges itself (`custom`) is the manager's to place; the floor places
+    // everywhere else, connected manager or not (rev 1: presented at once, re-posed after)
+    let place_engine = st.scene.get(member).map(|m| st.policy.engine(m.place)).unwrap_or_default();
+    if !st.policy.state(member).at_spawn || place_engine == Engine::Custom {
         return;
     }
     let Some(m) = st.scene.get(member) else { return };
@@ -366,6 +367,7 @@ pub fn tick(st: &mut Zxr, now_ns: u64) {
         st.policy.cfg = st.prefs.policy_cfg();
     }
     follow::tick(st, now_ns);
+    seam::tick(st, now_ns);
 }
 
 /// A member left the scene.
