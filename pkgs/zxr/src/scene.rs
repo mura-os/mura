@@ -363,6 +363,25 @@ impl<M> Scene<M> {
         }
     }
 
+    /// A layer member's own place goes with it (never the default place).
+    pub fn remove_place(&mut self, p: PlaceId) -> bool {
+        if p == self.default_place || self.members.iter().any(|(_, m)| m.place == p) {
+            return false;
+        }
+        self.places.remove(p.0).is_some()
+    }
+
+    /// `set_layer`: a layer surface moved bands.
+    pub fn set_place_band(&mut self, p: PlaceId, band: u8) -> bool {
+        match self.places.get_mut(p.0) {
+            Some(pl) => {
+                pl.band = band;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn place_world(&self, p: PlaceId) -> Option<xr::Posef> {
         let pl = self.places.get(p.0)?;
         let fr = self.frames.get(pl.frame.0)?;

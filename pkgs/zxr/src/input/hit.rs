@@ -139,8 +139,9 @@ impl HitStage {
     fn magnetise(&mut self, kind: SourceKind, tip: xr::Posef, time_ns: u64, st: &mut Zxr) {
         let p = [tip.position.x, tip.position.y, tip.position.z];
         let mut best: Option<(f32, MemberId, [f32; 2])> = None;
+        let gated = st.input.mode != super::Mode::Normal;
         for (id, member) in st.scene.iter() {
-            if !(member.m.mapped() && !member.m.hidden) {
+            if !(member.m.mapped() && !member.m.hidden && (!gated || member.m.trusted)) {
                 continue;
             }
             let Shape::Plane { size } = member.shape else { continue };
@@ -160,11 +161,14 @@ impl HitStage {
     fn cast(&mut self, kind: SourceKind, pose: xr::Posef, time_ns: u64, st: &mut Zxr) {
         let origin = [pose.position.x, pose.position.y, pose.position.z];
         let dir = math::rotate(pose.orientation, [0.0, 0.0, -1.0]);
+        // while the mode gate is closed only the trusted members are composed, so only they are
+        // hit (spec §9 rev 3.12)
+        let gated = st.input.mode != super::Mode::Normal;
         let Some(hit) = hit_member_with(
             &st.scene,
             origin,
             dir,
-            |p| p.mapped() && !p.hidden,
+            |p| p.mapped() && !p.hidden && (!gated || p.trusted),
             |_, band| Class::from_band(band),
             self.class_epsilon_m,
         ) else {

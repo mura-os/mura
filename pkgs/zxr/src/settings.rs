@@ -214,6 +214,12 @@ pub struct Prefs {
     pub session_lock_on_suspend: bool,
     pub session_docked_lock_on_doff: bool,
     pub session_docked_deep_idle_after_s: u64,
+    // shell.head.* — the head frame's fallback rectangle (shell-plane §2.6; shell/mod.rs)
+    pub shell_head_extent_h_deg: f32,
+    pub shell_head_extent_v_deg: f32,
+    pub shell_head_distance_m: f32,
+    /// the wearer's placement rows `shell.place:<namespace>` — explicit values only
+    pub shell_place_rows: HashMap<String, crate::shell::PlaceRow>,
     // hardware.input.*
     pub hardware: Calibration,
 }
@@ -300,6 +306,10 @@ impl Default for Prefs {
             session_lock_on_suspend: true,
             session_docked_lock_on_doff: false,
             session_docked_deep_idle_after_s: 0,
+            shell_head_extent_h_deg: 90.0,
+            shell_head_extent_v_deg: 70.0,
+            shell_head_distance_m: 0.5,
+            shell_place_rows: HashMap::new(),
             hardware: Calibration::default(),
         }
     }
@@ -415,6 +425,10 @@ impl Prefs {
             session_lock_on_suspend: m.b("session.lock.on_suspend", d.session_lock_on_suspend),
             session_docked_lock_on_doff: m.b("session.docked.lock_on_doff", d.session_docked_lock_on_doff),
             session_docked_deep_idle_after_s: m.u("session.docked.deep_idle_after_s", d.session_docked_deep_idle_after_s),
+            shell_head_extent_h_deg: m.f("shell.head.extent_h_deg", d.shell_head_extent_h_deg),
+            shell_head_extent_v_deg: m.f("shell.head.extent_v_deg", d.shell_head_extent_v_deg),
+            shell_head_distance_m: m.f("shell.head.distance_m", d.shell_head_distance_m),
+            shell_place_rows: place_rows(map),
             hardware: Calibration {
                 pinch_close: m.f("hardware.input.hand.pinch.close", c.pinch_close),
                 pinch_open: m.f("hardware.input.hand.pinch.open", c.pinch_open),
@@ -602,7 +616,7 @@ impl Prefs {
 }
 
 /// The schemas zxr reads: the resolution lists only these prefixes.
-const PREFIXES: [&str; 7] = ["input.", "wm.", "system.", "games.", "session.", "ui.", "hardware.input."];
+const PREFIXES: [&str; 8] = ["input.", "wm.", "system.", "games.", "session.", "ui.", "hardware.input.", "shell."];
 
 /// The open engine and the watch — on `Zxr` so the calloop callback can re-resolve.
 pub struct Settings {
@@ -630,6 +644,11 @@ impl Settings {
             for (id, eff) in self.engine.list(prefix) {
                 if eff.provenance == "invalid" {
                     invalid += 1;
+                }
+                // a template instance's key at its default is not a wearer's value: the placement
+                // table keeps explicit rows only (shell/place.rs), the seed fills the rest
+                if id.contains(':') && eff.provenance == "default" {
+                    continue;
                 }
                 map.insert(id, eff.value);
             }
@@ -730,6 +749,21 @@ pub fn apply(st: &mut Zxr, mut prefs: Prefs) {
     // everything else is a stage's: they compare `prefs.generation` at their next tick
     st.journal.settings_generation = prefs.generation;
     st.prefs = prefs;
+    // the shell layer: the head rectangle (and with it the output mode) and the placement rows
+    crate::shell::take_prefs(st);
+}
+
+/// The placement rows out of the resolved map: every `shell.place:<namespace>.<key>` entry
+/// (explicit values only — `resolve` skipped the defaults).
+fn place_rows(map: &HashMap<String, Value>) -> HashMap<String, crate::shell::PlaceRow> {
+    let mut rows: HashMap<String, crate::shell::PlaceRow> = HashMap::new();
+    for (id, v) in map {
+        if let Some((ns, key)) = crate::shell::place::parse_id(id) {
+            crate::shell::place::set_field(rows.entry(ns.to_string()).or_default(), key, v);
+        }
+    }
+    rows.retain(|_, r| !r.is_empty());
+    rows
 }
 
 /// Open the settings, resolve once, apply, and watch the store directory from the state loop.

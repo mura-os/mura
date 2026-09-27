@@ -35,10 +35,12 @@
 //! - **A manager's focus request** ([`manager_focus_request`]) is the same rule with the manager's
 //!   delivered `interaction` serial (window-workspace-management §11: "an application's standing
 //!   under `xdg-activation`, no more"); no protocol carries it yet.
-//! - **Layer-shell keyboard interactivity** sits above member focus (§6, niri's
-//!   `update_keyboard_focus`): the hook is [`layer_focus_override`] — `None` until a layer-shell
-//!   global exists; when it returns a surface, that surface is the keyboard focus regardless of
-//!   the stack.
+//! - **Layer-shell keyboard interactivity** sits above member focus (§6 rev 0.5, niri's
+//!   `update_keyboard_focus`; research/77 §4.2): [`layer_focus_override`] is the topmost mapped
+//!   `exclusive` layer surface (`shell::exclusive_override`) and `focus_window` defers to it;
+//!   an `on_demand` surface is an ordinary stack member; a `none` surface never takes the
+//!   keyboard (`shell::layer_accepts_focus`). The fallback member on a `none` commit is the
+//!   stack's most recent mapped *window*.
 //!
 //! Budget (invariant 9): the stack is a `Vec<MemberId>` of ≤ N members, touched once per commit
 //! and once per close; the serial rule is two `u32` comparisons; nothing per tick.
@@ -149,13 +151,28 @@ pub fn new_window_rule(mode: &str, at_request: Option<Serial>, now: Option<Seria
     }
 }
 
-/// Layer-shell keyboard-interactivity precedence (§6; niri `update_keyboard_focus`): an
-/// `exclusive` layer surface (greeter/lock scene, the keyboard component while shown) owns the
-/// keyboard above every member. **Hook only** — there is no layer-shell global yet; when
-/// `wlr-layer-shell` is served this returns the exclusive (or on-demand-focused) layer surface and
-/// `focus_window` defers to it.
-pub fn layer_focus_override(_st: &Zxr) -> Option<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface> {
-    None
+/// Layer-shell keyboard-interactivity precedence (§6 rev 0.5; spec §8 rev 3.12; research/77
+/// §4.2): the topmost mapped `exclusive` layer surface on overlay/top — the greeter/lock program's
+/// mode — owns the keyboard above every member, and on bottom/background only while no window is
+/// mapped (niri `update_keyboard_focus`, `references/niri/src/niri.rs:1354-1366`; cosmic-comp
+/// `focus/mod.rs:648-672`; sway `layer_shell.c:103-138`). `focus_window` defers to it. An
+/// `on_demand` surface is not an override: it is a member of the stack (`commit_focus`, the
+/// new-window rule at map — `shell::layer::commit`).
+pub fn layer_focus_override(st: &Zxr) -> Option<MemberId> {
+    crate::shell::exclusive_override(st)
+}
+
+/// A layer surface mapped, unmapped, committed or died: recompute the override and re-apply the
+/// focus (a changed override is counted — spec §11 `layer_focus_overrides`).
+pub fn layer_focus_changed(st: &mut Zxr) {
+    let now = layer_focus_override(st);
+    if now != st.shell.last_override {
+        st.shell.last_override = now;
+        st.shell.focus_overrides += 1;
+        st.journal.layer_focus_overrides += 1;
+    }
+    let f = st.scene.focused;
+    st.focus_window(f);
 }
 
 /// spatial-input §6 line 282: a `down` / `button` press on `member`'s surface. Called by the

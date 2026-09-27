@@ -40,6 +40,7 @@
 
 use smithay::backend::input::{Axis, AxisRelativeDirection, AxisSource as SmAxisSource, ButtonState, InputTime};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerHandle, RelativeMotionEvent};
+use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Point, SERIAL_COUNTER};
 
 use super::{AxisSource, Button, Flow, Hit, Sample, SourceKind};
@@ -416,6 +417,12 @@ pub struct PointerTransport {
     last_member: Option<MemberId>,
     /// the focus tuple of the last `Move` (relative motion is delivered against it)
     last_focus: Option<(smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, Point<f64, smithay::utils::Logical>)>,
+    /// the still-pointer rule (spec §8 rev 3.12; research/77 §2.7 — wlroots' `wlr_seat_pointer_send_motion`,
+    /// `types/seat/wlr_seat_pointer.c:241-258`): the surface and the `wl_fixed` (1/256 px) surface-local
+    /// point of the last `motion` sent; an identical one is not sent again
+    last_sent: Option<(smithay::reexports::wayland_server::backend::ObjectId, (i32, i32))>,
+    /// whether anything was sent since the last `frame` (a `frame` with nothing before it is dropped)
+    sent_since_frame: bool,
 }
 
 impl PointerTransport {
@@ -424,7 +431,7 @@ impl PointerTransport {
             Some(p) => p,
             None => st.seat.add_pointer(),
         };
-        PointerTransport { pointer, logic: PointerLogic::default(), ops: Vec::with_capacity(8), last_member: None, last_focus: None }
+        PointerTransport { pointer, logic: PointerLogic::default(), ops: Vec::with_capacity(8), last_member: None, last_focus: None, last_sent: None, sent_since_frame: false }
     }
 
     /// Per tick: release a ray-owned pointer when gaze targets (`PointerLogic::release_for_gaze`).
@@ -461,8 +468,17 @@ impl PointerTransport {
                         Some((surface, logical, origin)) => {
                             // a locked pointer (pointer-constraints) keeps its position; relative motion still flows
                             let locked = self.pointer.current_focus().as_ref() == Some(&surface) && is_locked(&surface, &self.pointer);
-                            if !locked {
+                            // wlroots' dedupe: the same surface at the same wl_fixed point sends nothing
+                            let local = logical - origin;
+                            let fixed = ((local.x * 256.0).round() as i32, (local.y * 256.0).round() as i32);
+                            let key = (surface.id(), fixed);
+                            let same = self.pointer.current_focus().as_ref() == Some(&surface) && self.last_sent.as_ref() == Some(&key);
+                            if !locked && !same {
                                 self.pointer.motion(st, Some((surface.clone(), origin)), &MotionEvent { location: logical, serial, time });
+                                self.last_sent = Some(key);
+                                self.sent_since_frame = true;
+                            } else if same {
+                                st.journal.pointer_motion_deduped += 1;
                             }
                             self.last_member = Some(*member);
                             self.last_focus = Some((surface.clone(), origin));
@@ -470,6 +486,8 @@ impl PointerTransport {
                         }
                         None => {
                             self.pointer.motion(st, None, &MotionEvent { location: (0.0, 0.0).into(), serial, time });
+                            self.last_sent = None;
+                            self.sent_since_frame = true;
                             self.last_member = None;
                             self.last_focus = None;
                             st.pointer_focus = None;
@@ -479,6 +497,8 @@ impl PointerTransport {
                 PtrOp::Leave => {
                     let serial = SERIAL_COUNTER.next_serial();
                     self.pointer.motion(st, None, &MotionEvent { location: (0.0, 0.0).into(), serial, time });
+                    self.last_sent = None;
+                    self.sent_since_frame = true;
                     self.last_member = None;
                     self.last_focus = None;
                     st.pointer_focus = None;
@@ -487,10 +507,12 @@ impl PointerTransport {
                     let delta = Point::<f64, smithay::utils::Logical>::from((*dx, *dy));
                     // flat profile: the unaccelerated vector is the vector
                     self.pointer.relative_motion(st, self.last_focus.clone(), &RelativeMotionEvent { delta, delta_unaccel: delta, time });
+                    self.sent_since_frame = true;
                 }
                 PtrOp::Button { code, pressed } => {
                     let serial = SERIAL_COUNTER.next_serial();
                     self.pointer.button(st, &ButtonEvent { serial, time, button: *code, state: if *pressed { ButtonState::Pressed } else { ButtonState::Released } });
+                    self.sent_since_frame = true;
                     if *pressed {
                         if let Some(m) = self.last_member {
                             // focus follows the commit, never hover (spatial-input §6)
@@ -498,8 +520,17 @@ impl PointerTransport {
                         }
                     }
                 }
-                PtrOp::Axis(frame) => self.pointer.axis(st, frame.clone()),
-                PtrOp::Frame => self.pointer.frame(st),
+                PtrOp::Axis(frame) => {
+                    self.pointer.axis(st, frame.clone());
+                    self.sent_since_frame = true;
+                }
+                PtrOp::Frame => {
+                    // no `frame` without an event before it (spec §8 rev 3.12)
+                    if self.sent_since_frame {
+                        self.pointer.frame(st);
+                        self.sent_since_frame = false;
+                    }
+                }
             }
         }
         delivered

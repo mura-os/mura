@@ -201,6 +201,9 @@ fn occupancy(st: &Zxr, place: PlaceId, head: xr::Posef, except: Option<MemberId>
         let Some(world) = st.scene.world_pose(id) else { continue };
         out.push(basis.project(world.position, size));
     }
+    // the head frame's exclusive bands (spec §4 rev 3.12: the window tiers honour the head
+    // frame's usable rectangle at spawn — a panel's or the OSK's strip is occupied)
+    out.extend(crate::shell::exclusive_occupancy(st));
     out
 }
 

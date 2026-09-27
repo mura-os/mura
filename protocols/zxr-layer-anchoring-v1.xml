@@ -98,7 +98,8 @@
     <event name="frames">
       <description summary="anchorable frames">
         The set of frames surfaces can currently anchor to, as a bitfield
-        of (1 &lt;&lt; frame) bits. Sent on bind and whenever the set
+        whose bit number frame is set for each available frame (bit 0 is
+        head, bit 4 is world). Sent on bind and whenever the set
         changes (a hand losing tracking, the dock connecting). Requesting
         an absent frame is not an error: the surface is presented in its
         fallback frame (see zxr_anchored_layer_v1.set_frame) until the
@@ -146,7 +147,7 @@
         fall back to the body frame, the docked frame to the head frame.
         Values set in this way are double-buffered, see wl_surface.commit.
       </description>
-      <arg name="frame" type="uint" enum="frame"/>
+      <arg name="frame" type="uint" enum="zxr_layer_anchoring_v1.frame"/>
     </request>
 
     <request name="set_pose">

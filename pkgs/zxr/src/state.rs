@@ -22,10 +22,10 @@ use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, LoopSignal, Mode as CMode, PostAction};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason, ObjectId};
+use smithay::reexports::wayland_server::backend::ObjectId;
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
-use smithay::utils::{Rectangle, Serial, Transform, SERIAL_COUNTER};
+use smithay::utils::{Rectangle, Serial, Size, Transform, SERIAL_COUNTER};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
@@ -51,18 +51,12 @@ use crate::input::{ei, focus, libinput, text};
 use crate::journal::Journal;
 use crate::render::{Renderer, Texture};
 use crate::scene::{self, Flags, MemberId, Scene, Shape};
+use crate::shell::Surface;
 use crate::xr::math;
 use crate::xr::XrCore;
 
-/// One client's compositor bookkeeping (smithay's `ClientData`).
-#[derive(Default)]
-pub struct ClientState {
-    pub compositor_state: CompositorClientState,
-}
-impl ClientData for ClientState {
-    fn initialized(&self, _client_id: ClientId) {}
-    fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
-}
+/// One client's compositor bookkeeping and admission bits (`shell::filter`, spec §10 rev 3.12).
+pub use crate::shell::filter::ClientState;
 
 /// A surface's texture: shm textures belong to the surface and are re-uploaded per commit;
 /// dmabuf textures belong to the `wl_buffer` (cached in `dmabuf_textures`) and are only
@@ -135,6 +129,15 @@ pub struct Zxr {
     pub _virtual_keyboard_state: VirtualKeyboardManagerState,
     /// spatial-input §8: `keyboard-shortcuts-inhibit`, recorded per surface in `text`
     pub shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
+    // ---- the shell-layer half (spec §4/§9/§10 rev 3.12; shell/)
+    pub layer_shell_state: smithay::wayland::shell::wlr_layer::WlrLayerShellState,
+    pub _layer_anchoring_global: smithay::reexports::wayland_server::backend::GlobalId,
+    pub shell_anchoring_managers: Vec<crate::shell::anchoring::zxr_layer_anchoring_v1::ZxrLayerAnchoringV1>,
+    pub session_lock_state: smithay::wayland::session_lock::SessionLockManagerState,
+    pub _security_context_state: smithay::wayland::security_context::SecurityContextState,
+    pub shell: crate::shell::Shell,
+    /// the trusted connections' data, read each tick for `disconnected`
+    pub trusted_clients: Vec<Arc<ClientState>>,
     pub popups: PopupManager,
     pub seat: Seat<Zxr>,
     pub output: Output,
@@ -180,6 +183,8 @@ pub struct Zxr {
     /// xwayland-satellite's pid when spawned: its toplevels are the X11 ones (gate 4)
     pub satellite_pid: Option<u32>,
     pub pointer_focus: Option<WlSurface>,
+    /// the R0 head-floor path's last sent (surface, wl_fixed point) — the still-pointer rule
+    pub last_gaze_sent: Option<(ObjectId, (i32, i32))>,
     pub last_head_pose: Option<openxr::Posef>,
     /// research/63 Phase 1b: how panels reach the runtime (projection pass / quad layers / both)
     /// `--debug-panels`: force every plane into the projection layer (the R0 path) for measurement
@@ -268,7 +273,8 @@ pub struct CursorKey {
 /// The frontend's member payload (spec §5a `M`): the smithay window, its panel, and the
 /// per-member state the tick reads. `scene` never sees these types.
 pub struct Payload {
-    pub window: Window,
+    /// the plane's surface role: an xdg toplevel, a layer surface or a lock surface (`shell::Surface`)
+    pub window: Surface,
     pub panel: Option<PanelSwapchain>,
     /// set by the commit handler when any surface of this member's tree committed; cleared by
     /// the panel pass. Nothing is hashed per tick.
@@ -290,6 +296,9 @@ pub struct Payload {
     /// an `xdg_activation_v1.activate` arrived before the first buffer (niri keeps the token on
     /// the unmapped window, `handlers/mod.rs:836-838`): its serial, applied at map
     pub pending_activation: Option<Option<Serial>>,
+    /// the member belongs to a trusted (socketpair) connection: composed and routed while the
+    /// mode gate is closed (spec §9 rev 3.12)
+    pub trusted: bool,
 }
 
 impl Payload {
@@ -301,13 +310,13 @@ impl Payload {
         self.mapped() && !self.hidden
     }
     pub fn root(&self) -> Option<WlSurface> {
-        self.window.toplevel().map(|t| t.wl_surface().clone())
+        self.window.wl_surface()
     }
 }
 
 /// The plane extents in metres of a window's current geometry at the scene's density
 /// (`wm.density_px_per_cm`, `Layout::m_per_px`).
-pub fn plane_size_of(window: &Window, layout: &scene::Layout) -> [f32; 2] {
+pub fn plane_size_of(window: &Surface, layout: &scene::Layout) -> [f32; 2] {
     let g = window.geometry().size;
     layout.plane_size(g.w, g.h)
 }
@@ -320,6 +329,7 @@ impl Zxr {
         xr: XrCore,
         renderer: Renderer,
         socket: Option<&str>,
+        listen: bool,
         drm_node: Option<&str>,
     ) -> Result<Zxr, String> {
         let dh = display.handle();
@@ -345,10 +355,20 @@ impl Zxr {
         // (`niri.rs:2462-2466`, `client_is_unrestricted`); zxr's gate — the session's keyboard
         // component only — is the filter closure here. Open to every client until the
         // component and its unit exist (flagged in the lane report).
-        let input_method_state = InputMethodManagerState::new::<Self, _>(&dh, |_client| true);
-        let virtual_keyboard_state = VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
+        // rev 3.12: the predicate is the connection's `restricted` bit (shell/filter.rs) — the
+        // privileged set is hidden from security-context clients (research/30's rule; niri,
+        // cosmic-comp, Hyprland)
+        let input_method_state = InputMethodManagerState::new::<Self, _>(&dh, crate::shell::filter::unrestricted);
+        let virtual_keyboard_state = VirtualKeyboardManagerState::new::<Self, _>(&dh, crate::shell::filter::unrestricted);
         let shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
         tracing::info!("text-input-v3, input-method-v2, virtual-keyboard-v1, keyboard-shortcuts-inhibit, xdg-activation globals created (spatial-input §6, §12)");
+        // ---- the shell-layer half (spec §4/§9/§10 rev 3.12): layer-shell + anchoring, the
+        // desktop profile's session lock, security-context — all behind the filter
+        let layer_shell_state = smithay::wayland::shell::wlr_layer::WlrLayerShellState::new_with_filter::<Self, _>(&dh, crate::shell::filter::unrestricted);
+        let layer_anchoring_global = dh.create_global::<Self, crate::shell::anchoring::zxr_layer_anchoring_v1::ZxrLayerAnchoringV1, ()>(1, ());
+        let session_lock_state = smithay::wayland::session_lock::SessionLockManagerState::new::<Self, _>(&dh, crate::shell::filter::unrestricted);
+        let security_context_state = smithay::wayland::security_context::SecurityContextState::new::<Self, _>(&dh, crate::shell::filter::no_security_context);
+        tracing::info!("wlr-layer-shell v5, zxr-layer-anchoring-v1, ext-session-lock-v1, security-context-v1 globals created behind the per-connection filter (spec §10 rev 3.12)");
 
         // ---- dmabuf v4 with feedback: the render node + the modifiers the device samples (§6.1)
         let node = drm_node.map(String::from).or_else(find_render_node);
@@ -394,24 +414,35 @@ impl Zxr {
         // ---- the one wl_output: a virtual panel (§10 notes; sized to the view)
         let output = Output::new("XR-1".into(), PhysicalProperties { size: (600, 340).into(), subpixel: Subpixel::Unknown, make: "Mura".into(), model: "zxr virtual".into(), serial_number: "0".into() });
         let _global = output.create_global::<Self>(&dh);
-        let mode = Mode { size: (1920, 1080).into(), refresh: 60_000 };
+        // the output *is* the head rectangle (research/77 §3.3): its mode follows `shell.head.*`,
+        // 1920 wide, 1493 tall at the 90×70° default; `shell::take_prefs` re-derives it live
+        let head_size = crate::shell::head_mode_size(&crate::shell::HeadCfg::default());
+        let mode = Mode { size: (head_size.w, head_size.h).into(), refresh: 60_000 };
         output.change_current_state(Some(mode), Some(Transform::Normal), Some(Scale::Integer(1)), Some((0, 0).into()));
         output.set_preferred(mode);
 
-        // ---- listening socket + display source
-        let listening = match socket {
-            Some(name) => ListeningSocketSource::with_name(name),
-            None => ListeningSocketSource::new_auto(),
-        }
-        .map_err(|e| format!("wayland socket: {e}"))?;
-        let socket_name = listening.socket_name().to_os_string();
-        loop_handle
-            .insert_source(listening, move |stream, _, state| {
-                if let Err(e) = state.dh.insert_client(stream, Arc::new(ClientState::default())) {
-                    tracing::warn!("insert_client: {e}");
-                }
-            })
-            .map_err(|e| e.to_string())?;
+        // ---- listening socket + display source. `--greeter` binds none (session-auth §5: "no
+        // client Wayland listening socket"); its clients arrive over socketpairs (shell/filter.rs).
+        let socket_name = if listen {
+            let listening = match socket {
+                Some(name) => ListeningSocketSource::with_name(name),
+                None => ListeningSocketSource::new_auto(),
+            }
+            .map_err(|e| format!("wayland socket: {e}"))?;
+            let socket_name = listening.socket_name().to_os_string();
+            loop_handle
+                .insert_source(listening, move |stream, _, state| {
+                    // the public socket: neither restricted nor trusted (spec §10 rev 3.12)
+                    if let Err(e) = state.dh.insert_client(stream, Arc::new(ClientState::default())) {
+                        tracing::warn!("insert_client: {e}");
+                    }
+                })
+                .map_err(|e| e.to_string())?;
+            socket_name
+        } else {
+            tracing::info!("no listening socket (restricted mode): clients are admitted over socketpairs only");
+            OsString::new()
+        };
         loop_handle
             .insert_source(Generic::new(display, Interest::READ, CMode::Level), |_, display, state| {
                 // SAFETY: the display is never dropped while the source lives
@@ -460,6 +491,13 @@ impl Zxr {
             _input_method_state: input_method_state,
             _virtual_keyboard_state: virtual_keyboard_state,
             shortcuts_inhibit_state,
+            layer_shell_state,
+            _layer_anchoring_global: layer_anchoring_global,
+            shell_anchoring_managers: Vec::new(),
+            session_lock_state,
+            _security_context_state: security_context_state,
+            shell: crate::shell::Shell::new(),
+            trusted_clients: Vec::new(),
             popups,
             seat,
             output,
@@ -487,6 +525,7 @@ impl Zxr {
             children: Vec::new(),
             satellite_pid: None,
             pointer_focus: None,
+            last_gaze_sent: None,
             last_head_pose: None,
             debug_panels: DebugPanels::default(),
             quiet: false,
@@ -560,7 +599,7 @@ impl Zxr {
 
     /// The member whose toplevel surface is `root` (linear over N ≈ 50 members).
     pub fn member_for_root(&self, root: &WlSurface) -> Option<MemberId> {
-        self.scene.find(|p| p.window.toplevel().map(|t| t.wl_surface() == root).unwrap_or(false))
+        self.scene.find(|p| p.window.wl_surface().as_ref() == Some(root))
     }
 
     /// A member's window geometry in logical pixels.
@@ -584,7 +623,7 @@ impl Zxr {
         self.seat.get_keyboard().map(|k| k.modifier_state().logo).unwrap_or(false)
     }
 
-    pub fn window_for_root(&self, root: &WlSurface) -> Option<&Window> {
+    pub fn window_for_root(&self, root: &WlSurface) -> Option<&Surface> {
         self.member_for_root(root).and_then(|id| self.scene.get(id)).map(|m| &m.m.window)
     }
 
@@ -862,10 +901,16 @@ impl Zxr {
         if let Some(m) = id {
             self.policy.touch(m);
         }
+        // spec §8 rev 3.12: an `exclusive` layer surface owns the keyboard above the stack and no
+        // toplevel is Activated while it exists (cosmic-comp's rule; focus::layer_focus_override)
+        let override_member = focus::layer_focus_override(self);
+        // a `none` layer surface never takes the keyboard: the stack's member keeps it
+        let id_accepts = id.map(|m| crate::shell::layer_accepts_focus(self, m).unwrap_or(true)).unwrap_or(true);
+        let effective = override_member.or(if id_accepts { id } else { self.focus.stack.restore(|m| self.scene.get(m).map(|x| x.m.mapped() && x.m.window.is_window()).unwrap_or(false)) });
         for (i, m) in self.scene.iter() {
             if let Some(t) = m.m.window.toplevel() {
                 t.with_pending_state(|s| {
-                    if Some(i) == id {
+                    if Some(i) == effective {
                         s.states.set(xdg_toplevel::State::Activated);
                     } else {
                         s.states.unset(xdg_toplevel::State::Activated);
@@ -874,14 +919,15 @@ impl Zxr {
                 t.send_pending_configure();
             }
         }
-        let surf = self.scene.focused().and_then(|m| m.m.root());
+        let surf = effective.and_then(|m| self.scene.get(m)).and_then(|m| m.m.root());
         self.set_keyboard_focus(surf);
     }
 
     /// Spec §5a hit test, then smithay's 2D hit within the plane: the member, the surface under
     /// the ray and the surface-local point.
     pub fn hit_surface(&self, origin: [f32; 3], dir: [f32; 3]) -> Option<(MemberId, WlSurface, smithay::utils::Point<f64, smithay::utils::Logical>)> {
-        let (id, local, _) = self.scene.hit(origin, dir, |p| p.mapped())?;
+        let gated = self.input.mode != crate::input::Mode::Normal;
+        let (id, local, _) = self.scene.hit(origin, dir, |p| p.mapped() && (!gated || p.trusted))?;
         self.hit_surface_at(id, local)
     }
 
@@ -908,24 +954,40 @@ impl Zxr {
         let time = smithay::backend::input::InputTime::now();
         match hit {
             Some((_, surface, loc)) => {
+                // the still-pointer rule (spec §8 rev 3.12): the same surface at the same wl_fixed
+                // point sends nothing (wlroots `wlr_seat_pointer_send_motion`)
+                let key = (surface.id(), ((loc.x * 256.0).round() as i32, (loc.y * 256.0).round() as i32));
+                if self.pointer_focus.as_ref() == Some(&surface) && self.last_gaze_sent.as_ref() == Some(&key) {
+                    self.journal.pointer_motion_deduped += 1;
+                    return;
+                }
                 pointer.motion(self, Some((surface.clone(), loc)), &smithay::input::pointer::MotionEvent { location: loc, serial, time });
                 pointer.frame(self);
+                self.last_gaze_sent = Some(key);
                 self.pointer_focus = Some(surface);
             }
             None => {
                 if self.pointer_focus.take().is_some() {
                     pointer.motion(self, None, &smithay::input::pointer::MotionEvent { location: (0.0, 0.0).into(), serial, time });
                     pointer.frame(self);
+                    self.last_gaze_sent = None;
                 }
             }
         }
     }
 
-    fn unconstrain_popup(&self, popup: &PopupSurface) {
+    pub(crate) fn unconstrain_popup(&self, popup: &PopupSurface) {
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else { return };
         let Some(window) = self.window_for_root(&root) else { return };
         let geo = window.geometry();
-        let mut target = Rectangle::new((0, 0).into(), (1920, 1080).into());
+        // the unconstrain box: the frame rectangle for a layer popup (sway's full-output rule on
+        // the frame, research/77 §2.5), the output for a window's
+        let (size, origin) = match self.shell.entry_for_surface(&root) {
+            Some(e) => (self.shell.rect(e.frame).map(|r| r.size).unwrap_or_else(|| crate::shell::head_mode_size(&self.shell.head)), e.box_px.map(|b| b.loc).unwrap_or_default()),
+            None => (self.output.current_mode().map(|m| Size::from((m.size.w, m.size.h))).unwrap_or_else(|| crate::shell::head_mode_size(&self.shell.head)), (0, 0).into()),
+        };
+        let mut target = Rectangle::new((0, 0).into(), size);
+        target.loc -= origin;
         target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
         target.loc -= geo.loc;
         popup.with_pending_state(|state| {
@@ -1091,6 +1153,18 @@ impl CompositorHandler for Zxr {
             window.on_commit();
             self.mark_dirty(id);
             self.hold_if_not_sampled(id, surface);
+            // the shell roles have their own commit paths (shell/layer.rs, shell/lock.rs)
+            match &window {
+                Surface::Layer(_) => {
+                    crate::shell::layer::commit(self, id, surface);
+                    return;
+                }
+                Surface::Lock(_) => {
+                    crate::shell::lock::commit(self, id, surface);
+                    return;
+                }
+                Surface::Window(_) => {}
+            }
             // xdg toplevel: initial configure, then map on first buffer
             if root.as_ref() == Some(surface) {
                 let initial_sent = with_states(surface, |states| states.data_map.get::<XdgToplevelSurfaceData>().unwrap().lock().unwrap().initial_configure_sent);
@@ -1205,13 +1279,15 @@ impl XdgShellHandler for Zxr {
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         // a transient's parent (set before the first commit) places it beside the parent (wm §3)
         let parent = surface.parent().and_then(|p| self.member_for_root(&p));
-        let window = Window::new_wayland_window(surface);
+        let window = Surface::Window(Window::new_wayland_window(surface));
         // mapped_at 0 = not yet mapped; commit() flips it on the first buffer. Placement is the
         // `free` engine's (policy/free.rs, window-workspace-management §3): the current place,
         // head-relative spawn into a free angular slot, or beside the parent.
         let size = plane_size_of(&window, &self.scene.layout);
         // the new-window rule's "request time" (spatial-input §6): the seat's last commit now
-        let payload = Payload { window, panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0, hidden: false, urgent: false, requested_at_commit: self.focus.last_commit_serial, pending_activation: None };
+        // the connection's trusted bit is the member's (spec §9 rev 3.12)
+        let trusted = window.wl_surface().and_then(|s| s.client()).map(|c| crate::shell::filter::is_trusted(&c)).unwrap_or(false);
+        let payload = Payload { window, panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0, hidden: false, urgent: false, requested_at_commit: self.focus.last_commit_serial, pending_activation: None, trusted };
         let id = crate::policy::spawn(self, Shape::Plane { size }, Flags::WINDOW, payload, parent);
         // a new, unmapped toplevel must not steal focus from a mapped one
         if let Some(prev) = self.scene.iter().filter(|(i, m)| *i != id && m.m.mapped()).map(|(i, _)| i).last() {

@@ -7,6 +7,7 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=../../protocols/zxr-window-management-v1.xml");
+    println!("cargo:rerun-if-changed=../../protocols/zxr-layer-anchoring-v1.xml");
     let glslc = std::env::var("GLSLC").unwrap_or_else(|_| "glslc".into());
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     for (src, stage) in [("shaders/plane.vert", "vert"), ("shaders/plane.frag", "frag")] {

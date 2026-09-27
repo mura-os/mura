@@ -11,6 +11,7 @@ mod render;
 mod policy;
 mod scene;
 mod settings;
+mod shell;
 mod state;
 mod xr;
 
@@ -35,7 +36,7 @@ use state::{now_ns, spawn_client, DebugPanels, HoldPolicy, PanelSwapchain, TexRe
 use xr::math;
 use xr::{FrameTick, QuadLayer, XrCore};
 
-const USAGE: &str = "zxr [--socket NAME] [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--debug-panels projection] [--debug-hold replacement|tick|callback|fence] [--overlay PLACEMENT]\n       zxr ctl SOCKET COMMAND...";
+const USAGE: &str = "zxr [--socket NAME] [--greeter] [--trusted CMD]... [--shell-fd N]... [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--debug-panels projection] [--debug-hold replacement|tick|callback|fence] [--overlay PLACEMENT]\n       zxr ctl SOCKET COMMAND...";
 
 struct Args {
     socket: Option<String>,
@@ -48,10 +49,17 @@ struct Args {
     debug_panels: DebugPanels,
     hold: HoldPolicy,
     overlay: Option<u32>,
+    /// `--greeter`: restricted mode — no listening socket, `Mode::Greeter` (spec §9)
+    greeter: bool,
+    /// `--trusted CMD`: spawn CMD with one end of a socketpair as `WAYLAND_SOCKET`, admit the other
+    /// end as a trusted client (the greeter/lock program, the OSK; ADR 0007 amendment)
+    trusted: Vec<String>,
+    /// `--shell-fd N`: admit an inherited fd as a trusted client
+    shell_fds: Vec<i32>,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, debug_panels: DebugPanels::Auto, hold: HoldPolicy::Replacement, overlay: None };
+    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, debug_panels: DebugPanels::Auto, hold: HoldPolicy::Replacement, overlay: None, greeter: false, trusted: Vec::new(), shell_fds: Vec::new() };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut val = || it.next().ok_or_else(|| format!("{arg} needs a value\n{USAGE}"));
@@ -59,6 +67,9 @@ fn parse_args() -> Result<Args, String> {
             "--socket" => a.socket = Some(val()?),
             "--control" => a.control = Some(val()?),
             "--spawn" => a.spawn.push(val()?),
+            "--greeter" => a.greeter = true,
+            "--trusted" => a.trusted.push(val()?),
+            "--shell-fd" => a.shell_fds.push(val()?.parse().map_err(|e| format!("--shell-fd: {e}"))?),
             "--frames" => a.frames = Some(val()?.parse().map_err(|e| format!("--frames: {e}"))?),
             "--journal" => a.journal = Some(val()?.into()),
             "--drm-node" => a.drm_node = Some(val()?),
@@ -136,7 +147,7 @@ fn run() -> Result<(), String> {
 
     let mut event_loop: EventLoop<'static, Zxr> = EventLoop::try_new().map_err(|e| e.to_string())?;
     let display: Display<Zxr> = Display::new().map_err(|e| e.to_string())?;
-    let mut st = Zxr::new(display, event_loop.handle(), event_loop.get_signal(), xr, renderer, args.socket.as_deref(), args.drm_node.as_deref())?;
+    let mut st = Zxr::new(display, event_loop.handle(), event_loop.get_signal(), xr, renderer, args.socket.as_deref(), !args.greeter, args.drm_node.as_deref())?;
     st.frames_limit = args.frames;
     st.journal_path = args.journal.clone();
     st.debug_panels = args.debug_panels;
@@ -267,6 +278,20 @@ fn run() -> Result<(), String> {
             Err(e) => tracing::warn!(cmd, "spawn: {e}"),
         }
     }
+    // the trusted connections (spec §9 rev 3.12): inherited fds first, then the children
+    for fd in &args.shell_fds {
+        if let Err(e) = shell::filter::admit_trusted_fd(&mut st, *fd) {
+            tracing::warn!(fd, "--shell-fd: {e}");
+        }
+    }
+    for cmd in &args.trusted {
+        if let Err(e) = shell::filter::spawn_trusted(&mut st, cmd) {
+            tracing::warn!(cmd, "--trusted: {e}");
+        }
+    }
+    if args.greeter {
+        st.input.mode = input::Mode::Greeter;
+    }
 
     // the loop: ticks, clients, control; flush after every dispatch
     let res = event_loop.run(None, &mut st, |state| {
@@ -302,7 +327,7 @@ fn walk_member(st: &mut Zxr, id: MemberId, frame: u64) -> Option<MemberTree> {
         let m = st.scene.get(id)?;
         (m.m.window.clone(), m.m.window.geometry())
     };
-    let root = window.toplevel().map(|t| t.wl_surface().clone())?;
+    let root = window.wl_surface()?;
     let mut surfaces: Vec<(WlSurface, Point<i32, Logical>, Size<i32, Logical>)> = Vec::new();
     collect_tree(&root, (0, 0).into(), &mut surfaces);
     for (popup, offset) in PopupManager::popups_for_surface(&root) {
@@ -375,6 +400,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         st.journal.input_presence_changes += 1;
     }
     input::tick(st, head, time, now_ns());
+    // a trusted client that died since the last tick (ADR 0007 I3: nothing unlocks)
+    shell::filter::take_trusted_losses(st);
     // the window-management floor's timed work: settings by generation, lazy-follow (wm §7)
     policy::tick(st, now_ns());
 
@@ -428,7 +455,10 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     let cursor_layers = usize::from(st.input.cursor_layer.is_some());
     let budget = if st.debug_panels == DebugPanels::Projection { 0 } else { st.quad_budget().saturating_sub(cursor_layers) };
     let mut submit = std::mem::take(&mut st.scene.submit);
-    st.scene.flatten_into(&mut submit, head_pos, budget, |p| p.presentable());
+    // while the mode gate is closed the composed set is the trusted members only (spec §9 rev
+    // 3.12; ADR 0007 I1 read with the amendment)
+    let gated = st.input.mode != input::Mode::Normal;
+    st.scene.flatten_into(&mut submit, head_pos, budget, |p| p.presentable() && (!gated || p.trusted));
     let depth = st.depth_content_present(!submit.overflow.is_empty());
     st.journal.members_composed += (submit.quads.len() + submit.overflow.len()) as u64;
     st.journal.quads_submitted += submit.quads.len() as u64;
@@ -912,6 +942,8 @@ fn plane_in_view(view: &openxr::View, model: &math::Mat4, half: [f32; 2]) -> boo
 }
 
 fn finish_frame(st: &mut Zxr) -> Result<(), String> {
+    // ext-session-lock: `locked` after a frame composed with no untrusted sample (I2)
+    shell::lock::after_frame(st);
     if st.frame_id % 60 == 0 {
         st.gc_textures(st.frame_id);
     }
@@ -992,6 +1024,8 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             s.push('\n');
             s.push_str(&policy::seam::describe(st));
             s.push('\n');
+            // the shell layer (spec §11 rev 3.12): one `shell:` line per layer member, a `zone:` per frame
+            s.push_str(&shell::describe(st));
             // the settings picture (settings.rs): where it came from and how often it moved
             s.push_str(&format!(
                 "settings: artifact={} keys={} generation={} reloads={} invalid={} cursor.ray={} pointer.gain={} dwell={} density_px_per_cm={:.1} targeting={} dominant={} xkb={}/{} repeat={}/{} theme={}@{} warp={} long_press_ms={}\n",

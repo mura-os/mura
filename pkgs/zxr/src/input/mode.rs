@@ -20,10 +20,12 @@
 //! socketpair (ADR 0007 amendment 2026-09-27, session-auth rev 5 §5); no *normal* client has
 //! focus while gated (I1), and while that member is absent nothing does — the frame is an
 //! opaque scene and nothing unlocks. (Before the amendment this doc said "the auth scene, not a
-//! client"; the gate's behaviour is the same, its destination is now a member.) The
-//! second exception the design names — members of an `exclusive` layer-shell surface — has no
-//! implementation to gate: zxr serves no `wlr-layer-shell` yet, so [`ModeGate::exclusive`] is the
-//! documented hook and is empty.
+//! client"; the gate's behaviour is the same, its destination is now a member.) **Rev 3.12
+//! (research/77 §4.3):** the exception is the **trusted connection** — every member of a client
+//! admitted over the socketpair (the greeter/lock program's `overlay`/`exclusive` surface, the
+//! OSK's `top` surface) is composed and hit while gated, nothing else is; [`ModeGate::exclusive`]
+//! passes a sample when such a member is composed and `hit.rs` routes it only to those. A `top`
+//! surface from the public socket is neither composed nor hit while gated.
 //!
 //! **Presence** (ADR 0007 lines 97-102): doff, seen through `XR_EXT_user_presence` in the
 //! compositor's own OpenXR loop, "→ blank panels immediately + start a grace timer; don within
@@ -95,12 +97,14 @@ impl ModeGate {
     // The activity record lives on `Input::activity` (KWin's spy shape, `references/kwin/src/input.cpp:3169-3172`);
     // read it there — this stage only feeds it (`don` counts as activity).
 
-    /// The `exclusive` layer-shell hook (spatial-input §1a line 115; ADR 0007's "the seat routes
-    /// only to the lock scene"): a member whose surface holds an exclusive layer-shell role may
-    /// receive while the mode gate is closed. zxr serves no layer shell yet, so this is always
-    /// `false` and the call site is the one line that changes when it does.
-    fn exclusive(&self, _st: &Zxr, _s: &Sample) -> bool {
-        false
+    /// The gate's exception (spatial-input §1a line 115, §6 rev 0.5; spec §9 rev 3.12; research/77
+    /// §4.3): while gated, only members of a **trusted connection** — the socketpair the greeter/lock
+    /// program and the OSK arrive over — are composed (`main.rs` flatten) and hit (`hit.rs`), so a
+    /// sample passes when one is composed and the hit stage below routes it only to those. The
+    /// comparables invent a per-surface bit for the OSK-on-lock case (cosmic-comp `show_on_lock`,
+    /// Hyprland `above_lock`); Mura's bit is the connection, so the case is a consequence.
+    fn exclusive(&self, st: &Zxr, _s: &Sample) -> bool {
+        st.scene.iter().any(|(_, m)| m.m.trusted && m.m.presentable())
     }
 
     /// doff (`present == Some(false)`): suspend the XR sources, close every open contact, and mark

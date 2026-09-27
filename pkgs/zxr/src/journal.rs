@@ -152,6 +152,23 @@ pub struct Journal {
     pub grab_moves: u64,
     /// bar quads submitted (≤ 1 per frame)
     pub grab_bar_layers: u64,
+    /// the shell layer (spec §11 rev 3.12, research/77 §7): layer surfaces created / mapped /
+    /// unmapped, arrangement runs (layer events only — a still session adds none), configures
+    /// sent, exclusive-override changes, registry/bind decisions that hid a privileged global,
+    /// clients inserted restricted / trusted, trusted clients lost, security contexts created,
+    /// and `wl_pointer.motion`s the still-pointer rule dropped (research/75 D3 made visible)
+    pub layer_surfaces: u64,
+    pub layer_mapped: u64,
+    pub layer_unmapped: u64,
+    pub layer_arranges: u64,
+    pub layer_configures: u64,
+    pub layer_focus_overrides: u64,
+    pub binds_filtered: u64,
+    pub clients_restricted: u64,
+    pub clients_trusted: u64,
+    pub trusted_lost: u64,
+    pub security_contexts: u64,
+    pub pointer_motion_deduped: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -319,6 +336,22 @@ impl Journal {
         let _ = writeln!(s, "grab_pushes={}", self.grab_pushes);
         let _ = writeln!(s, "grab_moves={}", self.grab_moves);
         let _ = writeln!(s, "grab_bar_layers={}", self.grab_bar_layers);
+        for (k, v) in [
+            ("layer_surfaces", self.layer_surfaces),
+            ("layer_mapped", self.layer_mapped),
+            ("layer_unmapped", self.layer_unmapped),
+            ("layer_arranges", self.layer_arranges),
+            ("layer_configures", self.layer_configures),
+            ("layer_focus_overrides", self.layer_focus_overrides),
+            ("binds_filtered", self.binds_filtered),
+            ("clients_restricted", self.clients_restricted),
+            ("clients_trusted", self.clients_trusted),
+            ("trusted_lost", self.trusted_lost),
+            ("security_contexts", self.security_contexts),
+            ("pointer_motion_deduped", self.pointer_motion_deduped),
+        ] {
+            let _ = writeln!(s, "{k}={v}");
+        }
         s
     }
 }
