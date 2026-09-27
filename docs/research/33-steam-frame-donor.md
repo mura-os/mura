@@ -11,6 +11,13 @@ artifacts (kconfig, DTS, scripts, inspection transcripts) persist beside the ima
 This is a pinned 2026-09-21 specimen, not channel-independent “latest”: the official `vr/` index
 already contained builds through 2026-09-25 when checked on 2026-09-27.
 
+**Superseded in part by [74](74-steam-frame-recovery-image.md) (2026-09-27).** Valve's official
+recovery release (QDL LUN images + USB repair image) supplies what an update payload cannot: the
+complete GPT of the OS LUN and both boot-firmware LUNs, the Firehose programmer, and the vendor's own
+install script. Where this document says "physical map incomplete", "`syspersist` on the OS disk",
+"no pacman database" or "flash procedure unknown", doc 74 §7 holds the corrected statement; the
+0.5.0 payload facts here (kernel, config, DTS, userspace) stand.
+
 ## 1. Reconstruction audit
 
 | Fact | Value |
@@ -54,9 +61,12 @@ The proven stock OS partition set is therefore shared `esp`,
 `syspersist` and `home`, plus per-slot `efi`×2, `rootfs`×2 and **`var`×2**. This is not the
 complete physical map because §3 separately establishes a boot LUN.
 
-The current `devices/valve-steam-frame/donor.nix` partition list omits the proven `var-A/B` pair.
-That manifest/document mismatch remains open; this audit does not silently treat the listed
-subset as the stock layout.
+**Corrected by [74 §3](74-steam-frame-recovery-image.md):** the OS LUN (`/dev/sda`) holds exactly
+eight partitions — `esp`, `efi-A`, `efi-B`, `rootfs-A`, `rootfs-B`, `var-A`, `var-B`, `home` — and
+**`syspersist` is a separate UFS LUN (`/dev/sdd`)**, a cache regenerated from the calibration
+EEPROM. Boot firmware occupies two further LUNs (`/dev/sdb` XBL/TZ/HYP/U-Boot-SPL, `/dev/sdc`
+U-Boot/env/`uefivarstore`). `donor.nix` now records that structure (its earlier list omitted
+`var-A/B` and placed `syspersist` on the OS disk).
 
 ## 3. Boot chain — U-Boot, not stock UEFI
 
@@ -123,9 +133,10 @@ the donor.**
 
 ## 6. Userspace inventory
 
-- **No pacman database** in the deployed image (`/var/lib/pacman` absent) — the image is a
-  composed artifact, not a package-managed system; the SBOM must come from Valve's package repos
-  per-release rather than the image. (Adjusts the plan's assumption.)
+- ~~**No pacman database** in the deployed image (`/var/lib/pacman` absent)~~ — **wrong, corrected
+  2026-09-27 ([74 §5](74-steam-frame-recovery-image.md))**: SteamOS keeps the database at
+  `/usr/lib/holo/pacmandb/` (967 local packages in this image; `steamos-finalize-install` rewrites
+  `DBPath` to that location). The SBOM is readable from the image itself.
 - **XR stack:** `steamvr` + `gamescope`/`start-gamescope-session` binaries; SteamVR-specific
   units (`steamvr-program-ble`, `steamvr-set-kernel-thread-priorities`, `steamvr-v4l2loopback`,
   `steamvr-web-debug-portforward`). No Monado. The XR runtime is Valve-proprietary — reinforcing
@@ -199,7 +210,7 @@ channel as separate facts and leaves `mura.xr.sensing.micChannels = 0` until run
 | identify | Done — manifest + os-release + system.conf (this doc) |
 | parse/extract | Done for phase-1 needs (configs, kernel, DTS, inventories); deeper extraction (firmware closure, initrd contents) deferred to adaptation work |
 | qualify | Payload hash verified against Valve's manifest; bundle-signature chain **open** (§1); `redistributable=false → localOnly` |
-| gaps | No GPT/ESP/recovery *bytes* in the payload (expected — it's a slot image); §2–§3 specify the evidenced OS and boot-LUN partition roles, while exact complete physical ordering remains open and the donor manifest omits `var-A/B`. Flash procedure (Download/recovery path) remains device-side future work. |
+| gaps | No GPT/ESP/recovery *bytes* in the payload (expected — it's a slot image). **Closed by [74](74-steam-frame-recovery-image.md):** the recovery release supplies the full GPT of LUN 0–2, the EDL programmer and chord, the USB repair image and the vendor install script; `syspersist` moved to its own LUN in the record; the residual is hardware-only (fuse/verification policy, EFI-vs-native boot order, LUN 3 geometry). |
 
 ## 8. What this changes in the plan
 

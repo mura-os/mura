@@ -279,7 +279,16 @@ Status terms above are deliberately narrow: “root” means control after the v
   post-install handler reformats inactive `var` and syncs `/var` including the `/etc` overlay
   ([33 §2](33-steam-frame-donor.md)). RAUC covers in-system root updates, not first installation.
 - The donor also proves a separate boot LUN, but not the complete physical map or an alternate-OS
-  first-install path. Do not copy the Steam Deck's eight-partition GRUB layout.
+  first-install path. ~~Do not copy the Steam Deck's eight-partition GRUB layout.~~
+- **Update (2026-09-27, recovery release — [74](74-steam-frame-recovery-image.md)):** the complete
+  LUN 0–2 map is now source-verified. The Frame *does* use the Deck's eight-partition OS layout
+  (`esp`, `efi-A/B`, `rootfs-A/B`, `var-A/B`, `home`; same `repair_device.sh`), without GRUB;
+  `syspersist` is a separate LUN regenerated from the calibration EEPROM. Chain: PBL → XBL (LUN 1)
+  → **U-Boot SPL in `uefi_a/b`** → U-Boot FIT on LUN 2 → `/boot/Image` from the selected rootfs.
+  Valve publishes an EDL/QDL package (programmer + LUN 0–2 images, chord Power+VolUp+VolDown) and a
+  USB repair image booted from the Aux+Power U-Boot menu. Every signed stage carries Qualcomm's
+  test OEM root and the stages after XBL are unsigned or checksum-only in the artifacts; fuse
+  state and enforcement remain hardware-unknown.
 - Developer Mode officially enables SSH, RDP, and ADB; ADB addresses the native debugging bridge and Lepton instances, not an Android host OS. Valve documents [`ssh steamos@frame`, ADB, and `steamos-readonly disable`](https://partner.steamgames.com/doc/steamhardware/steamframe/debugging).
 - Stock root access is therefore operationally available through the `steamos` user and `sudo`. This is different from a cryptographic bootloader unlock; Secure Boot keys and external-boot behavior remain **unknown**.
 
@@ -288,6 +297,7 @@ Status terms above are deliberately narrow: “root” means control after the v
 - Valve publicly indexes stock VR builds at [`holo-images.steamos.cloud/vr/`](https://holo-images.steamos.cloud/vr/). This is an official vendor source.
 - A current directory contains a tiny signed RAUC bundle plus adjacent casync chunk store, manifest, and chunk details; see [`deckard-20260921.6090922-0.5.0`](https://holo-images.steamos.cloud/vr/20260921.6090922/).
 - Goldmaster and MR channels are also openly indexed. `latest-oobe-test-image.txt` points to a specific goldmaster RAUC bundle, so “latest” is channel-dependent.
+- Recovery artifacts live in a different bucket: [`steamdeck-images.steamos.cloud/recovery/`](https://steamdeck-images.steamos.cloud/recovery/) publishes `steamframe-oobe-repair-qdl-<build>-<version>.tar.gz` (EDL package) and `steamframe-oobe-repair-<build>-<version>.img.bz2` (USB repair image), reached from the store's EULA page through a `-latest` redirect; archive recipe and audit in [74](74-steam-frame-recovery-image.md).
 - Reconstruction is offline-capable: extract the SquashFS-based `.raucb`, obtain `rootfs.img.caibx`, and use casync or desync against the `.castr/` store. The equivalent SteamOS workflow is documented in the [RAUC reconstruction example](https://iliana.fyi/blog/build-your-own-steamos-updates/).
 - Pin build ID, manifest hash, RAUC bundle hash, keyring, and chunk-store namespace. Do not silently follow `latest` in reproducible builds.
 - Valve makes these files public, but that does not imply every proprietary firmware file inside may be separately redistributed. Prefer fetch-and-hash derivations.

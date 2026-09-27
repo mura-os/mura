@@ -19,7 +19,7 @@ those procedures.
 | Lynx / `lynx-r1:mod:postmarketos-mainline` | header-v2 packaging, hashes and debug-shell boot | R1 observed, not Mura-qualified |
 | Galaxy XR / `sm-i610:base` | launch unlock; no exact donor/GPT/header/recovery closure | A0 |
 | PFDM / `pfdm-mr:base` | one unlocked-unit FastBoot capture; partial A/B/EDL reports, no donor/map/restore | A0 |
-| Frame / `deckard:base` | rootfs reconstruction verified; stock `var-A/B` proven but manifest omits them; physical map/recovery incomplete | donor S1; hardware A0 |
+| Frame / `deckard:base` | rootfs reconstruction verified; official recovery release gives the full LUN 0â€“2 GPT, EDL programmer, USB repair image and vendor install script ([74](74-steam-frame-recovery-image.md)); fuse/enforcement unread | donor S1; hardware A0 |
 | Quest 3 / `eureka:base` | exact root-build hashes; root is not unlock; no safe flash path | A0 |
 
 Software/build states are not profiles except where a maintained modification changes the durable
@@ -108,10 +108,13 @@ Doc 33 proves a hash-matching 10-GiB btrfs rootfs, A/B RAUC semantics, and PBLâ†
 `/boot`. Its post-install source also proves per-slot `var-A/B`, reformats inactive `var`, and
 syncs `/var` including the `/etc` overlay
 (`references/archive-steam-frame/frame-archive-deckard-20260921.6090922-0.5.0/extracted/batch2.txt:851-916`);
-the current `donor.nix` partition list omits that pair. It does **not** prove a complete physical
-map: `kernelsetup.sh` separately identifies a `/dev/sdb` boot LUN with A/B XBL/U-Boot/bootfw.
-RAUC describes in-system root updates, not first installation. Bundle signature authentication,
-physical install, U-Boot payload integration, bootfw handling and hardware recovery remain open.
+the `donor.nix` partition list omitted that pair until 2026-09-27. Doc 74 closes the physical map
+from Valve's recovery release: LUN 0 = the eight-partition OS disk (no `syspersist` there),
+LUN 1 = 28 A/B boot-firmware partitions byte-equal to `bootfw.tar.xz` (`uefi_a/b` is Valve's
+U-Boot SPL), LUN 2 = U-Boot FIT/env/`uefivarstore`, LUN 3 = `syspersist` regenerated from the
+calibration EEPROM. The vendor's first-install paths (QDL LUN images; USB `repair_device.sh`) and
+its bootfw update transaction are source-verified. Bundle signature authentication, fuse state and
+boot-ROM enforcement, the EFI-vs-native U-Boot order and any Mura hardware boot remain open.
 VM R4 does not promote hardware flashing.
 
 ### Meta Quest 3

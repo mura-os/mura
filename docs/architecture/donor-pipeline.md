@@ -165,4 +165,17 @@ spike — the first AVB device through the pipeline); whether SELinux/capability
 becomes boot-critical (condition-shaped: only if a containerized-Android layer is adopted,
 ADR 0003); GPL corresponding-source verification (decider: the pre-release legal review,
 M-18-class); and what controls the Steam Frame boot/firmware partitions — the RAUC bundle
-updates only `rootfs` (owner: the Frame workstream's hardware bring-up).
+updates only `rootfs` (owner: the Frame workstream's hardware bring-up). **Answered statically
+2026-09-27** ([research/74 §4](../research/74-steam-frame-recovery-image.md)): the post-install
+handler's `kernelsetup.sh` writes `bootfw.tar.xz` members and the U-Boot FIT/env from the new
+rootfs `/boot` into the inactive `_a/_b` boot-LUN partitions and flips with `splctl`; Valve's
+QDL package writes the same bytes. What remains for hardware bring-up is the owner's boot-LUN
+write policy (74 §10 Q4), not the mechanism.
+
+A recovery-class donor also enters the pipeline shape: Valve's Frame recovery release is a
+whole-LUN image set plus programmer rather than a slot payload, acquired by
+`references/archive-steam-frame/archive-steam-frame-recovery.sh` and recorded under
+`acquire.recovery` in the device donor manifest. The `parse` recipe list above gains "rawprogram
+XML + LUN images → `sfdisk --sector-size 4096 -d` + per-partition carve" (research/74 §3), and the
+`identify` step must record sector size, since the vendor's UFS images use 4096-byte logical
+sectors while its USB image uses 512.

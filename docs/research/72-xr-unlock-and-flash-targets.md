@@ -30,7 +30,7 @@ and protected-state rules, not merely the existence of a recovery mode or EDL US
 | PICO 4 / 4 Pro `phoenix` | community unlock | model-specific EDL programmer + engineering ABL/devinfo → OEM fastboot token | source-documented, hardware-unqualified |
 | PICO 4 Enterprise `phoenix` | tool claim conflicts with vendor memory specification | no safe programmer selection established | unsupported for EDL writes |
 | PICO Neo 3 | maintainer reports support through 5.11.2 | same family, different entry/buttons/artifacts; original discoverer tested only PICO 4 | maintainer-reported, hardware-unqualified |
-| Steam Frame `deckard` | administrator access, cryptographic unlock unknown | SSH/RAUC/U-Boot evidence, no alternate-OS procedure | hardware-unqualified |
+| Steam Frame `deckard` | administrator access; official EDL programmer, USB repair image and full LUN 0–2 layout published; fuse/verification policy unknown | Valve QDL package (LUN 0–2) or USB repair `repair_device.sh` ([74](74-steam-frame-recovery-image.md)); no alternate-OS procedure yet | source-documented, hardware-unqualified |
 | Lynx R1 | vendor says bootloader is open | fastboot for custom images; QDL/QFIL stock restore | vendor-documented |
 | Oculus Go `pacific` | official unlock | Meta unlock ZIP → `fastboot oem unlock` | vendor-documented |
 | Quest 1 `monterey` | current community unlock | inactive-slot v29 boot-chain downgrade + ABL exploit | source-documented, hardware-unqualified |
@@ -423,17 +423,42 @@ Pinned donor inspection proves:
 - public RAUC/casync update artifacts, but incomplete bundle-signature trust-chain reconstruction
   ([research/33 §1](33-steam-frame-donor.md)).
 
-**UNKNOWN on hardware:** secure-boot fuse policy; U-Boot console/menu and verified-boot policy;
-external-media boot; accepted unsigned EFI/Linux payloads; EDL programmer; complete physical-LUN
-map; rescue image; boot-firmware update transaction; persistent UEFI variables; factory/calibration
-partitions.
+**Resolved statically on 2026-09-27 by Valve's official recovery release
+([74](74-steam-frame-recovery-image.md)):**
 
-The current device manifest's `flashMethod = rauc` is only a coarse capability label; the typed
-install plan would have to describe the in-system inactive-root update after SteamOS is already
-booted. Neither establishes first installation onto blank or replaced storage. There is no unlock
-flow. An eventual first-install flow must first choose
-between a vendor-supported alternate boot, a U-Boot boot target, or an internal-slot write with an
-independently bootable rescue path. Root access alone cannot decide that.
+- **EDL programmer and entry (VENDOR-DOCUMENTED + SOURCE-VERIFIED):** Valve ships `loader.melf`
+  (Qualcomm Lanai/SM8650 device programmer, BOOT.MXF.2.1-01643.1) with Linaro `qdl` builds and
+  rawprogram XMLs for LUN 0–2; chord = fully off, wait 10 s, hold Power + Volume Up + Volume Down
+  10 s, then USB-C. The programmer's OEM signing chain is Qualcomm's *published test root*
+  (74 §2).
+- **U-Boot menu and external-media boot (SOURCE-VERIFIED):** Aux+Power opens an in-headset U-Boot
+  menu (`SteamOS`, `Current`/`Previous` slot, `Boot from USB`, `Repair Steam Installation`,
+  `Erase User Data`, `ADB mode`, `Fastboot`, `Shutdown`, `Hard Reset`). "Boot from USB" makes the
+  U-Boot **SPL** load a U-Boot FIT from the stick's first FAT partition at `/uboot/u-boot.img`; the
+  loaded U-Boot then boots that stick's `rootfs-A:/boot/Image` (74 §4, §6.2).
+- **Complete physical map of LUN 0–2 (SOURCE-VERIFIED):** LUN 0 = eight partitions (`esp`,
+  `efi-A/B`, `rootfs-A/B` 10 GiB, `var-A/B`, `home`) on a 32 GiB GPT template grown by
+  systemd-repart at first boot; LUN 1 = 28 A/B boot-firmware partitions whose bytes equal
+  `bootfw.tar.xz` in the rootfs (`uefi_a/b` = U-Boot SPL, `keymaster`/`uefisecapp` empty); LUN 2 =
+  `uboot_a/b` FIT, `ubootenv_a/b`, `ubootfw_a/b`, `uefivarstore`, platform data. `syspersist` is a
+  **separate LUN (`/dev/sdd`)** regenerated from the calibration EEPROM (74 §3).
+- **Rescue image (VENDOR-DOCUMENTED):** the USB repair image is a single-slot SteamOS whose
+  `repair_device.sh` `sfdisk`s LUN 0 and `dd`s its own rootfs into both slots; it never writes
+  LUN 1–3 (74 §6).
+- **Boot-firmware update transaction (SOURCE-VERIFIED):** `kernelsetup.sh` writes the same bytes as
+  the QDL package into the inactive `_a/_b` partitions and flips with `splctl set-bootfw-slot`.
+
+**Still UNKNOWN on hardware:** secure-boot fuse state and what the boot ROM/XBL actually enforce
+(static prior: OEM test root in every signed stage, unsigned SPL, crc32-only U-Boot FIT, `verify=n`,
+raw kernel `Image`); whether U-Boot's EFI bootmeth (`EFI/BOOT/BOOTAA64.EFI`, `steamcl.efi` is
+shipped) is tried before or after the native `/boot` path; runtime persistence in `uefivarstore`;
+LUN 3 geometry.
+
+The current device manifest's `flashMethod = rauc` is only a coarse capability label. Two vendor
+first-install shapes now exist (QDL LUN images; USB repair `sfdisk`+`dd`), plus the in-system
+inactive-slot write; choosing among them is an owner decision recorded as 74 §10 Q1 with the
+comparables' positions. There is still no unlock flow to perform — the static evidence says the
+chain after XBL is not signature-enforced, and only hardware can confirm it.
 
 The locally audited 2026-09-21 donor is a pinned specimen, not a channel-independent “latest”:
 the public `vr/` index already contained builds through 2026-09-25 when checked on 2026-09-27.
@@ -456,10 +481,14 @@ fw_printenv
 
 Commands absent from the stock image are recorded as “tool unavailable,” not inferred. Also copy
 and hash `/boot`, RAUC configuration, U-Boot environment/scripts and boot updater scripts without
-modifying them. Redact UUIDs, serials, MACs and keys.
+modifying them. Redact UUIDs, serials, MACs and keys. Add the capture items of
+[74 §11](74-steam-frame-recovery-image.md): `lsblk` over `sda`–`sdd`, `splctl get-bootfw-slot`,
+`/esp/SteamOS/conf` and `/esp/EFI` contents on a QDL-flashed unit, and the two zero-write USB
+probes (EFI-only stick; Valve `u-boot.img` + foreign `/boot`).
 
-**Static verdict:** hardware-unqualified. Developer Mode is useful for capture and stock-slot
-inspection, not proof that Mura can replace SteamOS.
+**Static verdict:** source-documented, hardware-unqualified. Developer Mode is useful for capture
+and stock-slot inspection; the recovery release documents the vendor's own install paths and a
+statically open boot chain, and only hardware can confirm either.
 
 ## 8. Lynx R1
 
@@ -735,7 +764,7 @@ This is a bounded discovery result, not a claim that no private/vendor service p
 | `galaxy-u1-u2` | official ledger establishes AYKE `U1`, then AZCI/AZD8/AZF3 `U2` | no SM-I610 `SW REV CHECK FAIL`/Odin transcript | strong explanation for signed U2→U1 rejection; not a claim that all U2 downgrades fail | package comparison plus signed U2→U1 and U2→U2 attempts |
 | `galaxy-update-relock` | Samsung-family community warning | no controlled SM-I610 transcript | community-reported | already-unlocked AYIA specimen |
 | `pfdm-retail-unlock` | one unburnt-eFuse unit photo | no retail matrix/recovery package | one-unit report only | retail captures across SKU/build |
-| `frame-open` | root-capable stock Linux | lower boot-chain policy unknown | admin access ≠ unlock | secure-boot/U-Boot/external-boot capture |
+| `frame-open` | root-capable stock Linux; every signed boot stage carries Qualcomm's test OEM root, SPL unsigned, U-Boot FIT crc32-only, kernel loaded raw ([74 §2–§4](74-steam-frame-recovery-image.md)) | fuse state and ROM/XBL enforcement unread | admin access ≠ unlock; static prior strongly open | secure-boot fuse read, the two zero-write USB probes (74 §11) |
 | `quest2-locked` | current retail firmware has no entry | old v29 and profile-specific WebUSB source exist | build-bounded, not universally locked/unlocked | exact build/profile matrix |
 | `vive-xr-elite` | one guide tied only to displayed release 1.0.999.738 | no vendor procedure/factory package | community-reported | second reproduction + stock restore |
 
