@@ -16,9 +16,49 @@
 use crate::xr::math::{self, Mat4};
 use openxr as xr;
 
-/// Metres per logical pixel: 1000 px ≈ 1.2 m at the default distance (a comfortable panel).
-pub const M_PER_PX: f32 = 0.0012;
+/// Metres per logical pixel: 8.3 px/cm, 1000 px ≈ 1.2 m at the default distance (a comfortable panel).
+/// The default of `wm.density_px_per_cm` (8.3 px/cm; kwin-vr's `ppu` 20 is named in the key's
+/// description, research/73 Q9) — the live value is [`Layout::m_per_px`].
+pub const M_PER_PX: f32 = 1.0 / 830.0;
+/// The default of `wm.spawn.distance_m` (1.5 m), as the plane's −Z.
 pub const PLANE_DISTANCE: f32 = -1.5;
+/// The defaults of `wm.spawn.{sibling_offset_m,sibling_yaw_rad}` (R0's fan).
+pub const FAN_OFFSET_M: f32 = 0.9;
+pub const FAN_YAW_RAD: f32 = 0.35;
+
+/// The scene's scale and placement — `wm.density_px_per_cm` and `wm.spawn.*`
+/// (window-workspace-management §3; settings.rs `Prefs::layout`). One struct so a density change
+/// re-derives every plane from its window geometry (`Zxr::rescale_planes`) and a spawn change
+/// applies to the next window only — a placement is a decision made, not a binding.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Layout {
+    /// metres per logical pixel (`1 / (density_px_per_cm · 100)`)
+    pub m_per_px: f32,
+    /// the spawn distance from the head, metres
+    pub spawn_distance_m: f32,
+    /// the spawn elevation relative to the eye line, degrees (negative = below)
+    pub spawn_elevation_deg: f32,
+    pub sibling_offset_m: f32,
+    pub sibling_yaw_rad: f32,
+}
+
+impl Default for Layout {
+    fn default() -> Self {
+        Layout { m_per_px: M_PER_PX, spawn_distance_m: -PLANE_DISTANCE, spawn_elevation_deg: 0.0, sibling_offset_m: FAN_OFFSET_M, sibling_yaw_rad: FAN_YAW_RAD }
+    }
+}
+
+impl Layout {
+    /// `wm.density_px_per_cm` → metres per pixel; a non-positive density is the default.
+    pub fn m_per_px_of(density_px_per_cm: f32) -> f32 {
+        if density_px_per_cm > 0.0 { 1.0 / (density_px_per_cm * 100.0) } else { M_PER_PX }
+    }
+
+    /// The plane extents in metres of a `w × h` logical geometry.
+    pub fn plane_size(&self, w: i32, h: i32) -> [f32; 2] {
+        [w.max(1) as f32 * self.m_per_px, h.max(1) as f32 * self.m_per_px]
+    }
+}
 
 // ---------------------------------------------------------------------------------------------
 // Arena
@@ -257,6 +297,8 @@ pub struct Scene<M> {
     /// the window tier's place until M1's engines: on the world frame, band 3
     pub default_place: PlaceId,
     pub submit: Submit,
+    /// `wm.density_px_per_cm`, `wm.spawn.*` (settings.rs)
+    pub layout: Layout,
     spawned: usize,
     handles: Vec<Handle>,
 }
@@ -274,7 +316,7 @@ impl<M> Scene<M> {
         let head = FrameId(frames.insert(Frame { space: Space::Views, kind: FrameKind::Head, pose: math::pose_identity(), valid: false }));
         let mut places = Arena::default();
         let default_place = PlaceId(places.insert(Place { frame: world, local: math::pose_identity(), band: 3 }));
-        Scene { frames, places, members: Arena::default(), focused: None, world, head, default_place, submit: Submit::default(), spawned: 0, handles: Vec::new() }
+        Scene { frames, places, members: Arena::default(), focused: None, world, head, default_place, submit: Submit::default(), layout: Layout::default(), spawned: 0, handles: Vec::new() }
     }
 
     // ---- frames ----
@@ -339,12 +381,17 @@ impl<M> Scene<M> {
     }
 
     /// The stand-in placement (R0's fan): slot 0 centre, then alternating right/left with a
-    /// small yaw toward the viewer, in the default place.
+    /// small yaw toward the viewer, in the default place — at `wm.spawn.distance_m`, raised or
+    /// lowered by `wm.spawn.elevation_deg`, siblings `wm.spawn.sibling_offset_m` apart and
+    /// `wm.spawn.sibling_yaw_rad` turned toward the viewer.
     pub fn add_fanned(&mut self, shape: Shape, flags: Flags, m: M) -> MemberId {
         let n = self.spawned as i32;
         let slot = (n + 1) / 2 * if n % 2 == 1 { 1 } else { -1 };
         self.spawned += 1;
-        let local = math::pose_yaw([slot as f32 * 0.9, 0.0, PLANE_DISTANCE], -(slot as f32) * 0.35);
+        let l = self.layout;
+        let d = l.spawn_distance_m.max(0.1);
+        let y = d * l.spawn_elevation_deg.to_radians().tan();
+        let local = math::pose_yaw([slot as f32 * l.sibling_offset_m, y, -d], -(slot as f32) * l.sibling_yaw_rad);
         let place = self.default_place;
         self.add(place, local, shape, flags, m).expect("default place is live")
     }
@@ -595,6 +642,26 @@ mod tests {
 
     fn plane(w: f32, h: f32) -> Shape {
         Shape::Plane { size: [w, h] }
+    }
+
+    #[test]
+    fn layout_drives_the_fan_and_the_plane_scale() {
+        // `wm.density_px_per_cm` 20 (kwin-vr's ppu): 0.5 mm per px; 1000 px = 0.5 m
+        assert!((Layout::m_per_px_of(20.0) - 0.0005).abs() < 1e-9);
+        assert_eq!(Layout::m_per_px_of(0.0), M_PER_PX, "a non-positive density is the default");
+        let l = Layout { m_per_px: Layout::m_per_px_of(20.0), ..Layout::default() };
+        let s = l.plane_size(1000, 500);
+        assert!((s[0] - 0.5).abs() < 1e-6 && (s[1] - 0.25).abs() < 1e-6);
+        // `wm.spawn.*`: distance 2 m, 10° below the eye line, siblings 1 m apart
+        let mut sc: Scene<()> = Scene::new();
+        sc.layout = Layout { spawn_distance_m: 2.0, spawn_elevation_deg: -10.0, sibling_offset_m: 1.0, sibling_yaw_rad: 0.2, ..Layout::default() };
+        let a = sc.add_fanned(plane(1.0, 1.0), Flags::WINDOW, ());
+        let b = sc.add_fanned(plane(1.0, 1.0), Flags::WINDOW, ());
+        let pa = sc.world_pose(a).unwrap().position;
+        let pb = sc.world_pose(b).unwrap().position;
+        assert!((pa.z + 2.0).abs() < 1e-6, "at the spawn distance");
+        assert!((pa.y - 2.0 * (-10.0f32).to_radians().tan()).abs() < 1e-6, "lowered by the elevation");
+        assert!((pb.x - 1.0).abs() < 1e-6, "the sibling one offset to the right");
     }
 
     #[test]

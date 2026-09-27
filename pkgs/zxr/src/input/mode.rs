@@ -27,6 +27,13 @@
 //! lock machine's, not this stage's** — this stage raises [`ModeGate::presence_state`] and
 //! suspends the XR sources, and stops there. "Presence never *unlocks* without a biometric"
 //! (line 100), so nothing here ever leaves `Mode::Locked`.
+//!
+//! **Settings the lock machine reads** (settings.rs `Prefs`, resolved and live; declared in
+//! `lib/contract/preferences.nix` and `default.nix`): `session.lock.{enabled,on_doff,on_idle,
+//! on_suspend,doff_grace_s}`, `session.idle.{delay_s,lock_delay_s}`, `session.docked.{lock_on_doff,
+//! deep_idle_after_s}` — the ADR 0007 ladder's numbers. The grace and idle timers are not built
+//! (ADR 0007's lock machine, M1); until they are, the keys reach `Prefs` and nothing else. The
+//! one built consumer is `session.idle.count_emulated_input` → `activity::Activity::count_emulated`.
 
 use super::activity;
 use super::reserved::cancel_sample;

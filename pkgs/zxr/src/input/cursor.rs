@@ -218,11 +218,13 @@ pub struct Cursors {
     hide_after_ns: u64,
     last_motion_ns: Option<u64>,
     hidden_idle: bool,
+    /// the scene's metres per pixel for `Scale::Plane` (`wm.density_px_per_cm`)
+    plane_m_per_px: f32,
 }
 
 impl Default for Cursors {
     fn default() -> Self {
-        Cursors { reticle: None, pointer: None, targeting: None, client: CursorImageStatus::default_named(), hidden_typing: false, ray_cursor: RayCursor::default(), scale: Scale::default(), angle_deg: RETICLE_DEG, hide_when_typing: true, hide_after_ns: 0, last_motion_ns: None, hidden_idle: false }
+        Cursors { reticle: None, pointer: None, targeting: None, client: CursorImageStatus::default_named(), hidden_typing: false, ray_cursor: RayCursor::default(), scale: Scale::default(), angle_deg: RETICLE_DEG, hide_when_typing: true, hide_after_ns: 0, last_motion_ns: None, hidden_idle: false, plane_m_per_px: crate::scene::M_PER_PX }
     }
 }
 
@@ -346,6 +348,11 @@ impl Cursors {
         self.hidden_idle
     }
 
+    /// The scene's metres per pixel (`wm.density_px_per_cm`), for `Scale::Plane`.
+    pub fn set_plane_m_per_px(&mut self, m_per_px: f32) {
+        self.plane_m_per_px = if m_per_px > 0.0 { m_per_px } else { crate::scene::M_PER_PX };
+    }
+
     /// `input.cursor.{angle_deg,hide_when_typing,hide_after_ms}` (settings.rs `apply`).
     pub fn set_prefs(&mut self, angle_deg: f32, hide_when_typing: bool, hide_after_ms: u64) {
         self.angle_deg = if angle_deg > 0.0 { angle_deg } else { RETICLE_DEG };
@@ -394,11 +401,12 @@ impl Cursors {
     pub fn layer(&self) -> Option<CursorLayer> {
         let scale = self.scale;
         let angle_deg = self.angle_deg;
+        let plane_m_per_px = self.plane_m_per_px;
         let at = |plane_world: xr::Posef, local: [f32; 2], distance: f32| {
             let p = math::pose_apply(plane_world, [local[0], local[1], CURSOR_LIFT_M]);
             let mpp = match scale {
                 Scale::Angle => m_per_px_for(angle_deg, distance),
-                Scale::Plane => crate::scene::M_PER_PX,
+                Scale::Plane => plane_m_per_px,
             };
             (xr::Posef { orientation: plane_world.orientation, position: xr::Vector3f { x: p[0], y: p[1], z: p[2] } }, mpp)
         };

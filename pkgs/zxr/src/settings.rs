@@ -247,7 +247,7 @@ impl Default for Prefs {
             wm_spawn_elevation_deg: 0.0,
             wm_spawn_sibling_offset_m: 0.9,
             wm_spawn_sibling_yaw_rad: 0.35,
-            wm_density_px_per_cm: 1.0 / (crate::scene::M_PER_PX * 100.0),
+            wm_density_px_per_cm: 8.3,
             wm_focus_new_windows: "smart".into(),
             wm_focus_raise_on_commit: true,
             ui_reduced_motion: false,
@@ -444,6 +444,17 @@ impl Prefs {
         }
     }
 
+    /// The scene's scale and placement (`wm.density_px_per_cm`, `wm.spawn.*`).
+    pub fn layout(&self) -> crate::scene::Layout {
+        crate::scene::Layout {
+            m_per_px: crate::scene::Layout::m_per_px_of(self.wm_density_px_per_cm),
+            spawn_distance_m: if self.wm_spawn_distance_m > 0.0 { self.wm_spawn_distance_m } else { -crate::scene::PLANE_DISTANCE },
+            spawn_elevation_deg: self.wm_spawn_elevation_deg.clamp(-60.0, 60.0),
+            sibling_offset_m: self.wm_spawn_sibling_offset_m.max(0.0),
+            sibling_yaw_rad: self.wm_spawn_sibling_yaw_rad,
+        }
+    }
+
     /// The libinput per-device configuration (`input.pointer.*`, `input.scroll.natural`,
     /// `input.touchpad.*`).
     pub fn device_config(&self) -> crate::input::libinput::DeviceConfig {
@@ -569,6 +580,21 @@ pub fn apply(st: &mut Zxr, mut prefs: Prefs) {
     }
     st.input.injector.bridge_cfg = bridge;
 
+    // the scene's scale and placement (`wm.density_px_per_cm`, `wm.spawn.*`): a density change
+    // re-derives every plane; a spawn change is for the next window
+    let layout = prefs.layout();
+    if st.scene.layout != layout {
+        let rescale = (st.scene.layout.m_per_px - layout.m_per_px).abs() > 1e-9;
+        st.scene.layout = layout;
+        if rescale {
+            st.rescale_planes();
+            tracing::info!(density_px_per_cm = prefs.wm_density_px_per_cm, m_per_px = layout.m_per_px, "scene: planes rescaled (wm.density_px_per_cm)");
+        }
+    }
+
+    // the idle ladder's view of emulated input (`session.idle.count_emulated_input`, Q5 flagged)
+    st.input.activity.count_emulated = prefs.session_idle_count_emulated_input;
+
     // everything else is a stage's: they compare `prefs.generation` at their next tick
     st.journal.settings_generation = prefs.generation;
     st.prefs = prefs;
@@ -680,7 +706,7 @@ mod tests {
         assert_eq!(d.system_double_tap_ms, 300);
         assert_eq!(d.hardware.pinch_close, 0.75);
         assert_eq!(d.hardware.near_enter_m, 0.18);
-        assert!((d.wm_density_px_per_cm - 8.333).abs() < 0.01);
+        assert!((d.wm_density_px_per_cm - 8.3).abs() < 1e-6 && (crate::scene::Layout::m_per_px_of(d.wm_density_px_per_cm) - crate::scene::M_PER_PX).abs() < 1e-9);
         assert!((d.body_shoulder_half_m - 0.155).abs() < 1e-6);
     }
 

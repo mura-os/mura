@@ -243,6 +243,9 @@ pub struct PointerLogic {
     pub gain: f64,
     /// `input.pointer.warp`
     pub warp: Warp,
+    /// the scene's metres per logical pixel (`wm.density_px_per_cm`, `scene::Layout`): a mouse
+    /// delta in logical px moves the pointer this far on the plane
+    pub m_per_px: f32,
     on_surface: bool,
     pub gaze_scrolls: u64,
     pub warps: u64,
@@ -252,7 +255,7 @@ pub struct PointerLogic {
 
 impl Default for PointerLogic {
     fn default() -> Self {
-        PointerLogic { owner: PointerOwner::default(), axis: AxisMap::default(), plane: None, gain: DEFAULT_GAIN, warp: Warp::default(), on_surface: false, gaze_scrolls: 0, warps: 0, releases: 0 }
+        PointerLogic { owner: PointerOwner::default(), axis: AxisMap::default(), plane: None, gain: DEFAULT_GAIN, warp: Warp::default(), m_per_px: M_PER_PX, on_surface: false, gaze_scrolls: 0, warps: 0, releases: 0 }
     }
 }
 
@@ -338,8 +341,8 @@ impl PointerLogic {
                     }
                     let (px, py) = (dx * self.gain, dy * self.gain);
                     if let Some((m, mut local)) = self.plane {
-                        local[0] += (px * M_PER_PX as f64) as f32;
-                        local[1] -= (py * M_PER_PX as f64) as f32;
+                        local[0] += (px * self.m_per_px as f64) as f32;
+                        local[1] -= (py * self.m_per_px as f64) as f32;
                         let inside = cx.plane_half.map(|h| local[0].abs() <= h[0] && local[1].abs() <= h[1]).unwrap_or(true);
                         if inside {
                             self.move_to(Some((m, local)), out);

@@ -29,7 +29,7 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use input::cursor;
 use render::PlaneDraw;
-use scene::{MemberId, M_PER_PX};
+use scene::MemberId;
 use state::{now_ns, spawn_client, DebugPanels, HoldPolicy, PanelSwapchain, TexRef, Zxr, PANEL_SHRINK_TICKS};
 use xr::math;
 use xr::{FrameTick, QuadLayer, XrCore};
@@ -574,6 +574,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     let submit_gpu = !dirty.is_empty() || depth || cursor_draw.is_some();
     if submit_gpu {
         let Zxr { renderer, dmabuf_textures, surface_tex, journal, scene, xr, ring_tex, cursor_panel, cursor_named, .. } = &mut *st;
+        let m_per_px = scene.layout.m_per_px;
         let resolve = |r: &TexRef| -> Option<&render::Texture> {
             match r {
                 TexRef::Dmabuf(bid) => dmabuf_textures.get(bid).map(|(t, _)| t),
@@ -675,10 +676,10 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                             journal.stale_texture_draws += 1;
                             continue;
                         };
-                        let cx = (loc.x as f32 + size.w as f32 * 0.5 - centre[0]) * M_PER_PX;
-                        let cy = -(loc.y as f32 + size.h as f32 * 0.5 - centre[1]) * M_PER_PX;
+                        let cx = (loc.x as f32 + size.w as f32 * 0.5 - centre[0]) * m_per_px;
+                        let cy = -(loc.y as f32 + size.h as f32 * 0.5 - centre[1]) * m_per_px;
                         let local = math::model([cx, cy, i as f32 * 0.0005], 0.0);
-                        planes.push(PlaneDraw { model: math::mul(&world, &local), half_size: [size.w as f32 * M_PER_PX * 0.5, size.h as f32 * M_PER_PX * 0.5], texture, flip_v: false });
+                        planes.push(PlaneDraw { model: math::mul(&world, &local), half_size: [size.w as f32 * m_per_px * 0.5, size.h as f32 * m_per_px * 0.5], texture, flip_v: false });
                     }
                 }
                 let clear = if submit.quads.is_empty() { [0.05, 0.05, 0.08, 1.0] } else { [0.0, 0.0, 0.0, 0.0] };
@@ -724,6 +725,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         let emphasis_strength = st.prefs.emphasis_strength;
         let cursor = st.input.cursor_layer.as_ref().map(|l| (l.pose, l.m_per_px));
         let Zxr { xr, scene, cursor_panel, journal, .. } = &mut *st;
+        let m_per_px_plane = scene.layout.m_per_px;
         let mut quads: Vec<QuadLayer<'_>> = Vec::with_capacity(submit.quads.len());
         for q in &submit.quads {
             let Some(m) = scene.get(q.member) else { continue };
@@ -733,13 +735,13 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
             }
             // the quad is centred on the panel bounds, offset from the plane's geometry centre
             let geo = m.m.window.geometry();
-            let dx = ((ps.bounds.loc.x as f32 + ps.bounds.size.w as f32 * 0.5) - (geo.loc.x as f32 + geo.size.w as f32 * 0.5)) * M_PER_PX;
-            let dy = -((ps.bounds.loc.y as f32 + ps.bounds.size.h as f32 * 0.5) - (geo.loc.y as f32 + geo.size.h as f32 * 0.5)) * M_PER_PX;
+            let dx = ((ps.bounds.loc.x as f32 + ps.bounds.size.w as f32 * 0.5) - (geo.loc.x as f32 + geo.size.w as f32 * 0.5)) * m_per_px_plane;
+            let dy = -((ps.bounds.loc.y as f32 + ps.bounds.size.h as f32 * 0.5) - (geo.loc.y as f32 + geo.size.h as f32 * 0.5)) * m_per_px_plane;
             let p = math::pose_apply(q.world, [dx, dy, 0.0]);
             quads.push(QuadLayer {
                 swapchain: &ps.sc,
                 pose: openxr::Posef { orientation: q.world.orientation, position: openxr::Vector3f { x: p[0], y: p[1], z: p[2] } },
-                size: [ps.bounds.size.w as f32 * M_PER_PX, ps.bounds.size.h as f32 * M_PER_PX],
+                size: [ps.bounds.size.w as f32 * m_per_px_plane, ps.bounds.size.h as f32 * m_per_px_plane],
                 image_extent: [ps.bounds.size.w.max(1) as u32, ps.bounds.size.h.max(1) as u32],
                 // touch-class emphasis of the targeted member (spatial-input §4)
                 emphasis: emphasis.filter(|(m, _)| *m == q.member).map(|(_, e)| e).unwrap_or(0.0),
@@ -958,6 +960,10 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
         Quiet(on) => {
             st.set_quiet(on);
             format!("quiet {}", if on { "on" } else { "off" })
+        }
+        Primary(on) => {
+            st.primary_changed(on);
+            format!("primary {} quiet={} keep_planes={}", if on { "on" } else { "off" }, st.quiet, st.prefs.games_keep_planes)
         }
         Mode(m) => {
             let mode = match m.as_str() {

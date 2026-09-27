@@ -6,8 +6,10 @@
 # enforces with `mura.settings.locks` (specs/settings-schema.md rev 4 §3, §7 — NixOS
 # `users.mutableUsers`, KConfig's `[$i]`). Which values are preferences, and why, is
 # docs/research/73-user-configurable-decisions.md (§2, the owner's rulings in §5); each key's
-# description names its comparable and its consumer. Keys with no consumer yet are not declared
-# (research/73 §5; a key exists exactly once and says who reads it).
+# description names its comparable and its consumer. A key exists exactly once and says who
+# reads it: the designed wm keys whose consumer is the not-yet-built policy module are declared
+# with that said (window-workspace-management §12 fixes their names); keys whose value the design
+# has not given are not declared until it does.
 #
 # Layered keys (Q2, ruled): a tracker threshold lives in `mura.hardware.input.*` (the contract's
 # calibration, lib/contract/input-calibration.nix) and the preference's default *is* that value,
@@ -393,6 +395,67 @@ in
           type = types.bool;
           default = true;
           description = "A commit (touch down / button press) on a window raises it within its place (spatial-input §6). GNOME `raise-on-click`, KWin `ClickRaise`. Consumer: zxr input/focus.rs.";
+        };
+      };
+
+      # The designed keys of window-workspace-management §12 whose consumer is the wm policy
+      # module (§4 `free` in-process, external managers; zxr-architecture §6 `policy`) — not yet
+      # built. Declared now so the schema and the design's names are fixed; each says so. Keys
+      # whose *value* the design has not given (wm.size.*, wm.focus.{dim,sibling_alpha},
+      # wm.spawn.overlap: "seed from the contract") are not declared until it does.
+      engine = k "wm" "engine" {
+        type = types.str;
+        default = "free";
+        apply = "relogin";
+        description = "The default placement engine (window-workspace-management §4, §12 Q2 ruled: the compositor carries `free` only; arc/dock/band ship as external managers). Consumer: the wm policy module when it lands (declared ahead of it).";
+      };
+      externalManager = k "wm" "external_manager" {
+        type = types.str;
+        default = "";
+        apply = "relogin";
+        description = "Executable of an external window manager (window-workspace-management §4, §11; Hyprland/river shape); empty = the in-process default. Consumer: the session's manager launcher when it lands (declared ahead of it).";
+      };
+      minimize = k "wm" "minimize" {
+        type = types.enum [ "dock" "close" ];
+        default = "dock";
+        description = "What minimize does (window-workspace-management §5, §12 Q1 ruled): park on the dock client with an indicator, degrading to close when no dock runs; or always close. Consumer: the wm policy module when it lands (declared ahead of it).";
+      };
+      follow = {
+        default = k "wm.follow" "default" {
+          type = types.bool;
+          default = false;
+          description = "Whether new windows follow the head by default (window-workspace-management §7, Q6 ruled: never by default, opt-in per window). kwin-vr `followEnabled` true (`kwinvr.kcfg:37-41`) is the dissent, not adopted. Consumer: the wm policy module when it lands (declared ahead of it).";
+        };
+        thresholdDeg = k "wm.follow" "threshold_deg" {
+          type = types.float;
+          default = 40.0;
+          range = { min = 5.0; max = 90.0; };
+          description = "Head yaw from a following window before it starts to move (kwin-vr `followFovH` 40, `kwinvr.kcfg:43-45`; Breezy 15° [external]). Consumer: the wm policy module when it lands (declared ahead of it).";
+        };
+        delayMs = k "wm.follow" "delay_ms" {
+          type = types.ints.unsigned;
+          default = 500;
+          range = { min = 0; max = 5000; };
+          description = "Dwell past the threshold before a following window moves (kwin-vr `followDelay` 0.5 s, `kwinvr.kcfg:55-57`; Breezy 1 s [external]). Consumer: the wm policy module when it lands (declared ahead of it).";
+        };
+        rate = k "wm.follow" "rate" {
+          type = types.float;
+          default = 2.0;
+          range = { min = 0.1; max = 10.0; };
+          description = "Speed of the follow motion (kwin-vr `followSpeed` 2.0, `kwinvr.kcfg:59-61`). Consumer: the wm policy module when it lands (declared ahead of it).";
+        };
+        stopDeg = k "wm.follow" "stop_deg" {
+          type = types.float;
+          default = 4.0;
+          range = { min = 0.0; max = 45.0; };
+          description = "Yaw within which the follow motion stops (kwin-vr `followStopFovH` 4, `kwinvr.kcfg:49-51`). Consumer: the wm policy module when it lands (declared ahead of it).";
+        };
+      };
+      move = {
+        billboard = k "wm.move" "billboard" {
+          type = types.bool;
+          default = true;
+          description = "A window being moved faces the head (window-workspace-management §7; kwin-vr `followWorldUpAlignment` is the world-up variant, `kwinvr.kcfg:63-65`; wayvr `snap_angle_deg`). Consumer: the wm policy module when it lands (declared ahead of it).";
         };
       };
     };

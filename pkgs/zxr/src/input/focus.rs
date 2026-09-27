@@ -139,6 +139,16 @@ pub fn new_window_takes_focus(at_request: Option<Serial>, now: Option<Serial>) -
     }
 }
 
+/// `wm.focus.new_windows` (window-workspace-management §12): `smart` is the rule above (GNOME
+/// `focus-new-windows = smart`, niri `Smart`); `strict` never focuses a new window — it is marked
+/// urgent instead (GNOME `strict`). Anything else reads as `smart`.
+pub fn new_window_rule(mode: &str, at_request: Option<Serial>, now: Option<Serial>) -> bool {
+    match mode {
+        "strict" => false,
+        _ => new_window_takes_focus(at_request, now),
+    }
+}
+
 /// Layer-shell keyboard-interactivity precedence (§6; niri `update_keyboard_focus`): an
 /// `exclusive` layer surface (greeter/lock scene, the keyboard component while shown) owns the
 /// keyboard above every member. **Hook only** — there is no layer-shell global yet; when
@@ -158,7 +168,11 @@ pub fn commit_focus(st: &mut Zxr, member: MemberId, serial: Serial) {
     }
     st.focus.last_commit_serial = Some(serial);
     st.focus.last_commit_member = Some(member);
-    st.focus.stack.touch(member);
+    // `wm.focus.raise_on_commit` (GNOME `raise-on-click`, KWin `ClickRaise`): the commit
+    // focuses either way; raising to the front of the stack is the preference
+    if st.prefs.wm_focus_raise_on_commit {
+        st.focus.stack.touch(member);
+    }
     st.focus.commits += 1;
     set_urgent(st, member, false);
     st.focus_window(Some(member));
@@ -303,6 +317,10 @@ mod tests {
         assert!(!new_window_takes_focus(Some(s(5)), Some(s(7))));
         // requested before any commit, one happened since: urgent
         assert!(!new_window_takes_focus(None, Some(s(3))));
+        // `wm.focus.new_windows`
+        assert!(super::new_window_rule("smart", Some(s(5)), Some(s(5))));
+        assert!(!super::new_window_rule("strict", Some(s(5)), Some(s(5))), "strict: never");
+        assert!(super::new_window_rule("whatever", None, None), "unknown reads as smart");
     }
 
     #[test]

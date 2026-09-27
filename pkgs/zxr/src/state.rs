@@ -50,7 +50,7 @@ use smithay::wayland::xdg_activation::{XdgActivationHandler, XdgActivationState,
 use crate::input::{ei, focus, libinput, text};
 use crate::journal::Journal;
 use crate::render::{Renderer, Texture};
-use crate::scene::{self, Flags, MemberId, Scene, Shape, M_PER_PX};
+use crate::scene::{self, Flags, MemberId, Scene, Shape};
 use crate::xr::math;
 use crate::xr::XrCore;
 
@@ -296,10 +296,11 @@ impl Payload {
     }
 }
 
-/// The plane extents in metres of a window's current geometry (`M_PER_PX`).
-pub fn plane_size_of(window: &Window) -> [f32; 2] {
+/// The plane extents in metres of a window's current geometry at the scene's density
+/// (`wm.density_px_per_cm`, `Layout::m_per_px`).
+pub fn plane_size_of(window: &Window, layout: &scene::Layout) -> [f32; 2] {
     let g = window.geometry().size;
-    [g.w.max(1) as f32 * M_PER_PX, g.h.max(1) as f32 * M_PER_PX]
+    layout.plane_size(g.w, g.h)
 }
 
 impl Zxr {
@@ -754,6 +755,26 @@ impl Zxr {
         }
     }
 
+    /// `wm.density_px_per_cm` changed: every window plane is re-derived from its geometry at
+    /// the new scale (the placement stays; only the extents move).
+    pub fn rescale_planes(&mut self) {
+        let layout = self.scene.layout;
+        let ids: Vec<(MemberId, [f32; 2])> = self.scene.iter().filter(|(_, m)| m.m.window.toplevel().is_some()).map(|(id, m)| (id, plane_size_of(&m.m.window, &layout))).collect();
+        for (id, size) in ids {
+            self.scene.set_shape(id, Shape::Plane { size });
+        }
+    }
+
+    /// A native app became (or stopped being) primary (native-openxr-apps §4; the libmonado
+    /// observer, M1): quiet mode follows, unless `games.keep_planes` keeps the planes composed
+    /// over the game.
+    pub fn primary_changed(&mut self, native_primary: bool) {
+        let quiet = native_primary && !self.prefs.games_keep_planes;
+        if quiet != self.quiet {
+            self.set_quiet(quiet);
+        }
+    }
+
     /// Quiet mode on/off: every mapped plane is (un)suspended (spec §7 rev 3.3).
     pub fn set_quiet(&mut self, on: bool) {
         self.quiet = on;
@@ -1047,7 +1068,7 @@ impl CompositorHandler for Zxr {
                     let has_buffer = with_renderer_surface_state(surface, |st| st.buffer().is_some()).unwrap_or(false);
                     let newly_mapped = has_buffer && !self.scene.get(id).map(|m| m.m.mapped()).unwrap_or(true);
                     // the plane's extents follow the window geometry
-                    let size = plane_size_of(&window);
+                    let size = plane_size_of(&window, &self.scene.layout);
                     self.scene.set_shape(id, Shape::Plane { size });
                     if newly_mapped {
                         let (at_request, pending) = match self.scene.get_mut(id) {
@@ -1069,7 +1090,7 @@ impl CompositorHandler for Zxr {
                             Some(token_serial) => {
                                 focus::activate(self, id, token_serial);
                             }
-                            None if focus::new_window_takes_focus(at_request, self.focus.last_commit_serial) => {
+                            None if focus::new_window_rule(&self.prefs.wm_focus_new_windows, at_request, self.focus.last_commit_serial) => {
                                 self.focus.new_windows_focused += 1;
                                 self.focus.stack.touch(id);
                                 self.focus_window(Some(id));
@@ -1142,7 +1163,7 @@ impl XdgShellHandler for Zxr {
         let window = Window::new_wayland_window(surface);
         // mapped_at 0 = not yet mapped; commit() flips it on the first buffer. Placement is the
         // stand-in fan in the default place (spec §5a) until M1's `free` engine.
-        let size = plane_size_of(&window);
+        let size = plane_size_of(&window, &self.scene.layout);
         // the new-window rule's "request time" (spatial-input §6): the seat's last commit now
         let payload = Payload { window, panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0, hidden: false, urgent: false, requested_at_commit: self.focus.last_commit_serial, pending_activation: None };
         let id = self.scene.add_fanned(Shape::Plane { size }, Flags::WINDOW, payload);

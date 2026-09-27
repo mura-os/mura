@@ -175,6 +175,9 @@ impl SeatStage {
             self.cursors.set_scale(s);
         }
         self.cursors.set_prefs(p.cursor_angle_deg, p.cursor_hide_when_typing, p.cursor_hide_after_ms);
+        let m_per_px = crate::scene::Layout::m_per_px_of(p.wm_density_px_per_cm);
+        self.cursors.set_plane_m_per_px(m_per_px);
+        self.pointer.logic.m_per_px = m_per_px;
         if let Some(w) = Warp::parse(&p.pointer_warp) {
             self.pointer.logic.warp = w;
         }
