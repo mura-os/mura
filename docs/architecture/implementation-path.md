@@ -9,7 +9,7 @@ groundwork with no compositor dependency, verified in the rung-2 VM with stand-i
 by dependency class; G2 reduced to a recorded swap; the pre-groundwork specifications named in
 §5.1; **rev 4.1 same day — F2/F3/D2/D3 absorb first-run rev 2.5 / ADR 0017 rev 2.4: sshd
 upstream on every profile, `mura-setup` one program in two instances, the `setup-complete`
-marker, Cockpit dropped**; **rev 4.2, 2026-09-27 — G1 rewritten for ADR 0007's amendment: the auth scene is a trusted client (the greeter program, its toolkit a prerequisite research pass), zxr `--greeter` composes it over a socketpair and draws no UI**).
+marker, Cockpit dropped**; **rev 4.2, 2026-09-27 — G1 rewritten for ADR 0007's amendment: the auth scene is a trusted client (the greeter program, its toolkit a prerequisite research pass), zxr `--greeter` composes it over a socketpair and draws no UI**; **rev 4.3, same day — the shell-plane research and design (research/75, shell-plane.md) recorded as done in §3 G1's prerequisites and §5**; **rev 4.4, same day — M1's window-management floor and the seam recorded as landed** (§3 M1 status; §5 "The window manager": the floor, the grab and `zxr_window_management_v1` rev 1 built and gated; the shipped external managers remain ordered after the shell clients that need them).
 **What this is:** the ordered build path from power-on to a zxr session, derived from the
 dependency graph ([desktop-environment.md §6](desktop-environment.md)) — not a replacement for
 it. Rungs are ordered only where a hard dependency exists; everything else is a parallel track.
@@ -316,6 +316,13 @@ type, select, copy/paste, open menus, move/rotate/resize planes". When M1 lands,
 `COMPOSITOR_CMD` swaps sway for zxr, rung 1 becomes zxr's own loop, and **sway leaves the
 `mura-session.target` member list** (the second stand-in swap).
 
+**Status (2026-09-27):** M1's window-management floor is landed — placement into free angular
+slots at first commit, the grab (bar and body, depth, resize; client `move`/`resize` requests
+as the same grab), lifecycle, opt-in follow, recenter, the `wm.*` preferences — and the seam is
+served and proven with a scripted manager (spec §12 gate 7; window-workspace-management rev
+0.2). Still open under M1's acceptance line: copy/paste and the keyboard component (§5 "Shell-plane
+presentation"); the dev-session `COMPOSITOR_CMD` swap and sway leaving the target are G3's.
+
 ### G3 — the full handoff
 
 greetd `start_session` forks the **B6a session wrapper** (`mura-session start`), which brings
@@ -594,14 +601,16 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   downstream of M1's window model and the places implementation; registry status honest
   (missing), by design.
 - **The window manager** — [window-workspace-management.md](window-workspace-management.md)
-  (draft) specifies the in-process default policy and the bounded seam
-  (`protocols/zxr-window-management-v1.xml`, draft rev 0). Order: M1 implements the in-process
-  floor — placement, the `free` engine with angular-slot spawn/tidy, lifecycle, rigid attachment
-  and opt-in lazy-follow — over spec §5a's mutation API; the seam is served once M1 has windows
-  worth managing (ADR 0012 amendment) and the exclusive-scene exit input is ruled (focus on
-  the seam is ruled — interaction-backed requests); the shipped default external managers
-  (`arc`, then `dock`/`band` as the shell clients need them; emphasis) follow the seam;
-  adaptive engines only as external managers. The `wm.*` keys of
+  (rev 0.2) specifies the in-process default policy and the bounded seam
+  (`protocols/zxr-window-management-v1.xml`, rev 1). **Landed (2026-09-27):** the in-process
+  floor — placement, the `free` engine with angular-slot spawn/tidy, the grab (§4a,
+  research/76), lifecycle, rigid attachment and opt-in lazy-follow — over spec §5a's mutation
+  API, and the seam served with its disconnect contract, proven by a scripted manager (spec §12
+  gate 7). **Next in this line:** the shipped default external managers (`arc`, then
+  `dock`/`band` as the shell clients need them; emphasis and the exclusive grant, which the
+  served capabilities do not yet advertise) follow the shell-plane research; the dock hook
+  (`dock_present()`) is what turns minimize from close into hide; adaptive engines only as
+  external managers. The `wm.*` keys of
   [window-workspace-management.md §12](window-workspace-management.md) enter `lib/settings`
   (the D7 compiler, `mutability = mutable` — rev 4 vocabulary) with M1's `policy` module, seeded from the
   contract's placement defaults ([device-contract.md](device-contract.md), the panel/placement

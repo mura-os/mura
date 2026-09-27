@@ -1,6 +1,6 @@
 # Window and workspace management — the manager's design
 
-**Status: DRAFT, rev 0.1 (2026-09-26; six items ruled the same day, one — the exclusive-scene exit input — sent to research).** Derived from
+**Status: DRAFT, rev 0.2 (2026-09-27 — §4a the grab from [research/76](../research/76-grab-mechanics-from-comparables.md); the `free` floor (§3, §4, §5, §7, §8) and the seam (§11, XML rev 1) built in `pkgs/zxr/src/policy/` and `input/grabs.rs`, the as-built notes marked "built" in each section; rev 0.1 2026-09-26: six items ruled the same day, one — the exclusive-scene exit input — sent to research).** Derived from
 [research/64](../research/64-window-workspace-management-from-comparables.md) (twelve rows, the
 matrix, twelve verdicts) under ADR 0012's amendment (c) and ADR 0016. The six forks it raised
 were brought to the owner and are ruled (§13; ADR 0012 amendment (ii)); the one item still
@@ -181,6 +181,19 @@ States a member can be in, and their protocol meaning:
 | exclusive | **ruled:** the client's scene takes the environment layer (§9 mechanism 1); native OpenXR apps are Monado's primary session with zxr as overlay (§9 mechanism 2) | `exclusive_requested` → `grant_exclusive` on the seam; a zxr-shell-v2 request for 3D clients | manager grants; the wearer's reserved system input always returns the shell (exit path: research pending) |
 | closed | `xdg_toplevel` destroyed | — | client; the manager's `close` sends `xdg_toplevel.close` |
 
+**Built (2026-09-27, `policy/lifecycle.rs`).** The states are the floor's `Life` enum
+(`Mapped`, `Hidden`, `Minimized`, `Maximized(saved)`, `Fullscreen(saved)`); hidden is one
+function (`set_hidden`: `hidden` flag, `suspended`, the fallback cadence) used by hide, minimize,
+fullscreen's sibling-hiding and the seam's `hide`/unassign. Minimize reads `wm.minimize`
+(`dock` default) and degrades to close through a `dock_present()` hook that answers **false
+until the dock client exists** (shell plane) — the ruled behaviour, the hook the condition.
+Maximize saves geometry and pose and configures the size that fills the comfort limit's angular
+width at the member's distance keeping aspect — a **stand-in** for "spawn size ×
+`wm.size.maximized`", which has no declared value yet (flagged); fullscreen does the same with
+the siblings of the place hidden and restored on exit or close. Client `set_maximized` /
+`set_fullscreen` / `set_minimized` reach the floor only when no manager is connected; with one,
+they are re-emitted to it (§11) and the manager decides.
+
 Restore: places-model §7 — a pinned place remembers member identities and poses; an app that
 relaunches into a remembered slot is placed there (visionOS scene restoration, HoloLens tiles,
 Windows re-dock — universal). Closing the last member of a transient place evaporates the place
@@ -337,6 +350,45 @@ receiving the full state in its first manage sequence. The XML states this.
 **Unavailability:** the global is advertised only to the manager process (the session's
 configured WM client, spawned by the session like any shell component); a second binder gets
 `unavailable`.
+
+**Built (2026-09-27, `policy/seam.rs`; XML rev 1; proven by `zxr-test-manager`, a scripted
+client built with `--features test-manager` and never in the product closure).** What the wire
+now is, where it sharpened the text above, and the two judgments it had to make:
+
+- **Rev 1 of the XML.** Places are announced by a `place` event (new object), the way windows
+  are — `get_place` is gone; `state` and `assign` carry the `zxr_managed_place_v1` object, not
+  an index. The first binder gets the whole picture before its first `manage_start`:
+  `capabilities` (advertised: `focus`, `hide`, `engine`; `emphasis` and `exclusive` are M2's
+  and unadvertised, their requests ignored), `limits` (the contract's comfort values), every
+  mapped toplevel (`window`, `kind`, `app_id`, `title`, `parent`, `dimensions`, `state`) in
+  the floor's most-recently-used order, every place (`engine`, `member_enter`…, `done`).
+- **Sequences.** A manage sequence starts when reported state changed (a pose the wearer or the
+  floor moved, a place, a new or closed window, an interaction, a client request) or when the
+  manager asks (`manage_dirty`); its render sequence follows the finish. Requests are queued
+  and applied at the matching `*_finish`, management ones (`assign`, `propose_dimensions`,
+  `set_maximized`, `set_fullscreen`, `focus`) inside manage, rendering ones (`set_pose`,
+  `hide`/`show`, `set_flags`, `set_engine`, `arrange`) inside either. A request outside its
+  sequence is `sequence_order`; a `set_pose` that is not sixteen binary32 or not rigid is
+  `invalid_pose`; a sequence unanswered for **5 s** is `unresponsive` — each a protocol error,
+  the manager dropped, the floor continuing (the count is `seam: errors=` in `zxr ctl list`).
+- **The floor stays in the loop.** With a manager connected and a place's engine `free`, new
+  windows are still placed by the floor at map and announced placed — the manager re-poses what
+  it wants (rev 1's "presented at once, re-posed after"); with the engine `custom`, the floor
+  places nothing in that place and the window waits at its spawn pose for the manager's
+  `set_pose`. `assign` with no place is "not presented" — the floor's hidden — and the `state`
+  reports no place until it is assigned again. `focus(window, serial)` with a serial from an
+  `interaction` event passes through the activation rule; zero or unknown is urgency.
+  Move/resize requests from clients are re-emitted *and* start the compositor's grab (§4a);
+  they are never the manager's to perform.
+- **Disconnect, two judgments (flagged, owner's to overrule).** (1) Windows the manager had
+  hidden or left unassigned are **shown again** when it goes: hidden exists only while
+  something can unhide it — the condition Q1 gave minimize; a hidden window with no manager and
+  no dock is unreachable. river has no floor and so no position here; Hyprland's plugin
+  ejection has nothing hidden to consider. (2) A sequence in flight is **discarded**, not
+  applied: river force-finishes (`WindowManager.zig:154-158`, because its configures are
+  already out); here nothing is applied before `*_finish`, and a dead manager's half-sequence
+  has no finish. Engines return to `free`; placements are untouched; the next binder takes over
+  from the current state.
 
 ## 12. Settings
 

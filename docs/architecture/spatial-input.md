@@ -330,7 +330,12 @@ This is the one place gaze position reaches a client, and it is named as such.
   ruled 2026-09-26): request focus with the serial of a user commit the compositor delivered to
   it (`interaction` → `focus(window, serial)`); the rule above decides, and refusal is
   urgency-only — the manager has an application's standing under `xdg-activation`, no more. The
-  rule itself is the compositor's and is not on the wire.
+  rule itself is the compositor's and is not on the wire. **Built (2026-09-27):** `commit_focus`
+  emits `interaction` to the connected manager (`policy/seam.rs`); `focus(window, serial)` with
+  one of the last 64 serials so delivered goes through `manager_focus_request` → `activate`,
+  anything else marks urgency (`activations_urgent`). The nested proof (spec §12 gate 7): a
+  stale serial → `urgent=true`; a click on one plane then `focus` on another with that click's
+  serial → focus moves.
 
 ## 7. Cursors
 

@@ -21,16 +21,18 @@ rustPlatform.buildRustPackage {
   pname = "zxr";
   version = "0.1.0";
   # zxr links the settings library (../mura-settingsd, default-features = false: no zbus, no
-  # bus, no bins) as a Cargo path dependency (research/73 §6 option b), so the source is the two
-  # crate trees with zxr as the build root.
+  # bus, no bins) as a Cargo path dependency (research/73 §6 option b), and generates the
+  # window-management seam from the repo's protocols/ XML at build time (policy/seam.rs), so the
+  # source is the two crate trees plus protocols/, with zxr as the build root.
   src = lib.fileset.toSource {
-    root = ../.;
+    root = ../..;
     fileset = lib.fileset.unions [
       (lib.fileset.fromSource (lib.cleanSource ./.))
       (lib.fileset.fromSource (lib.cleanSource ../mura-settingsd))
+      (lib.fileset.fromSource (lib.cleanSource ../../protocols))
     ];
   };
-  sourceRoot = "source/zxr";
+  sourceRoot = "source/pkgs/zxr";
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {

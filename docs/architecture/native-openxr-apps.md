@@ -154,7 +154,10 @@ While a native app is primary:
   when summoned or explicitly kept over games per window** (HoloLens's Follow-me toggle is the
   precedent for the per-window keep). This is the DEs' list plus the hands: the surfaces that
   take mutter's `disable_unredirect` are the overview, the message tray and the OSD; niri draws
-  only its Overlay layer above a fullscreen window.
+  only its Overlay layer above a fullscreen window. *Hook (2026-09-27):* the per-window keep and
+  the follow opt-in are the same member-level attachment the floor now carries
+  (`policy/follow.rs`, `zxr ctl wm follow`; window-workspace-management §7) — the toggle the
+  shell plane exposes sets it; nothing here is a second mechanism.
 - Resuming for (a) draws *only* those surfaces, above the game, with the game still FOCUSED —
   a notification does not take the game's input (GNOME's notifications do not either). Summoning
   (b) does (§5).

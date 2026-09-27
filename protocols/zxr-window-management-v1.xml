@@ -75,11 +75,16 @@
       such requests raise the sequence_order error.
 
       When the window manager client disconnects, the compositor continues
-      with its own default policy: existing window state is left unchanged
-      and new windows are placed by the compositor until another window
-      manager binds this global. A window manager that binds while windows
-      exist receives the complete current state before its first
-      manage_start event.
+      with its own default policy: existing window placement is left
+      unchanged and new windows are placed by the compositor until another
+      window manager binds this global. Windows the manager had hidden or
+      left unassigned are presented again (nothing remains that could show
+      them), every place's engine returns to the compositor's own, and a
+      sequence in flight is discarded rather than applied. A window manager
+      that binds while windows exist receives the complete current state
+      before its first manage_start event. A manager that leaves a sequence
+      unfinished for longer than the compositor's patience (5 s) is
+      disconnected with the unresponsive error.
     </description>
 
     <enum name="error">

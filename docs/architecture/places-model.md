@@ -87,7 +87,12 @@ its members). Desktop models only have the first, so one `active` bit suffices; 
   location-derived > sticky-last*: spawn-target (focus-first), pager-highlight
   (selection-first), notification-routing (location-first, presentation-policy scoped),
   restore write-target (membership facts, not currency), sharing scope (selection only),
-  docked-presentation source (policy selection, ADR 0015).
+  docked-presentation source (policy selection, ADR 0015). *As built (2026-09-27,
+  `policy/mod.rs::current_place`):* the spawn-target selector is focus-first — the focused
+  member's place, else the scene's default place (the one head-relative place M1 has, which is
+  C2's fallback by construction); location-derived and sticky-last currency wait on the
+  perception layer's frames and on more than one place (M2), so the ladder's lower rungs are
+  not yet exercised.
 - **Offer-never-yank**: location events (place entered/exited, reloc state changes) may *offer*
   currency and trigger entry policy; they never forcibly rearrange presentation — ADR 0009's
   corrections rule generalized to context.

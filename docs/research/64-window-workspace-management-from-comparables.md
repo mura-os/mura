@@ -266,6 +266,14 @@ river's re-emission to the WM is the model for the external seam. **Trade-off.**
 makes "how big is this window" a function of distance the user cannot read off directly; Apple
 accepts this for UI and refuses it for volumes; Mura's two shapes map one-to-one.
 
+**Addendum (2026-09-27).** The *gesture* side this section leaves to the input workstream — how
+the grabbed pose is stored, how depth is changed, what release keeps, where the affordance is —
+is read from the same comparables' source in
+[research/76](76-grab-mechanics-from-comparables.md) (kwin-vr, WayVR, xrdesktop/g3k, StereoKit,
+flatland, Simula, motorcar, wxrc, zen, MRTK3; the platforms external) and is normative as
+[window-workspace-management.md §4a](../architecture/window-workspace-management.md); transfer
+(5) above is built there as `input/grabs.rs`, the client request becoming the bar's grab.
+
 ## 5. Lifecycle — close, hide, minimize, restore
 
 **Lineage.** motorcar: map/unmap; wxrc: `mapped` flag. **Comparables.** *visionOS*: **no
