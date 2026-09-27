@@ -207,5 +207,16 @@
   "queststack": {"url": "https://github.com/starseed12345/QuestStack.git", "commit": "7f943f867067e8ef575ec91b8554c4cb08fa83ac", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
   "quest1-bootloader-unlocker-web": {"url": "https://github.com/darknight1050/quest1-bootloader-unlocker-web.git", "commit": "7f34276ecef9021771e7bf4a2d53f10b26243334", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
   "quest-bootloader-unlocker": {"url": "https://github.com/darknight1050/quest-bootloader-unlocker.git", "commit": "e171bbee61e754863fd3a82fe9dc35cd18adf3ac", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
-  "g3k": {"url": "https://gitlab.freedesktop.org/xrdesktop/g3k.git", "commit": "8660d1e947703a70e7bd348815d9d0cef41f416e", "ref": "main", "cloned": "2026-09-27T18:35:00Z"}
+  "g3k": {"url": "https://gitlab.freedesktop.org/xrdesktop/g3k.git", "commit": "8660d1e947703a70e7bd348815d9d0cef41f416e", "ref": "main", "cloned": "2026-09-27T18:35:00Z"},
+  "cosmic-greeter": {"url": "https://github.com/pop-os/cosmic-greeter.git", "commit": "bfb2745176e3fd0824e008d3efb2b37bce5ae0db", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
+  "cosmic-launcher": {"url": "https://github.com/pop-os/cosmic-launcher.git", "commit": "cc3d42bcc8fbcb67e6312f2766394e18b4d937d5", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
+  "cosmic-osd": {"url": "https://github.com/pop-os/cosmic-osd.git", "commit": "a0f5fc60ab8f62373eedfd43df82a974d893beb3", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
+  "cosmic-notifications": {"url": "https://github.com/pop-os/cosmic-notifications.git", "commit": "aa4dac2702506395ab76da1f6755e03b2ccb0db8", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
+  "cosmic-applets": {"url": "https://github.com/pop-os/cosmic-applets.git", "commit": "82e7cd814addb0641959b634227fe550374e195b", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
+  "cosmic-session": {"url": "https://github.com/pop-os/cosmic-session.git", "commit": "1e4f10b5821982688e4a8a39f819be0bc2ad3e74", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
+  "waybar": {"url": "https://github.com/Alexays/Waybar.git", "commit": "16843896794a9c595139318420f81f40e84f8c78", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
+  "fuzzel": {"url": "https://codeberg.org/dnkl/fuzzel.git", "commit": "815d4385afb844f74243a6bc1c7836c4fbebe830", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
+  "maliit-keyboard": {"url": "https://github.com/maliit/keyboard.git", "commit": "cbb0bbfa67354df76c25dbc3b1ea99a376fd15bb", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
+  "slint": {"url": "https://github.com/slint-ui/slint.git", "commit": "bd20dab8529add087b5cbc81aec70bf30861ae4c", "ref": "v1.18.0", "cloned": "2026-09-27T18:11:20Z"},
+  "accesskit": {"url": "https://github.com/AccessKit/accesskit.git", "commit": "ce8164ba92995cfa86005b6259115e08c8244253", "ref": "main", "cloned": "2026-09-27T18:11:20Z"}
 }

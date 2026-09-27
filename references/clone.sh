@@ -312,6 +312,24 @@ repos=(
   # inherit it. openvr = IVROverlay's runtime-side mouse-event synthesis (xrizer/opencomposite implement it).
   'aosp-frameworks-native|https://android.googlesource.com/platform/frameworks/native|'
   'openvr|https://github.com/ValveSoftware/openvr.git|'
+  # --- the shell plane as shipped (docs/research/75) ---
+  # The COSMIC shell components beside the already-pinned cosmic-panel/libcosmic: greeter,
+  # launcher, OSD, notifications, applets — one toolkit (libcosmic/iced), one process each,
+  # started by cosmic-session. waybar/fuzzel = the wlroots ecosystem's panel and launcher
+  # (per-tool GTK/cairo); maliit-keyboard = Plasma Mobile's OSK (Qt); slint = the toolkit
+  # candidate for Mura's own shell components (docs/research/75 §toolkit); accesskit = the
+  # cross-toolkit accessibility bridge (AT-SPI over zbus) Slint and iced both integrate.
+  'cosmic-greeter|https://github.com/pop-os/cosmic-greeter.git|'
+  'cosmic-launcher|https://github.com/pop-os/cosmic-launcher.git|'
+  'cosmic-osd|https://github.com/pop-os/cosmic-osd.git|'
+  'cosmic-notifications|https://github.com/pop-os/cosmic-notifications.git|'
+  'cosmic-applets|https://github.com/pop-os/cosmic-applets.git|'
+  'cosmic-session|https://github.com/pop-os/cosmic-session.git|'
+  'waybar|https://github.com/Alexays/Waybar.git|'
+  'fuzzel|https://codeberg.org/dnkl/fuzzel.git|'
+  'maliit-keyboard|https://github.com/maliit/keyboard.git|'
+  'slint|https://github.com/slint-ui/slint.git|v1.18.0'
+  'accesskit|https://github.com/AccessKit/accesskit.git|'
 )
 
 mkdir -p .logs
