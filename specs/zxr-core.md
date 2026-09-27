@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 3.5 (2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3.6 (2026-09-27; rev 3.5 + research/70 §9 — §8 the cursor as one composition layer in one fixed-size swapchain (ruled: one cursor element, the client's cursor over the ray's reticle, nothing under gaze), §11 cursor counters, §12 the cursor gate row; rev 3.5 = 2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -474,11 +474,19 @@ stand-ins' values and sources are research/70 §5, the first-hardware list.
 - **Cursors** by class: none for gaze; a compositor reticle at the hit for rays and poke (sized in
   visual angle — 1.5° stand-in); for pointer-class, the reticle plus the client's cursor meaning —
   `cursor-shape-v1` names rendered from the compositor's theme, else the client's `set_cursor`
-  image, with its hotspot at the pointer. **As built:** both are band-5 quads over the plane
-  (the reticle a 64×64 panel drawn once; the client cursor a panel sized to the image, redrawn
-  only when the image changes — never a panel re-pass per motion; the cursor-plane shape). The
-  theme comes from `XCURSOR_THEME`/`XCURSOR_SIZE`/`XCURSOR_PATH` (KWin's first step) until
-  settings-schema names the key (open, §14).
+  image, with its hotspot at the pointer. **One cursor layer at a time (rev 3.6, ruled
+  2026-09-27; research/70 §9):** the seat has one logical pointer, so it has one cursor element —
+  the client's cursor when the pointer is on a plane (a ray that owns the pointer gets the ring
+  composited around the image, in the same panel), the reticle at the ray's hit otherwise,
+  nothing under gaze; a mouse on a plane shows no ray reticle beside it (the look changes no
+  focus, §6, and only places the pointer's warp, §8). **As built:** one band-5 quad from one
+  fixed 64×64 swapchain (grown only around a larger `set_cursor` image, never shrunk; the DRM
+  cursor plane's shape), drawn into only when its content changes — the ring once, a
+  `set_cursor` surface on its commits, a name when the name changes — never a pass per pointer
+  motion; the hotspot is the panel's centre, the quad is centred on the point and sized so the 64
+  px span subtends 1.5° at the point's distance, lifted 1 mm. The theme comes from
+  `XCURSOR_THEME`/`XCURSOR_SIZE`/`XCURSOR_PATH` (KWin's first step) until settings-schema names
+  the key (open, §14).
 - **The mouse pointer** lives on a plane in plane-local coordinates (libinput flat profile +
   compositor gain); warps to the looked-at plane when the look has moved (gaze, degrading to
   head); leaving a plane without a look change it becomes an angular ray from the head until it
@@ -495,8 +503,9 @@ stand-ins' values and sources are research/70 §5, the first-hardware list.
 - **Stand-ins** (the first-hardware list; research/70 §5 has every value and its source): pinch
   0.75/0.5 and 1.0/1.5 cm, emphasis ramp 700 ms, near band 0.18/0.22 m, dwell 200 + 750 ms,
   eyes→head 800 ms, controller held 2 s, reserved press windows 400/800/300/1000 ms, reticle
-  1.5°, pointer gain 1.0. None is measured on trackers; the nested gate measured the
-  architecture, not the thresholds.
+  1.5° (the cursor layer's 64 px span; the client image at its theme pixel size inside it),
+  cursor panel 64 px, cursor lift 1 mm, pointer gain 1.0. None is measured on trackers; the
+  nested gate measured the architecture, not the thresholds.
 
 ## 9. Modes, unit, restart (ADR 0007; session-bootstrap rev 3)
 
@@ -575,7 +584,12 @@ in the runtime-call census, `input_tier_changes/deferrals`, `input_source_losses
 `input_touch_downs/cancels`, `input_pointer_handoffs/warps`, `input_gaze_scrolls`,
 `input_presence_changes`, `input_cursor_named_ticks` (a `cursor-shape-v1` name the theme could
 not render), and the focus/text/intake block `focus_commits`, `activations_*`, `urgency_marks`,
-`keys_physical/emulated`, `osk_suppressed`, `libinput_*`, `ei_*`.
+`keys_physical/emulated`, `osk_suppressed`, `libinput_*`, `ei_*`. **Rev 3.6 — the cursor
+counters** (research/70 §9): `cursor_layers` and `cursor_layers_per_frame_x100` (cursor quads
+submitted — ≤ 1 per frame is the one-element rule), `cursor_passes` (passes into the cursor
+panel — content changes only, never motion), `cursor_swapchains_created` (1 per session unless
+a client image outgrows the fixed panel); `zxr ctl list` ends with a `cursor:` line naming the
+layer's content, position, size, panel and the inputs it was resolved from.
 
 ## 12. Conformance — the R0 gates (research/39 §5, measured)
 
@@ -627,6 +641,11 @@ headset). Each gate is a written result with numbers in
    storm; wake-ups 1.7–1.9 k/s idle (1.0 k on the spine), 2.8 k with the stream; CPU 10–13 ms/s
    idle, 27 with the stream; 0 missed in every clean trial; RSS anon 7.6 → 8.2 MB, binary
    4.95 → 6.41 MB, closure +5.7 MB. The §8 trigger not met; no input thread.
+   **The cursor (rev 3.6, research/70 §9):** `cursor_layers_per_frame ≤ 1` in every scenario
+   and 0 under gaze; `cursor_passes` = content changes (20 for 20 shape crossings; 0 for 10 000
+   pointer events at 1 kHz); `cursor_swapchains_created = 1` per session. **Measured (host):**
+   1.00 / 1.00 / 1.00 / 1.00 layers per frame (crossing, 1 kHz stream, head only, beside
+   xrgears), 0 under gaze; 20 / 0 / 0 / 0 passes; 1 swapchain; 0 missed.
 
 Plus the fence (budget impact above) and the unit contract items already verified for sway by
 D4 (readiness, restart in the same session), re-run with zxr in the slot behind a flag.
@@ -683,4 +702,8 @@ whether a held controller outranks a hand ray when both target (spatial-input §
 code follows it; research/63 §1's "Transfer" line said the reverse); the `Head` kind's class
 label (pointer in the code, touch-class "whatever commits" in §3); every stand-in in research/70
 §5 at first hardware; and, for Monado upstream, `xrSyncActions` batching, `FB_hand_tracking_aim`,
-`XR_EXT_user_presence` and `MNDX_system_buttons` on the simulated devices.
+`XR_EXT_user_presence` and `MNDX_system_buttons` on the simulated devices. **Open from the
+one-layer cursor (rev 3.6, research/70 §9; decider: the owner):** the second controller's drawn
+ray while the first owns the pointer (spatial-input §5) — a second cursor element by design, not
+built; the cursor stand-ins (64 px panel, 1 mm lift, the image at theme pixels inside the 1.5°
+span) at first hardware.

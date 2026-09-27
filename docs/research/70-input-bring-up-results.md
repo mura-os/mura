@@ -1,6 +1,6 @@
 # 70 — Input bring-up: the ruled architecture built, tested and measured (M1 input gate)
 
-**Research date:** 2026-09-26. **Question:** does the input architecture ruled in
+**Research date:** 2026-09-26 (§9 addendum 2026-09-27). **Question:** does the input architecture ruled in
 [research/68 §9](68-input-architecture-from-comparables.md) (in-compositor on the state loop; one
 OpenXR action set as the XR seam; smithay's `InputBackend` as the non-XR seam; a closed enum of
 source kinds; KWin's stage order) work end to end on the nested host, what does it cost per
@@ -239,7 +239,7 @@ trackers. Listed so the owner can adjudicate or send them to the first-hardware 
 | `hit.rs` | shell/affordance wins within 2 cm of ray depth over content | class-aware hit, design §4 |
 | `touch.rs` | contact ids Left 0 / Right 1 / other committer 2; pinch 0.75/0.25 edges; cancel (not up) on loss | smithay `touch/mod.rs:392-403`; no comparable numbers contacts |
 | `pointer.rs` | gain 1.0 px/unit; wheel detent = niri's px; mouse motion takes pointer ownership; head claims the pointer before the tier exists | niri `input/mod.rs:3542-3547` |
-| `cursor.rs` | reticle 1.5° visual angle; hidden while typing | MRTK3 scales without an angle; desktops hide on key |
+| `cursor.rs` | the cursor layer's 64 px span subtends 1.5° (the client image at its theme pixel size inside it, ≈ 0.6° for a 24 px cursor); one lift 1 mm; fixed 64 px panel, grow-only; hidden while typing; **one element**: a mouse on a plane suppresses the ray's reticle (§9) | MRTK3 scales without an angle; kwin-vr lifts 15 mm, motorcar 10 mm, neither with a reason; the DRM cursor plane's fixed size; desktops hide on key; the one-element rule is the owner's 2026-09-27 ruling on §7's "as above" |
 | `emphasis.rs` | 700 ms ramp (design 500–1000); scale 1 + 0.15·e | HoloLens hover ramp |
 | `reserved.rs` | short < 400 ms, long ≥ 800 ms, double gap 300 ms, chord 1 s; reserved *before* a11y (KWin runs a11y first) | research/66 §11; the order is the design's §1a, flagged as a divergence from KWin |
 | `a11y.rs` | dwell onset 200 ms, dwell 750 ms, tolerance 2° / 20 px | KWin `dwellclicker.cpp:150-152`; research/42 §5 |
@@ -248,7 +248,7 @@ trackers. Listed so the owner can adjudicate or send them to the first-hardware 
 | `mode.rs` | keyboard samples pass the lock (the PAM conversation); everything else consumed | ADR 0007 I1 |
 | `text.rs` | physical-key OSK suppression 5 min (StereoKit); the Seat stage emits keys (`IM_EMITS_KEYS=false`) | `platform.cpp:258` |
 | `libinput.rs` | calloop priority above client sources — not set (calloop 0.14 has no priority API on this smithay); EIS socket path unscoped | flagged |
-| `theme.rs`, `main.rs` | cursor theme/size from `XCURSOR_*` env until a Settings1 key exists; client cursor as its own quad (cursor-plane shape) rather than a panel re-pass per motion | KWin `cursor.cpp:117-126`; every desktop's cursor plane |
+| `theme.rs`, `main.rs` | cursor theme/size from `XCURSOR_*` env until a Settings1 key exists; the cursor as **one** quad layer from **one** fixed swapchain (§9; was two quads and a per-size swapchain in the first pass) rather than a panel re-pass per motion | KWin `cursor.cpp:117-126`; every desktop's cursor plane; Meta's merge-co-located-layers guidance (research/67 §1) |
 | `actions.rs` | one extra space locate per tick is folded into the batched call; `MNDX_system_buttons` *exposes* controller home buttons, it does not reserve them (§6 item 3) | Monado |
 
 ## 6. Open joins and corrections found while integrating
@@ -281,8 +281,9 @@ trackers. Listed so the owner can adjudicate or send them to the first-hardware 
   no input thread (§3.2, with its caveat).
 - **D2 — seven runtime calls per frame is the input floor's census**, not 13 + N: batching and
   client-side reads absorb the devices; `xrSyncActions`' time is where devices show (§3.1).
-- **D3 — cursors are quads** (reticle, client cursor), never panel re-passes; the theme is the
-  freedesktop mechanism until the settings key exists (§5 last rows; owner item).
+- **D3 — cursors are quads**, never panel re-passes; the theme is the freedesktop mechanism
+  until the settings key exists (§5 last rows; owner item). **Amended by §9 (2026-09-27): one
+  quad**, not one per element.
 - Everything in §5 is a stand-in for the first-hardware list; everything in §6 is an owner or
   upstream item.
 
@@ -291,3 +292,110 @@ trackers. Listed so the owner can adjudicate or send them to the first-hardware 
 Comparables as cited per file in §1 (all `references/<clone>/path:line`; Meta/PICO/HoloLens
 [external], mechanism only). Harness and scripts: `/tmp/mura-input/harness/` (outside the repo;
 removed with the workspace). Journals per trial: `gate.sh`'s `journal-<scenario>-<trial>.txt`.
+
+## 9. Addendum (2026-09-27) — the cursor as one layer in one fixed swapchain
+
+**Question.** The first pass (§1, §5) drew the reticle and the client cursor as two quad layers
+from two swapchains, the client's swapchain recreated whenever the image's size changed. Is that
+the efficient shape for an embedded target, and if not, what is? Plan:
+`one-layer_xr_cursor` (2026-09-27). Design: spatial-input §7 rev 0.3; contract: spec §8 rev 3.6.
+
+### 9.1 The accounting (analytic, from §2.1 of research/65 and §1 of research/67)
+
+A submitted layer is redrawn per view per frame by Monado's squasher: ≈ 0.02 ms per quad on
+this host, ~0.1 ms per layer and a 16-layer cap on a Quest 2 [external]. Pointer *motion* costs
+a quad layer nothing on the GPU — its pose is a struct `xrEndFrame` already carries — so the
+cursor's cost is its layer count per frame plus whatever redraws its panel. Two layers where one
+element would do is a permanent ~0.1 ms/frame and two slots of the quad budget (`main.rs`
+subtracts the cursor's quads from `quad_budget()` — two windows lost quad status to the cursor).
+A swapchain recreated per image size is an `xrDestroySwapchain` + `xrCreateSwapchain` + image
+enumeration + Vulkan import on every arrow ↔ I-beam whose images differ in size. The alternative
+shape — the cursor drawn into the window's panel (Simula `CanvasBase.hs:162-163,773-796`, wayvr
+`overlays/screen/capture.rs:251-281`) — is worse on a bandwidth-bound SoC: OpenXR swapchain
+images rotate and cannot be patched, so it is a full-panel re-blit per motion tick (1080p ≈
+16.6 MB plus three swapchain RPCs). The cursor-plane shape — one fixed-size plane, one image,
+composited by whoever scans out (DRM `cursor` planes; kwin-vr's single node whose texture is
+rebuilt only on `currentCursorChanged`, `VrKwinCursor.qml:20-41`, `kwincurrentcursor.cpp:24`;
+Meta's guidance to merge co-located layers into one) is the precedent, and it says one layer and
+one fixed panel.
+
+### 9.2 The rule (owner's ruling, 2026-09-27)
+
+One cursor element at a time: the client's cursor when the logical pointer is on a plane (a ray
+that owns the pointer gets the ring composited around the image, in the same panel); the reticle
+at the ray's hit otherwise; nothing under gaze (a mouse under gaze keeps its own cursor — its
+position is the mouse's). A mouse on a plane shows no ray reticle beside it: the head ray's look
+changes no focus (§6) and only decides where the pointer warps (§8) — the owner's answer to §7's
+"the pointer-class cursor as above" was that the mouse takes priority and the head ray is the
+degraded-state device. The rule follows from §5's one logical pointer (ruled) rather than adding
+to it. The second controller's drawn ray while the first owns the pointer (§5) is a second
+element by design and is not built (spatial-input §15).
+
+### 9.3 As built (`input/cursor.rs`, `main.rs`, `state.rs`, `journal.rs`, `input/seat.rs`)
+
+`Cursors::layer()` resolves the seat's two inputs (the targeting ray's hit; the logical
+pointer's plane point with its owner) to `Option<CursorLayer { pose, m_per_px, content: Ring |
+Image | RingAndImage, image }>`. One `cursor_panel` swapchain of `CURSOR_PX`² = 64² (grown only
+when a `set_cursor` image needs more room around its hotspot — `panel_side_for` — never shrunk),
+created on first use; the ring texture once; a pass into the panel only when `CursorKey {
+content, image: Named(icon) | Surface(id, commit) }` changes; the hotspot at the panel's centre,
+so the one `QuadLayer` is centred on the point and sized `m_per_px × side`, with 64 px
+subtending 1.5° at the point's distance (the client image at its theme pixel size inside that
+span, ≈ 0.6° for a 24 px cursor); lifted 1 mm. Journal: `cursor_layers` (+ per frame),
+`cursor_passes`, `cursor_swapchains_created`; `zxr ctl list` ends with a `cursor:` line (content,
+position, size, panel, and the inputs). 124 unit tests (the precedence table, the fixed panel's
+growth rule, the ring, the visual-angle scale).
+
+### 9.4 Measured (host; medians of three trials; Monado simulated HMD at 60 Hz, breeze_cursors at 24 px, `ZXR_NO_LIBINPUT=1`, load 3–5 on 32 cores)
+
+Master `4dc8313` against the branch. `d_` = delta over the measurement window. Master has no
+cursor counters: its cursor passes are `panel_passes` minus the windows' (the branch's
+`panel_passes` measures the windows alone under the same script), its layers per frame are read
+from the code (`main.rs:733-749` at `4dc8313`: reticle + client cursor whenever both have an
+image), labelled analytic.
+
+| scenario (window) | frames | cursor layers/frame | cursor passes | cursor swapchains | window panel passes | zxr CPU ms/s | wake-ups/s | missed |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **crossing** — mouse on gtk3-demo, 20 arrow ↔ I-beam crossings in 10 s | 612 | master **2** (analytic) · branch **1.00** (612/612) | master 20 (45 − 25) · branch **20** | 0 · 0 | 25 · 25 | 16.7 · 12.7 | 2 022 · 1 906 | 0 · 0 |
+| **stream** — 1 kHz mouse deltas for 10 s (achieved 1000.10 Hz; 10 000 events) | 605 | 2 · **1.00** | 0 · **0** | 0 · 0 | 0 · 0 | 20.8 · 16.9 | 2 988 · 2 864 | 0 · 0 |
+| **head only** — the floor on foot, 8 s | 485 | 2 · **1.00** | 0 · 0 | 0 · 0 | 0 · 0 | 13.6 · 8.7 | 1 949 · 1 894 | 0 · 0 |
+| **head only, then gaze** — nominal gaze streamed at 60 Hz, 3 s window after the tier took gaze | 180 | master 1 (analytic: the reticle clears, the head-owned client cursor stays) · branch **0** (0/180) | — | — | — | — | — | 0 · 0 |
+| **beside xrgears** — zxr overlay, head-owned pointer on foot, 20 s | 1 207 | 2 · **1.00** | 0 · 0 | 0 · 0 | 0 · 0 | 9.4 · 10.4 | 1 799 · 1 799 | 0 · 0 |
+
+Per session: master creates **3** swapchains for one window (the window, the reticle, the
+cursor); the branch **2** (the window, the cursor) — `cursor_swapchains_created = 1` in every
+trial, including the crossing trials' 20 shape changes. The tier took gaze in every trial
+(`input_tier_changes` +1) and the branch submitted no cursor layer for the 180 frames after it.
+
+**Reading.** The one-element rule holds at exactly one layer per frame in every scenario and
+zero under gaze; passes track content changes (20 for 20 crossings) and never motion (0 for
+10 000 events); the panel is created once. The layer saved is one of the quad budget's slots
+and, on Monado, one squasher draw per view per frame — below this host's `fdinfo` noise floor
+(research/67 §2.1: 1–4 layers are inside ±5 ms/s), and **not measured here**: this Monado build's
+compositor fd exposed no `drm-engine-gfx` line in `fdinfo` during these runs (its VRAM
+allocations show; xrgears' and zxr's engine time show), so the Monado column research/67 had
+is absent. The Quest-class figure stays analytic: ~0.1 ms/frame and 1/16 of the layer budget
+per layer [external]. CPU and wake-up differences (−4 ms/s, −100/s) are inside run-to-run noise
+and are not claimed.
+
+**What the host could not show.** (i) Master's per-size swapchain recreation: with one theme at
+one nominal size every breeze image is 24×24, and both clients here (foot, GTK 3.24.52) speak
+`cursor-shape-v1`, so no size change occurred and master created 0 swapchains in the crossing
+window too; the path is exercised by `set_cursor` surfaces of another size (a client with its
+own theme or scale) — the fixed panel removes the dependency rather than measuring it. (ii) The
+controller-ray crossing: a controller injected at 4 Hz is a lost controller to the tier (800 ms
+staleness) and at 60 Hz its crossings landed differently run to run (the ray stabiliser and the
+window arc), so the crossing scenario uses the mouse; the controller path was verified by hand
+(`RingAndImage` every tick, one pass per crossing, 1.5° at 1.5 m = 39 mm) and is not in the
+table.
+
+### 9.5 Determination
+
+**D4 — the cursor is one composition layer from one fixed-size swapchain**, content by the §9.2
+precedence; passes on content change only; nothing submitted when there is nothing to show.
+Amends D3. Stand-ins added to §5 (`CURSOR_PX` 64, lift 1 mm, the client image at theme pixels
+inside the 1.5° span); the second controller's drawn ray is a spatial-input §15 item.
+
+Harness (outside the repo, removed with the workspace): `/tmp/mura-cursor/harness/run.sh`
+(scenarios), `pointer-stream` (the 1 kHz mouse and the 60 Hz pose/gaze streams on absolute
+`CLOCK_MONOTONIC` deadlines), `summarize.sh` (medians); journals per run under `out/`.

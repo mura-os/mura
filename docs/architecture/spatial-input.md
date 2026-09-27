@@ -1,6 +1,7 @@
 # Spatial input: targeting, hover, commit, focus, cursors, peripherals and text entry
 
-**Status: DRAFT rev 0.2 (2026-09-26; rev 0.1 + §1a **implemented** markers from
+**Status: DRAFT rev 0.3 (2026-09-27; rev 0.2 + §7 **one cursor element** ruled and built as one
+composition layer in one fixed swapchain, [research/70 §9](../research/70-input-bring-up-results.md); rev 0.2 = 2026-09-26; rev 0.1 + §1a **implemented** markers from
 [research/70](../research/70-input-bring-up-results.md) — the module as built in `pkgs/zxr/src/input/`, the §1a trigger measured and not met, `MNDX_system_buttons` wording corrected, the §7 cursors as quads and the theme mechanism; rev 0.1 = rev 0 + §1a "Where input lives, and how it is built" from
 [research/68](../research/68-input-architecture-from-comparables.md), §10 and §13 amended).** The design of the compositor's `input` module
 ([specs/zxr-core.md §3, §8](../../specs/zxr-core.md)) and of the input authority the registry
@@ -336,21 +337,50 @@ because I-beams, resize arrows and link hands carry meaning the wearer needs; `c
 is preferred so the compositor renders one theme at one scale across applications (the
 protocol's own stated reason).
 
-**Implemented (research/70; `input/cursor.rs`, `theme.rs`, `main.rs`):** the reticle and the client
-cursor are each a **band-5 quad** lifted 2 mm / 1 mm off the plane — the reticle a 64×64 panel
-drawn once, the client cursor a panel sized to its image and redrawn only when the image changes
-(a `set_cursor` surface's commit, a name change) — never a panel re-pass per pointer motion. This
-is the cursor-plane shape every desktop compositor prefers when the hardware offers one (wlroots
-`types/output/cursor.c:291,423` tries the hardware cursor first and falls back to software;
-mutter `meta-cursor-renderer-native.c:71,405` `has_hw_cursor`; KWin's DRM cursor plane,
-`drm_output.cpp:308`, `drm_pipeline.cpp:506-527`) and composite it into the frame only as a
-fallback; the quad is XR's cursor plane. Names resolve through the Xcursor theme named by
+**One cursor element at a time (ruled 2026-09-27; research/70 §9).** The seat has one logical
+pointer (§5; ADR 0013 item 4), so it has one cursor element, by precedence: (1) the logical
+pointer is on a plane (mouse, trackpad, or a controller that owns the pointer) → the **client's
+cursor** at the pointer, its hotspot at the point; when the pointer's owner is a **ray**
+(controller, head), the ring is composited around the image in the same panel — the row above's
+"reticle plus the client's cursor meaning", as one image; (2) otherwise a ray targets (hand,
+head, a non-owning controller, or the pointer between planes per §8) → the **reticle** at the
+hit; (3) gaze targeting, or nothing → no cursor, nothing submitted. While a **mouse** owns the
+pointer on a plane the ray's reticle is not shown beside it — the look changes no focus (§6) and
+only decides where the pointer warps (§8); "the pointer-class cursor as above" in the table means
+the cursor, not the cursor and a ring. This resolves the table's ambiguity by the owner's ruling
+(the mouse takes priority; the head ray is the degraded-state device). The second controller's
+"ray drawn" while the first owns the pointer (§5) is a second element by design and is not
+built (§15).
+
+**Implemented (research/70 §9; `input/cursor.rs`, `theme.rs`, `main.rs`):** one **band-5 quad**
+from **one fixed 64×64 swapchain** — grown only when a `set_cursor` image needs more room around
+its hotspot, never shrunk; the hotspot at the panel's centre so the quad is centred on the point;
+drawn into only when its content changes (the ring once, a `set_cursor` surface on its commits,
+a `cursor-shape-v1` name when the name changes) — never a pass per pointer motion; sized so the
+64 px span subtends 1.5° at the point's distance, the client image at its theme pixel size
+inside it (a 24 px cursor ≈ 0.6°); lifted 1 mm. Why one layer and one fixed panel: the runtime
+redraws every submitted layer per view per frame (research/65 §2.1; ≈ 0.02 ms/quad on the host,
+~0.1 ms and a 16-layer cap on Quest 2 [external], research/67 §1), so a second layer is a
+permanent per-frame cost and a slot of the quad budget, and a swapchain recreated per cursor
+size is runtime and Vulkan churn on every arrow ↔ I-beam. This is the cursor-plane shape: one
+fixed-size plane, one image, composited by whoever scans out — wlroots `types/output/cursor.c:291,423`
+(hardware cursor first, software fallback), mutter `meta-cursor-renderer-native.c:71,405`,
+KWin `drm_output.cpp:308`, `drm_pipeline.cpp:506-527`; the quad is XR's cursor plane. The XR
+comparables split on the composition axis — own node above the plane: wxrc `src/render.c:367-395`,
+kwin-vr `plugins/vr/qml/VrKwinCursor.qml:20-41` (one node, texture rebuilt only on
+`currentCursorChanged`, `kwincurrentcursor.cpp:24` — the shape here), motorcar
+`sixdofpointingdevice.cpp:98-107`, xrdesktop `xrd-shell.c:1812-1815`; drawn into the window's
+texture every frame: Simula `CanvasBase.hs:162-163,773-796`, wayvr `overlays/screen/capture.rs:251-281`
+— and none composites through OpenXR quad layers, which is why the cursor plane, not they, is
+the structural precedent. Names resolve through the Xcursor theme named by
 `XCURSOR_THEME`/`XCURSOR_SIZE` on `XCURSOR_PATH` — KWin's first step before its own config
 (`kwin/src/cursor.cpp:117-126`), wlroots' path search (`xcursor/xcursor.c:515-563`), niri sets
 the same variables for clients (`niri/src/cursor.rs:189-193`) — until settings-schema names
 the theme and size key (§15). A name the theme lacks draws nothing and is counted
-(`input_cursor_named_ticks`); the reticle stays. The poke indicator and the ray line are not
-drawn yet (hardware-deferred with the trackers). The reticle's 1.5° is a stand-in (§15).
+(`input_cursor_named_ticks`); a ray owner's ring stays. The poke indicator and the ray line are
+not drawn yet (hardware-deferred with the trackers). Stand-ins (§15): the 1.5° span, the 64 px
+panel, the 1 mm lift (kwin-vr 15 mm, motorcar 10 mm — no comparable states a reason), the client
+image at theme pixels inside the span.
 
 ## 8. Peripherals: mouse, trackpad, keyboard, controllers
 
@@ -482,6 +512,10 @@ make gaze reach a client.
   carries and its source, for the first-hardware list.
 - The cursor theme and size key in settings-schema (§7 reads `XCURSOR_THEME`/`XCURSOR_SIZE` until
   then) — the owner.
+- The second controller's drawn ray while the first owns the pointer (§5): a second cursor
+  element by design, outside §7's one-layer rule as built (research/70 §9) — the owner, with two
+  controllers in hand. The cursor stand-ins (64 px panel, 1 mm lift, the client image at theme
+  pixels inside the 1.5° span) join the first-hardware list.
 - Whether a held controller outranks a hand ray when both target: §3 says so and the code follows
   it; research/63 §1's "Transfer" line said the reverse (research/70 §6 item 1) — the owner.
 - The `Head` kind's class: the code drives the reticle and, before any tier exists, the pointer
