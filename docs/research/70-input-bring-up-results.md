@@ -331,6 +331,31 @@ degraded-state device. The rule follows from §5's one logical pointer (ruled) r
 to it. The second controller's drawn ray while the first owns the pointer (§5) is a second
 element by design and is not built (spatial-input §15).
 
+**Gaze, the second pass (same day).** The first build hid the cursor under gaze with a rule in
+`cursor.rs` while the transport kept a head-owned `wl_pointer` hovering the client at its last
+point (`enter` with no `leave`) — a §5 seam, not a §7 one. Ruled (owner, option a): when gaze
+takes the tier a **ray-owned pointer is released** (`PointerLogic::release_for_gaze`: `leave` +
+`frame`, no plane, owner kept; the ray's next sample re-enters when it retakes the tier); a
+mouse-owned pointer is not touched. The cursor then needs no gaze rule at all — no plane and no
+hit resolve to no layer. Consequences recorded: hover/tooltip state ends correctly on the client;
+a gaze flicker costs one `leave`/`enter` pair per drop-and-return, bounded by the two 800 ms
+hystereses; a `pointer-constraints` lock on a *controller*-owned pointer is lost when gaze takes
+the tier (consistent with amendment 1; mouse locks unaffected). Verified nested (head-only floor
+on foot, nominal gaze streamed at 60 Hz for 10 s, then stale): `input_tier_changes` +1 → gaze,
+`input_pointer_releases` = 1, **0 cursor layers over 301 frames** under gaze with
+`owner=None on_plane=false reticle=false`, the head re-enters when gaze goes stale, and the
+client's `WAYLAND_DEBUG` log shows exactly `enter → leave → enter`.
+
+**Two preferences (owner, same day; spatial-input §14):** `input.cursor.ray = both | image |
+ring` — what a ray that owns the pointer shows (default `both`, the ruling above; `image` is
+kwin-vr's desktop look, `ring` MRTK3's) — and `input.cursor.scale = angle | plane` (default
+`angle`; `plane` is kwin-vr's pixels-per-unit). Both are `runtime` per-user keys through
+`org.mura.Settings1` when the daemon carries them; until then `zxr ctl cursor ray|scale …`.
+Verified live: `image` → `Image`, `ring` → `Ring`, `plane` → 77 mm at 1.5 m (64 px × the plane's
+1.2 mm/px) against 39 mm at `angle`. Not a setting, deliberately: the 1 mm lift (a painter's-order
+artefact with no wearer-visible meaning — Monado does no depth test between layers) and the
+tracker calibrations of §5, which are device-contract numbers, not preferences.
+
 ### 9.3 As built (`input/cursor.rs`, `main.rs`, `state.rs`, `journal.rs`, `input/seat.rs`)
 
 `Cursors::layer()` resolves the seat's two inputs (the targeting ray's hit; the logical

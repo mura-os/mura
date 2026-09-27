@@ -1,6 +1,8 @@
 # Spatial input: targeting, hover, commit, focus, cursors, peripherals and text entry
 
-**Status: DRAFT rev 0.3 (2026-09-27; rev 0.2 + §7 **one cursor element** ruled and built as one
+**Status: DRAFT rev 0.4 (2026-09-27; rev 0.3 + §5 a ray-owned pointer is **released when gaze
+takes the tier**, §14 the `input.cursor.ray` / `input.cursor.scale` preferences — research/70 §9.2;
+rev 0.3 = same day; rev 0.2 + §7 **one cursor element** ruled and built as one
 composition layer in one fixed swapchain, [research/70 §9](../research/70-input-bring-up-results.md); rev 0.2 = 2026-09-26; rev 0.1 + §1a **implemented** markers from
 [research/70](../research/70-input-bring-up-results.md) — the module as built in `pkgs/zxr/src/input/`, the §1a trigger measured and not met, `MNDX_system_buttons` wording corrected, the §7 cursors as quads and the theme mechanism; rev 0.1 = rev 0 + §1a "Where input lives, and how it is built" from
 [research/68](../research/68-input-architecture-from-comparables.md), §10 and §13 amended).** The design of the compositor's `input` module
@@ -282,7 +284,15 @@ libinput delivers them. Relative motion and pointer constraints are served (`rel
 
 **One logical pointer per seat** (Wayland's model; kwin-vr, xrdesktop, WiVRn). When two
 controllers target, the one that last committed owns the pointer; the other's ray is drawn but
-inert until it commits. Mice and controllers share the same pointer.
+inert until it commits. Mice and controllers share the same pointer. **When gaze takes the tier
+(ruled 2026-09-27; research/70 §9.2), a ray-owned pointer is released:** the ray no longer targets
+(ADR 0013 amendment item 1 — with gaze, gaze targets and the ray's trigger commits at the gaze
+point), so the client receives `leave` and the pointer is between planes until the ray retakes
+the tier (its next sample re-enters) or a pointer-class device claims it; ownership is kept. A
+mouse-owned pointer is not released — its position is the mouse's, and a pointer coexists with
+gaze (visionOS's pointer "appears where you're looking" [external], research/63 §8). §3's
+no-transition-mid-gesture rule means this never happens with a button held. Verified nested:
+`enter → leave → enter` on the client across a gaze interlude (`input_pointer_releases`).
 
 **The system gesture** (palm-facing pinch, or the contract's reserved button chord) is the
 compositor's; it is never forwarded — the Wayland equivalent of a compositor keybinding — and
@@ -502,8 +512,15 @@ desktop gives an a11y source a seat or a process of its own, and neither does th
 `input.targeting.source` (auto | eyes | hand | controller | head), `input.dwell.enabled`,
 `input.dwell.onset_ms`, `input.dwell.complete_ms`, `input.pointer.gain`, `input.pointer.warp`
 (gaze | head | off), `input.magnetism.enabled`, `input.hand.pinch.{close,open}` (the stand-ins,
-exposed because the design says they are stand-ins). Preferences, not policy: none of them can
-make gaze reach a client.
+exposed because the design says they are stand-ins). **Cursor (§7; ruled 2026-09-27, per-user
+`preference`, `runtime`, `apply = live`):** `input.cursor.ray` (both | image | ring — what a ray
+that owns the pointer shows; default `both`; a mouse always shows the image, a non-owning ray
+always the ring; with `image`, typing hides the cursor entirely as for a mouse), `input.cursor.scale`
+(angle | plane — a constant visual angle, the §7 dynamic-scale rule, or the plane's pixel scale,
+kwin-vr's; default `angle`), and the theme and size keys (§15, open — the code reads
+`XCURSOR_THEME`/`XCURSOR_SIZE`). Until the daemon carries them the two ruled keys reach zxr
+through the control socket (`zxr ctl cursor ray|scale …`). Preferences, not policy: none of them
+can make gaze reach a client.
 
 ## 15. Open items (deciders named)
 
