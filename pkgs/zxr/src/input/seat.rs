@@ -31,12 +31,11 @@ use smithay::wayland::pointer_constraints::PointerConstraintsState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 
-use super::cursor::Cursors;
-use smithay::input::pointer::CursorImageStatus;
+use super::cursor::{Cursors, PointerPoint};
 use super::emphasis::Emphasis;
 use super::pointer::PointerTransport;
 use super::touch::TouchTransport;
-use super::{Class, CursorSource, Flow, Hit, Sample, Selection, SourceKind, Stage};
+use super::{Class, Flow, Hit, Sample, Selection, SourceKind, Stage};
 use crate::scene::{self, MemberId, Shape};
 use crate::state::Zxr;
 
@@ -141,9 +140,9 @@ impl SeatStage {
         stage
     }
 
-    /// Per-tick presentation state from the tier and this tick's hits: the reticle for ray
-    /// targeting (hand, head, controller — never gaze, §7), the client cursor on the pointer's
-    /// plane, and the touch-class emphasis target (§4).
+    /// Per-tick presentation state from the tier and this tick's hits: the targeting ray's hit
+    /// (hand, head, controller — never gaze, §7) and the logical pointer's plane point, which
+    /// `Cursors::layer` resolves to the one cursor element; and the touch-class emphasis target (§4).
     fn present(&mut self, st: &mut Zxr) {
         let tier = st.input.tier;
         // the ray whose reticle is drawn: the tier's targeting kind; before the Tier stage lands,
@@ -157,7 +156,19 @@ impl SeatStage {
                 None => self.cursors.clear_reticle(),
             },
         }
-        self.cursors.set_client_on_plane(self.pointer.logic.plane.is_some());
+        // the logical pointer on its plane: the point, its distance from the head (the layer's
+        // visual-angle scale), and the owning kind (a ray owner keeps its ring around the image)
+        let pointer = self.pointer.logic.plane.and_then(|(member, local)| {
+            let plane_world = st.scene.world_pose(member)?;
+            let p = crate::xr::math::pose_apply(plane_world, [local[0], local[1], 0.0]);
+            let distance = st.input.head.map(|h| {
+                let d = [p[0] - h.position.x, p[1] - h.position.y, p[2] - h.position.z];
+                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+            }).unwrap_or(1.0);
+            Some(PointerPoint { plane_world, local, distance, owner: self.pointer.logic.owner.owner() })
+        });
+        self.cursors.set_pointer(pointer);
+        self.cursors.set_targeting(targeting);
         let touch_target = match tier {
             Some(t) if t.class == Class::Touch => hit.map(|h| h.member),
             _ => None,
@@ -218,16 +229,9 @@ impl Stage for SeatStage {
         }
         self.present(st);
         self.emphasis.tick(now_ns);
-        // publish for the frame procedure (main.rs step 6) and the journal
-        st.input.reticle = self.cursors.reticle_quad();
-        st.input.client_cursor = None;
-        if let (Some((member, local)), Some(c)) = (self.pointer.logic.plane, self.cursors.client_cursor()) {
-            match c {
-                CursorImageStatus::Surface(s) => st.input.client_cursor = Some((member, local, CursorSource::Surface(s.clone()))),
-                CursorImageStatus::Named(icon) => st.input.client_cursor = Some((member, local, CursorSource::Named(*icon))),
-                CursorImageStatus::Hidden => {}
-            }
-        }
+        // publish the one cursor layer for the frame procedure (main.rs steps 4–6) and the journal
+        st.input.cursor_layer = self.cursors.layer();
+        st.input.cursor_inputs = Some(self.cursors.inputs());
         st.input.emphasis = self.emphasis.target().map(|m| (m, self.emphasis.emphasis_of(m)));
         st.journal.input_touch_downs = self.touch.logic.downs;
         st.journal.input_touch_cancels = self.touch.logic.cancels;

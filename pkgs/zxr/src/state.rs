@@ -107,16 +107,17 @@ pub struct Zxr {
     pub idle_notifier: smithay::wayland::idle_notify::IdleNotifierState<Zxr>,
     pub _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState,
     pub idle_inhibitors: Vec<WlSurface>,
-    /// the reticle's 64×64 swapchain + target, drawn once (spatial-input §7; input/cursor.rs)
-    pub reticle_panel: Option<PanelSwapchain>,
-    /// the ring texture the reticle pass samples (16 KiB; lives for the session)
-    pub reticle_tex: Option<crate::render::Texture>,
-    /// the client cursor's panel (§7): sized to the cursor surface, redrawn only when that
-    /// surface commits, positioned per tick as a band-5 quad — the cursor-plane shape every
+    /// the one cursor panel (spatial-input §7; research/70 §9; input/cursor.rs): a fixed
+    /// `CURSOR_PX`² swapchain (grown only around a larger client image, never shrunk), drawn into
+    /// only when the layer's content changes — the ring once, a `set_cursor` surface on its
+    /// commits, a `cursor-shape-v1` name when the name changes — and positioned per tick as the
+    /// one band-5 cursor quad: the cursor-plane shape (one fixed-size plane, one image) every
     /// desktop compositor prefers over compositing the cursor into the window
     pub cursor_panel: Option<PanelSwapchain>,
-    pub cursor_commit: Option<smithay::backend::renderer::utils::CommitCounter>,
-    pub cursor_hotspot: smithay::utils::Point<i32, smithay::utils::Logical>,
+    /// what the cursor panel currently holds; a different key redraws it
+    pub cursor_key: Option<CursorKey>,
+    /// the ring texture (16 KiB; lives for the session)
+    pub ring_tex: Option<crate::render::Texture>,
     /// the cursor theme for `cursor-shape-v1` names, and the texture of the current name
     pub cursor_theme: crate::input::theme::Theme,
     pub cursor_named: Option<(smithay::input::pointer::CursorIcon, crate::render::Texture)>,
@@ -233,6 +234,22 @@ pub struct PanelSwapchain {
 /// Ticks the bounds must stay smaller than the image before the swapchain is recreated smaller
 /// (spec §5a stand-in: 60 ≈ 1 s at 60 Hz; fixed by measurement).
 pub const PANEL_SHRINK_TICKS: u64 = 60;
+
+/// Which client image the cursor panel holds (spatial-input §7): a theme image by its
+/// `cursor-shape-v1` name, or a `set_cursor` surface at one of its commits.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum CursorImageKey {
+    Named(smithay::input::pointer::CursorIcon),
+    Surface(smithay::reexports::wayland_server::backend::ObjectId, smithay::backend::renderer::utils::CommitCounter),
+}
+
+/// What the cursor panel holds: the content shape and the image, if any. The frame procedure
+/// redraws the panel only when this changes — never per pointer motion (research/70 §9).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CursorKey {
+    pub content: crate::input::cursor::Content,
+    pub image: Option<CursorImageKey>,
+}
 
 /// The frontend's member payload (spec §5a `M`): the smithay window, its panel, and the
 /// per-member state the tick reads. `scene` never sees these types.
@@ -413,11 +430,9 @@ impl Zxr {
             idle_notifier,
             _idle_inhibit: idle_inhibit,
             idle_inhibitors: Vec::new(),
-            reticle_panel: None,
-            reticle_tex: None,
             cursor_panel: None,
-            cursor_commit: None,
-            cursor_hotspot: Default::default(),
+            cursor_key: None,
+            ring_tex: None,
             cursor_theme: crate::input::theme::Theme::from_env(),
             cursor_named: None,
             activation_state,

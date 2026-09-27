@@ -126,6 +126,13 @@ pub struct Journal {
     pub input_pointer_warps: u64,
     /// ticks a `cursor-shape-v1` name was the client cursor and went unrendered (§7 theme open)
     pub input_cursor_named_ticks: u64,
+    /// the cursor (spatial-input §7; research/70 §9): cursor quad layers submitted (≤ 1 per
+    /// frame — the one-element rule), passes into the cursor panel (content changes only, never
+    /// motion), and cursor swapchains created (1 per session unless a client image outgrows the
+    /// fixed panel)
+    pub cursor_layers: u64,
+    pub cursor_passes: u64,
+    pub cursor_swapchains_created: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -276,6 +283,10 @@ impl Journal {
         let _ = writeln!(s, "input_pointer_handoffs={}", self.input_pointer_handoffs);
         let _ = writeln!(s, "input_pointer_warps={}", self.input_pointer_warps);
         let _ = writeln!(s, "input_cursor_named_ticks={}", self.input_cursor_named_ticks);
+        let _ = writeln!(s, "cursor_layers={}", self.cursor_layers);
+        let _ = writeln!(s, "cursor_layers_per_frame_x100={}", self.cursor_layers * 100 / f);
+        let _ = writeln!(s, "cursor_passes={}", self.cursor_passes);
+        let _ = writeln!(s, "cursor_swapchains_created={}", self.cursor_swapchains_created);
         s
     }
 }
