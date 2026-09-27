@@ -60,6 +60,7 @@ repos=(
   'wxrd|https://gitlab.freedesktop.org/xrdesktop/wxrd.git|'
   'xrdesktop|https://gitlab.freedesktop.org/xrdesktop/xrdesktop.git|'
   'gxr|https://gitlab.freedesktop.org/xrdesktop/gxr.git|'
+  'g3k|https://gitlab.freedesktop.org/xrdesktop/g3k.git|'
   'zwin|https://github.com/zwin-project/zwin.git|'
   'zen|https://github.com/zwin-project/zen.git|'
   'wayvr|https://github.com/wayvr-org/wayvr.git|'

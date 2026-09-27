@@ -206,5 +206,6 @@
   "pico4-downgrade-guide": {"url": "https://github.com/Spalishe/Pico4-Downgrade-Guide.git", "commit": "9ddfb0092d19039505ae3caa383b468160c56336", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
   "queststack": {"url": "https://github.com/starseed12345/QuestStack.git", "commit": "7f943f867067e8ef575ec91b8554c4cb08fa83ac", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
   "quest1-bootloader-unlocker-web": {"url": "https://github.com/darknight1050/quest1-bootloader-unlocker-web.git", "commit": "7f34276ecef9021771e7bf4a2d53f10b26243334", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
-  "quest-bootloader-unlocker": {"url": "https://github.com/darknight1050/quest-bootloader-unlocker.git", "commit": "e171bbee61e754863fd3a82fe9dc35cd18adf3ac", "ref": "main", "cloned": "2026-09-27T10:13:20Z"}
+  "quest-bootloader-unlocker": {"url": "https://github.com/darknight1050/quest-bootloader-unlocker.git", "commit": "e171bbee61e754863fd3a82fe9dc35cd18adf3ac", "ref": "main", "cloned": "2026-09-27T10:13:20Z"},
+  "g3k": {"url": "https://gitlab.freedesktop.org/xrdesktop/g3k.git", "commit": "8660d1e947703a70e7bd348815d9d0cef41f416e", "ref": "main", "cloned": "2026-09-27T18:35:00Z"}
 }
