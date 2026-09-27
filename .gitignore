@@ -10,3 +10,6 @@ result-*
 
 # virtual-headset VM state
 *.qcow2
+
+# editor workspace files
+*.code-workspace
