@@ -218,5 +218,9 @@
   "fuzzel": {"url": "https://codeberg.org/dnkl/fuzzel.git", "commit": "815d4385afb844f74243a6bc1c7836c4fbebe830", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
   "maliit-keyboard": {"url": "https://github.com/maliit/keyboard.git", "commit": "cbb0bbfa67354df76c25dbc3b1ea99a376fd15bb", "ref": "master", "cloned": "2026-09-27T18:11:20Z"},
   "slint": {"url": "https://github.com/slint-ui/slint.git", "commit": "bd20dab8529add087b5cbc81aec70bf30861ae4c", "ref": "v1.18.0", "cloned": "2026-09-27T18:11:20Z"},
-  "accesskit": {"url": "https://github.com/AccessKit/accesskit.git", "commit": "ce8164ba92995cfa86005b6259115e08c8244253", "ref": "main", "cloned": "2026-09-27T18:11:20Z"}
+  "accesskit": {"url": "https://github.com/AccessKit/accesskit.git", "commit": "ce8164ba92995cfa86005b6259115e08c8244253", "ref": "main", "cloned": "2026-09-27T18:11:20Z"},
+  "sway": {"url": "https://github.com/swaywm/sway.git", "commit": "1652c54b73f67df17b7b4ab0b0f7048204aa8104", "ref": "master", "cloned": "2026-09-27T19:33:00Z"},
+  "phoc": {"url": "https://gitlab.gnome.org/World/Phosh/phoc.git", "commit": "6bf71f77f43138136adb4efb4796c8e35d9fe3b2", "ref": "main", "cloned": "2026-09-27T19:33:00Z"},
+  "gtk-layer-shell": {"url": "https://github.com/wmww/gtk-layer-shell.git", "commit": "eb7876471dea74697c0212198d1a8e6d83aa5583", "ref": "master", "cloned": "2026-09-27T19:33:00Z"},
+  "layer-shell-qt": {"url": "https://invent.kde.org/plasma/layer-shell-qt.git", "commit": "440e99dfff02460561a61312f4d90d5cc470b21d", "ref": "master", "cloned": "2026-09-27T19:33:00Z"}
 }

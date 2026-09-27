@@ -330,6 +330,16 @@ repos=(
   'maliit-keyboard|https://github.com/maliit/keyboard.git|'
   'slint|https://github.com/slint-ui/slint.git|v1.18.0'
   'accesskit|https://github.com/AccessKit/accesskit.git|'
+  # --- the shell layer's server-side mechanics (docs/research/76) ---
+  # sway = wlroots' reference layer-shell arrangement and keyboard-interactivity focus rules;
+  # phoc = phosh's compositor (the pinned mobile shell's other half: squeekboard/phosh-lockscreen
+  # against a wlroots server); gtk-layer-shell / layer-shell-qt = the two client libraries whose
+  # assumptions (pixel output geometry, configure round-trip, popup parenting) must map on zxr
+  # unmodified.
+  'sway|https://github.com/swaywm/sway.git|'
+  'phoc|https://gitlab.gnome.org/World/Phosh/phoc.git|'
+  'gtk-layer-shell|https://github.com/wmww/gtk-layer-shell.git|'
+  'layer-shell-qt|https://invent.kde.org/plasma/layer-shell-qt.git|'
 )
 
 mkdir -p .logs
