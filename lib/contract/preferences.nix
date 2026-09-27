@@ -451,6 +451,20 @@ in
           description = "Yaw within which the follow motion stops (kwin-vr `followStopFovH` 4, `kwinvr.kcfg:49-51`). Consumer: the wm policy module when it lands (declared ahead of it).";
         };
       };
+      grab = {
+        depthRate = k "wm.grab" "depth_rate" {
+          type = types.float;
+          default = 3.0;
+          range = { min = 0.5; max = 10.0; };
+          description = "Push/pull speed while a plane is grabbed: distance changes by (1 + rate · axis · dt) per tick on the grabbing device's secondary axis (research/76 D3). xrdesktop `scroll-to-push-ratio` 3.0 (`org.xrdesktop.gschema.xml:53-58`), wayvr `scroll_speed`. Consumer: zxr input/grabs.rs.";
+        };
+        barDeg = k "wm.grab" "bar_deg" {
+          type = types.float;
+          default = 2.0;
+          range = { min = 0.5; max = 6.0; };
+          description = "Height of the grab bar under a plane, in degrees of visual angle — the affordance the commit-class gesture moves a window by (visionOS/Horizon/Android XR window bar [external]; window-workspace-management §4a). Stand-in 2°: research/42 §5's effective target width; Meta hit targets ≥ 2.5–3° [external]. A target size, so a preference. Consumer: zxr input/grabs.rs.";
+        };
+      };
       move = {
         billboard = k "wm.move" "billboard" {
           type = types.bool;

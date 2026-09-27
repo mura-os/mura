@@ -124,6 +124,49 @@ external manager is an ordinary session component (ADR 0012): its own process, s
 session, selected by `wm.external_manager`, replaceable by the user's own; the seam's
 `set_engine` carries `custom` for managers whose arrangement the compositor does not know.
 
+## 4a. Movement — the grab (normative, 2026-09-27; [research/76](../research/76-grab-mechanics-from-comparables.md))
+
+How a wearer moves, turns, pushes and resizes a plane, ruled from the comparables (every XR shell
+in the corpus converges on the same mechanics; research/76 §3):
+
+- **Two ways into a grab, one grab.** (1) A client's `xdg_toplevel.move` / `resize(edges)` with a
+  valid serial becomes the compositor's grab on the requesting device (kwin-vr on KWin's move,
+  wxrd/wxrc/river/zen on the request — nobody honours a client-driven position; §1 principle 5).
+  (2) The compositor's own affordances: **the bar** — a hit volume under the plane's bottom edge,
+  drawn only while the ray is near it or the plane is grabbed (visionOS/Horizon/Android XR/HoloLens'
+  shape; zen's nameplate), height `wm.grab.bar_deg` (2°, a target size — stand-in) — for the
+  commit-class gesture of every kind including the input floor; and **body grabs** by a grab-class
+  input that is not the client's commit: a controller's `grasp`, a hand's `grasp_ext` when the
+  runtime provides it, a mouse with the desktop modifier (`Super` + button, GNOME/KWin). The bar
+  is the decoration chrome's first hit volume (ADR 0012); its look is that renderer's, the plainest
+  strip until then. Resize: the bar's ends / the plane's corners as resize affordances, and the
+  client's `resize(edges)`.
+- **Move math.** At grab the plane's pose is stored in the grabbing ray's frame (hand aim,
+  controller aim, head ray, or the mouse's plane point) with the grab point as pivot; every tick
+  it is re-applied as the ray moves (kwin-vr `Xray.qml:56-62,155-159`, wayvr `input.rs:870-878`,
+  g3k `g3k-controller.c:274-316`, MRTK3 attach point). The head ray is one more ray.
+- **Facing.** While grabbed with `wm.move.billboard` (§7, ruled), the plane yaws toward the head
+  and stays upright (wayvr `realign`, StereoKit `ui_move_face_user`); without it the ray's
+  rotation delta applies (g3k, `ui_move_exact`). Release keeps the pose (`free`, §4).
+- **Depth.** The grabbing device's secondary axis (stick Y, wheel, touchpad scroll) pushes/pulls
+  along the ray multiplicatively, `d ← d·(1 + rate·axis·Δt)`, `wm.grab.depth_rate` 3.0 /s
+  (xrdesktop `scroll-to-push-ratio`), clamped to the compositor's `limits` — `hardware.input.comfort.{min_distance_m
+  0.4, max_distance_m 5.0}` (HoloLens' comfort floor [external]; wayvr's clamp), which the seam
+  publishes as `limits` (§11) and never delegates.
+- **Resize** changes the client's logical size through `xdg_toplevel` configure, from the ray's
+  plane-local motion on the grabbed edge/corner (wxrc `input.c:253-265`), clamped by
+  `hardware.input.comfort.max_angular_deg` at the current distance. **There is no scale verb**: apparent
+  size is angular and density is one number (§3 principle 3) — the overlay shells' metres-scale
+  (wayvr, xrdesktop, two-hand StereoKit/simula) is not adopted, with that reason.
+- **Start, hold, end.** The grab starts on the frame after the affordance is focused with the
+  commit held (StereoKit's one-frame settle); no drag-start distance (no XR comparable has one —
+  the bar already separates click from drag); it ends on the commit's release or the source's loss
+  (the tier's release, research/70). While grabbed, the grabbing kind's samples stop at the
+  `Grabs` slot (the client receives nothing from it; wayvr `pause_movement`, KWin's move seat-op)
+  and the plane's follow (§7) is paused.
+- **Not adopted, with reasons** (research/76 §4 D8): two-hand scale; zen's capsule constraint (an
+  arrangement); kwin-vr's "any button releases"; haptics on grab (no path yet).
+
 ## 5. Lifecycle
 
 States a member can be in, and their protocol meaning:

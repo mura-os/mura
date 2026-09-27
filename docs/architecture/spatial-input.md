@@ -139,8 +139,8 @@ seat        wl_touch / wl_pointer / wl_keyboard emission; xdg-activation; cursor
 ```
 
   **Implemented** as nine static slots (`reserved:system`, `mode:greeter-lock`, `a11y:dwell-gain`,
-  `stabilize:ray-lock-compensate`, `tier:arbiter`, `hit:scene-members`, `grabs` (no-op until the
-  WM policy lands), `im:text`, `seat`), the startup log's `input chain stages=` line. This is
+  `stabilize:ray-lock-compensate`, `tier:arbiter`, `hit:scene-members`, `grabs:wm` (the window
+  grab — bar, body grabs, client move/resize requests; window-workspace-management §4a, research/76), `im:text`, `seat`), the startup log's `input chain stages=` line. This is
   KWin's `InputFilterOrder` (`kwin/src/input.h:366-393`) with the XR stages inserted
   where their inputs exist, and without the plugin loader: rebinding and a11y before the lock,
   the compositor's non-maskable input first of all, WM grabs after targeting, the IM last before

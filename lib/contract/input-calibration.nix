@@ -189,6 +189,26 @@ in
         description = "The `buttons` role that is the reserved system control on the HMD body; empty = none (native-openxr-apps.md §6). Consumer: zxr input/libinput.rs → input/reserved.rs.";
       };
     };
+    # The compositor's placement `limits` (window-workspace-management §4a, §11 — never delegated
+    # to a manager): how close and how far a plane may be, and how large it may appear. Display
+    # comfort facts (vergence–accommodation, the field of view), so calibrations, not preferences.
+    comfort = {
+      minDistanceM = c "hardware.input.comfort" "min_distance_m" {
+        type = types.float;
+        default = 0.4;
+        description = "Nearest a plane may be placed or pulled, metres (research/76 D3). HoloLens comfort: 'never closer than 40 cm' [external]; wayvr clamps at 0.5 (`input.rs:1017-1022`). Consumer: zxr input/grabs.rs, policy limits.";
+      };
+      maxDistanceM = c "hardware.input.comfort" "max_distance_m" {
+        type = types.float;
+        default = 5.0;
+        description = "Farthest a plane may be placed or pushed, metres (research/76 D3). wayvr's clamp 5.0; HoloLens comfort zone 1.25–5 m [external]. Consumer: zxr input/grabs.rs, policy limits.";
+      };
+      maxAngularDeg = c "hardware.input.comfort" "max_angular_deg" {
+        type = types.float;
+        default = 90.0;
+        description = "Largest visual angle a plane may subtend (its width) — the resize ceiling at the current distance (research/76 D4). Stand-in 90°: no comparable states one; the display's field of view is the ceiling. Consumer: zxr input/grabs.rs, policy limits.";
+      };
+    };
     stick = {
       deadzone = c "hardware.input.stick" "deadzone" {
         type = types.float;
