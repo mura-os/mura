@@ -141,6 +141,17 @@ pub struct Journal {
     pub settings_reloads: u64,
     pub settings_invalid: u64,
     pub settings_generation: u64,
+    /// the window grab (wm §4a, input/grabs.rs): grabs begun (of which from client requests),
+    /// released, resize steps, depth pushes, and pose updates while grabbed
+    pub grab_requests: u64,
+    pub grabs_started: u64,
+    pub grabs_from_requests: u64,
+    pub grabs_released: u64,
+    pub grab_resizes: u64,
+    pub grab_pushes: u64,
+    pub grab_moves: u64,
+    /// bar quads submitted (≤ 1 per frame)
+    pub grab_bar_layers: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
     pub last_tick_submitted: bool,
     pub frames: u64,
@@ -300,6 +311,14 @@ impl Journal {
         let _ = writeln!(s, "settings_reloads={}", self.settings_reloads);
         let _ = writeln!(s, "settings_invalid={}", self.settings_invalid);
         let _ = writeln!(s, "settings_generation={}", self.settings_generation);
+        let _ = writeln!(s, "grab_requests={}", self.grab_requests);
+        let _ = writeln!(s, "grabs_started={}", self.grabs_started);
+        let _ = writeln!(s, "grabs_from_requests={}", self.grabs_from_requests);
+        let _ = writeln!(s, "grabs_released={}", self.grabs_released);
+        let _ = writeln!(s, "grab_resizes={}", self.grab_resizes);
+        let _ = writeln!(s, "grab_pushes={}", self.grab_pushes);
+        let _ = writeln!(s, "grab_moves={}", self.grab_moves);
+        let _ = writeln!(s, "grab_bar_layers={}", self.grab_bar_layers);
         s
     }
 }

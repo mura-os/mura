@@ -158,6 +158,9 @@ fn run() -> Result<(), String> {
     // kind at a time, gaze → held controller → hand → head, direct touch overriding a ray inside
     // WiVRn's 0.18/0.22 band, and no transition mid-gesture
     st.input.chain.set(input::Slot::Tier, Box::new(input::tier::TierStage::new()));
+    // the window grab (window-workspace-management §4a, research/76): the bar and body grabs,
+    // client move/resize requests as the same grab; consumes the grabbing kind while it holds
+    st.input.chain.set(input::Slot::Grabs, Box::new(input::grabs::GrabsStage::new()));
     // the action spaces become scene frames the batched locate finds (spatial-input §2; actions.rs)
     input::actions::register_frames(&mut st);
     // lane C: the seat stage — wl_touch / wl_pointer transports, cursors, emphasis (spatial-input
@@ -570,10 +573,31 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     let mut cursor_acquired = false;
     let mut cursor_key_reset = false;
 
+    // 4b. the grab bar (wm §4a): one fixed strip panel, drawn once, shown under the hovered or
+    // grabbed plane; the pass runs the first time a bar is needed
+    let bar_wanted = st.input.grab_bar.is_some();
+    let mut bar_draw = false;
+    if bar_wanted {
+        if st.bar_panel.is_none() {
+            let sc = st.xr.create_panel_swapchain(input::grabs::BAR_PX[0], input::grabs::BAR_PX[1])?;
+            let target = st.renderer.make_panel_target(sc.extent, st.xr.color_format, &sc.images)?;
+            let bounds = Rectangle::new(Point::from((0, 0)), Size::from((input::grabs::BAR_PX[0] as i32, input::grabs::BAR_PX[1] as i32)));
+            st.bar_panel = Some(PanelSwapchain { sc, target, has_image: false, bounds, shrink_since: None, passes: 0 });
+        }
+        if st.bar_tex.is_none() {
+            let (w, h) = (input::grabs::BAR_PX[0], input::grabs::BAR_PX[1]);
+            let mut tex = st.renderer.create_shm_texture(w, h)?;
+            st.renderer.upload_shm(&mut tex, &input::grabs::bar_pixels(w, h), w * 4)?;
+            st.bar_tex = Some(tex);
+        }
+        bar_draw = st.bar_panel.as_ref().map(|p| !p.has_image).unwrap_or(false);
+    }
+    let mut bar_acquired = false;
+
     // 5. GPU work — only if there is any: dirty panel passes, the cursor's pass and/or the projection pass
-    let submit_gpu = !dirty.is_empty() || depth || cursor_draw.is_some();
+    let submit_gpu = !dirty.is_empty() || depth || cursor_draw.is_some() || bar_draw;
     if submit_gpu {
-        let Zxr { renderer, dmabuf_textures, surface_tex, journal, scene, xr, ring_tex, cursor_panel, cursor_named, .. } = &mut *st;
+        let Zxr { renderer, dmabuf_textures, surface_tex, journal, scene, xr, ring_tex, cursor_panel, cursor_named, bar_panel, bar_tex, .. } = &mut *st;
         let m_per_px = scene.layout.m_per_px;
         let resolve = |r: &TexRef| -> Option<&render::Texture> {
             match r {
@@ -661,6 +685,20 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 journal.cursor_passes += 1;
             }
         }
+        // the bar's one pass: the strip texture into the bar panel (never again until recreated)
+        if bar_draw {
+            if let (Some(bp), Some(tex)) = (bar_panel.as_mut(), bar_tex.as_ref()) {
+                let idx = xr.acquire_panel_image(&mut bp.sc)?;
+                journal.panel_acquires += 1;
+                bar_acquired = true;
+                let (w, h) = (bp.sc.extent.width.max(1) as f32, bp.sc.extent.height.max(1) as f32);
+                let ortho = math::ortho_px(w, h);
+                let planes = [PlaneDraw { model: math::model([w * 0.5, h * 0.5, 0.0], 0.0), half_size: [w * 0.5, h * 0.5], texture: tex, flip_v: true }];
+                renderer.record_pass_in(cmd, &bp.target, idx, ash::vk::Extent2D { width: w as u32, height: h as u32 }, &ortho, &planes, [0.0, 0.0, 0.0, 0.0]);
+                bp.has_image = true;
+                bp.passes += 1;
+            }
+        }
         // the projection pass: overflow members (and, from M2, volumes / environment / cutout)
         if depth {
             let projection_indices = xr.acquire_images()?;
@@ -703,6 +741,12 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 journal.panel_releases += 1;
             }
         }
+        if bar_acquired {
+            if let Some(bp) = bar_panel.as_mut() {
+                xr.release_panel_image(&mut bp.sc)?;
+                journal.panel_releases += 1;
+            }
+        }
         if depth {
             xr.release_images()?;
         }
@@ -724,7 +768,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         // `input.emphasis.strength` (spatial-input §4; the 0.15 stand-in is its default)
         let emphasis_strength = st.prefs.emphasis_strength;
         let cursor = st.input.cursor_layer.as_ref().map(|l| (l.pose, l.m_per_px));
-        let Zxr { xr, scene, cursor_panel, journal, .. } = &mut *st;
+        let bar = st.input.grab_bar;
+        let Zxr { xr, scene, cursor_panel, bar_panel, journal, .. } = &mut *st;
         let m_per_px_plane = scene.layout.m_per_px;
         let mut quads: Vec<QuadLayer<'_>> = Vec::with_capacity(submit.quads.len());
         for q in &submit.quads {
@@ -746,6 +791,14 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 // touch-class emphasis of the targeted member (spatial-input §4)
                 emphasis: emphasis.filter(|(m, _)| *m == q.member).map(|(_, e)| e).unwrap_or(0.0),
             });
+        }
+        // the grab bar (wm §4a): band 4, one quad under the hovered or grabbed plane, emphasised
+        // while grabbed
+        if let (Some(b), Some(bp)) = (bar, bar_panel.as_ref()) {
+            if bp.has_image {
+                quads.push(QuadLayer { swapchain: &bp.sc, pose: b.pose, size: b.size, image_extent: [bp.sc.extent.width.max(1), bp.sc.extent.height.max(1)], emphasis: if b.grabbed { 1.0 } else { 0.0 } });
+                journal.grab_bar_layers += 1;
+            }
         }
         // the one cursor layer (§7, research/70 §9): band 5, nearest — last in painter's order,
         // never emphasised; centred on the pointer point / hit (the hotspot is the panel centre),
@@ -965,6 +1018,20 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             st.primary_changed(on);
             format!("primary {} quiet={} keep_planes={}", if on { "on" } else { "off" }, st.quiet, st.prefs.games_keep_planes)
         }
+        Grab(what) => match what.as_str() {
+            "focused" => match st.scene.focused {
+                Some(id) => {
+                    st.input.grab_shortcut = Some(id);
+                    format!("grab {id:?} by the head ray (ends on the next press or `grab end`)")
+                }
+                None => "no focus".into(),
+            },
+            "end" => {
+                st.input.grab_end = true;
+                "grab end".into()
+            }
+            other => format!("unknown grab verb {other:?} (focused|end)"),
+        },
         Mode(m) => {
             let mode = match m.as_str() {
                 "normal" => Some(input::Mode::Normal),

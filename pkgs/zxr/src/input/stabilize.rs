@@ -324,7 +324,7 @@ impl Stage for Stabilize {
         }
     }
 
-    fn run(&mut self, sample: &mut Sample, _st: &mut Zxr) -> Flow {
+    fn run(&mut self, sample: &mut Sample, st: &mut Zxr) -> Flow {
         if !has_ray_pose(sample.kind) {
             return Flow::Continue;
         }
@@ -346,7 +346,14 @@ impl Stage for Stabilize {
             SourceKind::Pointer | SourceKind::Keyboard => 0.0,
         };
         let relaxation = if sample.kind == SourceKind::Gaze { cfg.relaxation_gaze } else { cfg.relaxation_ray };
-        if let Some(pose) = sample.pose {
+        // the sticky target lock is a *selection* aid (the commit lands on the target held when
+        // it began); a ray that is grabbing a plane needs its live pose — g3k drags from the
+        // controller's current pose (`g3k-controller.c:258-301`), MRTK3's ObjectManipulator
+        // follows the live interactor while its sticky hover concerns targets. The lock is
+        // skipped for the grabbing kind (window-workspace-management §4a) and stays relaxed.
+        if st.input.grabbing_kind == Some(sample.kind) {
+            self.locks[i] = TargetLock::new();
+        } else if let Some(pose) = sample.pose {
             sample.pose = Some(self.locks[i].update_with(pose, progress, relaxation, cfg.sticky));
         }
 

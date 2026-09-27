@@ -114,10 +114,15 @@ pub struct Zxr {
     /// one band-5 cursor quad: the cursor-plane shape (one fixed-size plane, one image) every
     /// desktop compositor prefers over compositing the cursor into the window
     pub cursor_panel: Option<PanelSwapchain>,
+    /// the grab bar's one fixed swapchain (wm §4a; drawn once, shown under the hovered or
+    /// grabbed plane — the cursor's one-layer shape)
+    pub bar_panel: Option<PanelSwapchain>,
     /// what the cursor panel currently holds; a different key redraws it
     pub cursor_key: Option<CursorKey>,
     /// the ring texture (16 KiB; lives for the session)
     pub ring_tex: Option<crate::render::Texture>,
+    /// the bar's strip texture
+    pub bar_tex: Option<crate::render::Texture>,
     /// the cursor theme for `cursor-shape-v1` names, and the texture of the current name
     pub cursor_theme: crate::input::theme::Theme,
     pub cursor_named: Option<(smithay::input::pointer::CursorIcon, crate::render::Texture)>,
@@ -440,8 +445,10 @@ impl Zxr {
             _idle_inhibit: idle_inhibit,
             idle_inhibitors: Vec::new(),
             cursor_panel: None,
+            bar_panel: None,
             cursor_key: None,
             ring_tex: None,
+            bar_tex: None,
             cursor_theme: crate::input::theme::Theme::from_env(),
             cursor_named: None,
             activation_state,
@@ -548,6 +555,27 @@ impl Zxr {
     /// The member whose toplevel surface is `root` (linear over N ≈ 50 members).
     pub fn member_for_root(&self, root: &WlSurface) -> Option<MemberId> {
         self.scene.find(|p| p.window.toplevel().map(|t| t.wl_surface() == root).unwrap_or(false))
+    }
+
+    /// A member's window geometry in logical pixels.
+    pub fn logical_size(&self, id: MemberId) -> Option<(i32, i32)> {
+        let m = self.scene.get(id)?;
+        let g = m.m.window.geometry().size;
+        Some((g.w.max(1), g.h.max(1)))
+    }
+
+    /// Ask a member's client for a new logical size (a resize grab's step, window-workspace-
+    /// management §4a: resize changes pixels). The plane's extents follow the client's commit.
+    pub fn request_size(&mut self, id: MemberId, w: i32, h: i32) {
+        let Some(t) = self.scene.get(id).and_then(|m| m.m.window.toplevel().cloned()) else { return };
+        t.with_pending_state(|s| s.size = Some((w.max(1), h.max(1)).into()));
+        t.send_pending_configure();
+    }
+
+    /// The seat keyboard's `logo` (Super) modifier is down — the desktops' move modifier
+    /// (GNOME `mouse-button-modifier`, KWin `CommandAllKey`).
+    pub fn modifier_logo(&self) -> bool {
+        self.seat.get_keyboard().map(|k| k.modifier_state().logo).unwrap_or(false)
     }
 
     pub fn window_for_root(&self, root: &WlSurface) -> Option<&Window> {
@@ -1216,8 +1244,37 @@ impl XdgShellHandler for Zxr {
 
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
 
-    fn move_request(&mut self, _surface: ToplevelSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
-        // R0: planes move through the control socket; interactive grabs arrive with hands (M1)
+    /// A client's `xdg_toplevel.move`: the compositor's own grab (window-workspace-management §4a,
+    /// research/76 convergence 5 — kwin-vr on KWin's move, wxrd/wxrc/river on the request). The
+    /// `Grabs` stage takes the request on the next sample of a kind whose commit is held.
+    fn move_request(&mut self, surface: ToplevelSurface, _seat: wl_seat::WlSeat, serial: Serial) {
+        if let Some(member) = self.member_for_root(surface.wl_surface()) {
+            self.input.grab_request = Some(crate::input::grabs::GrabRequest { member, op: crate::input::grabs::Op::Move, serial, at_ns: now_ns() });
+            self.journal.grab_requests += 1;
+        }
+    }
+
+    /// A client's `xdg_toplevel.resize(edges)`: the same grab, resizing by those edges.
+    fn resize_request(&mut self, surface: ToplevelSurface, _seat: wl_seat::WlSeat, serial: Serial, edges: xdg_toplevel::ResizeEdge) {
+        use crate::input::grabs::{Edges, GrabRequest, Op};
+        let Some(member) = self.member_for_root(surface.wl_surface()) else { return };
+        let e = match edges {
+            xdg_toplevel::ResizeEdge::Top => Edges { top: true, ..Edges::default() },
+            xdg_toplevel::ResizeEdge::Bottom => Edges { bottom: true, ..Edges::default() },
+            xdg_toplevel::ResizeEdge::Left => Edges { left: true, ..Edges::default() },
+            xdg_toplevel::ResizeEdge::Right => Edges { right: true, ..Edges::default() },
+            xdg_toplevel::ResizeEdge::TopLeft => Edges { top: true, left: true, ..Edges::default() },
+            xdg_toplevel::ResizeEdge::TopRight => Edges { top: true, right: true, ..Edges::default() },
+            xdg_toplevel::ResizeEdge::BottomLeft => Edges { bottom: true, left: true, ..Edges::default() },
+            xdg_toplevel::ResizeEdge::BottomRight => Edges { bottom: true, right: true, ..Edges::default() },
+            _ => Edges::default(),
+        };
+        if !e.any() {
+            return;
+        }
+        let start_px = self.logical_size(member).unwrap_or((800, 600));
+        self.input.grab_request = Some(GrabRequest { member, op: Op::Resize { edges: e, start_px }, serial, at_ns: now_ns() });
+        self.journal.grab_requests += 1;
     }
 }
 

@@ -431,8 +431,8 @@ stand-ins' values and sources are research/70 §5, the first-hardware list.
 - **The shape:** a closed `SourceKind` enum (`Head, Gaze, Hand(L|R), Controller(L|R), Pointer,
   Keyboard`), a by-value `Sample`, and a static nine-slot chain in KWin's order — `Reserved →
   Mode → A11y → Stabilize → Tier → Hit → Grabs → Im → Seat` — each slot one `Stage` whose `run`
-  returns `Continue` or `Consumed`; the first `Consumed` ends the sample. `Grabs` is a no-op
-  until window-workspace-management's policy lands. Not plugins, not trait objects (§1a).
+  returns `Continue` or `Consumed`; the first `Consumed` ends the sample. `Grabs` is the window
+  grab (rev 3.10: `input/grabs.rs` — the bar and body grabs, client `move`/`resize` requests as the same grab, ray-relative pose, depth on the secondary axis, resize in logical px; window-workspace-management §4a, research/76); it consumes the grabbing kind for the grab's duration. Not plugins, not trait objects (§1a).
 - **The XR seam is one action set** (`mura`): aim/grip poses, select, menu, `system`, gaze pose,
   pinch/aim-activate/grasp/poke values and `ready` per hand, with suggested bindings for
   `khr/simple_controller`, `ext/hand_interaction_ext`, `ext/eye_gaze_interaction`, Touch and

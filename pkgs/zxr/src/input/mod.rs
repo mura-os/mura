@@ -330,7 +330,7 @@ impl Stage for NoOp {
             Slot::Stabilize => "noop:stabilize",
             Slot::Tier => "noop:tier",
             Slot::Hit => "noop:hit",
-            Slot::Grabs => "noop:grabs",
+            Slot::Grabs => "noop:grabs", // replaced by grabs::GrabsStage in main.rs
             Slot::Im => "noop:im",
             Slot::Seat => "noop:seat",
         }
@@ -494,11 +494,23 @@ pub struct Input {
     pub cursor_named_ticks: u64,
     /// the touch-class emphasis target this tick (member, level ∈ [0,1]) — spatial-input §4
     pub emphasis: Option<(crate::scene::MemberId, f32)>,
+    /// a client's `xdg_toplevel.move`/`resize` request waiting for the `Grabs` stage (§4a)
+    pub grab_request: Option<grabs::GrabRequest>,
+    /// the member a grab holds this tick — the policy pauses its follow (wm §7)
+    pub grabbed: Option<crate::scene::MemberId>,
+    /// the kind holding the grab — the stabiliser skips its sticky lock for it (live ray)
+    pub grabbing_kind: Option<SourceKind>,
+    /// the bar to draw this tick (the hovered or grabbed plane's), for the frame procedure
+    pub grab_bar: Option<grabs::BarLayer>,
+    /// `zxr ctl grab focused`: grab this member with the head ray at the next tick (kwin-vr's
+    /// grab-window shortcut); `grab end` sets the flag
+    pub grab_shortcut: Option<crate::scene::MemberId>,
+    pub grab_end: bool,
 }
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, tick_event_count: 0, tick_event_time_sum_ns: 0, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_ray: None, cursor_scale: None, cursor_image: None, cursor_layer: None, cursor_inputs: None, cursor_named_ticks: 0, emphasis: None }
+        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, tick_event_count: 0, tick_event_time_sum_ns: 0, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_ray: None, cursor_scale: None, cursor_image: None, cursor_layer: None, cursor_inputs: None, cursor_named_ticks: 0, emphasis: None, grab_request: None, grabbed: None, grabbing_kind: None, grab_bar: None, grab_shortcut: None, grab_end: false }
     }
 }
 
@@ -836,6 +848,7 @@ mod tests {
 
 pub mod stabilize;
 pub mod hit;
+pub mod grabs;
 // the stages above targeting: `Slot::Reserved`, `Slot::Mode` (+ presence), `Slot::A11y`, and the
 // user-activity side effect (spatial-input §1a lines 113-117; ADR 0007; §13)
 pub mod a11y;

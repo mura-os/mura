@@ -26,6 +26,9 @@ pub enum Command {
     /// a native app became / stopped being primary (the M1 observer's hook, driven by the harness):
     /// quiet follows unless `games.keep_planes`
     Primary(bool),
+    /// `grab focused` — grab the focused plane with the head ray (kwin-vr's grab-window shortcut;
+    /// the harness's direct path into the Grabs stage); `grab end` releases
+    Grab(String),
     /// research/69: hide / show the focused member (window-workspace-management.md "hidden")
     Hide(bool),
     /// The test-only source injector (spatial-input §1a; plan judgment 1): a synthetic sample
@@ -102,6 +105,7 @@ pub fn parse(line: &str) -> Command {
         (Some("quit"), _) => Command::Quit,
         (Some("quiet"), Some(v)) => Command::Quiet(v == "on" || v == "1"),
         (Some("primary"), Some(v)) => Command::Primary(v == "on" || v == "1"),
+        (Some("grab"), Some(v)) => Command::Grab(v.to_string()),
         (Some("hide"), Some(v)) => Command::Hide(v == "on" || v == "1"),
         (Some("close"), _) => Command::Close,
         (Some("key"), Some(code)) => match code.parse() {

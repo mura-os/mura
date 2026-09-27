@@ -67,6 +67,10 @@ pub struct Calibration {
     pub hit_class_epsilon_m: f32,
     pub palm_cone_deg: f32,
     pub stick_deadzone: f32,
+    /// `hardware.input.comfort.*`: the placement limits (wm §4a, §11) — the compositor's, never delegated
+    pub comfort_min_distance_m: f32,
+    pub comfort_max_distance_m: f32,
+    pub comfort_max_angular_deg: f32,
     /// `hardware.input.hmd.*`: the HMD-body buttons `role=KEY,…` and the select / back / system
     /// roles (device-contract `hmdButtons`, native-openxr-apps §6); empty = none declared
     pub hmd_buttons: String,
@@ -102,6 +106,9 @@ impl Default for Calibration {
             hit_class_epsilon_m: 0.02,
             palm_cone_deg: 35.0,
             stick_deadzone: 0.0,
+            comfort_min_distance_m: 0.4,
+            comfort_max_distance_m: 5.0,
+            comfort_max_angular_deg: 90.0,
             hmd_buttons: String::new(),
             hmd_select_role: String::new(),
             hmd_back_role: String::new(),
@@ -182,6 +189,18 @@ pub struct Prefs {
     pub wm_density_px_per_cm: f32,
     pub wm_focus_new_windows: String,
     pub wm_focus_raise_on_commit: bool,
+    /// `wm.grab.*`, `wm.move.billboard` (research/76; input/grabs.rs)
+    pub wm_grab_depth_rate: f32,
+    pub wm_grab_bar_deg: f32,
+    pub wm_move_billboard: bool,
+    /// `wm.engine`, `wm.minimize`, `wm.follow.*` (the policy module)
+    pub wm_engine: String,
+    pub wm_minimize: String,
+    pub wm_follow_default: bool,
+    pub wm_follow_threshold_deg: f32,
+    pub wm_follow_delay_ms: u64,
+    pub wm_follow_rate: f32,
+    pub wm_follow_stop_deg: f32,
     // ui.*
     pub ui_reduced_motion: bool,
     // session.*
@@ -260,6 +279,16 @@ impl Default for Prefs {
             wm_density_px_per_cm: 8.3,
             wm_focus_new_windows: "smart".into(),
             wm_focus_raise_on_commit: true,
+            wm_grab_depth_rate: 3.0,
+            wm_grab_bar_deg: 2.0,
+            wm_move_billboard: true,
+            wm_engine: "free".into(),
+            wm_minimize: "dock".into(),
+            wm_follow_default: false,
+            wm_follow_threshold_deg: 40.0,
+            wm_follow_delay_ms: 500,
+            wm_follow_rate: 2.0,
+            wm_follow_stop_deg: 4.0,
             ui_reduced_motion: false,
             session_idle_delay_s: 300,
             session_idle_lock_delay_s: 0,
@@ -365,6 +394,16 @@ impl Prefs {
             wm_density_px_per_cm: m.f("wm.density_px_per_cm", d.wm_density_px_per_cm),
             wm_focus_new_windows: m.s("wm.focus.new_windows", &d.wm_focus_new_windows),
             wm_focus_raise_on_commit: m.b("wm.focus.raise_on_commit", d.wm_focus_raise_on_commit),
+            wm_grab_depth_rate: m.f("wm.grab.depth_rate", d.wm_grab_depth_rate),
+            wm_grab_bar_deg: m.f("wm.grab.bar_deg", d.wm_grab_bar_deg),
+            wm_move_billboard: m.b("wm.move.billboard", d.wm_move_billboard),
+            wm_engine: m.s("wm.engine", &d.wm_engine),
+            wm_minimize: m.s("wm.minimize", &d.wm_minimize),
+            wm_follow_default: m.b("wm.follow.default", d.wm_follow_default),
+            wm_follow_threshold_deg: m.f("wm.follow.threshold_deg", d.wm_follow_threshold_deg),
+            wm_follow_delay_ms: m.u("wm.follow.delay_ms", d.wm_follow_delay_ms),
+            wm_follow_rate: m.f("wm.follow.rate", d.wm_follow_rate),
+            wm_follow_stop_deg: m.f("wm.follow.stop_deg", d.wm_follow_stop_deg),
             ui_reduced_motion: m.b("ui.reduced_motion", d.ui_reduced_motion),
             session_idle_delay_s: m.u("session.idle.delay_s", d.session_idle_delay_s),
             session_idle_lock_delay_s: m.u("session.idle.lock_delay_s", d.session_idle_lock_delay_s),
@@ -401,6 +440,9 @@ impl Prefs {
                 hit_class_epsilon_m: m.f("hardware.input.hit.class_epsilon_m", c.hit_class_epsilon_m),
                 palm_cone_deg: m.f("hardware.input.palm.cone_deg", c.palm_cone_deg),
                 stick_deadzone: m.f("hardware.input.stick.deadzone", c.stick_deadzone),
+                comfort_min_distance_m: m.f("hardware.input.comfort.min_distance_m", c.comfort_min_distance_m),
+                comfort_max_distance_m: m.f("hardware.input.comfort.max_distance_m", c.comfort_max_distance_m),
+                comfort_max_angular_deg: m.f("hardware.input.comfort.max_angular_deg", c.comfort_max_angular_deg),
                 hmd_buttons: m.s("hardware.input.hmd.buttons", &c.hmd_buttons),
                 hmd_select_role: m.s("hardware.input.hmd.select_role", &c.hmd_select_role),
                 hmd_back_role: m.s("hardware.input.hmd.back_role", &c.hmd_back_role),
@@ -495,6 +537,22 @@ impl Prefs {
     pub fn gesture_cfg(&self) -> crate::input::loss::GestureCfg {
         let h = &self.hardware;
         crate::input::loss::GestureCfg { pinch_close: self.hand_pinch_close, pinch_open: self.hand_pinch_open.min(self.hand_pinch_close), poke_down_m: h.poke_down_m, poke_up_m: h.poke_up_m.max(h.poke_down_m) }
+    }
+
+    /// The grab's configuration (`wm.grab.*`, `wm.move.billboard`, the comfort limits, the pinch
+    /// ladder) — window-workspace-management §4a.
+    pub fn grab_cfg(&self) -> crate::input::grabs::GrabCfg {
+        let h = &self.hardware;
+        crate::input::grabs::GrabCfg {
+            bar_deg: self.wm_grab_bar_deg.clamp(0.25, 10.0),
+            depth_rate: self.wm_grab_depth_rate.max(0.0),
+            min_distance_m: h.comfort_min_distance_m.max(0.05),
+            max_distance_m: h.comfort_max_distance_m.max(h.comfort_min_distance_m + 0.1),
+            max_angular_deg: h.comfort_max_angular_deg.clamp(5.0, 179.0),
+            billboard: self.wm_move_billboard,
+            pinch_close: self.hand_pinch_close,
+            pinch_open: self.hand_pinch_open.min(self.hand_pinch_close),
+        }
     }
 
     /// The scene's scale and placement (`wm.density_px_per_cm`, `wm.spawn.*`).
