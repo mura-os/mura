@@ -18,7 +18,14 @@
 //!   (`dwellclicker.cpp:194` `input()->addInputDevice(m_device.get())`); zxr's equivalent is a
 //!   `Button::Select` press and release queued as samples of the dwelling kind, so the whole chain
 //!   below — stabilize, tier, hit, grabs, seat — treats the dwell commit exactly like a physical
-//!   one. Off by default.
+//!   one. Off by default. **The anchor is the hit point on the target** (ruled 2026-09-28,
+//!   spatial-input §13): KWin arms on the pointer's *position* moving past `motionThreshold`
+//!   (`dwellclicker.cpp:252-277`), and a ray's position is where it lands on a plane — so a plane
+//!   the head carries never reads as "still" while the head turns, and a still plane under a
+//!   moving head settles where the ray points. The tolerance is visual angle at that point. Only
+//!   the targeting tier's source drives the machine; a new target rearms it (MRTK3's dwell belongs
+//!   to the interactable it started on, `InteractorDwellManager.cs`). Progress is published for
+//!   the reticle's fill (Cardboard's fuse; KWin's dwell animation).
 //! - **Pointer gain** (§14 `input.pointer.gain`; spec §8 "libinput flat profile + compositor
 //!   gain"): a multiplier on `SourceKind::Pointer` deltas and nothing else.
 //!
@@ -33,8 +40,8 @@
 //! path, as separate stages of this slot in the order above, and are **not** implemented here.
 
 use super::{Button, Flow, Sample, SourceKind, Stage};
+use crate::scene::MemberId;
 use crate::state::Zxr;
-use openxr as xr;
 
 /// dwell onset — the delay before the dwell itself starts (KWin's `delayTime`,
 /// `dwellclicker.cpp:150`). **Stand-in:** 200 ms, the middle of §13's 150-250 ms (HoloLens;
@@ -45,36 +52,41 @@ pub const ONSET_NS: u64 = 200_000_000;
 /// alphanumerics, 800 ms for icons, ≥ 1000 ms judged unusable" and Rajanna & Hansen's 550 ms in
 /// VR. Flagged.
 pub const DWELL_NS: u64 = 750_000_000;
-/// movement tolerance for a pose source, as the cosine of the angle between the ray now and the ray
-/// at the anchor. **Stand-in:** 2° of visual angle (§13 line 422 requires "a movement tolerance"
-/// and gives no number; 2° is the order of KWin's pixel threshold at a panel's arm's length).
-/// Flagged.
-pub const TOLERANCE_COS: f32 = 0.999_390_8;
+/// movement tolerance for a pose source, in **visual angle at the hit point on the target**
+/// (ruled 2026-09-28, spatial-input §13: the anchor is the point the ray hits on the plane,
+/// KWin's pointer position, `dwellclicker.cpp:260-275` — never the ray's direction in the world,
+/// which a plane carried by the same head would make constant). **Stand-in:** 2° (§13 requires "a
+/// movement tolerance" and gives no number; 2° is the order of KWin's pixel threshold at a panel's
+/// arm's length). Flagged.
+pub const TOLERANCE_DEG: f32 = 2.0;
 /// movement tolerance for `SourceKind::Pointer`, in accumulated device units. **Stand-in:** 20,
 /// the order of KWin's dwell-clicker motion threshold. Flagged.
 pub const TOLERANCE_PX: f64 = 20.0;
 
-/// The ray a pose sample points along: -Z rotated by the orientation (OpenXR's convention).
-fn forward(q: xr::Quaternionf) -> [f32; 3] {
-    let (x, y, z, w) = (q.x, q.y, q.z, q.w);
-    [-2.0 * (x * z + w * y), 2.0 * (w * x - y * z), -(1.0 - 2.0 * (x * x + y * y))]
-}
-
-fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+/// Where a targeting ray lands this sample: the plane and the point on it (the hit stage's
+/// `MemberHit`, cast here ahead of it because the transform must shape the sample first).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct HitPoint {
+    pub member: MemberId,
+    /// plane-local metres from the plane's centre
+    pub local: [f32; 2],
+    /// metres from the ray's origin to the point: the visual-angle scale of the tolerance
+    pub distance: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Anchor {
-    /// a pose source: the ray it held when the settle began
-    Dir([f32; 3]),
+    /// a pose source: the target and the point on it where the settle began
+    Hit(HitPoint),
     /// `SourceKind::Pointer`: the accumulated position where the settle began
     Px(f64, f64),
 }
 
 /// The dwell state machine, pure: one targeting source at a time (the tier rule guarantees that,
 /// §3), a settle anchor, and the two intervals. Fires once per settle and rearms only on movement
-/// past the tolerance — KWin's `start()`/`stop()` pair (`dwellclicker.cpp:163-183`).
+/// past the tolerance — KWin's `start()`/`stop()` pair (`dwellclicker.cpp:163-183`) — or on a new
+/// target under the same ray (MRTK3 `InteractorDwellManager`: the dwell belongs to the
+/// interactable it started on).
 pub struct Dwell {
     kind: Option<SourceKind>,
     anchor: Option<Anchor>,
@@ -85,12 +97,13 @@ pub struct Dwell {
     /// `input.dwell.{onset_ms,complete_ms,tolerance_deg}` (settings.rs); the consts are the defaults
     onset_ns: u64,
     dwell_ns: u64,
-    tolerance_cos: f32,
+    /// tan of the tolerance angle: metres of plane per metre of distance
+    tolerance_tan: f32,
 }
 
 impl Default for Dwell {
     fn default() -> Self {
-        Dwell { kind: None, anchor: None, px: (0.0, 0.0), settled_at: 0, fired: false, onset_ns: ONSET_NS, dwell_ns: DWELL_NS, tolerance_cos: TOLERANCE_COS }
+        Dwell { kind: None, anchor: None, px: (0.0, 0.0), settled_at: 0, fired: false, onset_ns: ONSET_NS, dwell_ns: DWELL_NS, tolerance_tan: TOLERANCE_DEG.to_radians().tan() }
     }
 }
 
@@ -99,7 +112,7 @@ impl Dwell {
     pub fn set_timing(&mut self, onset_ms: u64, complete_ms: u64, tolerance_deg: f32) {
         self.onset_ns = onset_ms.saturating_mul(1_000_000);
         self.dwell_ns = complete_ms.saturating_mul(1_000_000);
-        self.tolerance_cos = tolerance_deg.max(0.0).to_radians().cos();
+        self.tolerance_tan = tolerance_deg.clamp(0.0, 89.0).to_radians().tan();
     }
 
     fn rearm(&mut self, a: Anchor, now_ns: u64) {
@@ -113,8 +126,35 @@ impl Dwell {
         self.fired = false;
     }
 
-    /// Advance the machine with one sample. `true` means a commit is due now.
-    pub fn step(&mut self, s: &Sample, now_ns: u64) -> bool {
+    /// The target the settle is anchored on, while a pose source is settling.
+    pub fn target(&self) -> Option<MemberId> {
+        match self.anchor {
+            Some(Anchor::Hit(h)) => Some(h.member),
+            _ => None,
+        }
+    }
+
+    /// Dwell progress for the reticle (Cardboard's fuse ring, KWin's dwell animation
+    /// `dwellclicker.cpp:91-114`): `Some(0..=1)` from the onset's end to the commit while a settle
+    /// is anchored and has not fired; `None` otherwise. `0` during the onset — the ring shows
+    /// nothing for a glance that merely passes over a target.
+    pub fn progress(&self, now_ns: u64) -> Option<f32> {
+        if self.anchor.is_none() || self.fired {
+            return None;
+        }
+        let since = now_ns.saturating_sub(self.settled_at);
+        if since < self.onset_ns {
+            return Some(0.0);
+        }
+        if self.dwell_ns == 0 {
+            return Some(1.0);
+        }
+        Some(((since - self.onset_ns) as f32 / self.dwell_ns as f32).min(1.0))
+    }
+
+    /// Advance the machine with one sample; `hit` is where a tracked pose sample's ray lands, if
+    /// anywhere. `true` means a commit is due now.
+    pub fn step(&mut self, s: &Sample, hit: Option<HitPoint>, now_ns: u64) -> bool {
         let here = match s.kind {
             SourceKind::Pointer => {
                 let (dx, dy) = s.delta.unwrap_or((0.0, 0.0));
@@ -123,12 +163,12 @@ impl Dwell {
                 Anchor::Px(self.px.0, self.px.1)
             }
             k if k.targets() => {
-                // an untracked source is not dwelling on anything
-                let Some(p) = s.pose.filter(|_| s.tracked) else {
+                // an untracked source, or a ray into the void, is not dwelling on anything
+                let Some(h) = hit.filter(|_| s.tracked && s.pose.is_some()) else {
                     self.reset();
                     return false;
                 };
-                Anchor::Dir(forward(p.orientation))
+                Anchor::Hit(h)
             }
             // keyboards do not dwell (§13's dwell is a *commit method on a tier*)
             _ => return false,
@@ -140,7 +180,11 @@ impl Dwell {
             return false;
         }
         let moved = match (self.anchor, here) {
-            (Some(Anchor::Dir(a)), Anchor::Dir(b)) => dot(a, b) < self.tolerance_cos,
+            (Some(Anchor::Hit(a)), Anchor::Hit(b)) => {
+                // the anchor is the point on the target: a new target, or a move across the plane
+                // past the tolerance at this distance
+                a.member != b.member || (b.local[0] - a.local[0]).hypot(b.local[1] - a.local[1]) > self.tolerance_tan * b.distance.max(0.05)
+            }
             (Some(Anchor::Px(ax, ay)), Anchor::Px(bx, by)) => (bx - ax).hypot(by - ay) > TOLERANCE_PX,
             _ => true,
         };
@@ -156,17 +200,37 @@ impl Dwell {
     }
 }
 
-/// The two samples a dwell commit becomes: a press and its release on the dwelling kind, so every
-/// stage below sees an ordinary commit. KWin's dwell clicker does the same through an input device
-/// of its own (`references/kwin/src/plugins/dwellclicker/dwellclicker.cpp:188-194`).
-pub fn commit_samples(kind: SourceKind, now_ns: u64) -> [Sample; 2] {
+/// The hit a tracked pose sample's ray makes, the hit stage's own cast and predicate
+/// (`hit.rs` `HitStage::cast`: mapped, not hidden, trusted-only while the mode gate is closed).
+fn hit_of(s: &Sample, st: &Zxr) -> Option<HitPoint> {
+    let p = s.pose.filter(|_| s.tracked && s.kind.targets() && s.kind != SourceKind::Pointer)?;
+    let origin = [p.position.x, p.position.y, p.position.z];
+    let dir = crate::xr::math::rotate(p.orientation, [0.0, 0.0, -1.0]);
+    let gated = st.input.mode != super::Mode::Normal;
+    let h = super::hit::hit_member_with(&st.scene, origin, dir, |m| m.mapped() && !m.hidden && (!gated || m.trusted), |_, band| super::hit::Class::from_band(band), st.prefs.hardware.hit_class_epsilon_m.max(0.0))?;
+    Some(HitPoint { member: h.member, local: h.local, distance: h.distance })
+}
+
+/// The two samples a dwell commit becomes: a press and its release on the dwelling kind, **carrying
+/// the firing sample's pose and tracking**, so every stage below sees an ordinary commit at the
+/// point the ray holds (a touch-class `down` needs a tracked, ready sample with a hit — a bare
+/// button sample is dropped, `touch.rs` `plan`). KWin's dwell clicker does the same through an
+/// input device of its own, clicking at the pointer's position
+/// (`references/kwin/src/plugins/dwellclicker/dwellclicker.cpp:188-194`).
+pub fn commit_samples(from: &Sample) -> [Sample; 2] {
     // marked `Flags::A11Y`: a transform's commit, not a device's (KWin gives its dwell clicks a
     // device of their own, `plugins/dwellclicker/dwellclicker.cpp:188-194`)
-    let mut down = Sample::new(kind, now_ns).with_button(Button::Select, true);
-    let mut up = Sample::new(kind, now_ns).with_button(Button::Select, false);
-    down.flags.insert(crate::input::Flags::A11Y);
-    up.flags.insert(crate::input::Flags::A11Y);
-    [down, up]
+    let one = |pressed: bool| {
+        let mut s = Sample::new(from.kind, from.time_ns).with_button(Button::Select, pressed);
+        s.pose = from.pose;
+        s.tracked = from.tracked;
+        s.ready = from.ready;
+        s.quality = from.quality;
+        s.xr_time = from.xr_time;
+        s.flags.insert(crate::input::Flags::A11Y);
+        s
+    };
+    [one(true), one(false)]
 }
 
 /// The `Slot::A11y` stage.
@@ -220,11 +284,22 @@ impl Stage for A11y {
                 s.delta = Some((dx * self.gain, dy * self.gain));
             }
         }
-        if self.enabled && self.dwell.step(s, s.time_ns) {
-            let kind = s.kind;
-            st.input.queue.extend_from_slice(&commit_samples(kind, s.time_ns));
-            self.dwell_commits += 1;
-            tracing::info!(?kind, count = self.dwell_commits, "a11y: dwell commit");
+        // Dwell is the commit method of the *targeting* tier (§13, §3): only the source the tier
+        // arbiter selected last tick drives the machine — a head ray sampled beside a controller
+        // ray must not rearm the controller's settle, nor dwell for it. Before the first
+        // selection, any targeting kind may.
+        let targeting = st.input.tier.map(|t| t.targeting);
+        let drives = s.kind == SourceKind::Pointer || targeting.map(|t| t == s.kind).unwrap_or(true);
+        if self.enabled && drives {
+            // one ray cast per targeting sample while dwell is on (off by default): the anchor is
+            // the point on the target, so the transform needs the hit before the hit stage runs
+            let hit = hit_of(s, st);
+            if self.dwell.step(s, hit, s.time_ns) {
+                let kind = s.kind;
+                st.input.queue.extend_from_slice(&commit_samples(s));
+                self.dwell_commits += 1;
+                tracing::info!(?kind, count = self.dwell_commits, "a11y: dwell commit");
+            }
         }
         Flow::Continue
     }
@@ -232,7 +307,9 @@ impl Stage for A11y {
     /// Settings are taken here, once per tick: the resolved preferences when their generation
     /// moved (settings.rs `apply`; `input.dwell.*`, `input.pointer.gain`), and the control
     /// socket's direct pushes through `Input` (the harness's path, spatial-input §14).
-    fn tick(&mut self, st: &mut Zxr, _now_ns: u64) {
+    fn tick(&mut self, st: &mut Zxr, now_ns: u64) {
+        // the reticle's fill (cursor.rs): the settle's progress on its target, this tick
+        st.input.dwell_progress = if self.enabled { self.dwell.progress(now_ns).map(|p| (self.dwell.target(), p)) } else { None };
         if self.prefs_gen != st.prefs.generation {
             self.prefs_gen = st.prefs.generation;
             let p = &st.prefs;
@@ -261,16 +338,27 @@ mod tests {
     const MS: u64 = 1_000_000;
     const FIRE_MS: u64 = (ONSET_NS + DWELL_NS) / MS; // 950
 
-    fn yaw(deg: f32) -> xr::Posef {
-        let h = deg.to_radians() * 0.5;
-        xr::Posef { orientation: xr::Quaternionf { x: 0.0, y: h.sin(), z: 0.0, w: h.cos() }, position: xr::Vector3f { x: 0.0, y: 0.0, z: 0.0 } }
+    /// two targets in a scene, for the anchors' member ids
+    fn members() -> (MemberId, MemberId) {
+        use crate::scene::{Flags, Scene, Shape};
+        use crate::xr::math;
+        let mut scene: Scene<bool> = Scene::new();
+        let a = scene.add(scene.default_place, math::pose_identity(), Shape::Plane { size: [1.0, 1.0] }, Flags::default(), true).unwrap();
+        let b = scene.add(scene.default_place, math::pose_identity(), Shape::Plane { size: [1.0, 1.0] }, Flags::default(), true).unwrap();
+        (a, b)
     }
 
-    fn gaze(t_ms: u64, deg: f32) -> Sample {
+    fn gaze(t_ms: u64) -> Sample {
         let mut s = Sample::new(SourceKind::Gaze, t_ms * MS);
-        s.pose = Some(yaw(deg));
+        s.pose = Some(crate::xr::math::pose_identity());
         s.tracked = true;
         s
+    }
+
+    /// the ray landing `deg` of visual angle off the anchor on a plane 1 m away
+    fn at(member: MemberId, deg: f32) -> Option<HitPoint> {
+        let x = deg.to_radians().tan();
+        Some(HitPoint { member, local: [x, 0.0], distance: (1.0 + x * x).sqrt() })
     }
 
     fn pointer(t_ms: u64, delta: Option<(f64, f64)>) -> Sample {
@@ -281,61 +369,103 @@ mod tests {
 
     #[test]
     fn dwell_fires_once_per_settle() {
+        let (m, _) = members();
         let mut d = Dwell::default();
-        assert!(!d.step(&gaze(0, 0.0), 0), "the first sample only anchors");
+        assert!(!d.step(&gaze(0), at(m, 0.0), 0), "the first sample only anchors");
         for t in (11..FIRE_MS).step_by(11) {
-            assert!(!d.step(&gaze(t, 0.0), t * MS), "not yet at {t} ms");
+            assert!(!d.step(&gaze(t), at(m, 0.0), t * MS), "not yet at {t} ms");
         }
-        assert!(d.step(&gaze(FIRE_MS, 0.0), FIRE_MS * MS), "onset 200 + dwell 750");
+        assert!(d.step(&gaze(FIRE_MS), at(m, 0.0), FIRE_MS * MS), "onset 200 + dwell 750");
         for t in (FIRE_MS + 11..FIRE_MS + 500).step_by(11) {
-            assert!(!d.step(&gaze(t, 0.0), t * MS), "and never again while it sits still");
+            assert!(!d.step(&gaze(t), at(m, 0.0), t * MS), "and never again while it sits still");
         }
     }
 
     #[test]
     fn movement_past_the_tolerance_rearms_and_inside_it_does_not() {
+        let (m, _) = members();
         let mut d = Dwell::default();
-        d.step(&gaze(0, 0.0), 0);
-        // 1° is inside the 2° tolerance: the settle survives and still fires on time
-        assert!(!d.step(&gaze(500, 1.0), 500 * MS));
-        assert!(d.step(&gaze(FIRE_MS, 1.0), FIRE_MS * MS));
+        d.step(&gaze(0), at(m, 0.0), 0);
+        // 1° across the plane is inside the 2° tolerance: the settle survives and still fires on time
+        assert!(!d.step(&gaze(500), at(m, 1.0), 500 * MS));
+        assert!(d.step(&gaze(FIRE_MS), at(m, 1.0), FIRE_MS * MS));
         // 5° is past it: the machine rearms from there
         let mut d = Dwell::default();
-        d.step(&gaze(0, 0.0), 0);
-        assert!(!d.step(&gaze(900, 5.0), 900 * MS), "rearmed at 900 ms");
-        assert!(!d.step(&gaze(900 + FIRE_MS - 11, 5.0), (900 + FIRE_MS - 11) * MS));
-        assert!(d.step(&gaze(900 + FIRE_MS, 5.0), (900 + FIRE_MS) * MS), "fires 950 ms after the rearm");
+        d.step(&gaze(0), at(m, 0.0), 0);
+        assert!(!d.step(&gaze(900), at(m, 5.0), 900 * MS), "rearmed at 900 ms");
+        assert!(!d.step(&gaze(900 + FIRE_MS - 11), at(m, 5.0), (900 + FIRE_MS - 11) * MS));
+        assert!(d.step(&gaze(900 + FIRE_MS), at(m, 5.0), (900 + FIRE_MS) * MS), "fires 950 ms after the rearm");
+    }
+
+    /// The anchor is the point on the target, not the ray's direction (F2): a ray whose direction
+    /// changes but lands on the same point — the head turning while its ray stays on a still
+    /// plane's button, as the hit stage resolves it — keeps settling; a new target under a
+    /// constant ray (a plane the head carries sliding past) rearms; the void resets.
+    #[test]
+    fn the_anchor_is_the_hit_point_on_the_target() {
+        let (m, other) = members();
+        let mut d = Dwell::default();
+        d.step(&gaze(0), at(m, 0.0), 0);
+        let mut turned = gaze(FIRE_MS);
+        turned.pose = Some(crate::xr::math::pose_yaw([0.0; 3], 0.5));
+        assert!(d.step(&turned, at(m, 0.0), FIRE_MS * MS), "a turned head on the same point still commits");
+        let mut d = Dwell::default();
+        d.step(&gaze(0), at(m, 0.0), 0);
+        assert!(!d.step(&gaze(FIRE_MS), at(other, 0.0), FIRE_MS * MS), "a new target starts its own settle");
+        assert!(d.step(&gaze(2 * FIRE_MS), at(other, 0.0), 2 * FIRE_MS * MS));
+        let mut d = Dwell::default();
+        d.step(&gaze(0), at(m, 0.0), 0);
+        assert!(!d.step(&gaze(100), None, 100 * MS));
+        assert!(d.progress(100 * MS).is_none(), "no anchor, no progress");
+        assert!(!d.step(&gaze(FIRE_MS), at(m, 0.0), FIRE_MS * MS), "restarted when a target came back");
+    }
+
+    #[test]
+    fn progress_runs_from_the_onset_to_the_commit() {
+        let (m, _) = members();
+        let mut d = Dwell::default();
+        assert!(d.progress(0).is_none());
+        d.step(&gaze(0), at(m, 0.0), 0);
+        assert_eq!(d.progress(100 * MS), Some(0.0), "nothing during the onset");
+        let p = d.progress((200 + 375) * MS).unwrap();
+        assert!((p - 0.5).abs() < 1e-3, "{p}");
+        assert!((d.progress(FIRE_MS * MS).unwrap() - 1.0).abs() < 1e-6);
+        assert!(d.step(&gaze(FIRE_MS), at(m, 0.0), FIRE_MS * MS));
+        assert!(d.progress((FIRE_MS + 1) * MS).is_none(), "fired: the ring empties");
+        assert_eq!(d.target(), Some(m));
     }
 
     #[test]
     fn the_intervals_and_tolerance_are_the_settings() {
         // `input.dwell.{onset_ms,complete_ms,tolerance_deg}` = 150 / 650 / 6: fires at 800 ms,
         // and a 5° move stays inside the tolerance that 2° would have broken
+        let (m, _) = members();
         let mut d = Dwell::default();
         d.set_timing(150, 650, 6.0);
-        d.step(&gaze(0, 0.0), 0);
-        assert!(!d.step(&gaze(799, 5.0), 799 * MS), "5° inside 6°: still settled, not yet due");
-        assert!(d.step(&gaze(800, 5.0), 800 * MS), "fires at onset + complete");
+        d.step(&gaze(0), at(m, 0.0), 0);
+        assert!(!d.step(&gaze(799), at(m, 5.0), 799 * MS), "5° inside 6°: still settled, not yet due");
+        assert!(d.step(&gaze(800), at(m, 5.0), 800 * MS), "fires at onset + complete");
     }
 
     #[test]
     fn a_lost_source_does_not_dwell() {
+        let (m, _) = members();
         let mut d = Dwell::default();
-        d.step(&gaze(0, 0.0), 0);
-        let mut lost = gaze(100, 0.0);
+        d.step(&gaze(0), at(m, 0.0), 0);
+        let mut lost = gaze(100);
         lost.tracked = false;
-        assert!(!d.step(&lost, 100 * MS));
-        assert!(!d.step(&gaze(FIRE_MS, 0.0), FIRE_MS * MS), "the settle restarted when tracking came back");
-        assert!(d.step(&gaze(FIRE_MS * 2, 0.0), FIRE_MS * 2 * MS));
+        assert!(!d.step(&lost, at(m, 0.0), 100 * MS));
+        assert!(!d.step(&gaze(FIRE_MS), at(m, 0.0), FIRE_MS * MS), "the settle restarted when tracking came back");
+        assert!(d.step(&gaze(FIRE_MS * 2), at(m, 0.0), FIRE_MS * 2 * MS));
     }
 
     #[test]
     fn the_pointer_dwells_on_accumulated_motion() {
         let mut d = Dwell::default();
-        d.step(&pointer(0, None), 0);
-        assert!(!d.step(&pointer(500, Some((3.0, 4.0))), 500 * MS), "5 units is inside the 20 tolerance");
-        assert!(d.step(&pointer(FIRE_MS, None), FIRE_MS * MS));
-        assert!(!d.step(&pointer(FIRE_MS + 11, Some((30.0, 0.0))), (FIRE_MS + 11) * MS), "a 30-unit jump rearms");
+        d.step(&pointer(0, None), None, 0);
+        assert!(!d.step(&pointer(500, Some((3.0, 4.0))), None, 500 * MS), "5 units is inside the 20 tolerance");
+        assert!(d.step(&pointer(FIRE_MS, None), None, FIRE_MS * MS));
+        assert!(!d.step(&pointer(FIRE_MS + 11, Some((30.0, 0.0))), None, (FIRE_MS + 11) * MS), "a 30-unit jump rearms");
     }
 
     #[test]
@@ -344,17 +474,21 @@ mod tests {
         for t in (0..FIRE_MS * 2).step_by(11) {
             let mut s = Sample::new(SourceKind::Keyboard, t * MS);
             s.key = Some((30, true));
-            assert!(!d.step(&s, t * MS));
+            assert!(!d.step(&s, None, t * MS));
         }
     }
 
     #[test]
-    fn a_commit_is_a_press_then_a_release_of_the_same_kind() {
-        let [down, up] = commit_samples(SourceKind::Hand(Side::Left), 7);
+    fn a_commit_is_a_press_then_a_release_of_the_same_kind_at_the_same_pose() {
+        let from = Sample::new(SourceKind::Hand(Side::Left), 7).with_pose(crate::xr::math::pose_yaw([0.0; 3], 0.3));
+        let [down, up] = commit_samples(&from);
         assert_eq!(down.kind, SourceKind::Hand(Side::Left));
         assert_eq!(down.button, Some((Button::Select, true)));
         assert_eq!(up.button, Some((Button::Select, false)));
         assert_eq!(up.time_ns, 7);
+        // the touch transport plans a `down` only for a tracked, ready sample with a pose
+        assert!(down.tracked && down.ready && down.pose.is_some());
+        assert!(down.flags.contains(crate::input::Flags::A11Y));
     }
 
     #[test]

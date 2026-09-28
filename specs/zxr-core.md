@@ -1021,6 +1021,26 @@ headset). Each gate is a written result with numbers in
    point on the target measured in the plane's pixels, not a world direction, so the phantom
    re-arm F2 recorded no longer occurs — and a reticle fill shows dwell progress; with the head
    turned past `wm.follow.*`'s threshold the scene re-seats in front of it.
+   **Measured (host, 2026-09-28; nested under `fakegreet`, Monado's simulated HMD drifting
+   ≈ 8 cm/s and ≈ 1.5°/s):** the greeter arranges `frame=body` (`zone: frame=Body rect=1920×1493
+   extent=90×70° ppd=21.33 distance=0.50`), the lock surface the same; **a dwell-only login with the
+   head ray as the only targeting source** — `user` typed, the scene placed so `Next` sits under the
+   ray (a `shell.place:mura-greeter` row through the harness hatch `zxr ctl place`), dwell commits
+   it (`Password:`), `password` typed, `Log in` committed (`7 + 2:`), `9` typed, `Log in`
+   committed → `start_session` → `Success` → the program exits 0 and zxr with it; 7 head-dwell
+   commits for 3 presses (the drift re-arms and re-fires on the same spot ≈ every second — a real
+   still head fires once; the harness parks the ray on the margin between steps); the reticle's
+   fill runs 0→16 over each settle (`fill=9 … 15 … 1 … 7` on successive reads; ≈ 16 panel passes
+   per settle, never per tick). **Two findings the run fixed or flagged:** the dwell's commit
+   samples had carried no pose, so the touch transport planned no `down` for them — gate 9 (b)'s
+   "commits every second" had never clicked; a commit now carries the firing sample's pose and
+   tracking (KWin clicks at the pointer's position). And only the *targeting* tier's source drives
+   the machine now — a head ray sampled beside a controller ray neither re-arms nor dwells for it
+   (the second half of F2). Flagged for research/78 §9: F11 (a controller-ray dwell on a
+   body-framed surface rides the head's translation — the body follows the head's position each
+   tick — so it settles only on a still head; the simulator's 8 cm/s drift never lets it), F12
+   (a layer surface's every mapped commit re-arranges — the caret's blink is 2 arranges/s; sway
+   arranges only on the initial commit, a committed state change or a map change, `sway/sway/desktop/layer_shell.c:272-275`).
 10. **The G2 gate (rev 3.15; implementation-path §5 G2).** In the VM (`tests/vm/multi-user.nix`,
    `default-image.nix`; lavapipe, Monado's simulated HMD as the session user's socket): greetd's
    `default_session` is `zxr --greeter --trusted mura-greeter --osk mura-osk` under greetd's

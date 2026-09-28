@@ -50,6 +50,9 @@ pub enum Command {
     /// `cursor ray both|image|ring` / `cursor scale angle|plane`: the cursor preferences
     /// (spatial-input §14 `input.cursor.*`) until `org.mura.Settings1` carries them
     Cursor(String, String),
+    /// `place NAMESPACE KEY VALUE`: one `shell.place:<namespace>.<key>` row value written live —
+    /// the harness's hatch for the settings store's path when no artifact exists (spec §4)
+    Place(String, String, String),
     Unknown(String),
 }
 
@@ -144,6 +147,10 @@ pub fn parse(line: &str) -> Command {
         (Some("mode"), Some(m)) => Command::Mode(m.to_string()),
         (Some("a11y"), Some(k)) => Command::A11y(k.to_string(), it.next().unwrap_or("").to_string()),
         (Some("cursor"), Some(k)) => Command::Cursor(k.to_string(), it.next().unwrap_or("").to_string()),
+        (Some("place"), Some(ns)) => match (it.next(), it.next()) {
+            (Some(k), Some(v)) => Command::Place(ns.to_string(), k.to_string(), v.to_string()),
+            _ => Command::Unknown(line.to_string()),
+        },
         (Some("source"), Some(kind)) => parse_source(kind, it.collect::<Vec<_>>().as_slice()).map(Command::Source).unwrap_or_else(|| Command::Unknown(line.to_string())),
         _ => Command::Unknown(line.to_string()),
     }

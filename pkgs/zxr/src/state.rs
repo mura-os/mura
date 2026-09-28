@@ -115,6 +115,8 @@ pub struct Zxr {
     pub cursor_key: Option<CursorKey>,
     /// the ring texture (16 KiB; lives for the session)
     pub ring_tex: Option<crate::render::Texture>,
+    /// the fill step `ring_tex` currently holds (re-uploaded when the layer's fill changes)
+    pub ring_fill: u8,
     /// the bar's strip texture
     pub bar_tex: Option<crate::render::Texture>,
     /// the cursor theme for `cursor-shape-v1` names, and the texture of the current name
@@ -274,6 +276,8 @@ pub enum CursorImageKey {
 pub struct CursorKey {
     pub content: crate::input::cursor::Content,
     pub image: Option<CursorImageKey>,
+    /// the ring's dwell fill step (cursor.rs `FILL_STEPS`)
+    pub fill: u8,
 }
 
 /// The frontend's member payload (spec §5a `M`): the smithay window, its panel, and the
@@ -489,6 +493,7 @@ impl Zxr {
             bar_panel: None,
             cursor_key: None,
             ring_tex: None,
+            ring_fill: 0,
             bar_tex: None,
             cursor_theme: crate::input::theme::Theme::from_env(),
             cursor_named: None,

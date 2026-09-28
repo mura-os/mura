@@ -64,6 +64,8 @@ use crate::xr::math;
 pub const RETICLE_DEG: f32 = 1.5;
 /// The ring texture's side in pixels; also the pixel span that subtends `RETICLE_DEG`.
 pub const RETICLE_PX: u32 = 64;
+/// Steps of the ring's dwell fill: a redraw of the 64² panel per step, at most this many per settle.
+pub const FILL_STEPS: u8 = 16;
 /// The fixed side of the cursor panel (grow-only if a client image needs more around its
 /// hotspot). The DRM cursor plane's shape: one fixed-size plane the image is drawn into.
 pub const CURSOR_PX: u32 = 64;
@@ -162,6 +164,8 @@ pub struct CursorLayer {
     pub content: Content,
     /// the client image to draw when `content.has_image()`
     pub image: Option<CursorImageStatus>,
+    /// the ring's dwell fill in `FILL_STEPS`ths (0 = the plain ring); part of the redraw key
+    pub fill: u8,
 }
 
 /// The logical pointer's position on a plane this tick (seat stage → `Cursors`).
@@ -220,11 +224,14 @@ pub struct Cursors {
     hidden_idle: bool,
     /// the scene's metres per pixel for `Scale::Plane` (`wm.density_px_per_cm`)
     plane_m_per_px: f32,
+    /// the dwell settle's progress this tick, quantised to `FILL_STEPS` (a11y.rs; Cardboard's fuse
+    /// ring, KWin's dwell animation): the ring's fill, `0` = an empty ring
+    fill: u8,
 }
 
 impl Default for Cursors {
     fn default() -> Self {
-        Cursors { reticle: None, pointer: None, targeting: None, client: CursorImageStatus::default_named(), hidden_typing: false, ray_cursor: RayCursor::default(), scale: Scale::default(), angle_deg: RETICLE_DEG, hide_when_typing: true, hide_after_ns: 0, last_motion_ns: None, hidden_idle: false, plane_m_per_px: crate::scene::M_PER_PX }
+        Cursors { reticle: None, pointer: None, targeting: None, client: CursorImageStatus::default_named(), hidden_typing: false, ray_cursor: RayCursor::default(), scale: Scale::default(), angle_deg: RETICLE_DEG, hide_when_typing: true, hide_after_ns: 0, last_motion_ns: None, hidden_idle: false, plane_m_per_px: crate::scene::M_PER_PX, fill: 0 }
     }
 }
 
@@ -269,6 +276,16 @@ impl Cursors {
     /// No targeting hit this tick (gaze targeting, no hit).
     pub fn clear_reticle(&mut self) {
         self.reticle = None;
+    }
+
+    /// The dwell settle's progress (`0..=1`) for the ring's fill, or none. Quantised so the panel
+    /// is redrawn at most `FILL_STEPS` times per settle, never per tick.
+    pub fn set_dwell_progress(&mut self, p: Option<f32>) {
+        self.fill = p.map(|p| (p.clamp(0.0, 1.0) * FILL_STEPS as f32).round() as u8).unwrap_or(0);
+    }
+
+    pub fn fill(&self) -> u8 {
+        self.fill
     }
 
     /// Where the logical pointer is on a plane, and who owns it; `None` between planes.
@@ -417,11 +434,11 @@ impl Cursors {
             // the ring the owning ray keeps while its image is hidden — at its hit if it has one
             let ring_alone = || {
                 let (pose, m_per_px) = self.reticle.map(|(w, l, d)| at(w, l, d)).unwrap_or((pose, m_per_px));
-                Some(CursorLayer { pose, m_per_px, content: Content::Ring, image: None })
+                Some(CursorLayer { pose, m_per_px, content: Content::Ring, image: None, fill: self.fill })
             };
             return match (image, ray_owner, self.ray_cursor) {
-                (Some(img), true, RayCursor::Both) => Some(CursorLayer { pose, m_per_px, content: Content::RingAndImage, image: Some(img.clone()) }),
-                (Some(img), true, RayCursor::Image) | (Some(img), false, _) => Some(CursorLayer { pose, m_per_px, content: Content::Image, image: Some(img.clone()) }),
+                (Some(img), true, RayCursor::Both) => Some(CursorLayer { pose, m_per_px, content: Content::RingAndImage, image: Some(img.clone()), fill: self.fill }),
+                (Some(img), true, RayCursor::Image) | (Some(img), false, _) => Some(CursorLayer { pose, m_per_px, content: Content::Image, image: Some(img.clone()), fill: 0 }),
                 (Some(_), true, RayCursor::Ring) | (None, true, RayCursor::Both | RayCursor::Ring) => ring_alone(),
                 // a mouse, or a ray set to image-only, with nothing to show: no ray reticle either
                 (None, true, RayCursor::Image) | (None, false, _) => None,
@@ -429,25 +446,36 @@ impl Cursors {
         }
         let (w, l, d) = self.reticle?;
         let (pose, m_per_px) = at(w, l, d);
-        Some(CursorLayer { pose, m_per_px, content: Content::Ring, image: None })
+        Some(CursorLayer { pose, m_per_px, content: Content::Ring, image: None, fill: self.fill })
     }
 }
 
 /// An anti-aliased ring: outer radius 0.47·side, inner 0.34·side, one-pixel soft edges; white,
 /// premultiplied BGRA so the quad blends with `BLEND_TEXTURE_SOURCE_ALPHA`.
 pub fn ring_pixels(side: u32) -> Vec<u8> {
+    ring_pixels_filled(side, 0)
+}
+
+/// The ring with its dwell fill: a disc inside the ring growing from the centre to the inner
+/// radius as `fill` runs `0..=FILL_STEPS` (Cardboard's fuse reticle fills its ring over the gaze
+/// time; KWin's dwell clicker animates its cursor over `dwellTime`, `dwellclicker.cpp:91-114`).
+/// The disc is half-bright so the ring stays the reticle and the fill reads as progress.
+pub fn ring_pixels_filled(side: u32, fill: u8) -> Vec<u8> {
     let n = side as usize;
     let mut out = vec![0u8; n * n * 4];
     let c = (side as f32 - 1.0) * 0.5;
     let r_out = side as f32 * 0.47;
     let r_in = side as f32 * 0.34;
+    let r_fill = if fill == 0 { 0.0 } else { (r_in - 1.0) * (fill.min(FILL_STEPS) as f32 / FILL_STEPS as f32) };
     for y in 0..n {
         for x in 0..n {
             let dx = x as f32 - c;
             let dy = y as f32 - c;
             let r = (dx * dx + dy * dy).sqrt();
             // coverage: 1 inside the band, linear falloff over one pixel at both edges
-            let a = ((r_out - r).clamp(0.0, 1.0)) * ((r - r_in).clamp(0.0, 1.0));
+            let ring = ((r_out - r).clamp(0.0, 1.0)) * ((r - r_in).clamp(0.0, 1.0));
+            let disc = if r_fill > 0.0 { (r_fill - r).clamp(0.0, 1.0) * 0.5 } else { 0.0 };
+            let a = ring.max(disc);
             let v = (a * 255.0).round() as u8;
             let i = (y * n + x) * 4;
             out[i] = v;
@@ -496,6 +524,27 @@ mod tests {
         assert_eq!(at(0, 0), 0);
         let band = (RETICLE_PX as f32 * 0.405) as u32;
         assert_eq!(at(31 + band, 31), 255);
+    }
+
+    #[test]
+    fn the_dwell_fill_grows_a_disc_inside_the_ring_and_is_the_layer_key() {
+        let at = |px: &[u8], x: u32, y: u32| px[((y * RETICLE_PX + x) * 4 + 3) as usize];
+        let empty = ring_pixels_filled(RETICLE_PX, 0);
+        let half = ring_pixels_filled(RETICLE_PX, FILL_STEPS / 2);
+        let full = ring_pixels_filled(RETICLE_PX, FILL_STEPS);
+        assert_eq!(at(&empty, 31, 31), 0);
+        assert!(at(&half, 31, 31) > 0, "the centre fills first");
+        let mid = 31 + (RETICLE_PX as f32 * 0.34 * 0.7) as u32;
+        assert_eq!(at(&half, mid, 31), 0, "half way: the outer part of the disc is still empty");
+        assert!(at(&full, mid, 31) > 0, "full: the disc reaches the ring");
+        assert_eq!(at(&full, 31 + (RETICLE_PX as f32 * 0.405) as u32, 31), 255, "the ring itself is unchanged");
+        // the layer carries the quantised fill; a ray's ring only
+        let mut c = Cursors::default();
+        c.set_reticle(plane(), [0.0, 0.0], 1.0);
+        c.set_dwell_progress(Some(0.5));
+        assert_eq!(c.layer().unwrap().fill, FILL_STEPS / 2);
+        c.set_dwell_progress(None);
+        assert_eq!(c.layer().unwrap().fill, 0);
     }
 
     #[test]

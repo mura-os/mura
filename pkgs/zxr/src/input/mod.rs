@@ -488,6 +488,8 @@ pub struct Input {
     /// this tick's one cursor layer (§7, research/70 §9): the ring, the client's image, or both,
     /// for the frame procedure's one band-5 quad; `None` = nothing submitted
     pub cursor_layer: Option<cursor::CursorLayer>,
+    /// the dwell settle's target and progress this tick (a11y.rs → the reticle's fill, cursor.rs)
+    pub dwell_progress: Option<(Option<crate::scene::MemberId>, f32)>,
     /// the inputs the layer was resolved from (`zxr ctl list` diagnostics)
     pub cursor_inputs: Option<cursor::Inputs>,
     /// ticks a `cursor-shape-v1` name was current and the theme had no image for it
@@ -510,7 +512,7 @@ pub struct Input {
 
 impl Default for Input {
     fn default() -> Self {
-        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, tick_event_count: 0, tick_event_time_sum_ns: 0, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_ray: None, cursor_scale: None, cursor_image: None, cursor_layer: None, cursor_inputs: None, cursor_named_ticks: 0, emphasis: None, grab_request: None, grabbed: None, grabbing_kind: None, grab_bar: None, grab_shortcut: None, grab_end: false }
+        Input { chain: Chain::default(), tier: None, hits: Vec::with_capacity(8), mode: Mode::default(), xr_suspended: false, queue: Vec::with_capacity(64), present: None, presence_changed: false, head: None, tick_oldest_event_ns: None, tick_event_count: 0, tick_event_time_sum_ns: 0, injector: Injector::default(), activity: activity::Activity::default(), a11y_dwell: None, a11y_gain: None, cursor_ray: None, cursor_scale: None, cursor_image: None, cursor_layer: None, dwell_progress: None, cursor_inputs: None, cursor_named_ticks: 0, emphasis: None, grab_request: None, grabbed: None, grabbing_kind: None, grab_bar: None, grab_shortcut: None, grab_end: false }
     }
 }
 

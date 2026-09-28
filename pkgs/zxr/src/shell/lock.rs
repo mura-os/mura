@@ -122,10 +122,12 @@ impl SessionLockHandler for Zxr {
     }
 
     fn new_surface(&mut self, surface: LockSurface, _output: WlOutput) {
-        let rect = self.shell.rect(Frame::Head).copied().unwrap_or_else(|| super::FrameRect { frame: Frame::Head, size: super::head_mode_size(&self.shell.head), ppd: super::FRAME_PX_W as f32 / self.shell.head.extent_h_deg, distance_m: self.shell.head.distance_m, usable: smithay::utils::Rectangle::from_size(super::head_mode_size(&self.shell.head)) });
+        // the lock surface floats on the body frame like every surface that asks for nothing
+        // (spec §4 rev 3.15; spatial-input §13: nothing the wearer aims at is head-locked)
+        let rect = self.shell.rect(Frame::Body).copied().unwrap_or_else(|| super::FrameRect { frame: Frame::Body, size: super::head_mode_size(&self.shell.head), ppd: super::FRAME_PX_W as f32 / self.shell.head.extent_h_deg, distance_m: self.shell.head.distance_m, usable: smithay::utils::Rectangle::from_size(super::head_mode_size(&self.shell.head)) });
         surface.with_pending_state(|s| s.size = Some((rect.size.w as u32, rect.size.h as u32).into()));
         surface.send_configure();
-        let place = self.scene.add_place(self.scene.head, math::pose_identity(), 5);
+        let place = self.scene.add_place(self.scene.body, math::pose_identity(), 5);
         let payload = Payload { window: Surface::Lock(surface.clone()), panel: None, dirty: false, mapped_at: 0, last_frame_callback: 0, hidden: false, urgent: false, requested_at_commit: None, pending_activation: None, trusted: true };
         let prev = self.scene.focused;
         let id = self.scene.add(place, pose_at(0.0, 0.0, rect.distance_m, 0.0), Shape::Plane { size: plane_size_px(rect.size, rect.ppd, rect.distance_m) }, Flags(0), payload).expect("place is live");

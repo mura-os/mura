@@ -15,8 +15,9 @@
 //! per frame: a body-frame panel never shrinks the head frame (research/77 §3.2).
 //!
 //! **Where a surface sits is the wearer's** (owner ruling 2026-09-27; research/77 §3.3a): a
-//! `shell.place:<namespace>` row wins, else the client's anchoring request, else the head
-//! fallback (`shell.head.*`). Hyprland's layer rules by namespace are the precedent
+//! `shell.place:<namespace>` row wins, else the client's anchoring request, else the **body**
+//! fallback (the head's extent `shell.head.*` on the body frame — floating in front, head free;
+//! nothing is head-locked unless it asks, spatial-input §13, ruled 2026-09-28). Hyprland's layer rules by namespace are the precedent
 //! (`references/hyprland/src/desktop/rule/layerRule/LayerRule.cpp:96-115`). Seed rows for the
 //! carried components' namespaces are `place::seed`.
 //!
@@ -450,7 +451,7 @@ pub fn arrange(st: &mut Zxr) {
     st.shell.arranges += 1;
     st.journal.layer_arranges += 1;
     st.shell.typed_follow = None;
-    // resolve every entry's frame first (row > client > head)
+    // resolve every entry's frame first (row > client > seed > body)
     let typed = typed_target(st);
     st.shell.typed_member = typed.map(|t| t.member);
     let mut typed_members: Vec<MemberId> = Vec::new();
@@ -458,8 +459,9 @@ pub fn arrange(st: &mut Zxr) {
         let mut fs = Vec::new();
         for i in 0..st.shell.layers.len() {
             let e = &st.shell.layers[i];
-            // the wearer's row > the client's request > the seed row > head (shell-plane §2.6:
-            // seeds are the defaults for clients that ask nothing — the unaware ones)
+            // the wearer's row > the client's request > the seed row > body (shell-plane §2.6:
+            // seeds are the defaults for clients that ask nothing — the unaware ones; the body
+            // because nothing the wearer aims at is head-locked, spatial-input §13)
             let asked = st.shell.rows.get(&e.namespace).and_then(|r| r.frame).or_else(|| anchoring::requested_frame(e.surface.wl_surface()).map(PlaceFrame::Frame)).or_else(|| place::seed(&e.namespace).and_then(|r| r.frame));
             let wanted = match asked {
                 Some(PlaceFrame::Frame(f)) => f,
@@ -468,7 +470,7 @@ pub fn arrange(st: &mut Zxr) {
                     typed_members.push(e.member);
                     typed.map(|t| t.frame).unwrap_or(e.frame)
                 }
-                None => Frame::Head,
+                None => Frame::Body,
             };
             let f = st.shell.resolve_frame(wanted);
             st.shell.layers[i].frame = f;
@@ -482,8 +484,11 @@ pub fn arrange(st: &mut Zxr) {
                 fs.push(f);
             }
         }
-        if !fs.contains(&Frame::Head) {
-            fs.push(Frame::Head);
+        // the head and body rectangles always exist: the lock surface and the window tiers read them
+        for f in [Frame::Head, Frame::Body] {
+            if !fs.contains(&f) {
+                fs.push(f);
+            }
         }
         fs
     };
@@ -602,7 +607,7 @@ pub fn arrange(st: &mut Zxr) {
 /// The surface being typed into, as the arrangement sees it (`PlaceFrame::Typed`; research/36 §7:
 /// every shipping keyboard is bound to the panel with the focused field). smithay's *active*
 /// text input (an enabled `zwp_text_input_v3`) names the surface; its member gives the frame —
-/// a layer member's arranged frame, a window's the world, the lock surface's the head.
+/// a layer member's arranged frame, a window's the world, the lock surface's the body.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TypedTarget {
     pub member: MemberId,
@@ -626,7 +631,7 @@ pub fn typed_target(st: &Zxr) -> Option<TypedTarget> {
     if m.m.window.is_window() {
         Some(TypedTarget { member, frame: Frame::World, window: true })
     } else {
-        Some(TypedTarget { member, frame: Frame::Head, window: false })
+        Some(TypedTarget { member, frame: Frame::Body, window: false })
     }
 }
 
@@ -692,21 +697,34 @@ fn box_centre_deg(bx: Rectangle<i32, Logical>, rect: &FrameRect) -> (f32, f32) {
     (cx / rect.ppd, cy / rect.ppd)
 }
 
-/// The head frame's exclusive bands as the window tiers see them (spec §4: the tiers honour
-/// the head frame's usable rectangle at spawn): the reserved strips, in head-relative angles,
-/// for the free engine's occupancy pass.
+/// The head and body frames' exclusive bands as the window tiers see them (spec §4: the tiers
+/// honour the wearer-carried frames' usable rectangles at spawn): the reserved strips, in
+/// head-relative angles, for the free engine's occupancy pass. The body frame is the head's
+/// yaw-only derivative (body.rs), so its strips are the same arithmetic turned by the yaw the body
+/// currently lags the head by; the free engine's basis is the head's horizontal forward.
 pub fn exclusive_occupancy(st: &Zxr) -> Vec<crate::policy::free::AngularBounds> {
     let mut out = Vec::new();
-    let Some(r) = st.shell.rect(Frame::Head) else { return out };
+    let head_yaw = st.input.head.map(|h| body::yaw_of(h.orientation)).unwrap_or(0.0);
+    // a body-frame azimuth `a` (positive right) sits at head-azimuth `a + (head_yaw − body_yaw)`:
+    // a head turned left of the body sees the body's forward to its right
+    let body_offset_deg = if st.shell.body.seated { body::yaw_delta(st.shell.body.yaw, head_yaw).to_degrees() } else { 0.0 };
+    for (frame, az_offset) in [(Frame::Head, 0.0), (Frame::Body, body_offset_deg)] {
+        let Some(r) = st.shell.rect(frame) else { continue };
+        frame_strips(r, az_offset, &mut out);
+    }
+    out
+}
+
+fn frame_strips(r: &FrameRect, az_offset_deg: f32, out: &mut Vec<crate::policy::free::AngularBounds>) {
     let full = Rectangle::from_size(r.size);
     let u = r.usable;
     if u == full {
-        return out;
+        return;
     }
     let deg = |px: i32| px as f32 / r.ppd;
     let (hw, hh) = (deg(full.size.w) * 0.5, deg(full.size.h) * 0.5);
     // one strip per shrunk edge, in radians (the allocator's unit)
-    let strip = |c_az: f32, c_el: f32, h_az: f32, h_el: f32| crate::policy::free::AngularBounds { centre_az: c_az.to_radians(), centre_el: c_el.to_radians(), half_az: h_az.to_radians(), half_el: h_el.to_radians() };
+    let strip = |c_az: f32, c_el: f32, h_az: f32, h_el: f32| crate::policy::free::AngularBounds { centre_az: (c_az + az_offset_deg).to_radians(), centre_el: c_el.to_radians(), half_az: h_az.to_radians(), half_el: h_el.to_radians() };
     if u.loc.y > 0 {
         let d = deg(u.loc.y);
         out.push(strip(0.0, hh - d * 0.5, hw, d * 0.5));
@@ -725,7 +743,6 @@ pub fn exclusive_occupancy(st: &Zxr) -> Vec<crate::policy::free::AngularBounds> 
         let d = deg(right);
         out.push(strip(hw - d * 0.5, 0.0, d * 0.5, hh));
     }
-    out
 }
 
 /// The exclusive keyboard override (spec §8 rev 3.12; research/77 §4.2): the topmost mapped

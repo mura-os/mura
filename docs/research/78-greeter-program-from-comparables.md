@@ -460,6 +460,36 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   locked — the hint this program sets), logind unreachable locks, a missing session warns and
   stays resident. Verified on the host from outside the session scope (`Display=2`, resident,
   no lock) and by both VM fixtures.
+- **F11 — a controller-ray dwell on a body-framed surface rides the head's translation
+  (2026-09-28, gate 9 (j)).** The body frame takes the head's *position* every tick and only its
+  yaw lazily (zxr-core §5), so a world-fixed controller ray's hit point on a body-framed plane moves
+  whenever the head translates; the dwell's 2° tolerance at 0.5 m is 1.7 cm, and Monado's
+  simulated HMD drifts ≈ 8 cm/s, so a controller dwell never settles in the harness. A real
+  seated head is far stiller, and a controller has a select button — dwell is the head-ray
+  user's method — so this is recorded, not fixed. The MRTK3 `Follow` solver is the comparable if a
+  lazy *position* ever becomes the wearer's complaint: it clamps the distance to a
+  `MinDistance`..`MaxDistance` band rather than pinning it (`mrtk3/…/Solvers/Follow.cs:93-106, 375`)
+  and eases with `Solver.moveLerpTime` 0.1 s (`Solvers/Solver.cs:40`); a decision for the owner,
+  not a default.
+- **F12 — a layer surface's every mapped commit re-arranges (2026-09-28).** `shell/layer.rs`
+  arranges on each mapped commit; the greeter's caret blink is therefore 2 arranges/s while a
+  field is focused (`arranges=126` over 150 s in the gate 9 (j) run). Each is O(members) integer
+  arithmetic and re-sends nothing unless a size changed, so the budget cost is small; sway
+  arranges only on the initial commit, a committed state change or a map change
+  (`sway/sway/desktop/layer_shell.c:272-275`: `initial_commit || committed || mapped != …`).
+  The fix is a snapshot of `LayerSurfaceCachedState` + the anchoring request in `LayerEntry` and
+  an early return when neither moved. Deferred to the shell-plane workstream; not a G2 blocker.
+- **F13 — a settled ray re-fires on whatever appears under it (2026-09-28).** The dwell fires
+  once per settle and re-arms on motion past the tolerance (KWin's rule, `dwellclicker.cpp:252-277`).
+  A drifting head (the simulator's) crosses 2° about once a second, so the same spot is committed
+  again — and the greeter puts `Log in` where `Next` was, so after `Next` the empty password field
+  was submitted once (`Authentication failed`). A still head does not re-fire; the harness parks
+  the ray on the margin between steps, as a wearer moves their head between fields. Whether the
+  scene should also require the hit point to *leave and re-enter* a target before a second commit
+  (Cardboard's fuse re-arms on gaze exit; MRTK3 `InteractorDwellManager` on hover exit) is a
+  compositor-visible rule only per *member*, not per widget — a client-side question for the
+  greeter's buttons (a widget could ignore a press that arrives without a prior pointer enter)
+  and an owner item.
 
 ## 10. Sources
 

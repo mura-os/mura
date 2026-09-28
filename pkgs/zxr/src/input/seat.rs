@@ -310,6 +310,8 @@ impl Stage for SeatStage {
             self.cursors.set_scale(s);
         }
         self.cursors.tick(now_ns);
+        // the dwell settle's progress fills the ring (a11y.rs → cursor.rs; spatial-input §13)
+        self.cursors.set_dwell_progress(st.input.dwell_progress.map(|(_, p)| p));
         // gaze took the tier: a ray-owned pointer leaves its plane (spatial-input §5; the ray
         // no longer targets) — before the cursor is resolved, so no plane means no cursor
         self.pointer.tick(st.input.tier.map(|t| t.targeting), now_ns, st);

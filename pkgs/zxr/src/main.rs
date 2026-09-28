@@ -654,12 +654,22 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
         if let Some(content) = content {
             let side = image.as_ref().map(|(_, s, h, _)| cursor::panel_side_for(s.w.max(1) as u32, s.h.max(1) as u32, h.x, h.y)).unwrap_or(cursor::CURSOR_PX);
             let fresh = ensure_cursor_panel(st, side)?;
-            if st.ring_tex.is_none() {
-                let mut tex = st.renderer.create_shm_texture(cursor::RETICLE_PX, cursor::RETICLE_PX)?;
-                st.renderer.upload_shm(&mut tex, &cursor::ring_pixels(cursor::RETICLE_PX), cursor::RETICLE_PX * 4)?;
-                st.ring_tex = Some(tex);
+            // the ring texture: uploaded once, and again only when its dwell fill step changes
+            // (at most `FILL_STEPS` uploads of 16 KB per settle; cursor.rs)
+            let fill = if content.has_ring() { layer.fill } else { st.ring_fill };
+            if st.ring_tex.is_none() || fill != st.ring_fill {
+                let pixels = cursor::ring_pixels_filled(cursor::RETICLE_PX, fill);
+                match st.ring_tex.as_mut() {
+                    Some(tex) => st.renderer.upload_shm(tex, &pixels, cursor::RETICLE_PX * 4)?,
+                    None => {
+                        let mut tex = st.renderer.create_shm_texture(cursor::RETICLE_PX, cursor::RETICLE_PX)?;
+                        st.renderer.upload_shm(&mut tex, &pixels, cursor::RETICLE_PX * 4)?;
+                        st.ring_tex = Some(tex);
+                    }
+                }
+                st.ring_fill = fill;
             }
-            let key = state::CursorKey { content, image: image.as_ref().map(|(_, _, _, k)| k.clone()) };
+            let key = state::CursorKey { content, image: image.as_ref().map(|(_, _, _, k)| k.clone()), fill };
             if fresh || st.cursor_key.as_ref() != Some(&key) {
                 st.cursor_key = Some(key);
                 cursor_draw = Some(CursorDraw { content, image: image.map(|(t, s, h, _)| (t, s, h)) });
@@ -1083,7 +1093,7 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             let content = st.input.cursor_layer.as_ref().map(|l| format!("{:?} at=({:.2},{:.2},{:.2}) side_m={:.3}", l.content, l.pose.position.x, l.pose.position.y, l.pose.position.z, l.m_per_px * st.cursor_panel.as_ref().map(|p| p.sc.extent.width).unwrap_or(cursor::CURSOR_PX) as f32)).unwrap_or_else(|| "none".into());
             let panel = st.cursor_panel.as_ref().map(|p| format!("{}x{} passes={}", p.sc.extent.width, p.sc.extent.height, p.passes)).unwrap_or_else(|| "-".into());
             let inputs = st.input.cursor_inputs.map(|i| format!("targeting={:?} owner={:?} on_plane={} reticle={} typing={} client={}", i.targeting, i.owner, i.pointer_on_plane, i.reticle, i.hidden_typing, i.client_name)).unwrap_or_default();
-            s.push_str(&format!("cursor: layer={content} panel={panel} swapchains_created={} layers_submitted={} {inputs}\n", st.journal.cursor_swapchains_created, st.journal.cursor_layers));
+            s.push_str(&format!("cursor: layer={content} fill={}/{} panel={panel} swapchains_created={} layers_submitted={} {inputs}\n", st.input.cursor_layer.as_ref().map(|l| l.fill).unwrap_or(0), input::cursor::FILL_STEPS, st.journal.cursor_swapchains_created, st.journal.cursor_layers));
             s.push_str(&policy::describe(st));
             s.push('\n');
             s.push_str(&policy::seam::describe(st));
@@ -1188,6 +1198,17 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
                 }
                 None => format!("error unknown mode {m}"),
             }
+        }
+        Place(ns, key, val) => {
+            // the same field parser the settings store's rows go through (shell/place.rs)
+            let value = val.parse::<f64>().map(serde_json::Value::from).unwrap_or_else(|_| serde_json::Value::String(val.clone()));
+            let row = st.shell.rows.entry(ns.clone()).or_default();
+            shell::place::set_field(row, &key, &value);
+            if row.is_empty() {
+                st.shell.rows.remove(&ns);
+            }
+            shell::arrange(st);
+            format!("place {ns}.{key}={val}")
         }
         A11y(key, val) => match (key.as_str(), val.as_str()) {
             ("dwell", v) => {
