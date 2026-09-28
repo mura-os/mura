@@ -15,10 +15,29 @@
 
 use super::Frame;
 
+/// A row's frame: a protocol frame, or **`typed`** — the frame of the surface the member types
+/// into (the OSK's default; research/36 §7: every shipping keyboard is bound to the focused
+/// panel — WiVRn a fixed offset below its GUI, xrdesktop per focused window, visionOS/Quest
+/// near the field — and none to the body). Compositor-only: a client cannot request it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlaceFrame {
+    Frame(Frame),
+    Typed,
+}
+
+impl PlaceFrame {
+    pub fn parse(s: &str) -> Option<PlaceFrame> {
+        if s == "typed" {
+            return Some(PlaceFrame::Typed);
+        }
+        Frame::parse(s).map(PlaceFrame::Frame)
+    }
+}
+
 /// One row of the table; every field optional (explicit wearer values only).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlaceRow {
-    pub frame: Option<Frame>,
+    pub frame: Option<PlaceFrame>,
     pub azimuth_deg: Option<f32>,
     pub elevation_deg: Option<f32>,
     pub distance_m: Option<f32>,
@@ -34,16 +53,17 @@ impl PlaceRow {
 
 /// The seed row for a namespace, if one ships.
 ///
-/// - `osk` → body, low-centre, pitched toward the wearer (WayVR's keyboard at (0, −0.65, −0.5) m
-///   pitched −10°, `references/wayvr/wayvr/src/overlays/keyboard/mod.rs:109-110`; research/60
-///   §10 — the body frame is not built yet, so this resolves to head until it is)
+/// - `osk` → `typed`: the frame of the surface it types into (research/36 §7's convergence;
+///   shell-plane §3.2). Under a head- or body-frame scene the OSK is that frame's bottom band
+///   (its own layer-shell anchors); under a world-frame window it hangs below the window
+///   (`typed_pose`, WiVRn's offset). The wayvr body seed this replaced was the one outlier.
 /// - `notifications` → head, upper-right (mako's own anchor; research/36 §4's head-locked toasts)
 /// - `waybar` / `panel` / `bar` → body, bottom (research/60 §9's body-frame dock)
 pub fn seed(namespace: &str) -> Option<PlaceRow> {
     match namespace {
-        "osk" => Some(PlaceRow { frame: Some(Frame::Body), azimuth_deg: Some(0.0), elevation_deg: Some(-35.0), distance_m: Some(0.5), pitch_deg: Some(-10.0), width_deg: None }),
-        "notifications" => Some(PlaceRow { frame: Some(Frame::Head), azimuth_deg: None, elevation_deg: None, distance_m: None, pitch_deg: None, width_deg: None }),
-        "waybar" | "panel" | "bar" => Some(PlaceRow { frame: Some(Frame::Body), azimuth_deg: Some(0.0), elevation_deg: Some(-25.0), distance_m: None, pitch_deg: Some(-5.0), width_deg: None }),
+        "osk" => Some(PlaceRow { frame: Some(PlaceFrame::Typed), ..PlaceRow::default() }),
+        "notifications" => Some(PlaceRow { frame: Some(PlaceFrame::Frame(Frame::Head)), azimuth_deg: None, elevation_deg: None, distance_m: None, pitch_deg: None, width_deg: None }),
+        "waybar" | "panel" | "bar" => Some(PlaceRow { frame: Some(PlaceFrame::Frame(Frame::Body)), azimuth_deg: Some(0.0), elevation_deg: Some(-25.0), distance_m: None, pitch_deg: Some(-5.0), width_deg: None }),
         _ => None,
     }
 }
@@ -59,7 +79,7 @@ pub fn parse_id(id: &str) -> Option<(&str, &str)> {
 pub fn set_field(row: &mut PlaceRow, key: &str, value: &serde_json::Value) {
     let f = || value.as_f64().map(|v| v as f32);
     match key {
-        "frame" => row.frame = value.as_str().and_then(Frame::parse),
+        "frame" => row.frame = value.as_str().and_then(PlaceFrame::parse),
         "azimuth_deg" => row.azimuth_deg = f(),
         "elevation_deg" => row.elevation_deg = f(),
         "distance_m" => row.distance_m = f(),
@@ -85,7 +105,7 @@ mod tests {
         let mut r = PlaceRow::default();
         set_field(&mut r, "frame", &serde_json::json!("world"));
         set_field(&mut r, "elevation_deg", &serde_json::json!(-20.0));
-        assert_eq!(r.frame, Some(Frame::World));
+        assert_eq!(r.frame, Some(PlaceFrame::Frame(Frame::World)));
         assert_eq!(r.elevation_deg, Some(-20.0));
         assert_eq!(r.azimuth_deg, None);
         assert!(!r.is_empty());
@@ -93,7 +113,10 @@ mod tests {
 
     #[test]
     fn seeds_are_by_namespace_not_program() {
-        assert_eq!(seed("osk").and_then(|r| r.frame), Some(Frame::Body));
+        assert_eq!(seed("osk").and_then(|r| r.frame), Some(PlaceFrame::Typed), "the OSK follows the surface it types into");
+        assert_eq!(seed("bar").and_then(|r| r.frame), Some(PlaceFrame::Frame(Frame::Body)));
+        assert_eq!(PlaceFrame::parse("typed"), Some(PlaceFrame::Typed));
+        assert_eq!(PlaceFrame::parse("world"), Some(PlaceFrame::Frame(Frame::World)));
         assert!(seed("something-else").is_none());
     }
 }

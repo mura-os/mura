@@ -26,6 +26,7 @@
 //! client. No thread, no per-tick work.
 
 pub mod anchoring;
+pub mod body;
 pub mod filter;
 pub mod layer;
 pub mod lock;
@@ -51,7 +52,7 @@ use crate::state::Zxr;
 use crate::xr::math;
 
 pub use anchoring::Frame;
-pub use place::PlaceRow;
+pub use place::{PlaceFrame, PlaceRow};
 
 // ---------------------------------------------------------------------------------------------
 // The member's surface: one of the three roles a plane can carry
@@ -217,11 +218,17 @@ pub struct Shell {
     pub focus_overrides: u64,
     pub last_override: Option<MemberId>,
     pub lock: lock::LockState,
+    /// the body frame's yaw and re-seat timer (body.rs)
+    pub body: body::Body,
+    /// a `typed` member hanging below a world-frame window: re-posed when the window moves
+    pub typed_follow: Option<TypedFollow>,
+    /// the typed surface's member at the last arrange: a change re-arranges (the OSK's frame moves)
+    pub typed_member: Option<MemberId>,
 }
 
 impl Shell {
     pub fn new() -> Self {
-        Shell { frames_available: (1 << Frame::Head as u32) | (1 << Frame::World as u32), ..Default::default() }
+        Shell { frames_available: (1 << Frame::Head as u32) | (1 << Frame::Body as u32) | (1 << Frame::World as u32), ..Default::default() }
     }
 
     pub fn next_serial(&mut self) -> u64 {
@@ -245,9 +252,8 @@ impl Shell {
         self.rects.iter().find(|r| r.frame == frame)
     }
 
-    /// The frame a request resolves to today: only head and world exist (spec §5), so hand →
-    /// body → head and docked → head (the protocol's fallbacks, with body's fallback head until
-    /// the body frame is built — flagged, research/77 §8).
+    /// The frame a request resolves to: head, body and world exist (spec §5; the body derived from
+    /// the head, body.rs); hand → body and docked → head are the protocol's fallbacks.
     pub fn resolve_frame(&self, wanted: Frame) -> Frame {
         if self.frames_available & (1 << wanted as u32) != 0 {
             return wanted;
@@ -266,10 +272,11 @@ impl Shell {
     }
 
     /// The `FrameId` in the scene for a resolved frame.
-    pub fn frame_id(&self, st_world: FrameId, st_head: FrameId, frame: Frame) -> FrameId {
+    pub fn frame_id(&self, scene: &crate::scene::Scene<crate::state::Payload>, frame: Frame) -> FrameId {
         match frame {
-            Frame::World => st_world,
-            _ => st_head,
+            Frame::World => scene.world,
+            Frame::Body => scene.body,
+            _ => scene.head,
         }
     }
 }
@@ -442,19 +449,32 @@ fn frame_rect(st: &Zxr, frame: Frame) -> FrameRect {
 pub fn arrange(st: &mut Zxr) {
     st.shell.arranges += 1;
     st.journal.layer_arranges += 1;
+    st.shell.typed_follow = None;
     // resolve every entry's frame first (row > client > head)
+    let typed = typed_target(st);
+    st.shell.typed_member = typed.map(|t| t.member);
+    let mut typed_members: Vec<MemberId> = Vec::new();
     let frames: Vec<Frame> = {
         let mut fs = Vec::new();
         for i in 0..st.shell.layers.len() {
             let e = &st.shell.layers[i];
             // the wearer's row > the client's request > the seed row > head (shell-plane §2.6:
             // seeds are the defaults for clients that ask nothing — the unaware ones)
-            let wanted = st.shell.rows.get(&e.namespace).and_then(|r| r.frame).or_else(|| anchoring::requested_frame(e.surface.wl_surface())).or_else(|| place::seed(&e.namespace).and_then(|r| r.frame)).unwrap_or(Frame::Head);
+            let asked = st.shell.rows.get(&e.namespace).and_then(|r| r.frame).or_else(|| anchoring::requested_frame(e.surface.wl_surface()).map(PlaceFrame::Frame)).or_else(|| place::seed(&e.namespace).and_then(|r| r.frame));
+            let wanted = match asked {
+                Some(PlaceFrame::Frame(f)) => f,
+                // `typed`: the frame of the surface being typed into; without one, where it was
+                Some(PlaceFrame::Typed) => {
+                    typed_members.push(e.member);
+                    typed.map(|t| t.frame).unwrap_or(e.frame)
+                }
+                None => Frame::Head,
+            };
             let f = st.shell.resolve_frame(wanted);
             st.shell.layers[i].frame = f;
             // the member's place follows the frame
             let member = st.shell.layers[i].member;
-            let fid = st.shell.frame_id(st.scene.world, st.scene.head, f);
+            let fid = st.shell.frame_id(&st.scene, f);
             if let Some(place) = st.scene.get(member).map(|m| m.place) {
                 st.scene.reparent_place(place, fid);
             }
@@ -493,7 +513,15 @@ pub fn arrange(st: &mut Zxr) {
                 (e.surface.clone(), e.member, e.namespace.clone())
             };
             let s = surface.cached_state();
-            let bx = layer_box(&s, full, usable);
+            // a `typed` member under a world window is arranged against the *window's* rectangle
+            // (WiVRn sizes its keyboard to its GUI; a 1920-px keyboard beside a 700-px window is
+            // not "bound to the panel"), and reserves nothing from the world frame
+            let typed_window = typed.filter(|t| t.window && typed_members.contains(&member));
+            let window_rect = typed_window.and_then(|t| st.logical_size(t.member)).map(|(w, h)| Rectangle::from_size((w, h).into()));
+            let bx = match window_rect {
+                Some(wr) => layer_box(&s, wr, wr),
+                None => layer_box(&s, full, usable),
+            };
             // the exclusive band: the client's zone, or its exclusive angle in the same units
             let zone_px = match s.exclusive_zone {
                 ExclusiveZone::Exclusive(z) => {
@@ -507,7 +535,7 @@ pub fn arrange(st: &mut Zxr) {
                 _ => 0,
             };
             let mapped = st.shell.layers[i].mapped;
-            if mapped && zone_px > 0 && frame != Frame::World {
+            if mapped && zone_px > 0 && frame != Frame::World && window_rect.is_none() {
                 shrink_usable(&s, zone_px, &mut usable);
             }
             // the size the client is asked for (arrange → configure, research/77 §2.2)
@@ -539,10 +567,24 @@ pub fn arrange(st: &mut Zxr) {
                 let w = 2.0 * dist * (width_deg.to_radians() * 0.5).tan();
                 size_m = [w, w * bx.size.h as f32 / bx.size.w as f32];
             }
-            let pose = match (row.is_some(), client_pose) {
+            let mut pose = match (row.is_some(), client_pose) {
                 (false, Some(p)) => p,
                 _ => pose_at(az, el, dist, pitch),
             };
+            // a `typed` member under a world-frame window hangs below that window (WiVRn's
+            // offset); its plane is sized at the window's distance so its pixels match the frame's
+            if let Some(t) = typed_window {
+                {
+                    if let (Some(win), Some(wsize)) = (st.scene.world_pose(t.member), st.scene.get(t.member).and_then(|m| match m.shape { Shape::Plane { size } => Some(size), _ => None })) {
+                        let head = st.input.head.map(|h| [h.position.x, h.position.y, h.position.z]).unwrap_or([0.0; 3]);
+                        let d = [win.position.x - head[0], win.position.y - head[1], win.position.z - head[2]];
+                        let wdist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(0.2);
+                        size_m = plane_size_px(bx.size, rect.ppd, wdist);
+                        pose = typed_pose(win, wsize, size_m);
+                        st.shell.typed_follow = Some(TypedFollow { osk: member, window: t.member, last: win });
+                    }
+                }
+            }
             st.scene.set_local(member, pose);
             st.scene.set_shape(member, Shape::Plane { size: size_m });
             // the frame extent event when it changed (anchoring.rs keeps the last sent)
@@ -555,6 +597,93 @@ pub fn arrange(st: &mut Zxr) {
     st.shell.rects = rects;
     // the exclusive override may have moved (a mapped/unmapped exclusive surface)
     crate::input::focus::layer_focus_changed(st);
+}
+
+/// The surface being typed into, as the arrangement sees it (`PlaceFrame::Typed`; research/36 §7:
+/// every shipping keyboard is bound to the panel with the focused field). smithay's *active*
+/// text input (an enabled `zwp_text_input_v3`) names the surface; its member gives the frame —
+/// a layer member's arranged frame, a window's the world, the lock surface's the head.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TypedTarget {
+    pub member: MemberId,
+    pub frame: Frame,
+    /// a window in the world: the typed member hangs below it (`typed_pose`)
+    pub window: bool,
+}
+
+pub fn typed_target(st: &Zxr) -> Option<TypedTarget> {
+    let mut typed: Option<WlSurface> = None;
+    st.seat.text_input().with_active_text_input(|_, surface| {
+        if typed.is_none() {
+            typed = Some(surface.clone());
+        }
+    });
+    let member = st.member_for_root(&typed?)?;
+    if let Some(e) = st.shell.entry(member) {
+        return Some(TypedTarget { member, frame: e.frame, window: false });
+    }
+    let m = st.scene.get(member)?;
+    if m.m.window.is_window() {
+        Some(TypedTarget { member, frame: Frame::World, window: true })
+    } else {
+        Some(TypedTarget { member, frame: Frame::Head, window: false })
+    }
+}
+
+/// A `typed` member hanging below a world-frame window, and the window pose it was posed for.
+#[derive(Clone, Copy, Debug)]
+pub struct TypedFollow {
+    pub osk: MemberId,
+    pub window: MemberId,
+    pub last: xr::Posef,
+}
+
+/// WiVRn's keyboard offset from the panel it types into (`wivrn/client/constants.h:87-88`:
+/// `keyboard_position = (0, −0.3, 0.1)`, `keyboard_pitch = −0.6` rad): hinged below the panel's
+/// bottom edge with a small gap, brought 0.1 m toward the wearer, tilted −0.6 rad to face them.
+/// The offsets scale with the two planes' heights rather than WiVRn's fixed GUI.
+pub const TYPED_GAP_M: f32 = 0.05;
+pub const TYPED_TOWARD_M: f32 = 0.1;
+pub const TYPED_PITCH_RAD: f32 = -0.6;
+
+pub fn typed_pose(window: xr::Posef, window_size: [f32; 2], osk_size: [f32; 2]) -> xr::Posef {
+    let kh = osk_size[1] * 0.5;
+    // the OSK's centre, in the window's plane space: below the bottom edge by the gap and the
+    // pitched half-height, and out toward the wearer (+Z is toward the wearer for a facing plane)
+    let local = [0.0, -(window_size[1] * 0.5 + TYPED_GAP_M + kh * TYPED_PITCH_RAD.cos()), TYPED_TOWARD_M + kh * (-TYPED_PITCH_RAD).sin()];
+    let p = math::pose_apply(window, local);
+    xr::Posef { orientation: math::quat_mul(window.orientation, quat_pitch(TYPED_PITCH_RAD)), position: xr::Vector3f { x: p[0], y: p[1], z: p[2] } }
+}
+
+/// Per tick: a `typed` member follows the window it hangs below when that window moves (a grab,
+/// a lazy-follow). One pose compare; a re-pose only on change.
+pub fn typed_tick(st: &mut Zxr) {
+    // the typed surface changed (a field focused in another window): the typed members' frame
+    // follows it — one arrange, only when a layer member exists to move
+    if !st.shell.layers.is_empty() {
+        let now = typed_target(st).map(|t| t.member);
+        if now.is_some() && now != st.shell.typed_member {
+            st.shell.typed_member = now;
+            arrange(st);
+        }
+    }
+    let Some(f) = st.shell.typed_follow else { return };
+    let Some(win) = st.scene.world_pose(f.window) else { return };
+    let moved = |a: xr::Posef, b: xr::Posef| {
+        (a.position.x - b.position.x).abs() > 1e-4 || (a.position.y - b.position.y).abs() > 1e-4 || (a.position.z - b.position.z).abs() > 1e-4 || (a.orientation.x - b.orientation.x).abs() > 1e-4 || (a.orientation.y - b.orientation.y).abs() > 1e-4 || (a.orientation.z - b.orientation.z).abs() > 1e-4 || (a.orientation.w - b.orientation.w).abs() > 1e-4
+    };
+    if !moved(win, f.last) {
+        return;
+    }
+    let (Some(wsize), Some(osize)) = (
+        st.scene.get(f.window).and_then(|m| match m.shape { Shape::Plane { size } => Some(size), _ => None }),
+        st.scene.get(f.osk).and_then(|m| match m.shape { Shape::Plane { size } => Some(size), _ => None }),
+    ) else { return };
+    st.scene.set_local(f.osk, typed_pose(win, wsize, osize));
+    if let Some(tf) = st.shell.typed_follow.as_mut() {
+        tf.last = win;
+    }
+    st.journal.osk_follows += 1;
 }
 
 fn box_centre_deg(bx: Rectangle<i32, Logical>, rect: &FrameRect) -> (f32, f32) {
@@ -666,7 +795,7 @@ pub fn describe(st: &Zxr) -> String {
         s.push_str(&format!("zone: frame={:?} rect={}x{} extent={:.1}x{:.1}deg ppd={:.2} distance={:.2} usable={}x{}+{}+{}\n", r.frame, r.size.w, r.size.h, eh, ev, r.ppd, r.distance_m, r.usable.size.w, r.usable.size.h, r.usable.loc.x, r.usable.loc.y));
     }
     s.push_str(&format!(
-        "shell-counters: layers={} arranges={} configures={} focus_overrides={} override={:?} restricted={} trusted={} trusted_lost={} binds_filtered={} motion_deduped={} lock={:?} relocks={} triggers={} mode={:?} frames={} members_composed={} osk_band={:?} osk_raised={:?} osk_raises={} osk_restarts={}\n",
+        "shell-counters: layers={} arranges={} configures={} focus_overrides={} override={:?} restricted={} trusted={} trusted_lost={} binds_filtered={} motion_deduped={} lock={:?} relocks={} triggers={} mode={:?} frames={} members_composed={} osk_band={:?} osk_raised={:?} osk_raises={} osk_restarts={} body_yaw_deg={:.1} body_reseat_ticks={} typed={:?} osk_follows={}\n",
         st.shell.layers.len(),
         st.shell.arranges,
         st.shell.configures,
@@ -686,7 +815,11 @@ pub fn describe(st: &Zxr) -> String {
         st.shell.layers.iter().find(|e| e.namespace == "osk").and_then(|e| st.scene.band(e.member)),
         st.shell.layers.iter().find(|e| e.namespace == "osk").and_then(|e| st.scene.raised(e.member)),
         st.journal.osk_raises,
-        st.journal.osk_restarts
+        st.journal.osk_restarts,
+        st.shell.body.yaw.to_degrees(),
+        st.journal.body_reseat_ticks,
+        st.shell.typed_member.map(|m| m.0.index()),
+        st.journal.osk_follows
     ));
     s
 }
@@ -702,6 +835,26 @@ mod tests {
 
     fn m0() -> Margins {
         Margins { top: 0, right: 0, bottom: 0, left: 0 }
+    }
+
+    /// The OSK under a world window (WiVRn's offset): below its bottom edge, toward the wearer,
+    /// pitched to face them; it moves with the window.
+    #[test]
+    fn typed_pose_hangs_below_the_window_and_tilts_toward_the_wearer() {
+        // a 1.0 × 0.6 m window facing the wearer (+Z) at 1.5 m
+        let win = xr::Posef { orientation: xr::Quaternionf::IDENTITY, position: xr::Vector3f { x: 0.2, y: 1.4, z: -1.5 } };
+        let osk = [1.0, 0.3];
+        let p = typed_pose(win, [1.0, 0.6], osk);
+        assert!((p.position.x - 0.2).abs() < 1e-6, "centred under the window");
+        assert!(p.position.y < 1.4 - 0.3 - TYPED_GAP_M, "below the bottom edge: {}", p.position.y);
+        assert!(p.position.z > -1.5 + TYPED_TOWARD_M - 1e-6, "brought toward the wearer: {}", p.position.z);
+        // the plane's normal (+Z) now points up-and-toward: a negative pitch about +X lifts it
+        let n = math::rotate(p.orientation, [0.0, 0.0, 1.0]);
+        assert!(n[1] > 0.5 && n[2] > 0.5, "tilted toward a wearer looking down: {n:?}");
+        // a translated window carries the OSK with it
+        let win2 = xr::Posef { position: xr::Vector3f { x: 0.7, ..win.position }, ..win };
+        let p2 = typed_pose(win2, [1.0, 0.6], osk);
+        assert!((p2.position.x - p.position.x - 0.5).abs() < 1e-6);
     }
 
     #[test]

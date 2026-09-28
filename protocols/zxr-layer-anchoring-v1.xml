@@ -59,8 +59,14 @@
     <enum name="frame">
       <description summary="reference frames for layer surfaces">
         The frame a layer surface is positioned in. Head-framed surfaces
-        follow the view; body-framed surfaces follow the user's body
-        position and yaw without following head pitch or roll; hand-framed
+        follow the view. Body-framed surfaces follow the user's body: no
+        headset tracks a torso, so the body frame is derived from the
+        head — its origin is the head's position, its orientation the
+        head's yaw with pitch and roll removed, and that yaw re-seats
+        lazily (after the head has turned past a threshold for a delay,
+        at a rate, stopping within a band) rather than every frame; a
+        body-framed surface therefore stays put while the wearer looks
+        around and comes along when they turn. Hand-framed
         surfaces follow a tracked hand or its held controller; world-framed
         surfaces hold a pose in the local reference space; docked-framed
         surfaces are presented on the docked output's plane (and only exist

@@ -96,7 +96,7 @@ in
     # watch looks (`$XDG_CONFIG_HOME/mura/settings`).
     mura.settings.templates."shell.place" = {
       keys = {
-        frame = { type = "enum"; values = [ "head" "body" "hand_left" "hand_right" "world" "docked" ]; default = "head"; description = "The anchoring frame (zxr-layer-anchoring-v1's enum). An unavailable frame falls back per the protocol (hand → body, docked → head)."; };
+        frame = { type = "enum"; values = [ "head" "body" "hand_left" "hand_right" "world" "docked" "typed" ]; default = "head"; description = "The anchoring frame (zxr-layer-anchoring-v1's enum), or `typed`: the frame of the surface being typed into — the OSK's seed (research/36 §7: every shipping keyboard is bound to the focused panel). An unavailable frame falls back per the protocol (hand → body, docked → head)."; };
         azimuth_deg = { type = "double"; default = 0.0; range = { min = -180.0; max = 180.0; }; description = "Centre azimuth in the frame, degrees (positive = right)."; };
         elevation_deg = { type = "double"; default = 0.0; range = { min = -90.0; max = 90.0; }; description = "Centre elevation in the frame, degrees (positive = up)."; };
         distance_m = { type = "double"; default = 0.5; range = { min = 0.2; max = 5.0; }; description = "Presentation distance from the frame origin, metres."; };
