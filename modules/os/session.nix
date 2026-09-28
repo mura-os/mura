@@ -18,7 +18,8 @@
 #     XDG_VTNR to $XDG_RUNTIME_DIR/mura/session.env, the EnvironmentFile of
 #     mura-compositor.service, so libseat's logind backend finds the session — finding F1;
 #   - readiness: mura-compositor.service is Type=notify with TimeoutStartSec from the contract;
-#     the compositor runs `mura-session finalize` (sway stand-in) or sd_notify natively (zxr);
+#     zxr spawns `mura-session finalize` once its socket is bound (READY=1 after the variables
+#     are published) and sends STOPPING=1 itself (session-bootstrap rev 4 §7);
 #   - lifetime: `mura-session start` waits on mura-session.target and stops it on
 #     SIGTERM/SIGHUP, returning only when the session is down — spec §4.6/4.7.
 # Why not uwsm itself: it is 6.4k lines of Python and three interpreter starts on every login
@@ -34,9 +35,12 @@ let
   cfg = config.mura.xr.session;
   shell = config.mura.xr.shell;
 
-  # STAND-IN — replaced at M1 by the zxr session binary. Until then every mura.xr.shell
-  # value lands in sway, as ExecStart of mura-compositor.service.
-  compositorBinary = "${pkgs.sway}/bin/sway";
+  # The compositor (G3; specs/zxr-core.md §9 rev 3.15): zxr as ExecStart of
+  # mura-compositor.service, with the OSK as its socketpair child in every mode (shell-plane
+  # §3.2 — KWin's input-method shape). Readiness: zxr spawns `mura-session finalize` once its
+  # socket is bound (session-bootstrap rev 4 §7) and sends STOPPING=1 itself. sway was the
+  # D4–G2 stand-in in this slot.
+  compositorCommand = "${lib.getExe pkgs.mura.zxr} --osk ${lib.getExe pkgs.mura.osk}";
 
   # The session command greetd execs (both profiles). The compositor is not an argument: it
   # is the static unit's ExecStart. greetd's config and gtkgreet's session list read
@@ -89,8 +93,9 @@ in
         # No unit-private PATH: the compositor (and everything it execs) inherits the user
         # manager's session PATH from environment.d/50-systemd-path.conf — /run/wrappers,
         # the per-user profile, the system profile — like any desktop session unit. NixOS's
-        # default `path` for services would otherwise pin PATH to coreutils+systemd and sway's
-        # `exec` lines (which run through `sh -c`) fail with ENOENT (found at D4 rev 3).
+        # default `path` for services would otherwise pin PATH to coreutils+systemd, and what the
+        # compositor spawns through `sh -c` (the OSK, `mura-session finalize`, clients) would fail
+        # with ENOENT (found at D4 rev 3 with sway's `exec` lines).
         path = lib.mkForce [ ];
         unitConfig = endsSession // {
           PropagatesStopTo = "mura-session.target graphical-session.target";
@@ -108,8 +113,7 @@ in
         serviceConfig = {
           Type = "notify";
           NotifyAccess = "all";
-          # STAND-IN — replaced at M1 by zxr, which notifies READY=1 natively.
-          ExecStart = compositorBinary;
+          ExecStart = compositorCommand;
           # The session-specific class (spec §3), written by `mura-session start` step 2.
           EnvironmentFile = "-%t/mura/session.env";
           Restart = "on-failure";
@@ -223,20 +227,6 @@ in
         MURA_PROFILE=${profileName}
         XDG_SESSION_TYPE=wayland
       '';
-
-      ## Stand-in session body --------------------------------------------------------------
-      # sway's NixOS module wires the Wayland session basics (portals, polkit agent env) the
-      # real session will provide itself.
-      programs.sway.enable = lib.mkDefault true;
-      # STAND-IN — replaced at M1 by zxr. The NixOS sway config starts sway-session.target →
-      # graphical-session.target itself, *before* our readiness ordering; under mura-session
-      # the compositor must instead publish its variables and signal readiness through
-      # `mura-session finalize` (spec §4.5). Override the NixOS drop-in.
-      environment.etc."sway/config.d/nixos.conf".source = lib.mkForce (pkgs.writeText "nixos.conf" ''
-        # STAND-IN (D4) — sway under mura-session: export the compositor-created variables to
-        # the user manager and D-Bus, then notify mura-compositor.service READY=1.
-        exec ${lib.getExe pkgs.mura.session} finalize SWAYSOCK I3SOCK
-      '');
 
       # The greeter's session list (gtkgreet's and tuigreet's `environments` file, read by
       # mura-greeter `sessions.rs`): one session, through the wrapper.

@@ -2,15 +2,16 @@
 # dev mode): the Mura session as a plain window on your desktop, with Monado
 # running the simulated HMD. No VM, no image; iteration cost = process relaunch.
 #
-#   nix run .#dev-session               # nested session window + simulated Monado
+#   nix run .#dev-session               # zxr as the session against simulated Monado; foot inside;
+#                                       # Monado's mirror window is the view
 #   nix run .#dev-session -- --client   # + xrgears rendering against the runtime
 #   nix run .#dev-session -- --rotate   # canned head motion in the simulated HMD
-#   nix run .#dev-session -- --zxr      # zxr (R0) as the session against Monado; foot inside
-#   nix run .#dev-session -- --zxr --qwerty  # + the HMD and controllers driven by keyboard/mouse
-#                                         # in Monado's debug window (click it for focus)
+#   nix run .#dev-session -- --qwerty   # the HMD and controllers driven by keyboard/mouse in
+#                                       # Monado's debug window (click it for focus)
+#   nix run .#dev-session -- --sway     # the 2D stand-in (sway) in the slot instead — a
+#                                       # comparison fixture, never shipped
 #
-# The nested compositor is sway until zxr's M1 lands; `--zxr` runs zxr in that slot (R0
-# bring-up, specs/zxr-core.md §12), with Monado's mirror window as the only view of it.
+# zxr is the session compositor (G3, specs/zxr-core.md §9); `--zxr` is accepted and a no-op.
 { lib
 , writeShellApplication
 , writeText
@@ -56,10 +57,11 @@ writeShellApplication {
 
       --client       also launch xrgears inside the session (OpenXR smoke);
                      implies --mirror so you can see the XR view
-      --zxr          run zxr (R0) as the session instead of sway: foot spawned inside,
-                     Monado's mirror window shows the composited view; implies --mirror.
+      --sway         the 2D stand-in (sway) in the compositor slot instead of zxr
+      --zxr          (the default) zxr as the session: foot spawned inside, Monado's mirror
+                     window shows the composited view; implies --mirror.
                      Extra zxr flags go after "--" (e.g. -- --frames 600 --journal /tmp/j)
-      --x11          with --zxr: also start xwayland-satellite on :7 and spawn xterm (gate 4)
+      --x11          also start xwayland-satellite on :7 and spawn xterm (gate 4)
       --mirror       show Monado's XR output window (black until a client renders)
       --no-mirror    force the windowless null compositor even with --client
       --rotate       simulated HMD follows a canned rotation (SIMULATED_ROTATE)
@@ -75,11 +77,12 @@ writeShellApplication {
     USAGE
     }
 
-    client=0 rotate=0 controllers=0 monado_on=1 verbose=0 mirror=auto zxr=0 x11=0 qwerty=0
+    client=0 rotate=0 controllers=0 monado_on=1 verbose=0 mirror=auto zxr=1 x11=0 qwerty=0
     zxr_args=()
     while [ $# -gt 0 ]; do a=$1; shift; case "$a" in
       --client) client=1 ;;
       --zxr) zxr=1 ;;
+      --sway) zxr=0 ;;
       --x11) x11=1 ;;
       --mirror) mirror=1 ;;
       --no-mirror) mirror=0 ;;
@@ -185,7 +188,7 @@ writeShellApplication {
       # The control socket is announced in its log (zxr-<pid>.sock under XDG_RUNTIME_DIR).
       xw=()
       [ "$x11" = 1 ] && xw=(--xwayland :7 --spawn "xterm -fa Monospace -fs 14")
-      echo "[session] starting zxr (R0) with foot inside; SIGUSR1 dumps the frame journal"
+      echo "[session] starting zxr with foot inside; SIGUSR1 dumps the frame journal"
       # Nested on a host: the host session owns the seat, so zxr must not open a libseat session
       # (it would take the desktop's input devices). Peripherals reach the nested zxr over EI
       # (zxr is the EIS server) and the test injector (`zxr ctl source …`; spec §8).
@@ -195,7 +198,7 @@ writeShellApplication {
       exit $?
     fi
 
-    echo "[session] starting nested compositor (sway; Alt+Return = terminal, Alt+Shift+E = quit)"
+    echo "[session] starting the 2D stand-in (sway; Alt+Return = terminal, Alt+Shift+E = quit)"
     COMPOSITOR_CMD=(sway --config ${swayConfig})
     unset SWAYSOCK
     "''${COMPOSITOR_CMD[@]}"

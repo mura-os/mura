@@ -12,9 +12,9 @@
     machine.start()
     machine.wait_for_unit("multi-user.target")
 
-    with subtest("D0: greetd autologins the passwordless mura straight into the stand-in session"):
+    with subtest("D0: greetd autologins the passwordless mura straight into the zxr session"):
         machine.wait_for_unit("greetd.service")
-        machine.wait_until_succeeds("pgrep -u mura -x sway", timeout=120)
+        machine.wait_until_succeeds("pgrep -u mura -x zxr", timeout=120)
         machine.succeed("loginctl list-sessions --no-legend | grep -w mura")
         machine.screenshot("default-image-session")
 
@@ -38,15 +38,15 @@
         machine.succeed(userctl + "is-active monado.socket")      # the session's own Monado, socket-activated
         # no ordering cycle in the user manager either (target Wants= imply After=)
         machine.fail("journalctl -b --no-pager _UID=1000 | grep -q 'ordering cycle'")
-        # sway is inside the unit, not a child of greetd
-        cg = machine.succeed("cat /proc/$(pgrep -u mura -x sway | head -1)/cgroup").strip()
-        assert "mura-compositor.service" in cg, f"sway cgroup: {cg}"
+        # zxr is inside the unit, not a child of greetd
+        cg = machine.succeed("cat /proc/$(pgrep -u mura -x zxr | head -1)/cgroup").strip()
+        assert "mura-compositor.service" in cg, f"zxr cgroup: {cg}"
         # the F1 regression: seat acquisition through libseat's XDG_SESSION_ID fallback — the
         # session vars reach the compositor UNIT via the wrapper's session.env (0600), never the
         # user manager itself (which outlives sessions)
         machine.succeed("grep -q '^XDG_SESSION_ID=' /run/user/1000/mura/session.env")
         assert machine.succeed("stat -c %a /run/user/1000/mura/session.env").strip() == "600"
-        machine.succeed("tr '\\0' '\\n' < /proc/$(pgrep -u mura -x sway | head -1)/environ | grep '^XDG_SESSION_ID=' >/dev/null")
+        machine.succeed("tr '\\0' '\\n' < /proc/$(pgrep -u mura -x zxr | head -1)/environ | grep '^XDG_SESSION_ID=' >/dev/null")
         machine.fail(userctl + "show-environment | grep -q '^XDG_SESSION_ID='")
         machine.fail("journalctl -b --no-pager _UID=1000 | grep -qi 'libseat.*\\(fail\\|error\\|could not\\)'")
 
@@ -99,9 +99,9 @@
 
     with subtest("D4: a compositor crash restarts it inside the same session"):
         sid_before = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
-        pid_before = machine.succeed("pgrep -u mura -x sway | head -1").strip()
-        machine.succeed("pkill -9 -u mura -x sway")
-        machine.wait_until_succeeds(f"pgrep -u mura -x sway | grep -qv '^{pid_before}$'", timeout=60)
+        pid_before = machine.succeed("pgrep -u mura -x zxr | head -1").strip()
+        machine.succeed("pkill -9 -u mura -x zxr")
+        machine.wait_until_succeeds(f"pgrep -u mura -x zxr | grep -qv '^{pid_before}$'", timeout=60)
         machine.wait_until_succeeds(userctl + "is-active mura-compositor.service", timeout=60)
         machine.wait_until_succeeds(userctl + "is-active graphical-session.target", timeout=60)
         sid_after = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
@@ -170,6 +170,48 @@
         machine.succeed("su - mura -c \"echo s3cret | sudo -S true\"")
         machine.succeed(ssh_pw.format(pw="s3cret"))           # and SSH by password now works
 
+    # zxr's control socket in mura's session (`zxr ctl`; spec §11)
+    ZXR_CTL = "su -s /bin/sh mura -c '${pkgs.mura.zxr}/bin/zxr ctl $(ls -t /run/user/1000/zxr-*.sock | head -1) {}'"
+    def user(cmd):
+        # in mura's session (its manager environment: session bus, XDG dirs); absolute paths
+        return machine.succeed(f"systemd-run --quiet --user -M mura@ --pipe --wait --collect {cmd} 2>&1")
+
+    with subtest("G3: the lock/unlock cycle on the real stack — loginctl lock-session -> mura-greeter-lock locks zxr; the password typed at the VT unlocks"):
+        sid = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
+        machine.succeed(userctl + "is-active mura-greeter-lock.service")
+        listing = machine.succeed(ZXR_CTL.format("list"))
+        assert "mode=Normal" in listing and 'lock="unlocked"' in listing, listing
+        assert "ns=osk layer=Top frame=body" in listing, listing  # the OSK is zxr's child in the session too
+        machine.succeed(f"loginctl lock-session {sid}")
+        # ext-session-lock: the lock unit's surface is composed, the mode gate closes (I1), logind's hint is set (I2)
+        machine.wait_until_succeeds(ZXR_CTL.format("list") + " | grep -q 'mode=Locked'", timeout=30)
+        machine.wait_until_succeeds(f"loginctl show-session {sid} -p LockedHint --value | grep -qx yes", timeout=30)
+        listing = machine.succeed(ZXR_CTL.format("list"))
+        assert 'lock="locked"' in listing, listing
+        # a wrong password: the conversation fails, the lock stays (mura-authd through PAM mura-lock)
+        machine.send_chars("wrong\n")
+        machine.sleep(4)
+        assert "mode=Locked" in machine.succeed(ZXR_CTL.format("list"))
+        machine.succeed(f"loginctl show-session {sid} -p LockedHint --value | grep -qx yes")
+        # the right one: unlock_and_destroy -> Normal, the hint cleared, the same session
+        machine.send_chars("s3cret\n")
+        machine.wait_until_succeeds(ZXR_CTL.format("list") + " | grep -q 'mode=Normal'", timeout=30)
+        machine.wait_until_succeeds(f"loginctl show-session {sid} -p LockedHint --value | grep -qx no", timeout=30)
+        machine.succeed(userctl + "is-active mura-greeter-lock.service mura-compositor.service")
+        machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")
+
+    with subtest("G3: the idle rung — session.lock.on_idle with a short delay locks the session; the trigger is zxr's (loginctl lock-session)"):
+        S = "${pkgs.mura.settingsd}/bin/mura-settings"
+        user(f"{S} set session.lock.on_idle true")
+        user(f"{S} set session.idle.delay_s 5")
+        machine.send_chars("x")                                   # one event, so the idle clock exists
+        machine.wait_until_succeeds(ZXR_CTL.format("list") + " | grep -q 'mode=Locked'", timeout=60)
+        machine.succeed(f"loginctl show-session {sid} -p LockedHint --value | grep -qx yes")
+        machine.send_chars("s3cret\n")
+        machine.wait_until_succeeds(ZXR_CTL.format("list") + " | grep -q 'mode=Normal'", timeout=30)
+        user(f"{S} reset session.lock.on_idle")
+        user(f"{S} reset session.idle.delay_s")
+
     with subtest("D2: faillock really locks after the configured failures, counters on /persist"):
         machine.succeed("test -d /persist/mura/state/faillock")
         for _ in range(5):
@@ -184,7 +226,7 @@
         machine.succeed("faillock --dir /var/lib/mura/state/faillock --user mura --reset")
         machine.succeed(ssh_pw.format(pw="s3cret"))
 
-    with subtest("D5: mura-authd conformance (session-auth §6 items 1, 2, 3, 7) against the sway session"):
+    with subtest("D5: mura-authd conformance (session-auth §6 items 1, 2, 3, 7) against the zxr session"):
         for scenario in ("basic", "stale-nonce", "cancel", "kill", "revoked"):
             print(machine.succeed(harness.format(args=f"--scenario {scenario} --password s3cret")))
         print(machine.succeed(harness.format(args="--scenario slow --service mura-lock-slow --password s3cret")))
@@ -293,6 +335,6 @@
         machine.succeed("systemctl show -p Result mura-f1-seed-state.service | grep -q 'Result=success'")
         # the unit's condition must have failed on this boot (skipped, not re-executed)
         machine.succeed("systemctl show -p ConditionResult mura-f1-seed-state.service | grep -q 'ConditionResult=no'")
-        machine.wait_until_succeeds("pgrep -u mura -x sway", timeout=120)
+        machine.wait_until_succeeds("pgrep -u mura -x zxr", timeout=120)
   '';
 }

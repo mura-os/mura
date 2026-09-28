@@ -7,9 +7,9 @@
 # `nix flake check`; each test boots a VM and takes minutes).
 #
 # Test-only overrides (never in a fixture or a shipped image):
-#   - `-vga none -device virtio-gpu-pci`: cage/wlroots need a real DRM device in the test
-#     VM (upstream nixos/tests/cage.nix does the same).
-#   - WLR_RENDERER=pixman: no GL inside the test VM (upstream nixos/tests/sway.nix).
+#   - `-vga none -device virtio-gpu-pci`: a real DRM device in the test VM (upstream
+#     nixos/tests/cage.nix does the same) — the VT console, logind's seat; the XR path itself
+#     is blind here (Monado's null compositor, devices/virtual-headset; research/78 §9 F14).
 { pkgs }:
 { name
 , profileModules # e.g. [ ../../profiles/default.nix ]
@@ -28,7 +28,6 @@ pkgs.testers.runNixOSTest {
 
     # Test-only (see header).
     virtualisation.qemu.options = [ "-vga none -device virtio-gpu-pci" ];
-    environment.sessionVariables.WLR_RENDERER = "pixman";
     fonts.packages = [ pkgs.dejavu_fonts ];
     environment.systemPackages = [ pkgs.sshpass ];
 

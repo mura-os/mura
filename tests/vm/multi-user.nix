@@ -98,7 +98,7 @@
         machine.send_chars("mura\n")
         machine.sleep(2)
         machine.send_chars("mura\n")
-        machine.wait_until_succeeds("pgrep -u mura -x sway", timeout=120)
+        machine.wait_until_succeeds("pgrep -u mura -x zxr", timeout=120)
         machine.wait_until_fails(GREETER)
         machine.wait_until_fails(GREETER_ZXR)
         machine.succeed("loginctl list-sessions --no-legend | grep -w mura")
@@ -145,7 +145,7 @@
         # a logout is: the session target stops -> the wrapper returns -> greetd restarts the greeter
         machine.succeed(userctl + "stop mura-session.target")
         machine.wait_until_fails("test -e /run/user/1000/mura/session.env", timeout=60)  # the wrapper cleaned up
-        machine.wait_until_fails("pgrep -u mura -x sway", timeout=60)
+        machine.wait_until_fails("pgrep -u mura -x zxr", timeout=60)
         machine.wait_until_succeeds(GREETER, timeout=120)
         machine.wait_until_fails(f"loginctl show-session {sid} >/dev/null 2>&1", timeout=60)
         # the greeter's compositor took the DRM device cleanly

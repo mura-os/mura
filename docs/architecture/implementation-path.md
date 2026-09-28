@@ -9,7 +9,7 @@ groundwork with no compositor dependency, verified in the rung-2 VM with stand-i
 by dependency class; G2 reduced to a recorded swap; the pre-groundwork specifications named in
 §5.1; **rev 4.1 same day — F2/F3/D2/D3 absorb first-run rev 2.5 / ADR 0017 rev 2.4: sshd
 upstream on every profile, `mura-setup` one program in two instances, the `setup-complete`
-marker, Cockpit dropped**; **rev 4.2, 2026-09-27 — G1 rewritten for ADR 0007's amendment: the auth scene is a trusted client (the greeter program, its toolkit a prerequisite research pass), zxr `--greeter` composes it over a socketpair and draws no UI**; **rev 4.3, same day — the shell-plane research and design (research/75, shell-plane.md) recorded as done in §3 G1's prerequisites and §5**; **rev 4.4, same day — M1's window-management floor and the seam recorded as landed** (§3 M1 status; §5 "The window manager": the floor, the grab and `zxr_window_management_v1` rev 1 built and gated; the shipped external managers remain ordered after the shell clients that need them).; **rev 4.5, same day — the shell-layer mechanics study (research/77) recorded and zxr's shell-layer half ordered with its nested gate** (§5 "The shell plane": arrangement per frame, the placement table, the trusted connection, the filter; the gate = squeekboard and mako mapping on zxr unmodified, spec §12 gate 8); **rev 4.6, 2026-09-28 — G1 restated for ADR 0007 amendment 2 and research/78** (the program speaks greetd, zxr exits with it; the lock is an `ext-session-lock` unit; the Stage B platform gate; `fakegreet` as the harness).; **rev 4.7, same day — G1 landed** (§3 G1 status: `pkgs/mura-greeter` and zxr's greeter-mode rules built, gate 9 measured on nested zxr — spec §12; research/78 §7a–§7b; the G2 swap untouched).; **rev 4.8, same day — F2 resolved by ruling** (spatial-input §13: the input floor is one rule for every surface, nothing head-locked unless it asks, the body frame the default placement, dwell global on the hit point; §3 G1 status restated; G3 readiness through `mura-session finalize` spawned by zxr, session-bootstrap rev 4). G2 and G3 status lines are written when their gates are measured.
+marker, Cockpit dropped**; **rev 4.2, 2026-09-27 — G1 rewritten for ADR 0007's amendment: the auth scene is a trusted client (the greeter program, its toolkit a prerequisite research pass), zxr `--greeter` composes it over a socketpair and draws no UI**; **rev 4.3, same day — the shell-plane research and design (research/75, shell-plane.md) recorded as done in §3 G1's prerequisites and §5**; **rev 4.4, same day — M1's window-management floor and the seam recorded as landed** (§3 M1 status; §5 "The window manager": the floor, the grab and `zxr_window_management_v1` rev 1 built and gated; the shipped external managers remain ordered after the shell clients that need them).; **rev 4.5, same day — the shell-layer mechanics study (research/77) recorded and zxr's shell-layer half ordered with its nested gate** (§5 "The shell plane": arrangement per frame, the placement table, the trusted connection, the filter; the gate = squeekboard and mako mapping on zxr unmodified, spec §12 gate 8); **rev 4.6, 2026-09-28 — G1 restated for ADR 0007 amendment 2 and research/78** (the program speaks greetd, zxr exits with it; the lock is an `ext-session-lock` unit; the Stage B platform gate; `fakegreet` as the harness).; **rev 4.7, same day — G1 landed** (§3 G1 status: `pkgs/mura-greeter` and zxr's greeter-mode rules built, gate 9 measured on nested zxr — spec §12; research/78 §7a–§7b; the G2 swap untouched).; **rev 4.8, same day — F2 resolved by ruling** (spatial-input §13: the input floor is one rule for every surface, nothing head-locked unless it asks, the body frame the default placement, dwell global on the hit point; §3 G1 status restated; G3 readiness through `mura-session finalize` spawned by zxr, session-bootstrap rev 4). **rev 4.9, same day — G2 and G3 built** (§3 G2/G3/M1 status; the VM gates in §5 run blind, research/78 §9 F14).
 **What this is:** the ordered build path from power-on to a zxr session, derived from the
 dependency graph ([desktop-environment.md §6](desktop-environment.md)) — not a replacement for
 it. Rungs are ordered only where a hard dependency exists; everything else is a parallel track.
@@ -371,8 +371,9 @@ type, select, copy/paste, open menus, move/rotate/resize planes". When M1 lands,
 slots at first commit, the grab (bar and body, depth, resize; client `move`/`resize` requests
 as the same grab), lifecycle, opt-in follow, recenter, the `wm.*` preferences — and the seam is
 served and proven with a scripted manager (spec §12 gate 7; window-workspace-management rev
-0.2). Still open under M1's acceptance line: copy/paste and the keyboard component (§5 "Shell-plane
-presentation"); the dev-session `COMPOSITOR_CMD` swap and sway leaving the target are G3's.
+0.2). Closed 2026-09-28 (rev 4.9): copy/paste (`wl_data_device` and the primary selection, verified
+nested with wl-clipboard) and the keyboard component (`pkgs/mura-osk`, shell-plane §3.2); the
+dev-session default is zxr and sway left `mura-session.target` with G3.
 
 ### G3 — the full handoff
 
@@ -387,6 +388,19 @@ crash/restart and boot-locked-restart rules apply. Needs M1 (a session someone c
 (the greeter) + D5 (authd) for lock. Exit: VM boots → XR greeter → login → **zxr session** →
 doff-grace/lock/unlock cycle works end to end → logout tears down through the wrapper and
 returns to the greeter without racing device release; the spec is revised from what G3 taught.
+
+**Status (rev 4.9, 2026-09-28): built; the gate is `tests/vm/default-image.nix` and
+`multi-user.nix` (spec §12 gate 11).** `mura-compositor.service` runs `zxr --osk mura-osk`
+(the OSK zxr's child in every mode, shell-plane §3.2); readiness is `mura-session finalize`
+spawned by zxr once its socket is bound, `STOPPING=1` native (session-bootstrap rev 4 §7);
+`programs.sway` and its drop-in left the module, sway left the closure (fence (d)), and
+`dev-session` runs zxr by default (`--sway` keeps the 2D stand-in as a comparison fixture). The
+fixtures drive the lock/unlock cycle through the real stack — `loginctl lock-session` →
+`mura-greeter-lock` → zxr `Locked`/`LockedHint` → a wrong then the right password typed at the VT
+→ `Normal` — and the idle rung with `session.lock.on_idle` + a 5 s delay. *Not in the unit:*
+`--xwayland` (X11 through xwayland-satellite is R0 gate 4's, proven nested; whether the session
+publishes a `DISPLAY` by default is an owner item — a satellite that fails to start would
+otherwise leave a dead `DISPLAY` in the user manager).
 
 ### §3a — B9: session-ready tiers, mark-good, and boot-counting
 

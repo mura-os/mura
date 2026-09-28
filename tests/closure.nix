@@ -46,7 +46,7 @@ let
   # there and what removes it.
   pythonAllowlist = {
     "python3" = "the interpreter itself, pulled by the entries below and by mesa/gstreamer/flatpak retained references; leaves when they do";
-    "python3.X-pyxdg" = "speech-dispatcher (via etc metadata of the stand-in desktop stack) depends on pyxdg; leaves with the sway/gtkgreet stand-ins (M1/G2)";
+    "python3.X-pyxdg" = "speech-dispatcher depends on pyxdg; nixpkgs' graphical-desktop.nix enables services.speechd whenever a display manager is on (greetd's module sets services.displayManager.enable) — it did not leave with the sway/gtkgreet stand-ins (G2/G3, 2026-09-28); turning an accessibility service off is an owner item, not a default to flip here";
   };
   allowlistFile = pkgs.writeText "python-allowlist" (lib.concatStringsSep "\n" (lib.attrNames pythonAllowlist) + "\n");
   allowlistReasons = lib.concatStringsSep "\n" (lib.mapAttrsToList (n: r: "  ${n}: ${r}") pythonAllowlist);
@@ -67,7 +67,7 @@ let
     if ls ${toplevel}/sw/bin | grep -E '^(python|perl)' ; then echo "FAIL ${name}: interpreter on PATH"; exit 1; fi
     # (d) the stand-ins are gone (implementation-path §3 G2/G3 exit criteria): gtkgreet and cage
     #     left with the greeter swap, squeekboard with mura-osk
-    if echo "$names" | grep -E '^(gtkgreet|cage|squeekboard)-[0-9]' ; then echo "FAIL ${name}: a stand-in is still in the closure"; exit 1; fi
+    if echo "$names" | grep -E '^(gtkgreet|cage|squeekboard|sway)-[0-9]' ; then echo "FAIL ${name}: a stand-in is still in the closure"; exit 1; fi
     # (c) python3*-named paths == allowlist (normalised: minor version -> X, trailing version dropped)
     echo "$names" \
       | grep -E '^python3(\.[0-9]+)?(-|$)' \
