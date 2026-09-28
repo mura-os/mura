@@ -1,0 +1,22 @@
+[package]
+name = "mura-slint-platform"
+version = "0.1.0"
+edition = "2021"
+description = "Slint on smithay-client-toolkit for Mura's shell components: wl_shm + the software renderer, layer-shell and session-lock roles, text-input-v3 (shell-plane.md §4)"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+slint = { workspace = true }
+i-slint-core = { workspace = true }
+i-slint-common = { workspace = true }
+smithay-client-toolkit = { workspace = true }
+wayland-client = { workspace = true }
+wayland-protocols = { workspace = true }
+calloop = { workspace = true }
+calloop-wayland-source = { workspace = true }
+tracing = { workspace = true }
+mura-slint-accesskit = { path = "../accesskit", optional = true }
+
+[features]
+default = ["accessibility"]
+accessibility = ["dep:mura-slint-accesskit"]

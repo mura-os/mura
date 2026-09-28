@@ -1,0 +1,335 @@
+// mura-greeter — the greeter and lock scene (research/78 §5; specs/session-auth.md §5; shell-plane §3.1).
+//
+// One scene, two modes. Everything is a large target for a ray (≥ 64 px), operable by dwell,
+// keyboard, or the OSK (a sibling client — not drawn here). No images: the closure carries no
+// decoder and the accessibility pass stays on (build.rs). Every interactive element carries an
+// accessible role, label and action, so the AT-SPI tree is the scene (research/37).
+//
+// Prompts are rendered verbatim (never parsed): `prompt-secret` masks; the digit pad is keyed
+// off `secret` + the account's numeric-credential hint (multi-user §3) and is a rendering choice,
+// not a credential. Failure text is generic (tuigreet's leak argument).
+
+export struct AccountEntry { name: string, display: string }
+
+global Theme {
+    in-out property <bool> high-contrast: false;
+    in-out property <float> scale: 1.0;
+    out property <color> bg: high-contrast ? #000000 : #1c1f26;
+    out property <color> panel: high-contrast ? #000000 : #262a33;
+    out property <color> fg: high-contrast ? #ffffff : #e8ebf0;
+    out property <color> dim: high-contrast ? #ffffff : #9aa4b5;
+    out property <color> accent: high-contrast ? #ffff00 : #5b9bd5;
+    out property <color> field: high-contrast ? #000000 : #12151b;
+    out property <color> border: high-contrast ? #ffffff : #3a404c;
+    out property <color> danger: high-contrast ? #ff6060 : #d9534f;
+    out property <length> unit: 16px * scale;
+}
+
+// A push button: a rectangle the ray can dwell on.
+component Btn inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+    in property <length> min-w: 0px;
+    callback clicked;
+    min-height: Theme.unit * 4;
+    min-width: max(min-w, Theme.unit * 4);
+    border-radius: Theme.unit * 0.75;
+    background: !enabled ? Theme.panel : ta.pressed ? Theme.accent.darker(30%) : ta.has-hover ? (primary ? Theme.accent.brighter(15%) : Theme.border) : (primary ? Theme.accent : Theme.panel);
+    border-width: 2px;
+    border-color: ta.has-hover || fs.has-focus ? Theme.fg : Theme.border;
+    opacity: enabled ? 1.0 : 0.5;
+    accessible-role: button;
+    accessible-label: text;
+    accessible-enabled: enabled;
+    accessible-action-default => { if (enabled) { root.clicked(); } }
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(e) => {
+            if (e.text == Key.Return || e.text == " ") { root.clicked(); return accept; }
+            return reject;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: root.text;
+        color: root.primary && !Theme.high-contrast ? #ffffff : Theme.fg;
+        font-size: Theme.unit * 1.5;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// A one-line text field. `secret` masks; the field is the accessible entry.
+component Field inherits Rectangle {
+    in property <string> label;
+    in property <bool> secret: false;
+    in property <bool> enabled: true;
+    in-out property <string> text <=> ti.text;
+    callback accepted(string);
+    min-height: Theme.unit * 4;
+    border-radius: Theme.unit * 0.5;
+    background: Theme.field;
+    border-width: 2px;
+    border-color: ti.has-focus ? Theme.accent : Theme.border;
+    accessible-role: text-input;
+    accessible-label: label;
+    accessible-value: secret ? "" : ti.text;
+    accessible-placeholder-text: label;
+    accessible-enabled: enabled;
+    accessible-delegate-focus: 0;
+    public function take-focus() { ti.focus(); }
+    HorizontalLayout {
+        padding-left: Theme.unit;
+        padding-right: Theme.unit;
+        Text {
+            visible: ti.text == "" && !ti.has-focus;
+            text: root.label;
+            color: Theme.dim;
+            font-size: Theme.unit * 1.5;
+            vertical-alignment: center;
+        }
+    }
+    HorizontalLayout {
+        padding-left: Theme.unit;
+        padding-right: Theme.unit;
+        ti := TextInput {
+            enabled: root.enabled;
+            single-line: true;
+            input-type: root.secret ? InputType.password : InputType.text;
+            color: Theme.fg;
+            font-size: Theme.unit * 1.5;
+            vertical-alignment: center;
+            accepted => { root.accepted(self.text); }
+        }
+    }
+    TouchArea {
+        clicked => { ti.focus(); }
+        z: -1;
+    }
+}
+
+component Label inherits Text {
+    color: Theme.fg;
+    font-size: Theme.unit * 1.5;
+    horizontal-alignment: center;
+    wrap: word-wrap;
+    accessible-role: text;
+    accessible-label: self.text;
+}
+
+// The 3×4 digit pad: a rendering of a `secret` prompt for a numeric credential.
+component DigitPad inherits GridLayout {
+    callback digit(string);
+    callback backspace;
+    callback enter;
+    spacing: Theme.unit * 0.75;
+    Row { Btn { text: "1"; clicked => { digit("1"); } } Btn { text: "2"; clicked => { digit("2"); } } Btn { text: "3"; clicked => { digit("3"); } } }
+    Row { Btn { text: "4"; clicked => { digit("4"); } } Btn { text: "5"; clicked => { digit("5"); } } Btn { text: "6"; clicked => { digit("6"); } } }
+    Row { Btn { text: "7"; clicked => { digit("7"); } } Btn { text: "8"; clicked => { digit("8"); } } Btn { text: "9"; clicked => { digit("9"); } } }
+    Row { Btn { text: "⌫"; accessible-label: "Backspace"; clicked => { backspace(); } } Btn { text: "0"; clicked => { digit("0"); } } Btn { text: "↵"; primary: true; accessible-label: "Enter"; clicked => { enter(); } } }
+}
+
+export component Greeter inherits Window {
+    // mode
+    in property <bool> lock-mode: false;
+    in property <string> hostname: "";
+    in-out property <string> clock: "";
+    // accounts
+    in property <[AccountEntry]> accounts: [];
+    in-out property <string> username: "";
+    in property <bool> picker-visible: false;
+    // the conversation
+    in property <bool> conversing: false;      // a session is created; prompts may arrive
+    in property <bool> prompt-visible: false;  // a prompt awaits a response
+    in property <string> prompt-text: "";
+    in property <bool> prompt-secret: false;
+    in property <bool> digit-pad: false;
+    in property <string> info-text: "";
+    in property <string> error-text: "";
+    in property <bool> busy: false;            // waiting on the backend / a fail delay
+    in-out property <string> response: "";
+    // sessions
+    in property <[string]> sessions: [];
+    in-out property <int> session-index: 0;
+    in property <bool> chooser-visible: false;
+    // power
+    in property <bool> can-poweroff: false;
+    in property <bool> can-reboot: false;
+    in property <bool> can-suspend: false;
+    in-out property <string> power-pending: "";   // "" | poweroff | reboot | suspend
+    in-out property <int> power-countdown: 0;
+    // accessibility toggles (the input floor, first-run-onboarding §4.4)
+    in-out property <bool> dwell: false;
+    in property <bool> dwell-available: false;   // zxr's control socket is known (`ZXR_CONTROL`)
+    in-out property <bool> high-contrast <=> Theme.high-contrast;
+    in-out property <bool> large-text: false;
+
+    callback select-account(string);
+    callback submit-username(string);
+    callback respond(string);
+    callback cancel;
+    callback choose-session(int);
+    callback power(string);
+    callback confirm-power;
+    callback cancel-power;
+    callback toggle-dwell(bool);
+    callback backspace;   // the digit pad's ⌫: the string edit lives in Rust
+
+
+    title: lock-mode ? "Mura lock" : "Mura login";
+    background: Theme.bg;
+    default-font-size: Theme.unit * 1.5;
+
+    changed large-text => { Theme.scale = large-text ? 1.4 : 1.0; }
+
+    // clock and host, top
+    VerticalLayout {
+        y: Theme.unit * 2;
+        height: Theme.unit * 8;
+        alignment: start;
+        Text { text: root.clock; color: Theme.fg; font-size: Theme.unit * 4; horizontal-alignment: center; accessible-role: text; accessible-label: "Clock " + root.clock; }
+        Text { text: root.hostname; color: Theme.dim; font-size: Theme.unit * 1.25; horizontal-alignment: center; accessible-role: text; accessible-label: root.hostname; }
+    }
+
+    // the card
+    Rectangle {
+        width: min(root.width - Theme.unit * 4, Theme.unit * 40);
+        x: (root.width - self.width) / 2;
+        y: max(Theme.unit * 11, (root.height - self.height) / 2);
+        height: card.preferred-height + Theme.unit * 3;
+        background: Theme.panel;
+        border-radius: Theme.unit;
+        border-width: Theme.high-contrast ? 2px : 0px;
+        border-color: Theme.border;
+        accessible-role: groupbox;
+        accessible-label: root.lock-mode ? "Unlock form" : "Login form";
+
+        card := VerticalLayout {
+            padding: Theme.unit * 1.5;
+            spacing: Theme.unit;
+
+            // account picker (≥ 2 accounts, greeter mode)
+            if root.picker-visible && !root.conversing : VerticalLayout {
+                spacing: Theme.unit * 0.5;
+                Label { text: "Who is this?"; color: Theme.dim; }
+                for a in root.accounts : Btn {
+                    text: a.display == "" ? a.name : a.display;
+                    primary: a.name == root.username;
+                    clicked => { root.select-account(a.name); }
+                }
+            }
+
+            // username (free text always available beside the picker; lock mode shows the user)
+            if !root.conversing : username-field := Field {
+                label: "Username";
+                text <=> root.username;
+                enabled: !root.lock-mode && !root.busy;
+                init => { if (!root.lock-mode) { self.take-focus(); } }
+                accepted(t) => { root.submit-username(t); }
+            }
+            if !root.conversing && !root.lock-mode : Btn {
+                text: "Next";
+                primary: true;
+                enabled: root.username != "" && !root.busy;
+                clicked => { root.submit-username(root.username); }
+            }
+
+            if root.conversing : Label { text: root.lock-mode ? root.username : root.username; color: Theme.dim; font-size: Theme.unit * 1.25; }
+
+            // the prompt, verbatim
+            if root.prompt-visible : VerticalLayout {
+                spacing: Theme.unit * 0.75;
+                Label { text: root.prompt-text; }
+                response-field := Field {
+                    label: root.prompt-secret ? "•••" : "";
+                    secret: root.prompt-secret;
+                    text <=> root.response;
+                    enabled: !root.busy;
+                    init => { self.take-focus(); }
+                    accepted(t) => { root.respond(t); }
+                }
+                if root.digit-pad : DigitPad {
+                    digit(d) => { root.response += d; }
+                    backspace => { root.backspace(); }
+                    enter => { root.respond(root.response); }
+                }
+                HorizontalLayout {
+                    spacing: Theme.unit;
+                    Btn { text: "Cancel"; enabled: !root.busy; clicked => { root.cancel(); } }
+                    Btn { text: root.lock-mode ? "Unlock" : "Log in"; primary: true; enabled: !root.busy; clicked => { root.respond(root.response); } }
+                }
+            }
+            if root.conversing && !root.prompt-visible : Label { text: root.busy ? "…" : ""; color: Theme.dim; }
+
+            if root.info-text != "" : Label { text: root.info-text; color: Theme.dim; accessible-role: text; }
+            if root.error-text != "" : Label { text: root.error-text; color: Theme.danger; accessible-role: text; }
+
+            // session chooser (hidden with one entry)
+            if root.chooser-visible && !root.lock-mode : HorizontalLayout {
+                spacing: Theme.unit * 0.5;
+                Label { text: "Session"; color: Theme.dim; horizontal-alignment: left; vertical-alignment: center; }
+                for s[i] in root.sessions : Btn {
+                    text: s;
+                    primary: i == root.session-index;
+                    clicked => { root.session-index = i; root.choose-session(i); }
+                }
+            }
+        }
+    }
+
+    // bottom bar: power + accessibility
+    HorizontalLayout {
+        y: root.height - Theme.unit * 6;
+        height: Theme.unit * 4;
+        padding-left: Theme.unit * 2;
+        padding-right: Theme.unit * 2;
+        spacing: Theme.unit;
+        alignment: space-between;
+        HorizontalLayout {
+            spacing: Theme.unit * 0.5;
+            if root.can-poweroff : Btn { text: "Power off"; clicked => { root.power("poweroff"); } }
+            if root.can-reboot : Btn { text: "Restart"; clicked => { root.power("reboot"); } }
+            if root.can-suspend : Btn { text: "Sleep"; clicked => { root.power("suspend"); } }
+        }
+        HorizontalLayout {
+            spacing: Theme.unit * 0.5;
+            accessible-role: groupbox;
+            accessible-label: "Accessibility";
+            if root.dwell-available : Btn { text: root.dwell ? "Dwell: on" : "Dwell: off"; accessible-label: "Dwell click"; clicked => { root.dwell = !root.dwell; root.toggle-dwell(root.dwell); } }
+            Btn { text: root.high-contrast ? "Contrast: high" : "Contrast: normal"; accessible-label: "High contrast"; clicked => { root.high-contrast = !root.high-contrast; } }
+            Btn { text: root.large-text ? "Text: large" : "Text: normal"; accessible-label: "Large text"; clicked => { root.large-text = !root.large-text; } }
+        }
+    }
+
+    // power confirmation with a countdown (cosmic's dialog, `greeter.rs:1657-1696`)
+    if root.power-pending != "" : Rectangle {
+        background: #00000099;
+        TouchArea { clicked => { root.cancel-power(); } }
+        Rectangle {
+            width: Theme.unit * 28;
+            height: dlg.preferred-height + Theme.unit * 3;
+            background: Theme.panel;
+            border-radius: Theme.unit;
+            border-width: 2px;
+            border-color: Theme.border;
+            accessible-role: groupbox;
+            accessible-label: "Confirm";
+            dlg := VerticalLayout {
+                padding: Theme.unit * 1.5;
+                spacing: Theme.unit;
+                Label { text: root.power-pending == "poweroff" ? "Power off?" : root.power-pending == "reboot" ? "Restart?" : "Sleep?"; }
+                Label { text: "in " + root.power-countdown + " s"; color: Theme.dim; }
+                HorizontalLayout {
+                    spacing: Theme.unit;
+                    Btn { text: "Cancel"; clicked => { root.cancel-power(); } }
+                    Btn { text: "Now"; primary: true; clicked => { root.confirm-power(); } }
+                }
+            }
+        }
+    }
+}

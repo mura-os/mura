@@ -330,6 +330,10 @@ repos=(
   'maliit-keyboard|https://github.com/maliit/keyboard.git|'
   'slint|https://github.com/slint-ui/slint.git|v1.18.0'
   'accesskit|https://github.com/AccessKit/accesskit.git|'
+  # client-toolkit (sctk) = the Rust Wayland client toolkit Mura's Slint platform stands on: layer-shell
+  # and session-lock roles, seat, shm (docs/research/78 §9; shell-plane.md §4 rev 0.3). Pinned at the
+  # release the platform builds against.
+  'client-toolkit|https://github.com/Smithay/client-toolkit.git|v0.20.0'
   # --- the shell layer's server-side mechanics (docs/research/76) ---
   # sway = wlroots' reference layer-shell arrangement and keyboard-interactivity focus rules;
   # phoc = phosh's compositor (the pinned mobile shell's other half: squeekboard/phosh-lockscreen

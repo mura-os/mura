@@ -1,0 +1,12 @@
+[package]
+name = "mura-slint-accesskit"
+version = "0.1.0"
+edition = "2021"
+description = "Slint's AccessKit tree translation, extracted from its winit backend into a backend-independent module and driven by accesskit_unix (shell-plane.md §4; upstream candidate)"
+license = "GPL-3.0-only"
+
+[dependencies]
+i-slint-core = { workspace = true }
+accesskit = { workspace = true }
+accesskit_unix = { workspace = true }
+tracing = { workspace = true }

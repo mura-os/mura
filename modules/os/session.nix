@@ -47,6 +47,12 @@ let
   # implementation-path §3 G2: gtkgreet and cage leave the closure at the swap).
   greeterCommand = "${pkgs.cage}/bin/cage -s -- ${pkgs.gtkgreet}/bin/gtkgreet";
 
+  # G1's greeter command (specs/zxr-core.md §9 rev 3.13; session-auth rev 6 §5): greetd runs
+  # zxr in greeter mode as the `greeter` user; zxr spawns the program and the OSK over
+  # socketpairs (the kiosk's primary and its keyboard) and exits with the program (cage's
+  # rule). Defined here, wired at G2 (the `greeterCommand` flip is G2's exit criterion).
+  zxrGreeterCommand = "${lib.getExe pkgs.mura.zxr} --greeter --trusted ${lib.getExe pkgs.mura.greeter} --osk ${lib.getExe pkgs.squeekboard}";
+
   profileName = if cfg.autoLogin != null then "appliance" else "multi-user";
 
   # Every session unit ends with the session (uwsm's shutdown-target shape): a unit that
@@ -66,7 +72,7 @@ in
       services.greetd.enable = true;
 
       ## The wrapper ------------------------------------------------------------------------
-      environment.systemPackages = [ pkgs.mura.session pkgs.mura.authd ];
+      environment.systemPackages = [ pkgs.mura.session pkgs.mura.authd pkgs.mura.greeter ];
       # uwsm's module chose dbus-broker for the user bus; the reason (activation-environment
       # handling for units the session starts) holds without uwsm, so the choice stays.
       services.dbus.implementation = lib.mkDefault "broker";
@@ -168,6 +174,37 @@ in
           DefaultDependencies = false;
           StopWhenUnneeded = true;
         };
+      };
+
+      # `mura-greeter-lock.service`: the lock program, resident in the session (ADR 0007
+      # amendment 2; session-auth rev 6 §2, §5; research/78 §9 Q1 ruled). It waits for logind's
+      # `Session.Lock`, locks through ext-session-lock-v1 on the compositor's public socket and
+      # owns its mura-authd conversation; the compositor keeps the lock when it dies and this
+      # unit restarts it, which re-locks (cosmic-session's shape for cosmic-greeter's locker:
+      # `PartOf=graphical-session.target`, `Restart=on-failure`). The compositor's triggers
+      # (doff grace, idle ladder) run `loginctl lock-session`, which reaches this program.
+      systemd.user.services.mura-greeter-lock = {
+        description = "Mura lock screen (ext-session-lock client)";
+        partOf = [ "graphical-session.target" ];
+        after = [ "graphical-session.target" ];
+        wantedBy = [ "graphical-session.target" ];
+        path = lib.mkForce [ ];
+        serviceConfig = {
+          Type = "exec";
+          ExecStart = "${lib.getExe pkgs.mura.greeter} --lock";
+          Restart = "on-failure";
+          RestartSec = "1s";
+          Slice = "session.slice";
+          SyslogIdentifier = "mura-greeter-lock";
+        };
+      };
+
+      # The greeter picker's enumeration window is login.defs' (multi-user.md §2; the greeter
+      # reads UID_MIN/UID_MAX from /etc/login.defs — the SDDM/tuigreet pattern); the contract's
+      # `multiUser.uidRange` is written there rather than passed as flags.
+      security.loginDefs.settings = {
+        UID_MIN = cfg.multiUser.uidRange.min;
+        UID_MAX = cfg.multiUser.uidRange.max;
       };
 
       # Static environment class (spec §3): read by the user manager from environment.d.

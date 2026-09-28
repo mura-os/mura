@@ -30,6 +30,10 @@ final: prev: {
     # The compositor (specs/zxr-core.md; ADR 0006): one OpenXR client of Monado, one Wayland
     # compositor. R0 bring-up — runs nested in the dev-session slot (`dev-session --zxr`).
     zxr = final.callPackage ./zxr { };
+    # The greeter and lock program (specs/session-auth.md rev 6 §5; shell-plane §3.1; research/78):
+    # Slint on the sctk platform; greetd's kiosk child in greeter mode, an ext-session-lock client
+    # under a user unit in lock mode.
+    greeter = final.callPackage ./mura-greeter { };
     # The plymouth theme (boot / failure feedback / recovery screen) is device-specific — it is
     # composited from assets/branding with the panel geometry — so modules/os/recovery.nix calls
     # pkgs/mura-plymouth-theme directly with the contract's values; no fixed overlay attribute.

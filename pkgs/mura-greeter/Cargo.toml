@@ -1,0 +1,46 @@
+[package]
+name = "mura-greeter"
+version = "0.1.0"
+edition = "2021"
+description = "Mura's greeter and lock program: one Slint scene on the sctk platform, speaking greetd in greeter mode and owning the mura-authd conversation as an ext-session-lock client in lock mode (specs/session-auth.md rev 6; shell-plane.md §3.1)"
+license = "GPL-3.0-or-later"
+build = "build.rs"
+
+[workspace]
+members = ["platform", "accesskit"]
+
+[workspace.dependencies]
+slint = { version = "=1.18.0", default-features = false, features = ["std", "compat-1-2", "renderer-software", "accessibility"] }
+slint-build = "=1.18.0"
+i-slint-core = { version = "=1.18.0", default-features = false, features = ["std", "accessibility-text"] }
+i-slint-common = { version = "=1.18.0", default-features = false }
+smithay-client-toolkit = { version = "0.20", default-features = false, features = ["calloop", "xkbcommon"] }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
+calloop = "0.14"
+calloop-wayland-source = "0.4"
+accesskit = "0.24"
+accesskit_unix = { version = "0.22", default-features = false, features = ["async-io"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+
+[dependencies]
+slint = { workspace = true }
+mura-slint-platform = { path = "platform" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+greetd_ipc = { version = "0.10", features = ["sync-codec"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
+
+[build-dependencies]
+slint-build = { workspace = true }
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

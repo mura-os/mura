@@ -1,6 +1,6 @@
 # specs/session-auth: the lock auth helper, lock events, and greeter mode
 
-**Status:** rev 6 (2026-09-28 — **the lock is an `ext-session-lock-v1` client under a user unit**,
+**Status:** rev 6.1 (2026-09-28 — §6 items 4, 6, 6a verified at gate 9, the G1 nested run of `mura-greeter`; item 5 waits for G3) — rev 6 (2026-09-28 — **the lock is an `ext-session-lock-v1` client under a user unit**,
 ADR 0007 amendment 2, from [research/78](../docs/research/78-greeter-program-from-comparables.md):
 §2 `mura-authd` is spawned by the lock program, not the compositor; §2.4 the nonce is the
 program's; §3 triggers request the lock with `loginctl lock-session`, the lock and unlock are the
@@ -307,22 +307,29 @@ Status per item (D5, `tests/vm/default-image.nix` / `multi-user.nix`, `mura-auth
    `client_free_frame_submitted` frame contains no untrusted client samples (composition
    introspection: gate 8 (g) measured 1.00 members per frame while locked). *Rev 6:* the
    protocol's `locked` is the compositor's trace point and `SetLockedHint` the program's, in that
-   order. **Needs the lock program (G1/G3).**
+   order. **Verified at gate 9 (G1, nested):** `locked` after zxr's frame, then the program's
+   `SetLockedHint(true)`; the frame while locked composes trusted members only (gate 8 (g)'s
+   number unchanged). The VM run is G3's.
 5. Crash-restart: T10 both branches. **Partial:** the compositor restarts inside the same login
    session (D4, `RestartMode=direct`); *into locked* = the resident lock unit sees logind's
-   `LockedHint` and locks the new compositor (T9a's recovery, cosmic's shape). **Needs the lock
-   program (G3).**
+   `LockedHint` and locks the new compositor (T9a's recovery, cosmic's shape). The lock program
+   exists (G1); *into locked* on a compositor restart is G3's VM run. **Needs G3.**
 6. Greeter mode: no Wayland listening socket (`ss`/`lsof`) — the greeter program's connection
    is the inherited fd only (gate 8 (B) verified the socketless mode with squeekboard); camera
    nodes unopened; **no PAM symbols loaded** in zxr *or* the greeter program (greetd owns login
    PAM). The end-to-end run is against greetd's own `fakegreet` (`greetd/fakegreet/src/main.rs`,
-   `User:`/`Password:`/`7 + 2:`) unmodified. **Needs the greeter program (G1).**
+   `User:`/`Password:`/`7 + 2:`) unmodified. **Verified at gate 9 (G1, nested):** the run
+   against `fakegreet` end to end (research/78 §7b), no listening socket (gate 8 (g)); the PAM-
+   symbol check is the closure fence's (tests/closure.nix roots the program; neither binary
+   links PAM — the greeter spawns `mura-authd`, which does).
 6a. *(added rev 5, restated rev 6)* The scene's absence. **Lock mode:** `kill -9` the lock client
    ⇒ the composed frame is opaque with zero untrusted samples, no unlock (I3), input reaches
    nothing (gate 8 (g): `trusted_lost` 1, 0.02 members per frame, mode `Locked`); the unit
    restarts the program and it re-locks. **Greeter mode:** `kill -9` the program ⇒ zxr exits
    (cage's rule) and greetd restarts the greeter session; a second client cannot connect because no
-   listening socket exists. **Needs the greeter program (G1).**
+   listening socket exists. **Verified at gate 9 (G1, nested), both modes:** the locker killed ⇒
+   `Locked` stays, a second locker relocks (`lock_relocks` 1); the greeter killed ⇒ zxr exits
+   with 128 + the signal within the tick.
 7. Batched conversation: a module issuing two prompts + one info in one callback round-trips as
    one `prompt_batch`/`respond_batch` pair. **Verified** with `pam_mura_test.so batched`:
    one `prompt_batch` with `secret`, `visible`, `info`; one `respond_batch` with an empty slot

@@ -248,6 +248,59 @@ conversation client is a few hundred lines (agreety is 192; `greetd_ipc` is the 
 already Rust); the relay backend is the same message shapes over an fd. The two backends add no
 process, no thread, no bus in greeter mode; the lock relay is one fd on zxr's state loop.
 
+### 7a. Stage B — the platform gate (host, nested zxr, 2026-09-28)
+
+The tiny `Username / Password / Log in` scene (Slint std-widgets, `EmbedForSoftwareRenderer`) on
+the sctk platform (`mura-slint-platform`: `Platform` + `WindowAdapter` + `WindowAdapterInternal`,
+`SoftwareRenderer` into two `wl_shm` `ARGB8888` slots on the frame-callback cadence, seat
+keyboard/pointer/touch, `zwlr_layer_surface_v1` and `ext_session_lock_surface_v1` roles,
+`zwp_text_input_v3`; `mura-slint-accesskit`: upstream's translation on `accesskit_unix`), a
+debug build, dev-session `--zxr` (simulated HMD, no mirror):
+
+| leg | result |
+|---|---|
+| layer role, `zxr --greeter`, over the socketpair | maps as `overlay`/`mura-greeter`, 1920×1493 on the head frame, `Exclusive` keyboard, focus override taken (`layer_focus_overrides=1`); one `shm_uploads`, `commits=2` over 600 frames — a still scene costs nothing after its frame |
+| keyboard (`zxr ctl type/key`) | `alice`, Tab, `secret`, Return → the scene's `login("alice", 6 chars)`; Slint's `InputMethodRequest::{Enable,Update,Disable}` follow the field focus (content type `Password` on the second field) |
+| pointer | `wl_pointer` enter/motion/`button 272` from the head ray, the relative pointer device and the controller ray (after its first commit; spatial-input §5); a click on `Log in` fires the callback |
+| OSK (unmodified squeekboard, second trusted client) | `zwp_text_input_v3.enter` arrives once an input method is bound (Smithay's rule); the field's `enable`+`commit` → squeekboard `activate`, maps `top`/`osk` 1920×497+0+996; a controller click on its centre key → `zwp_input_method_v2.commit_string("v")` → the scene's `commit_string` + `done` → the focused field reads `v`. **Under a full-frame `overlay` greeter the OSK is occluded** (same head frame, `overlay` above `top`; the click lands on the greeter) — phoc's `phoc_layer_shell_update_osk` rule is the fix, in zxr (G1; shell-plane §4). squeekboard also hides itself while the host gsettings `screen-keyboard-enabled` is false (it reads that as "a physical keyboard is present", `server-context-service.c:49,116`); the harness gives it a private keyfile backend |
+| session-lock role, public socket, plain `zxr` | `ext_session_lock_v1.lock` → lock surface configured 1920×1493 → `locked` (zxr: mode `Locked`, I2 confirmed after a frame with no untrusted sample) → keys reach the lock surface → `unlock_and_destroy` → zxr `unlocked`, mode `Normal`; the program exits cleanly |
+| AT-SPI | the scene registers on the a11y bus (`accesskit_unix` → `org.a11y.atspi.Registry` `Embed`); tree: window → `Mura` (label), `Username` (role 79 entry), `Password` (40 password-text), `Log in` (43 push-button, `Action` `click`), status; `org.a11y.atspi.Action.DoAction(0)` on `Log in` → the callback fires. `Text` interfaces are absent on the entries (accesskit_atspi_common 0.19's coverage). The host's a11y bus socket was stale, so the harness runs a private session bus + `at-spi-bus-launcher` + `at-spi2-registryd` for the client |
+| a11y prerequisite found | `EmbedForSoftwareRenderer` silently compiles the accessibility tree away (`i-slint-compiler/lib.rs:342-346`, "HACK: … not supported with backend that support software renderer anyway"): the first tree had 1 node; with the hack removed, 6. Patch carried (Phase 4's Slint patch) |
+| extraction size | `accesskit.rs` 1011 lines → `mura-slint-accesskit` 877 (reflowed); semantic changes marked `// mura:`: the `Host` trait (3 methods), mpsc + wake for the three `accesskit` handlers (they run on AccessKit's thread), `set_window_focused`, `focus_node` asking the host. No `i_slint_core` change |
+| the platform | 1 228 lines (lib 156, state 683, adapter 161, text_input 186, pixel 42); one thread, one connection, one calloop loop; preedit is injectable after all (`WindowEvent::internal(InternalKeyEvent { UpdateComposition… })`, the path winit's `Ime::Preedit` takes, `winitwindowadapter.rs:1442-1460`) — the "gap" in research/75 was the public API only |
+
+**Decision (plan §Phase 1):** the extraction is contained ⇒ proceed on Slint + sctk; GTK4 is
+not brought to the owner. Release-profile measurements (binary, RSS, time-to-map) are taken on
+the program itself at the G1 gate (§7b).
+
+### 7b. G1 — the program on nested zxr (host, 2026-09-28; spec §12 gate 9)
+
+`mura-greeter` (release profile, `opt-level = "s"`, LTO) under greetd's **`fakegreet`
+unmodified** → `dev-session --zxr -- --greeter --trusted mura-greeter --osk squeekboard`, Monado's
+simulated HMD (which wobbles), the injector for keys, the controller ray and the relative pointer:
+
+| leg | result |
+|---|---|
+| the kiosk | greetd's `fakegreet` spawns the session command, zxr admits the program as the primary and the OSK as its child; the scene maps `overlay`/`mura-greeter`, **zone 0** (the OSK's exclusive band shrinks it to 1920×996 while the keyboard is up — the power and accessibility controls stay reachable), `Exclusive` keyboard, the override taken; **no listening socket** (gate 8 (g), unchanged) |
+| the conversation, keyboard | `user` ⏎ → `create_session` → `Password:` (secret, masked) → `password` ⏎ → `7 + 2:` (visible) → `9` ⏎ → `success` → `start_session{cmd: ["mura-session","start"], env: [XDG_SESSION_TYPE=wayland, XDG_SESSION_DESKTOP=mura, XDG_CURRENT_DESKTOP=Mura]}` → `success` → **the program exits 0 3.7 ms later, zxr exits with status 0** (`greeter mode: the greeter program exited`), fakegreet's `start` returned. Wrong answer: `error{auth_error}` → `cancel_session` → generic "Authentication failed" inline → the same user's `create_session` again (tuigreet's soft reset), the password prompt back with the error still shown; the description never rendered |
+| the conversation, ray | the controller ray clicks `Next` (592×88) and `Log in` (285×72) — the hit lands where the AT-SPI `Component.GetExtents` says the button is; a press whose release drifts off the button (the simulated head wobbles ≈20 px per 100 ms under a world-fixed ray) does not click, as a button should |
+| the conversation, dwell | the scene's `Dwell click` toggle (`zxr ctl a11y dwell on` over `ZXR_CONTROL`, which zxr now exports to its trusted children) turns dwell on: `a11y: dwell commit kind=Head count=…` once a second. **On a head-locked plane the head ray always dwells on the plane's centre** and its commits take the pointer from the controller ray, so a controller-dwell on a button never settles; a dwell-only login is possible only with the scene on a frame the head does not carry (the wearer's placement table row) or with dwell restricted to the non-head rays — flagged (§9, a spatial-input item, not the greeter's) |
+| the OSK | squeekboard maps on the field's `enable` (the `enter`→`enable`→`activate` chain of §7a) and is raised above the scene by zxr (phoc's rule, `osk_raised=true`); a click on its key reaches the focused field as `commit_string` (§7a); its exclusive band is respected by the zone-0 scene |
+| kill mid-scene | `SIGTERM` to the program ⇒ `trusted primary gone … status=143` ⇒ zxr exits 143 within the tick (I3: nothing was unlocked; greetd's `Restart=always` is the restart) |
+| lock mode (`--lock --lock-now`, the public socket, `mura-fake-authd` for the PAM helper) | `ext_session_lock_v1.lock` → zxr `Locked` → `locked` → `SetLockedHint(true)` → the conversation (`info` + `secret` in one batch: shown inline, the field masked) → wrong password → `failure{auth, 2000}` → generic text, retry after the delay → `kill -9` the locker ⇒ mode stays `Locked`, the scene opaque (I3) → a second instance locks again (`relocks=1`, cosmic-comp's rule) → right password → `success` → `unlock_and_destroy` → zxr `Normal`, `SetLockedHint(false)`, exit 0. The real `mura-authd` path is the same records over the same socketpair (its harness and the VM tests cover PAM) |
+| AT-SPI | frame `Mura login` → panel `Login form` (entry `Username`, button `Next`; then the prompt label, the masked entry, `Cancel`, `Log in`), buttons `Power off`/`Restart`/`Sleep` (each behind logind `Can*`), panel `Accessibility` (`Dwell click`, `High contrast`, `Large text`); `Action.DoAction(0)` on `Log in` sends the response — the tree is the scene |
+| cost, greeter mode | binary **11.3 MB** (nix, stripped; research/75 §5.4's winit program was 12.5 MB); **RSS 25.8 MB, PSS 13.7 MB, 5 threads** (main, accesskit_unix's, zbus's `async-io` executor + `blocking-1` + connection task); loop running → first frame **7 ms**; `start_session` accepted → zxr exit 3.7 ms; while a field is focused the caret blink redraws the dirty region twice a second (2 `shm_uploads`/s), nothing else moves |
+| cost, lock mode | RSS 27.6 MB, PSS 14.5 MB, 6 threads (+ the conversation thread); `lock` → first frame 6 ms → `locked` 13 ms; a still scene: zero redraws |
+| closure | 34 paths, 96.7 MB with fontconfig/freetype/libxkbcommon (libxkbcommon pulls libx11 — an nixpkgs feature flag to revisit); no interpreter (tests/closure.nix's fence holds with the program as a root); no image decoder (the scene carries no images; `EmbedFiles`) |
+
+**What moved because of the gate:** (1) the greeter's exclusive zone is **0**, not cosmic-greeter's
+−1 — cosmic has no OSK; Mura's is a sibling layer surface whose band the scene must leave
+(flagged, rule 4); (2) zxr exports **`ZXR_CONTROL`** to its trusted children so the input floor's
+toggles are one control-socket line from the scene (no bus); (3) no Slint fork after all: the
+AccessKit translation is a crate beside Slint depending on `i-slint-core`'s internals at the
+pinned version, and the compiler's `EmbedTextures` hack is sidestepped by carrying no images
+(`EmbedFiles`), so the package patches nothing (shell-plane §4 corrected).
+
 ## 8. Verdicts against the tree
 
 - `specs/session-auth.md` §5 — the open decision closes: the program speaks greetd (greeter
@@ -320,6 +373,34 @@ locker shape, the seam ADR 0007 keeps for the desktop profile; the lock is then 
 not the trusted connection's, and the OSK-on-lock needs the trusted bit anyway. *Consequence:*
 (a) is one loop in `shell/filter.rs` and keeps the ADR's channel; (b) changes the admission
 design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
+
+**Flagged at the G1 gate (rule 4; §7b), for the owner:**
+
+- **F1 — the greeter's exclusive zone is 0.** cosmic-greeter and gtkgreet `-l` use −1 (cover
+  everything; neither has an OSK). With squeekboard a sibling layer surface, zone 0 lets zxr
+  size the scene to the area the OSK leaves, so the bottom controls stay reachable. Alternative:
+  −1 and a layout that keeps the controls in the upper part (phosh's lockscreen shape). Chosen 0;
+  one line in `pkgs/mura-greeter/src/main.rs`.
+- **F2 — dwell on a head-locked plane.** The head ray always dwells on the plane's centre and
+  its commits take the pointer, so a controller-dwell on the scene cannot settle while the scene
+  is on the head frame. Two shapes, neither chosen here: the head ray does not dwell on members
+  of the frame it carries (a head-locked plane's centre is not a choice the wearer made), or the
+  scene lives on a frame the head does not carry (the wearer's `shell.place:mura-greeter` row).
+  The input floor's promise (first-run-onboarding §4.4: head-aim + dwell alone can log in)
+  depends on the answer. A spatial-input item, not the greeter's; comparables to be read before
+  it is decided.
+- **F3 — `start_session.env` values** `XDG_SESSION_TYPE=wayland`, `XDG_SESSION_DESKTOP=mura`,
+  `XDG_CURRENT_DESKTOP=Mura` (determination 4 said "proposed"): now written; the wrapper sets
+  `XDG_CURRENT_DESKTOP` itself (session.nix), so the greeter's value is the same name.
+- **F4 — the `ZXR_CONTROL` environment variable** for trusted children (the scene's dwell
+  toggle is `a11y dwell on|off` on zxr's control socket). No comparable hands a control socket
+  to its greeter; it is the harness's existing seam reused, not a new interface, and it is
+  greeter-mode-only in practice (a lock program on the public socket does not get it).
+- **F5 — the picker's display name is the GECOS full name**, and a `nologin`/`false` shell hides
+  an account from the list (tuigreet/SDDM's filters). Free-text entry stays beside it.
+- **F6 — `mura-greeter-lock.service` is `wantedBy graphical-session.target`** in every profile
+  (the lock exists whenever a session does); ADR 0007's `session.lock.enabled` governs the
+  *triggers*, not the unit.
 
 ## 10. Sources
 

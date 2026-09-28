@@ -269,6 +269,17 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
   `SetVisible` is a preference (phosh's rule: "any text input can make the keyboard show again");
   `input.osk.enabled` (declared, research/73) is the permanent suppression, `suppress_after_key_s`
   the physical-keyboard hatch.
+- **Above the surface it types into (rev 0.3, Stage B; phoc's rule):** a `top` OSK under an
+  `overlay` greeter or lock scene on the same frame is occluded and cannot be hit (research/78
+  §7a). phoc raises the `osk`-namespace surface to `overlay` while the focused layer surface's
+  layer is ≥ the OSK's and the input method is enabled on it (`phoc/src/layer-shell.c:446-499`
+  `phoc_layer_shell_update_osk`, "as otherwise keyboard input isn't possible"; re-evaluated on
+  every arrange, `:290-293`). zxr does the same in its own terms: while the exclusive-focus
+  override member has an active text input and its layer is ≥ the OSK member's, the OSK member
+  composes and hit-tests in the band above the override's (capped at the foreground band); the
+  OSK's own layer otherwise. Nothing is asked of the OSK client. Lock surfaces are above every
+  layer by the protocol; the lock scene is a lock surface, so the rule there is the same with the
+  lock member as the focused surface.
 - **Design rule for the Mura OSK (D5):** never `delete_surrounding_text` — Backspace as a key; the
   purpose hint selects the layout where the toolkit sends one (password ⇒ masked; number arrives as
   `Normal` from Slint clients, so the digit-pad *layout* is the OSK's own state, toggled by the user
@@ -408,9 +419,10 @@ greeter a layer-shell one (§3.1), so Mura's shell components run Slint on **one
 `linuxkms` backend is the in-tree template. **Accessibility is restored at that boundary, not
 dropped:** Slint's AccessKit tree translation lives in its winit backend
 (`references/slint/internal/backends/winit/accesskit.rs`, whose own comment says "If we wanted to
-move this to corelib…", `:43-45`); Mura carries a Slint patch that extracts it into a
-backend-independent module and drives `accesskit_unix::Adapter` from the platform, upstreamed
-when accepted. Semantics (roles, names, values, actions, text runs) stay in the client;
+move this to corelib…", `:43-45`); Mura carries it as a **crate beside Slint**
+(`pkgs/mura-greeter/accesskit`, depending on `i-slint-core`'s internals at the exact pinned
+version — no fork, no patch) that drives `accesskit_unix::Adapter` from the platform, offered
+upstream as the module that comment anticipates. Semantics (roles, names, values, actions, text runs) stay in the client;
 zxr owns secure lock, input routing, spatial placement and compositor-level accessibility
 (magnification, filters, assistive-technology input privileges). **Gate before the greeter is
 written** (Stage B): a three-widget scene on the platform maps as layer-shell and as a lock
@@ -418,6 +430,24 @@ surface on nested zxr, takes ray/key/OSK input, and shows its AT-SPI tree; if th
 not a contained adapter change, GTK4 + gtk4-layer-shell (layer-shell and session-lock, mature
 AT-SPI) is the fallback brought to the owner. The `backend-winit-wayland` feature above is
 replaced by the platform crate; the measured qualification is re-taken on it.
+
+**Stage B passed (2026-09-28; research/78 §7a).** The extraction is a contained adapter change:
+the translation is upstream's file unchanged apart from a `Host` trait (window adapter, keyboard
+focus, deferred re-entry) in place of `Weak<WinitWindowAdapter>`, an mpsc + wake in place of
+`accesskit_winit`'s event-loop proxy, and `set_window_focused` in place of winit's `Focused`
+event; `accesskit_unix::Adapter` is driven directly. One further Slint hack matters: the
+compiler's `EmbedTextures ⇒ accessibility off` rule (`internal/compiler/lib.rs:342-346`, "not
+supported with backends that support the software renderer anyway") is removed — its assumption
+is exactly what this platform breaks — sidestepped rather than patched: the scene carries no
+images (`EmbedFiles`), so the package builds unpatched Slint from crates.io. Both are upstream
+candidates. GTK4 is not brought to the owner. Two things the gate surfaced belong to zxr, not the platform: (1) **the OSK under a
+full-frame greeter** — squeekboard (`top`) is occluded by an `overlay` greeter on the same head
+frame, so its keys cannot be hit; phoc's rule is the precedent (`phoc/src/layer-shell.c:446-499`
+`phoc_layer_shell_update_osk`: when the focused layer surface's layer ≥ the `osk` surface's and
+the input method is enabled on it, the OSK is composed on `overlay` — "as otherwise keyboard
+input isn't possible"); zxr adopts it as the band above the focused layer member (§3.2, G1).
+(2) **The 2D pointer cannot cross members** — a relative pointer leaving its plane re-lands where
+the head ray hits (spatial-input §8); the harness aims the controller ray instead. Not a defect.
 
 **Not chosen, and why (research/75 §5.1):** libcosmic/iced (the comparator; one shipping greeter,
 but a fork of iced, `a11y` off in the shipping greeter, `wayland` implies `iced_wgpu`); GTK4
