@@ -6,6 +6,8 @@
 #   nix run .#dev-session -- --client   # + xrgears rendering against the runtime
 #   nix run .#dev-session -- --rotate   # canned head motion in the simulated HMD
 #   nix run .#dev-session -- --zxr      # zxr (R0) as the session against Monado; foot inside
+#   nix run .#dev-session -- --zxr --qwerty  # + the HMD and controllers driven by keyboard/mouse
+#                                         # in Monado's debug window (click it for focus)
 #
 # The nested compositor is sway until zxr's M1 lands; `--zxr` runs zxr in that slot (R0
 # bring-up, specs/zxr-core.md §12), with Monado's mirror window as the only view of it.
@@ -61,6 +63,11 @@ writeShellApplication {
       --mirror       show Monado's XR output window (black until a client renders)
       --no-mirror    force the windowless null compositor even with --client
       --rotate       simulated HMD follows a canned rotation (SIMULATED_ROTATE)
+      --qwerty       drive the HMD and both controllers from the keyboard and mouse in Monado's
+                     debug window (the qwerty driver, QWERTY_ENABLE + XRT_DEBUG_GUI; implies --mirror):
+                     right-drag rotates, WASD/QE move, arrows rotate, wheel = speed; no modifier =
+                     HMD, Ctrl = left controller, Alt = right controller; left click = trigger,
+                     middle = squeeze. Replaces the simulated HMD (builder priority -25 vs -50).
       --controllers  add simulated left/right controllers
       --no-monado    session only, no XR runtime
       --verbose      debug logging from Monado
@@ -68,7 +75,7 @@ writeShellApplication {
     USAGE
     }
 
-    client=0 rotate=0 controllers=0 monado_on=1 verbose=0 mirror=auto zxr=0 x11=0
+    client=0 rotate=0 controllers=0 monado_on=1 verbose=0 mirror=auto zxr=0 x11=0 qwerty=0
     zxr_args=()
     while [ $# -gt 0 ]; do a=$1; shift; case "$a" in
       --client) client=1 ;;
@@ -77,6 +84,7 @@ writeShellApplication {
       --mirror) mirror=1 ;;
       --no-mirror) mirror=0 ;;
       --rotate) rotate=1 ;;
+      --qwerty) qwerty=1 ;;
       --controllers) controllers=1 ;;
       --no-monado) monado_on=0 ;;
       --verbose) verbose=1 ;;
@@ -85,6 +93,7 @@ writeShellApplication {
       *) echo "dev-session: unknown flag $a" >&2; usage; exit 1 ;;
     esac; done
     [ "$zxr" = 1 ] && [ "$mirror" = auto ] && mirror=1
+    [ "$qwerty" = 1 ] && [ "$mirror" = auto ] && mirror=1
     [ "$mirror" = auto ] && mirror=$client
 
     # Preflight: we nest inside an existing graphical session.
@@ -133,6 +142,14 @@ writeShellApplication {
         echo "dev-session: a live Monado is already running at $sock — reusing it." >&2
       else
         export SIMULATED_ENABLE=true
+        if [ "$qwerty" = 1 ]; then
+          # The qwerty driver (monado src/xrt/drivers/qwerty; target_builder_qwerty.c): HMD +
+          # two controllers moved by keyboard and mouse in the SDL debug GUI (u_debug_gui.c feeds
+          # it the window's events). Its builder outranks the simulated one, so the head no longer
+          # drifts on its own — the poses are exactly what the wearer does at the desk.
+          export QWERTY_ENABLE=true XRT_DEBUG_GUI=true
+          echo "[monado] qwerty driver: right-drag rotates, WASD/QE move, arrows rotate, wheel speed; Ctrl = left controller, Alt = right controller; left click trigger, middle squeeze"
+        fi
         # We manage lifetime; monado's stdin-watching mainloop must not (it
         # epoll-fails on a non-terminal stdin — ipc_server_process.c).
         export XRT_NO_STDIN=true
