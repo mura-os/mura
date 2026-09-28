@@ -32,6 +32,7 @@ let
     pkgs.mura.setup
     pkgs.mura.authd
     pkgs.mura.greeter
+    pkgs.mura.osk
     pkgs.mura.recovery
     pkgs.mura.settingsd
     pkgs.greetd

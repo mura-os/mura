@@ -86,6 +86,29 @@ pub fn commit(st: &mut Zxr, id: crate::scene::MemberId, surface: &WlSurface) {
         return;
     }
     let _anchoring_changed = anchoring::apply_pending(&root);
+    let has_buffer = with_renderer_surface_state(&root, |s| s.buffer().is_some()).unwrap_or(false);
+    let was_mapped = st.shell.entry(id).map(|e| e.mapped).unwrap_or(false);
+    if !has_buffer && was_mapped {
+        // unmapped by a null buffer: back to the post-`get_layer_surface` state (protocol
+        // `:113-119`). Read before the initial-configure test: smithay resets the role on this
+        // very commit (`wlr_layer/mod.rs` `got_unmapped` → `reset()`), so the test would otherwise
+        // take the unmap for the client's next initial commit and configure it too early. The
+        // configure follows the client's own re-initial commit, as the protocol says.
+        if let Some(e) = st.shell.entry_mut(id) {
+            e.mapped = false;
+            e.box_px = None;
+        }
+        if let Some(m) = st.scene.get_mut(id) {
+            m.m.mapped_at = 0;
+        }
+        st.journal.layer_unmapped += 1;
+        let had_focus = st.scene.focused == Some(id);
+        arrange(st);
+        if had_focus {
+            focus::restore_after_close(st, id);
+        }
+        return;
+    }
     let initial_sent = with_states(&root, |states| states.data_map.get::<LayerSurfaceData>().map(|d| d.lock().unwrap().initial_configure_sent).unwrap_or(false));
     if !initial_sent {
         // arrange first so the configure carries the arranged size (the client's own size
@@ -96,8 +119,6 @@ pub fn commit(st: &mut Zxr, id: crate::scene::MemberId, surface: &WlSurface) {
         st.journal.layer_configures += 1;
         return;
     }
-    let has_buffer = with_renderer_surface_state(&root, |s| s.buffer().is_some()).unwrap_or(false);
-    let was_mapped = st.shell.entry(id).map(|e| e.mapped).unwrap_or(false);
     if has_buffer && !was_mapped {
         let serial = st.shell.next_serial();
         if let Some(e) = st.shell.entry_mut(id) {
@@ -120,21 +141,6 @@ pub fn commit(st: &mut Zxr, id: crate::scene::MemberId, surface: &WlSurface) {
                 st.focus.new_windows_focused += 1;
                 st.focus_window(Some(id));
             }
-        }
-    } else if !has_buffer && was_mapped {
-        // unmapped: back to the post-`get_layer_surface` state (protocol `:113-119`)
-        if let Some(e) = st.shell.entry_mut(id) {
-            e.mapped = false;
-            e.box_px = None;
-        }
-        if let Some(m) = st.scene.get_mut(id) {
-            m.m.mapped_at = 0;
-        }
-        st.journal.layer_unmapped += 1;
-        let had_focus = st.scene.focused == Some(id);
-        arrange(st);
-        if had_focus {
-            focus::restore_after_close(st, id);
         }
     } else if was_mapped {
         // a mapped commit: state may have moved (size, anchors, zone, layer, anchoring)

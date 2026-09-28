@@ -450,7 +450,7 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     // a trusted client that died since the last tick (ADR 0007 I3: nothing unlocks). The primary's
     // death ends greeter mode with its status (cage's rule); the OSK's restarts it within KWin's
     // bound (filter.rs).
-    let losses = shell::filter::take_trusted_losses(st);
+    let losses = shell::filter::take_trusted_losses(st, now_ns());
     if let Some(status) = losses.primary {
         if st.input.mode == input::Mode::Greeter && st.exit_status.is_none() {
             st.exit_status = Some(status);

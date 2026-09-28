@@ -34,6 +34,7 @@
 //!   restarts it.
 
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::process::Child;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -206,7 +207,7 @@ pub struct Losses {
 
 /// The tick's read of `disconnected`: which trusted clients went away since the last call.
 /// Their data is dropped from the list; the journal counts them.
-pub fn take_trusted_losses(st: &mut Zxr) -> Losses {
+pub fn take_trusted_losses(st: &mut Zxr, now_ns: u64) -> Losses {
     let mut losses = Losses::default();
     let mut roles = Vec::new();
     st.trusted_clients.retain(|c| {
@@ -218,41 +219,105 @@ pub fn take_trusted_losses(st: &mut Zxr) -> Losses {
             true
         }
     });
-    if losses.count == 0 {
-        return losses;
+    if losses.count > 0 {
+        st.journal.trusted_lost += losses.count as u64;
     }
-    st.journal.trusted_lost += losses.count as u64;
+    // a lost connection: the role's process is reaped if it has already exited, else told to
+    // leave (SIGTERM) and polled from here on — the compositor never blocks on a child
+    let mut exited: Vec<(TrustedRole, i32)> = Vec::new();
     for role in roles {
+        let pid = st.trusted_children.iter().find(|t| t.role == role).map(|t| t.pid);
+        match pid.map(|p| reap(st, p, role, now_ns)) {
+            Some(Some(status)) => exited.push((role, status)),
+            Some(None) => tracing::warn!(?role, "trusted client's connection gone; its process is still alive — SIGTERM sent, reaped when it exits"),
+            None => {
+                if role == TrustedRole::Other {
+                    tracing::warn!("trusted client gone — the composed set is what remains; nothing unlocks (ADR 0007 I3), its unit restarts it");
+                } else {
+                    exited.push((role, 0));
+                }
+            }
+        }
+    }
+    // the children told to leave earlier: exited now? SIGKILL past the grace (KWin `terminate()`
+    // then `kill()` on its input method; cage waits on the process, not the connection)
+    let mut i = 0;
+    while i < st.reaping.len() {
+        let r = &mut st.reaping[i];
+        match r.child.try_wait() {
+            Ok(Some(status)) => {
+                let r = st.reaping.remove(i);
+                exited.push((r.role, exit_code(status)));
+                continue;
+            }
+            Ok(None) if !r.killed && now_ns.saturating_sub(r.since_ns) > REAP_GRACE_NS => {
+                // SAFETY: a pid this process spawned and has not yet reaped
+                unsafe {
+                    libc::kill(r.child.id() as i32, libc::SIGKILL);
+                }
+                r.killed = true;
+                tracing::warn!(pid = r.child.id(), ?r.role, "trusted child did not exit within the grace; SIGKILL");
+            }
+            Ok(None) => {}
+            Err(_) => {
+                st.reaping.remove(i);
+                continue;
+            }
+        }
+        i += 1;
+    }
+    for (role, status) in exited {
         match role {
             TrustedRole::Primary => {
-                let pid = st.trusted_children.iter().find(|t| t.role == role).map(|t| t.pid);
-                let status = pid.map(|p| reap(st, p)).unwrap_or(0);
                 losses.primary = Some(status);
                 tracing::warn!(status, "trusted primary (the greeter program) gone — greeter mode ends with its status (cage's rule)");
             }
             TrustedRole::Osk => {
-                let pid = st.trusted_children.iter().find(|t| t.role == role).map(|t| t.pid);
-                let status = pid.map(|p| reap(st, p)).unwrap_or(0);
                 // KWin restarts on `CrashExit` only: a signal death. A plain exit is the OSK's own word.
                 losses.osk = status > 128;
                 tracing::warn!(status, crash = losses.osk, "trusted OSK gone");
             }
-            TrustedRole::Other => tracing::warn!("trusted client gone — the composed set is what remains; nothing unlocks (ADR 0007 I3), its unit restarts it"),
+            TrustedRole::Other => {}
         }
     }
     losses
 }
 
-/// Reap a spawned child by pid; its exit status in the shell's convention (128 + signal).
-fn reap(st: &mut Zxr, pid: u32) -> i32 {
-    let Some(i) = st.children.iter().position(|c| c.id() == pid) else { return 0 };
+/// How long a child whose connection is gone may take to exit after SIGTERM before SIGKILL.
+pub const REAP_GRACE_NS: u64 = 1_000_000_000;
+
+/// A spawned child whose connection is gone but whose process has not exited: told to leave,
+/// polled each tick (`take_trusted_losses`), never waited on.
+pub struct Reaping {
+    pub child: Child,
+    pub role: TrustedRole,
+    pub since_ns: u64,
+    pub killed: bool,
+}
+
+fn exit_code(status: std::process::ExitStatus) -> i32 {
+    status.code().unwrap_or_else(|| {
+        use std::os::unix::process::ExitStatusExt;
+        128 + status.signal().unwrap_or(0)
+    })
+}
+
+/// Reap a spawned child by pid without blocking: its exit status in the shell's convention
+/// (128 + signal) if it has exited; else SIGTERM and `None` — the tick polls it (`Reaping`).
+fn reap(st: &mut Zxr, pid: u32, role: TrustedRole, now_ns: u64) -> Option<i32> {
+    let i = st.children.iter().position(|c| c.id() == pid)?;
     let mut child = st.children.remove(i);
-    match child.wait() {
-        Ok(status) => status.code().unwrap_or_else(|| {
-            use std::os::unix::process::ExitStatusExt;
-            128 + status.signal().unwrap_or(0)
-        }),
-        Err(_) => 0,
+    match child.try_wait() {
+        Ok(Some(status)) => Some(exit_code(status)),
+        Ok(None) => {
+            // SAFETY: a pid this process spawned and has not yet reaped
+            unsafe {
+                libc::kill(pid as i32, libc::SIGTERM);
+            }
+            st.reaping.push(Reaping { child, role, since_ns: now_ns, killed: false });
+            None
+        }
+        Err(_) => Some(0),
     }
 }
 

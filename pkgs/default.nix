@@ -34,6 +34,9 @@ final: prev: {
     # Slint on the sctk platform; greetd's kiosk child in greeter mode, an ext-session-lock client
     # under a user unit in lock mode.
     greeter = final.callPackage ./mura-greeter { };
+    # The on-screen keyboard (shell-plane §3.2; research/75 §3.2): squeekboard's shape on the same
+    # Slint platform — zxr's `--osk` child in every mode.
+    osk = final.callPackage ./mura-osk { };
     # The plymouth theme (boot / failure feedback / recovery screen) is device-specific — it is
     # composited from assets/branding with the panel geometry — so modules/os/recovery.nix calls
     # pkgs/mura-plymouth-theme directly with the contract's values; no fixed overlay attribute.

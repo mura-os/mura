@@ -1,0 +1,27 @@
+[package]
+name = "mura-osk"
+version = "0.1.0"
+edition = "2021"
+description = "Mura's on-screen keyboard: a Slint scene on the sctk platform, zwp_input_method_v2 + zwp_virtual_keyboard_v1 client, zxr's child in every mode (shell-plane.md §3.2; research/75 §3.2)"
+license = "GPL-3.0-or-later"
+build = "build.rs"
+
+# not a member of the greeter's workspace: its own root, on the shared platform by path
+[workspace]
+
+[dependencies]
+slint = { version = "=1.18.0", default-features = false, features = ["std", "compat-1-2", "renderer-software", "accessibility"] }
+mura-slint-platform = { path = "../mura-greeter/platform", features = ["input-method"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
+
+[build-dependencies]
+slint-build = "=1.18.0"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

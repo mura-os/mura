@@ -1,6 +1,6 @@
 # The shell plane — components as processes, the compositor's shell-layer half, and the toolkit
 
-**Status: DRAFT, rev 0.5 (2026-09-28; rev 0.4 + the body frame as the **default placement** — nothing head-locked unless it asks (§2.6, §3.1, §3.4, §3.6; spatial-input §13) — and the input floor as one rule for every surface). Rev 0.4 (2026-09-28; rev 0.3 + the body frame built and the OSK bound to the surface it types into — §2.6 the `typed` seed and the body frame's definition, §3.2 the OSK's frame, §6 the seed-provenance item; spec §4/§5 rev 3.14). Rev 0.3 (2026-09-28; rev 0.2 + ADR 0007 amendment 2 and research/78 — §2.3 greeter
+**Status: DRAFT, rev 0.6 (2026-09-28; rev 0.5 + §3.2 `mura-osk` built — the OSK on the platform's `input-method` feature, squeekboard's shape, measured nested at G2). Rev 0.5 (2026-09-28; rev 0.4 + the body frame as the **default placement** — nothing head-locked unless it asks (§2.6, §3.1, §3.4, §3.6; spatial-input §13) — and the input floor as one rule for every surface). Rev 0.4 (2026-09-28; rev 0.3 + the body frame built and the OSK bound to the surface it types into — §2.6 the `typed` seed and the body frame's definition, §3.2 the OSK's frame, §6 the seed-provenance item; spec §4/§5 rev 3.14). Rev 0.3 (2026-09-28; rev 0.2 + ADR 0007 amendment 2 and research/78 — §2.3 greeter
 mode is the socketpair kiosk, the lock is an `ext-session-lock` client under a user unit; §3.1 the
 program's modes, unit, seams and surface roles; §3.2 the OSK as zxr's child in every mode (KWin's IM
 shape); §4 the sctk platform with the AccessKit bridge and the Stage B gate; §6 items).
@@ -256,12 +256,18 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
 
 ### 3.2 On-screen keyboard — carried (squeekboard), then Mura
 
-- **Process (ruled Q5):** **squeekboard** carried to reach G1–G3 — layer `top`, anchors
-  bottom|left|right, namespace `osk`; `zwp_input_method_v2` + `zwp_virtual_keyboard_v1`; owns
-  `sm.puri.OSK0` (`SetVisible`/`Visible`); 104 layouts; types with `commit_string`, erases with a
-  virtual-keyboard Backspace, sends no preedit (research/75 §3.2). Then **`mura-osk`** in Slint,
-  designed for the ray: large keys, dwell-friendly, the digit pad as a layout, the same two protocols
-  and the same D-Bus name so the shell does not change.
+- **Process (ruled Q5; built at G2, rev 0.6):** **`mura-osk`** (`pkgs/mura-osk`), Slint on the sctk
+  platform's `input-method` feature, in squeekboard's shape — layer `top`, anchors bottom|left|right,
+  namespace `osk`, exclusive zone = its height (`squeekboard/src/panel.c:64,84`); `zwp_input_method_v2`
+  + `zwp_virtual_keyboard_v1`; types with `commit_string`, erases with a virtual-keyboard Backspace,
+  sends no preedit and never `delete_surrounding_text` (`submission.rs:116-150`); shows on `activate`,
+  hides 200 ms after `deactivate` (`animation.rs:15`); the wearer's hide holds across one activation's
+  updates and clears with the next field (`state.rs:292-318`); layouts letters/symbols/digit pad, the
+  pad for digits/number/phone/pin/date/time purposes (`data/loading.rs:122-126`); every key an AT-SPI
+  button; `sm.puri.OSK0` (`SetVisible`/`Visible`) served when a session bus exists, absent in greeter
+  mode. Designed for the ray: keys ≥ 72 px (≈ 3.4° on the greeter frame), nothing on hover. Hidden =
+  unmapped (a null buffer; the compositor treats the next commit as the initial one again).
+  squeekboard was carried through G1 (104 layouts; `mura-osk` has `us` — layouts are an open item).
 - **Unit (rev 0.3):** **zxr's socketpair child in every mode** — KWin's input-method shape exactly
   (`kwin/src/inputmethod.cpp:864-926`: spawned with `WAYLAND_SOCKET`, restarted on crash up to five
   times in 20 s, then stopped with a warning, `:88-96, 916-928`). It is the one component zxr

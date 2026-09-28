@@ -52,7 +52,7 @@ let
   # socketpairs (the kiosk's primary and its keyboard) and exits with the program (cage's
   # rule). Defined here, wired at G2 (the `greeterCommand` flip is G2's exit criterion).
   # The picker's UID window rides the program's environment (`accounts.rs`), never login.defs.
-  zxrGreeterCommand = "${lib.getExe pkgs.mura.zxr} --greeter --trusted 'MURA_UID_MIN=${toString cfg.multiUser.uidRange.min} MURA_UID_MAX=${toString cfg.multiUser.uidRange.max} exec ${lib.getExe pkgs.mura.greeter}' --osk ${lib.getExe pkgs.squeekboard}";
+  zxrGreeterCommand = "${lib.getExe pkgs.mura.zxr} --greeter --trusted 'MURA_UID_MIN=${toString cfg.multiUser.uidRange.min} MURA_UID_MAX=${toString cfg.multiUser.uidRange.max} exec ${lib.getExe pkgs.mura.greeter}' --osk ${lib.getExe pkgs.mura.osk}";
 
   profileName = if cfg.autoLogin != null then "appliance" else "multi-user";
 

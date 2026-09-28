@@ -34,6 +34,8 @@ use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_s
 use wayland_client::{Connection, QueueHandle};
 
 use crate::adapter::MuraWindowAdapter;
+#[cfg(feature = "input-method")]
+use crate::input_method::InputMethod;
 use crate::text_input::TextInput;
 use crate::{Config, LockEvent, Role};
 
@@ -53,6 +55,14 @@ pub(crate) struct Shared {
     pub lock_callback: Option<Box<dyn Fn(LockEvent)>>,
     pub locked: bool,
     pub start: Instant,
+    /// `Handle::set_visible`: a layer surface unmapped (null buffer) and remapped on demand
+    pub visible_request: Option<bool>,
+    /// the layer surface is mapped, or will be at the next configure (`Handle::is_visible`)
+    pub mapped: bool,
+    #[cfg(feature = "input-method")]
+    pub im_callback: Option<Box<dyn Fn(crate::ImEvent)>>,
+    #[cfg(feature = "input-method")]
+    pub im_actions: Vec<crate::ImAction>,
 }
 
 impl Default for Shared {
@@ -67,6 +77,12 @@ impl Default for Shared {
             lock_callback: None,
             locked: false,
             start: Instant::now(),
+            visible_request: None,
+            mapped: true,
+            #[cfg(feature = "input-method")]
+            im_callback: None,
+            #[cfg(feature = "input-method")]
+            im_actions: Vec::new(),
         }
     }
 }
@@ -141,6 +157,10 @@ pub(crate) struct AppState {
     touch_points: Vec<(i32, (f64, f64))>,
     modifiers: Modifiers,
     pub(crate) text_input: TextInput,
+    #[cfg(feature = "input-method")]
+    pub(crate) input_method: InputMethod,
+    /// the layer surface is mapped (or will be at the next configure); `false` after `set_visible(false)`
+    mapped: bool,
     shared: Rc<RefCell<Shared>>,
     proxy: Proxy,
     config: Config,
@@ -167,6 +187,8 @@ impl AppState {
         loop_handle.insert_source(ping_source, |_, _, _| {}).map_err(|e| PlatformError::Other(format!("ping source: {e}")))?;
         let proxy = Proxy { queue: Default::default(), quit: Default::default(), ping };
         let text_input = TextInput::bind(globals, qh);
+        #[cfg(feature = "input-method")]
+        let input_method = InputMethod::bind(globals, qh);
         Ok(AppState {
             registry_state: RegistryState::new(globals),
             compositor,
@@ -189,6 +211,9 @@ impl AppState {
             touch_points: Vec::new(),
             modifiers: Modifiers::default(),
             text_input,
+            #[cfg(feature = "input-method")]
+            input_method,
+            mapped: true,
             shared,
             proxy,
             config: config.clone(),
@@ -277,14 +302,82 @@ impl AppState {
             adapter.window().dispatch_event(ev);
         }
 
+        #[cfg(feature = "input-method")]
+        {
+            let actions = std::mem::take(&mut self.shared.borrow_mut().im_actions);
+            for a in actions {
+                match a {
+                    crate::ImAction::CommitString(text) => self.input_method.commit_string(&text),
+                    crate::ImAction::Key(code) => self.input_method.key(code),
+                }
+            }
+            let events = self.input_method.take_events();
+            if !events.is_empty() {
+                let cb = self.shared.borrow_mut().im_callback.take();
+                if let Some(cb) = cb {
+                    for e in events {
+                        cb(e);
+                    }
+                    let mut s = self.shared.borrow_mut();
+                    if s.im_callback.is_none() {
+                        s.im_callback = Some(cb);
+                    }
+                }
+            }
+        }
+
+        let visible_request = self.shared.borrow_mut().visible_request.take();
+        if let Some(v) = visible_request {
+            self.set_visible(v);
+        }
+
         if self.closed {
             let _ = slint::quit_event_loop();
             return;
         }
 
-        if self.configured.is_some() && !self.frame_pending && adapter.take_redraw_request() {
+        if self.mapped && self.configured.is_some() && !self.frame_pending && adapter.take_redraw_request() {
             self.draw(qh, &adapter);
         }
+    }
+
+    /// Map or unmap the layer surface (the OSK's show/hide; squeekboard hides its panel the same
+    /// way). Hide: a null buffer commit — the protocol's unmap, after which the compositor treats
+    /// the next commit as the initial one again (`zwlr_layer_shell_v1.xml` `configure`/unmap;
+    /// smithay resets the role on unmap). Show: that initial commit, whose configure redraws.
+    fn set_visible(&mut self, visible: bool) {
+        if visible == self.mapped {
+            return;
+        }
+        let Surface::Layer(layer) = &self.surface else { return };
+        let layer = layer.clone();
+        self.mapped = visible;
+        if visible {
+            // unmapping reset the layer state to what `get_layer_surface` left (the protocol;
+            // smithay `wlr_layer/mod.rs` resets the pending state), so the role's properties are
+            // sent again before the initial commit — a width of 0 without left|right anchors is a
+            // protocol error otherwise
+            if let Role::Layer { layer: l, anchor, exclusive_zone, keyboard, size, .. } = &self.config.role {
+                layer.set_layer(*l);
+                layer.set_anchor(*anchor);
+                layer.set_exclusive_zone(*exclusive_zone);
+                layer.set_keyboard_interactivity(*keyboard);
+                layer.set_size(size.0, size.1);
+            }
+            layer.commit();
+            if let Some(adapter) = self.shared.borrow().adapter.clone() {
+                adapter.window().request_redraw();
+            }
+        } else {
+            let wl = layer.wl_surface();
+            wl.attach(None, 0, 0);
+            wl.commit();
+            self.frame_pending = false;
+            self.buffers = [None, None];
+            // no buffer before the next configure (the protocol's rule for the initial commit)
+            self.configured = None;
+        }
+        self.shared.borrow_mut().mapped = visible;
     }
 
     pub fn shutdown(&mut self) {
@@ -530,6 +623,8 @@ impl SeatHandler for AppState {
                     Err(e) => tracing::error!("keyboard: {e}"),
                 }
                 self.text_input.seat_ready(qh, &seat);
+                #[cfg(feature = "input-method")]
+                self.input_method.seat_ready(qh, &seat);
             }
             Capability::Pointer if self.pointer.is_none() => {
                 self.pointer = self.seat_state.get_pointer(qh, &seat).ok();

@@ -37,6 +37,7 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitHandl
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::selection::data_device::{set_data_device_focus, DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler};
+use smithay::wayland::selection::primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState};
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState, XdgToplevelSurfaceData};
 use smithay::wayland::shm::{with_buffer_contents, ShmHandler, ShmState};
@@ -89,6 +90,9 @@ pub struct Zxr {
     pub _output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Zxr>,
     pub data_device_state: DataDeviceState,
+    /// `zwp_primary_selection_v1` beside the clipboard (spec §10 rev 3.15: sway by default,
+    /// `sway/config.c:285`; cosmic-comp and niri unconditionally) — the middle-click paste
+    pub primary_selection_state: PrimarySelectionState,
     pub dmabuf_state: DmabufState,
     pub _dmabuf_global: DmabufGlobal,
     pub syncobj_state: Option<DrmSyncobjState>,
@@ -188,6 +192,8 @@ pub struct Zxr {
     /// the open settings engine and its watch state, when an artifact exists
     pub settings: Option<crate::settings::Settings>,
     pub children: Vec<Child>,
+    /// children whose connection is gone and whose exit is being polled (shell/filter.rs `Reaping`)
+    pub reaping: Vec<crate::shell::filter::Reaping>,
     /// xwayland-satellite's pid when spawned: its toplevels are the X11 ones (gate 4)
     pub satellite_pid: Option<u32>,
     pub pointer_focus: Option<WlSurface>,
@@ -350,6 +356,7 @@ impl Zxr {
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let primary_selection_state = PrimarySelectionState::new::<Self>(&dh);
         let viewporter = ViewporterState::new::<Self>(&dh);
         let presentation = PresentationState::new::<Self>(&dh, libc::CLOCK_MONOTONIC as u32);
         let single_pixel = SinglePixelBufferState::new::<Self>(&dh);
@@ -479,6 +486,7 @@ impl Zxr {
             _output_manager_state: output_manager_state,
             seat_state,
             data_device_state,
+            primary_selection_state,
             dmabuf_state,
             _dmabuf_global: dmabuf_global,
             syncobj_state,
@@ -537,6 +545,7 @@ impl Zxr {
             seam: crate::policy::seam::serve(&dh),
             settings: None,
             children: Vec::new(),
+            reaping: Vec::new(),
             satellite_pid: None,
             pointer_focus: None,
             last_gaze_sent: None,
@@ -1460,7 +1469,8 @@ impl SeatHandler for Zxr {
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let dh = &self.dh;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
-        set_data_device_focus(dh, seat, client);
+        set_data_device_focus(dh, seat, client.clone());
+        set_primary_focus(dh, seat, client);
     }
 }
 
@@ -1471,6 +1481,12 @@ impl SelectionHandler for Zxr {
 impl DataDeviceHandler for Zxr {
     fn data_device_state(&mut self) -> &mut DataDeviceState {
         &mut self.data_device_state
+    }
+}
+
+impl PrimarySelectionHandler for Zxr {
+    fn primary_selection_state(&mut self) -> &mut PrimarySelectionState {
+        &mut self.primary_selection_state
     }
 }
 

@@ -20,9 +20,24 @@
 //! redrawn only on Slint's request and only the dirty region is rendered.
 
 mod adapter;
+#[cfg(feature = "input-method")]
+pub mod input_method;
 mod pixel;
 mod state;
 mod text_input;
+
+#[cfg(feature = "input-method")]
+pub use input_method::ImEvent;
+
+/// What the program asks the input method to do (feature `input-method`; the OSK's two verbs).
+#[cfg(feature = "input-method")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ImAction {
+    /// `zwp_input_method_v2.commit_string` + `commit`: text into the focused field
+    CommitString(String),
+    /// one press-and-release of an evdev key through `zwp_virtual_keyboard_v1`
+    Key(u32),
+}
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -91,6 +106,29 @@ impl Handle {
     pub fn is_locked(&self) -> bool {
         self.shared.borrow().locked
     }
+    /// Layer role: map or unmap the surface (an on-screen keyboard's show/hide).
+    pub fn set_visible(&self, visible: bool) {
+        self.shared.borrow_mut().visible_request = Some(visible);
+    }
+    /// Whether the surface is mapped (or about to be).
+    pub fn is_visible(&self) -> bool {
+        self.shared.borrow().mapped
+    }
+    /// Feature `input-method`: register the callback for the input method's events (on the Slint thread).
+    #[cfg(feature = "input-method")]
+    pub fn on_im_event(&self, f: impl Fn(ImEvent) + 'static) {
+        self.shared.borrow_mut().im_callback = Some(Box::new(f));
+    }
+    /// Feature `input-method`: type text into the focused field.
+    #[cfg(feature = "input-method")]
+    pub fn commit_string(&self, text: &str) {
+        self.shared.borrow_mut().im_actions.push(ImAction::CommitString(text.to_string()));
+    }
+    /// Feature `input-method`: one evdev key press-and-release (`input_method::key`).
+    #[cfg(feature = "input-method")]
+    pub fn key(&self, keycode: u32) {
+        self.shared.borrow_mut().im_actions.push(ImAction::Key(keycode));
+    }
 }
 
 /// Install the platform. Call before creating any Slint component; the Wayland connection is
@@ -134,7 +172,16 @@ impl Platform for MuraPlatform {
         loop {
             slint::platform::update_timers_and_animations();
             app.process(&self.qh);
-            let _ = self.conn.flush();
+            // a dead connection (the compositor gone, or a protocol error it posted) ends the
+            // program: a readable-at-EOF fd would otherwise spin the loop forever
+            match self.conn.flush() {
+                Ok(()) => {}
+                Err(wayland_client::backend::WaylandError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => return Err(PlatformError::Other(format!("wayland connection: {e}"))),
+            }
+            if let Some(e) = self.conn.protocol_error() {
+                return Err(PlatformError::Other(format!("wayland protocol error: {} on {}@{}: {}", e.code, e.object_interface, e.object_id, e.message)));
+            }
             if self.proxy.quit_requested() {
                 break;
             }

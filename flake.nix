@@ -102,6 +102,7 @@
           mura-settingsd = (pkgsFor system).mura.settingsd; # the settings daemon + CLI (specs/settings-daemon.md; D7)
           zxr = (pkgsFor system).mura.zxr; # the compositor, R0 bring-up (specs/zxr-core.md)
           mura-greeter = (pkgsFor system).mura.greeter; # the greeter and lock program (G1; specs/session-auth.md §5)
+          mura-osk = (pkgsFor system).mura.osk; # the on-screen keyboard (G2; shell-plane §3.2)
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux")
           {
@@ -197,6 +198,7 @@
           mura-settingsd = self.packages.${system}.mura-settingsd;
           zxr = self.packages.${system}.zxr;
           mura-greeter = self.packages.${system}.mura-greeter;
+          mura-osk = self.packages.${system}.mura-osk;
           # The interpreter proof and the Python fence (tests/closure.nix): the closure of every
           # Mura program plus greetd carries no interpreter; the toplevels' residual nixpkgs
           # Python is a pinned, shrinking allowlist.

@@ -1049,6 +1049,27 @@ headset). Each gate is a written result with numbers in
    `zwp_input_method_v2` + `zwp_virtual_keyboard_v1` client on the Slint sctk platform; digit pad
    for a PIN purpose), the greeter exits 0 and greetd starts the scheduled session; neither
    `gtkgreet`, `cage` nor `squeekboard` is in the closure.
+   **Measured nested (host, 2026-09-28; the M1 half — the OSK and the clipboard):** `mura-osk`
+   (11 MB binary) maps as the OSK under the greeter: `top`/`osk`, zone 360 → the greeter arranged
+   `1920×1133`, the OSK `1920×360+0+1133`, both on the body frame; its keys by AT-SPI `DoAction`
+   (`u s e r r ⌫` → the Username field reads `user`: `commit_string` and the virtual-keyboard
+   Backspace both land) and by **controller-ray clicks** aimed from the AT-SPI extents (`m u r a`
+   4/4; ⌫ 6/8 — the misses are the simulator's 8 cm/s head drift moving the body frame between aim
+   and click, F11); layouts switch by key (`Digits` → `1 2 3 ⌫ …`, `Symbols` → `1 … 0 ! # …`,
+   `Letters` back); the `Hide keyboard` key unmaps it (`layer_unmapped 1`, the greeter's usable
+   rectangle back to `1920×1493`) and the hide holds through the same activation's updates
+   (squeekboard's override); `kill -9` → `trusted OSK gone status=137 crash=true` → `OSK restarted`
+   within the tick, mapped again (`osk_restarts 1`); `sm.puri.OSK0` served on the harness's bus.
+   **Clipboard:** `wl-copy`/`wl-paste` round-trip `hello mura clipboard` across two clients on the
+   public socket, and `--primary` the same through `zwp_primary_selection_v1` (§10 rev 3.15).
+   **Two compositor bugs the run found and fixed:** (1) a layer surface's null-buffer commit was
+   taken for its next *initial* commit (smithay resets `initial_configure_sent` on that very commit)
+   — the entry stayed `mapped`, a 0×0 plane was composed and a configure went out before the
+   client's re-initial commit; the unmap is now read first (`shell/layer.rs`); (2) `reap` blocked
+   on `Child::wait()` when a trusted client's connection died while its process lived (a protocol
+   error the client had not yet acted on) — the compositor hung; the child is now `try_wait`ed,
+   sent SIGTERM, polled per tick and SIGKILLed after 1 s (`shell/filter.rs` `Reaping`; KWin's
+   `terminate()`-then-`kill()`, cage's wait on the process).
 11. **The handoff gate (rev 3.15; implementation-path §5 G3 / M1).** `mura-compositor.service`
    runs `zxr` (`Type=notify`): `WAYLAND_DISPLAY` reaches the user manager and the D-Bus activation
    environment through `mura-session finalize` spawned by the compositor (§9), the unit is `active`

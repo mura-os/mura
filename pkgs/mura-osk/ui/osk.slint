@@ -1,0 +1,162 @@
+// mura-osk — the on-screen keyboard's scene (shell-plane §3.2; research/75 §3.2).
+//
+// Designed for a ray: every key is a large target (≥ 72 px) the wearer can dwell on or click;
+// nothing depends on hover. Four layouts — letters (lower/upper), symbols, and the digit pad —
+// chosen by the program from the field's content purpose (squeekboard's rule,
+// `squeekboard/src/data/loading.rs:122-126`: digits/number/phone → number, pin → pin). Every key
+// is an accessible button with its label, so the AT-SPI tree is the keyboard (research/37). No
+// images: the closure carries no decoder (build.rs).
+//
+// What a key does is the program's (main.rs): text keys `commit_string`, the rest are
+// virtual-keyboard keys (Backspace, Return, Tab, arrows) — squeekboard's split.
+
+export enum Layout { letters, symbols, digits }
+
+global Theme {
+    in-out property <float> scale: 1.0;
+    out property <color> bg: #1c1f26e6;
+    out property <color> key: #2b303a;
+    out property <color> key-special: #363c48;
+    out property <color> key-accent: #5b9bd5;
+    out property <color> fg: #e8ebf0;
+    out property <color> border: #3a404c;
+    out property <length> unit: 16px * scale;
+}
+
+// One key: a rectangle the ray can dwell on. `action` is what the program does with it:
+// "text" (commit `text`), "backspace", "enter", "tab", "left", "right", "shift", "symbols",
+// "letters", "digits", "hide".
+component Key inherits Rectangle {
+    in property <string> label;
+    in property <string> text;
+    in property <string> action: "text";
+    // the accessible name when the glyph is not one ("⌫" → "Backspace")
+    in property <string> name;
+    in property <bool> special: false;
+    in property <bool> accent: false;
+    in property <bool> active: false;
+    in property <float> span: 1.0;
+    callback pressed(string, string);
+    min-height: Theme.unit * 4.5;
+    horizontal-stretch: span;
+    border-radius: Theme.unit * 0.5;
+    background: ta.pressed ? Theme.key-accent.darker(30%) : ta.has-hover ? Theme.border : accent ? Theme.key-accent : active ? Theme.key-accent.darker(40%) : special ? Theme.key-special : Theme.key;
+    border-width: 1px;
+    border-color: Theme.border;
+    accessible-role: button;
+    accessible-label: name != "" ? name : label;
+    accessible-action-default => { root.pressed(root.action, root.text); }
+    ta := TouchArea {
+        clicked => { root.pressed(root.action, root.text); }
+    }
+    Text {
+        text: root.label;
+        color: Theme.fg;
+        font-size: special ? Theme.unit * 1.4 : Theme.unit * 1.9;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component Row inherits HorizontalLayout {
+    spacing: Theme.unit * 0.4;
+}
+
+export component Osk inherits Window {
+    in-out property <Layout> layout: Layout.letters;
+    in-out property <bool> shift: false;
+    in-out property <float> scale: 1.0;
+    callback key-pressed(string, string);
+    changed scale => { Theme.scale = scale; }
+    background: Theme.bg;
+
+    function k(action: string, text: string) { root.key-pressed(action, text); }
+    function letter(c: string) -> string { return root.shift ? c.to-uppercase() : c; }
+
+    VerticalLayout {
+        padding: Theme.unit * 0.5;
+        spacing: Theme.unit * 0.4;
+
+        if root.layout == Layout.letters : VerticalLayout {
+            spacing: Theme.unit * 0.4;
+            Row {
+                for c in ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"] : Key { label: root.letter(c); text: root.letter(c); pressed(a, t) => { root.k(a, t); } }
+                Key { label: "⌫"; name: "Backspace"; action: "backspace"; special: true; span: 1.5; pressed(a, t) => { root.k(a, t); } }
+            }
+            Row {
+                Rectangle { horizontal-stretch: 0.5; }
+                for c in ["a", "s", "d", "f", "g", "h", "j", "k", "l"] : Key { label: root.letter(c); text: root.letter(c); pressed(a, t) => { root.k(a, t); } }
+                Key { label: "⏎"; name: "Enter"; action: "enter"; special: true; accent: true; span: 2.0; pressed(a, t) => { root.k(a, t); } }
+            }
+            Row {
+                Key { label: "⇧"; name: "Shift"; action: "shift"; special: true; active: root.shift; span: 1.5; pressed(a, t) => { root.k(a, t); } }
+                for c in ["z", "x", "c", "v", "b", "n", "m"] : Key { label: root.letter(c); text: root.letter(c); pressed(a, t) => { root.k(a, t); } }
+                Key { label: ","; text: ","; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "."; text: "."; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "?"; text: "?"; pressed(a, t) => { root.k(a, t); } }
+            }
+            Row {
+                Key { label: "?123"; name: "Symbols"; action: "symbols"; special: true; span: 1.5; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "123"; name: "Digits"; action: "digits"; special: true; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "space"; name: "Space"; text: " "; span: 5.0; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "@"; text: "@"; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "-"; text: "-"; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "←"; name: "Left"; action: "left"; special: true; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "→"; name: "Right"; action: "right"; special: true; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "▾"; name: "Hide keyboard"; action: "hide"; special: true; pressed(a, t) => { root.k(a, t); } }
+            }
+        }
+
+        if root.layout == Layout.symbols : VerticalLayout {
+            spacing: Theme.unit * 0.4;
+            Row {
+                for c in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"] : Key { label: c; text: c; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "⌫"; name: "Backspace"; action: "backspace"; special: true; span: 1.5; pressed(a, t) => { root.k(a, t); } }
+            }
+            Row {
+                for c in ["!", "#", "$", "%", "&", "*", "(", ")", "_", "+"] : Key { label: c; text: c; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "⏎"; name: "Enter"; action: "enter"; special: true; accent: true; span: 1.5; pressed(a, t) => { root.k(a, t); } }
+            }
+            Row {
+                for c in ["/", "\\", "|", "~", "`", "[", "]", "{", "}", "^"] : Key { label: c; text: c; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "="; text: "="; pressed(a, t) => { root.k(a, t); } }
+            }
+            Row {
+                Key { label: "abc"; name: "Letters"; action: "letters"; special: true; span: 1.5; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "123"; name: "Digits"; action: "digits"; special: true; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "space"; name: "Space"; text: " "; span: 4.0; pressed(a, t) => { root.k(a, t); } }
+                for c in ["'", "\"", ":", ";", "<", ">"] : Key { label: c; text: c; pressed(a, t) => { root.k(a, t); } }
+                Key { label: "▾"; name: "Hide keyboard"; action: "hide"; special: true; pressed(a, t) => { root.k(a, t); } }
+            }
+        }
+
+        if root.layout == Layout.digits : HorizontalLayout {
+            spacing: Theme.unit * 0.4;
+            Rectangle { horizontal-stretch: 1.0; }
+            VerticalLayout {
+                horizontal-stretch: 2.0;
+                spacing: Theme.unit * 0.4;
+                Row {
+                    for c in ["1", "2", "3"] : Key { label: c; text: c; pressed(a, t) => { root.k(a, t); } }
+                    Key { label: "⌫"; name: "Backspace"; action: "backspace"; special: true; pressed(a, t) => { root.k(a, t); } }
+                }
+                Row {
+                    for c in ["4", "5", "6"] : Key { label: c; text: c; pressed(a, t) => { root.k(a, t); } }
+                    Key { label: "abc"; name: "Letters"; action: "letters"; special: true; pressed(a, t) => { root.k(a, t); } }
+                }
+                Row {
+                    for c in ["7", "8", "9"] : Key { label: c; text: c; pressed(a, t) => { root.k(a, t); } }
+                    Key { label: "▾"; name: "Hide keyboard"; action: "hide"; special: true; pressed(a, t) => { root.k(a, t); } }
+                }
+                Row {
+                    Key { label: "."; text: "."; pressed(a, t) => { root.k(a, t); } }
+                    Key { label: "0"; text: "0"; pressed(a, t) => { root.k(a, t); } }
+                    Key { label: "-"; text: "-"; pressed(a, t) => { root.k(a, t); } }
+                    Key { label: "⏎"; name: "Enter"; action: "enter"; special: true; accent: true; pressed(a, t) => { root.k(a, t); } }
+                }
+            }
+            Rectangle { horizontal-stretch: 1.0; }
+        }
+    }
+}

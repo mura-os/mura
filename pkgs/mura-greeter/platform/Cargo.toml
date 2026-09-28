@@ -16,7 +16,13 @@ calloop = { workspace = true }
 calloop-wayland-source = { workspace = true }
 tracing = { workspace = true }
 mura-slint-accesskit = { path = "../accesskit", optional = true }
+# the on-screen keyboard's protocols (feature `input-method`): zwp_input_method_v2 +
+# zwp_virtual_keyboard_v1 as a client, the keymap from xkbcommon over a memfd
+wayland-protocols-misc = { workspace = true, optional = true }
+xkbcommon = { workspace = true, optional = true }
+libc = { workspace = true, optional = true }
 
 [features]
 default = ["accessibility"]
 accessibility = ["dep:mura-slint-accesskit"]
+input-method = ["dep:wayland-protocols-misc", "dep:xkbcommon", "dep:libc"]
