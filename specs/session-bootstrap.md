@@ -1,12 +1,12 @@
 # Session bootstrap: the wrapper greetd execs, `mura-session.target`, and the environment contract
 
-**Status:** **rev 3 (2026-09-25, D4 rev 3 landed)** — rev 2 recorded what rung **D4** verified
+**Status:** **rev 4 (2026-09-28, G3 — the zxr session)** — rev 3 with zxr as the compositor in `mura-compositor.service`: §4.5/§7 readiness through `mura-session finalize`, now **spawned by zxr** once its socket is bound (the compositor knows only `NOTIFY_SOCKET` and `WAYLAND_DISPLAY`; `STOPPING=1` native), sway and its drop-in gone from the module and the target, §5 the tree with zxr, §8 re-run with zxr (rev 3.15 of zxr-core, gate 11). **Flagged (rule 4):** rev 3 §7 foresaw zxr calling `sd_notify` *and* setting its own variables; the chosen shape keeps one code path for the environment publication (the same child every stand-in used) and leaves the `systemctl`/`dbus-update-activation-environment` calls out of the compositor — the owner may prefer the in-process shape. Rev 3 (2026-09-25, D4 rev 3 landed) — rev 2 recorded what rung **D4** verified
 with **uwsm** as the wrapper. rev 3 replaces uwsm with **`mura-session`** (`pkgs/mura-session`,
 Rust, `libc` only) over **static** user units, keeping every mechanism rev 2 verified and
 re-running the same conformance checklist (§8). Why: the ruling that *no interpreter sits on
 the session-start path* (§9; AGENTS.md) — uwsm is 6.4k lines of Python and three interpreter
-starts per login, plus login-time unit generation and a `daemon-reload`. Revised again at **G3**
-when the zxr session replaces sway. Normative for `modules/os/session.nix` and
+starts per login, plus login-time unit generation and a `daemon-reload`. Revised at **G3** (rev 4)
+when the zxr session replaced sway. Normative for `modules/os/session.nix` and
 `pkgs/mura-session`.
 **Design source:** [implementation-path.md §2 (ii) B6/B6a](../docs/architecture/implementation-path.md),
 [ADR 0007](../docs/architecture/adr/0007-session-greeter-lock.md) (session body, crash/restart,
@@ -53,9 +53,9 @@ compositor unit) is the one kept.
 | `mura-session.target` | user unit (Mura, static) | the XR session body named across the corpus and **what the wrapper `--wait`s on**: `Requires=mura-compositor.service`, `Wants=monado.socket`, `BindsTo=graphical-session.target`, ordered after `graphical-session-pre.target` and **before** `graphical-session.target` (§5) |
 | `mura-session-bindpid@<pid>.service` | user unit (Mura, static template) | `waitpid -e <pid>` (util-linux) on the wrapper: a dead wrapper ends the session |
 | `mura-session-shutdown.target` | user unit (Mura, static) | the one-way exit: `Conflicts=` the whole graphical session, `StopWhenUnneeded`; every Mura unit's `OnSuccess=`/`OnFailure=` (`replace-irreversibly`) |
-| `mura-session finalize` | the user, inside the compositor unit | the STAND-IN readiness hook (§4.5, §7): publishes the compositor-created variables and sends `READY=1` on the unit's `NOTIFY_SOCKET` |
+| `mura-session finalize` | the user, inside the compositor unit (zxr's child) | the readiness hook (§4.5, §7): publishes the compositor-created variables and sends `READY=1` on the unit's `NOTIFY_SOCKET` |
 | `monado.socket`/`monado.service` (user) | the user | socket-activated OpenXR runtime; the session's *own* Monado instance (`services.monado`) |
-| the compositor | the user | `zxr` (or sway, the stand-in until M1); publishes its variables and signals readiness (§4.5) |
+| the compositor | the user | `zxr` (rev 4; sway was the stand-in through G2); binds its socket, then spawns `mura-session finalize WAYLAND_DISPLAY` to publish its variables and signal readiness (§4.5, §7) |
 | `graphical-session-pre.target` / `graphical-session.target` | user units (upstream) | freedesktop's layering points; Mura adds nothing to them, only orders around them |
 
 ## 3. Environment: three classes, three publication moments
@@ -136,7 +136,7 @@ build time — no login-time unit generation, no `daemon-reload`.
 
 ```
 mura-session.target                                  ← what the wrapper --wait's on
-├── Requires= mura-compositor.service                # THE COMPOSITOR; sway until M1 (STAND-IN)
+├── Requires= mura-compositor.service                # THE COMPOSITOR: zxr (rev 4; sway until G2)
 │     Type=notify NotifyAccess=all EnvironmentFile=-%t/mura/session.env
 │     BindsTo=mura-session.target  Before=mura-session.target graphical-session.target
 │     Wants=/After=graphical-session-pre.target  PropagatesStopTo=mura-session.target graphical-session.target
@@ -205,17 +205,26 @@ graphical-session.target: portals, pipewire/wireplumber, settings daemon, shell 
   same autologin again — an explicit "power off / restart" is the way out, exactly the Steam
   Deck shape.
 
-## 7. Stand-in specifics (D4, removed at M1)
+## 7. The compositor's readiness (rev 4: zxr; D4–G2: sway, the stand-in)
 
-sway as the session body: `mura-compositor.service`'s `ExecStart` is sway's binary (the line
-carries `# STAND-IN — replaced at M1 by zxr`). The NixOS sway module's default
-`config.d/nixos.conf` starts `sway-session.target` → `graphical-session.target` itself, *before*
-the readiness ordering; `modules/os/session.nix` `mkForce`s that file to one line —
-`exec mura-session finalize SWAYSOCK I3SOCK` — so the compositor performs §4.5 through the
-wrapper's `finalize` subcommand. sway has no sd-notify of its own; `finalize` sends `READY=1` on
-its behalf from inside the unit (`NotifyAccess=all`). zxr will call `sd_notify` directly and set
-its own variables; `finalize` leaves with sway (it stays in the binary as the generic hook for
-any compositor without native notification).
+**Rev 4.** `mura-compositor.service`'s `ExecStart` is `zxr`. Once the listening socket is bound
+and `WAYLAND_DISPLAY` is in its environment, zxr — when `NOTIFY_SOCKET` is set and the mode is not
+greeter — spawns **`mura-session finalize WAYLAND_DISPLAY`** as a child: the child runs
+`systemctl --user set-environment`, `dbus-update-activation-environment --systemd` and sends
+`READY=1` over the inherited `NOTIFY_SOCKET` (`NotifyAccess=all`), exactly what the sway drop-in
+did; at teardown zxr writes `STOPPING=1` to the socket itself (`sd_notify(3)`'s datagram, no
+library). `DISPLAY` follows the same path once satellite is up. The compositor therefore knows
+no systemd beyond two environment variables, and the environment publication has one
+implementation for every compositor the unit ever ran. **Flagged (rule 4):** rev 3 wrote that zxr
+would call `sd_notify` directly *and* set its own variables in-process; the spawned-child shape is
+the plan's choice (one code path, nothing bus-shaped in the compositor), not a forced one.
+
+**D4–G2, removed at rev 4.** sway as the session body: the NixOS sway module's default
+`config.d/nixos.conf` started `sway-session.target` → `graphical-session.target` itself, *before*
+the readiness ordering; `modules/os/session.nix` `mkForce`d that file to one line —
+`exec mura-session finalize SWAYSOCK I3SOCK` — so the compositor performed §4.5 through the
+wrapper's `finalize` subcommand. sway has no sd-notify of its own; `finalize` sent `READY=1` on
+its behalf from inside the unit.
 
 ## 8. Conformance checklist (VM, both fixtures — `tests/vm/default-image.nix`, `tests/vm/multi-user.nix`)
 

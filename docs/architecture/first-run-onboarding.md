@@ -278,8 +278,11 @@ NixOS configuration.
 ### 4.4 Input requirement — decided (conformance, normative)
 
 **The input floor is IMU head-aim plus the HMD's own buttons; dwell where a button is
-unusable. Every pre-login scene (greeter, lock) and every welcome-surface item is fully
-operable at the floor**, on every target, with nothing configured. Grounding
+unusable. Every surface the compositor composes — the greeter, the lock, every welcome-surface
+item, an on-screen keyboard's keys, any Wayland window in the session — is fully operable at
+the floor**, on every target, with nothing configured; the pre-login scenes are only its first
+consumers, nothing about them is special (spatial-input §13, ruled 2026-09-28: one input chain,
+dwell global, the scene never head-locked). Grounding
 ([research/42 §4, §7](../research/42-input-bootstrap.md)): every relevant Monado driver keeps a
 3DoF IMU path; every target has power + volume and most a third button
 (`mura.hardware.input.hmdButtons`, `selectRole`); PICO ships this as "Head Control Mode" and

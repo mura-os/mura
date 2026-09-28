@@ -388,7 +388,12 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   scene lives on a frame the head does not carry (the wearer's `shell.place:mura-greeter` row).
   The input floor's promise (first-run-onboarding §4.4: head-aim + dwell alone can log in)
   depends on the answer. A spatial-input item, not the greeter's; comparables to be read before
-  it is decided.
+  it is decided. **Resolved 2026-09-28 (owner ruling, spatial-input §13):** neither shape — the
+  premise was wrong. Nothing the wearer aims at is head-locked: the scene lives on the **body**
+  frame, the default for every surface that asks for nothing (PICO Head Control Mode, Cardboard,
+  HoloLens tag-along, the visionOS HIG), and dwell is one global commit for every surface (KWin's
+  dwell clicker), anchored on the hit point on the target in the plane's pixels, so a moving head
+  over a still plane settles where it points. Gate 9 (j) re-measures.
 - **F3 — `start_session.env` values** `XDG_SESSION_TYPE=wayland`, `XDG_SESSION_DESKTOP=mura`,
   `XDG_CURRENT_DESKTOP=Mura` (determination 4 said "proposed"): now written; the wrapper sets
   `XDG_CURRENT_DESKTOP` itself (session.nix), so the greeter's value is the same name.

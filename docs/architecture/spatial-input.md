@@ -1,6 +1,6 @@
 # Spatial input: targeting, hover, commit, focus, cursors, peripherals and text entry
 
-**Status: DRAFT rev 0.5 (2026-09-27; rev 0.4 + §6 layer-shell keyboard interactivity as the
+**Status: DRAFT rev 0.6 (2026-09-28; rev 0.5 + §13 the input floor as one rule for every surface, dwell global with its anchor on the hit point and progress on the reticle, and the body frame as the default placement — owner rulings; research/78 §7b, §9 F2). Rev 0.5 (2026-09-27; rev 0.4 + §6 layer-shell keyboard interactivity as the
 focus module's rules — the exclusive override, `on_demand` as a stack member, `none` never, the
 mode gate's exception as the trusted connection — [research/77](../research/77-shell-layer-mechanics-from-comparables.md);
 rev 0.4 = same day; rev 0.3 + §5 a ray-owned pointer is **released when gaze
@@ -516,6 +516,33 @@ research/42 §5's literature range), with a movement tolerance. Switch access is
 over the seat (item/point scanning), needing nothing from the compositor beyond the seat. The
 head ray with `hmdButtons` is always available (the floor).
 
+**The floor is one rule for every surface (ruled 2026-09-28).** A ray lands on a member,
+`select` commits; with no select button, dwell *is* the commit. Greeter, lock, an OSK's keys, a
+window in the free floor — the same chain (§1a), nothing scene-specific; the pre-login scenes
+were only its first consumers (first-run-onboarding §4.4). Three consequences, from the
+comparables that built head-aim UIs:
+
+- **Dwell is global** (ruled): KWin's dwell clicker clicks whatever is under a pointer that
+  rested (`kwin/src/plugins/dwellclicker/dwellclicker.cpp:252-277`); MRTK3's per-interactable
+  opt-in (`StatefulInteractable.cs:76-95` `UseGazeDwell`) and Cardboard's fuse are the other
+  camp, and a Wayland compositor cannot see a client's widgets — the client's cursor shape
+  (`pointer` over a link) is the only signal, recorded as an option, not taken.
+- **The anchor is the hit point on the target, not the ray's direction.** KWin arms on pointer
+  motion past `motionThreshold` in *screen pixels* and requires it "also after a click"
+  (`:260-275`); the head ray's equivalent is motion of its hit point on the surface. A plane
+  that moves with the head (a head-frame member) keeps the same hit point while the head turns,
+  so it never re-arms — the phantom click a second that gate 9 saw (research/78 §7b) was the
+  direction anchor re-arming on a head-locked plane.
+- **A scene the head aims at is never head-locked.** PICO's Head Control Mode moves a crosshair
+  over UI that stays put (research/42 §4), Cardboard's guidelines forbid head-locked UI,
+  HoloLens tag-alongs and MRTK `Follow` lazily body-lock, visionOS's HIG names head-anchoring as
+  the thing not to do. Hence the **body frame is the default** for every layer surface and the
+  lock surface (shell-plane §2.6; spec §4): floating in front, head free, coming along when the
+  wearer turns. `head` is given only to a client that asks or a wearer's row.
+- **Progress is shown on the reticle** — Cardboard's fuse fills, KWin animates the cursor
+  (`dwellclicker.cpp:91-114`), MRTK draws a ring (`InteractorDwellManager.cs`); none ships dwell
+  silent. The compositor's reticle (§"cursor") fills over `onset + complete`.
+
 **Where the hooks live (rev 0.1; research/68 §2, §5.5).** Accessibility *transforms* — dwell as
 a commit method, sticky/slow/bounce keys, mouse keys, pointer gain — are **in-compositor stages
 of §1a's chain, ahead of the lock/greeter mode**: KWin installs them as the first filters of its
@@ -559,7 +586,7 @@ can make gaze reach a client (§9).
 | `input.keyboard.repeat.{delay_ms,rate_hz}` | int [100, 2000] · 600; int [1, 100] · 25 | `apply` → `change_repeat_info`; the seat's default is the same | Hyprland/COSMIC 600/25; GNOME 500/33 |
 | `input.keyboard.numlock` | enum `off` \| `on` \| `remember` · `remember` | `apply` at start (`on`/`off`: niri's shape; `remember`: the state file under `XDG_STATE_HOME/mura/zxr/numlock`, cosmic-comp's `LastBoot`), `input/seat.rs` writes it on change | niri `numlock`, cosmic-comp `numlock_state` |
 | `input.osk.enabled`, `.suppress_after_key_s` | bool · true; int · 300 | `state.rs` `osk_suppressed` (disabled = permanent suppression); `input/text.rs` the window after a physical key | §12; StereoKit `platform.cpp:258` 5 min |
-| `input.dwell.{enabled,onset_ms,complete_ms,tolerance_deg}` | bool · false; int [50, 1000] · 200; int [200, 3000] · 750; double · 2.0 | `input/a11y.rs` `Dwell` | §13 (HoloLens 150–250 / 650–850 ms); KWin `dwellclicker.cpp:150-152` |
+| `input.dwell.{enabled,onset_ms,complete_ms,tolerance_deg}` | bool · false; int [50, 1000] · 200; int [200, 3000] · 750; double · 2.0 | `input/a11y.rs` `Dwell` | §13 (HoloLens 150–250 / 650–850 ms; MRTK3 gaze dwell 1.0 s, `StatefulInteractable.cs:84`; first-run §4.4's 400–600 ms is the literature's low end); KWin `dwellclicker.cpp:150-152`. The tolerance is applied to the **hit point** on the target at the plane's pixels-per-degree (§13, ruled 2026-09-28) |
 | `input.targeting.source` | enum `auto` \| `eyes` \| `hand` \| `controller` \| `head` · `auto` | `input/tier.rs` `Pin` — a **ceiling** on the §3 ladder: rungs above it are skipped, the ladder continues below it, the head stays the floor; direct touch is not aiming and is never pinned away | §13; visionOS Pointer Control [external]; HoloLens "head to aim rather than eyes" |
 | `input.magnetism.enabled` | bool · false | `input/hit.rs` — a poke whose ray misses is drawn to the nearest plane point within 0.07 m | §4; MRTK3 `ReticleMagnetism.cs:37` |
 | `input.hand.dominant` | enum `left` \| `right` · `right` | `input/bridge.rs` `BridgeCfg` (`Flags::DOMINANT`, the menu gesture's hand) | §10 |

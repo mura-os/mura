@@ -123,8 +123,11 @@
       layer-shell state committed there.
 
       If a client never sets a frame, the compositor presents the surface
-      in the head frame with a compositor-chosen angular size; layer-shell
-      clients unaware of this protocol therefore remain usable unmodified.
+      in the body frame — floating in front of the user, following them
+      when they turn, free of their head's motion — with a compositor-chosen
+      angular size; layer-shell clients unaware of this protocol therefore
+      remain usable unmodified, and nothing is head-locked unless it asks
+      to be.
     </description>
 
     <enum name="error">

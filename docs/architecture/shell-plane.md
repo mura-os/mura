@@ -1,6 +1,6 @@
 # The shell plane — components as processes, the compositor's shell-layer half, and the toolkit
 
-**Status: DRAFT, rev 0.4 (2026-09-28; rev 0.3 + the body frame built and the OSK bound to the surface it types into — §2.6 the `typed` seed and the body frame's definition, §3.2 the OSK's frame, §6 the seed-provenance item; spec §4/§5 rev 3.14). Rev 0.3 (2026-09-28; rev 0.2 + ADR 0007 amendment 2 and research/78 — §2.3 greeter
+**Status: DRAFT, rev 0.5 (2026-09-28; rev 0.4 + the body frame as the **default placement** — nothing head-locked unless it asks (§2.6, §3.1, §3.4, §3.6; spatial-input §13) — and the input floor as one rule for every surface). Rev 0.4 (2026-09-28; rev 0.3 + the body frame built and the OSK bound to the surface it types into — §2.6 the `typed` seed and the body frame's definition, §3.2 the OSK's frame, §6 the seed-provenance item; spec §4/§5 rev 3.14). Rev 0.3 (2026-09-28; rev 0.2 + ADR 0007 amendment 2 and research/78 — §2.3 greeter
 mode is the socketpair kiosk, the lock is an `ext-session-lock` client under a user unit; §3.1 the
 program's modes, unit, seams and surface roles; §3.2 the OSK as zxr's child in every mode (KWin's IM
 shape); §4 the sctk platform with the AccessKit bridge and the Stage B gate; §6 items).
@@ -135,8 +135,11 @@ The table is the relocatable settings template **`shell.place:<namespace>`** wit
 (any frame the compositor advertises), `azimuth_deg`, `elevation_deg`, `distance_m`, `pitch_deg`,
 `width_deg` (0 = compositor's choice). **Precedence:** a row wins over the client's
 `zxr-layer-anchoring-v1` request; without a row the client's request applies; without either the
-head fallback (`shell.head.{extent_h_deg,extent_v_deg,distance_m}`, 90×70° at 0.5 m — the
-anchoring protocol's own example and WiVRn/WayVR's distance). A grab on a shell plane (the WM
+**body fallback** (rev 0.5, ruled 2026-09-28: the body frame's rectangle is the head's extent at
+its distance, `shell.head.{extent_h_deg,extent_v_deg,distance_m}`, 90×70° at 0.5 m — the anchoring
+protocol's own example and WiVRn/WayVR's distance). Nothing is head-locked unless it asks: the
+scenes the head aims at stay put while the head moves (PICO Head Control Mode, Cardboard, HoloLens
+tag-along, the visionOS HIG — spatial-input §13); the lock surface is placed the same way. A grab on a shell plane (the WM
 branch's grab mechanics) writes the row; `mura-settings set shell.place:osk.frame body` is the same
 write by hand; `Reset`/`DeleteInstance` returns to the seed. **Seed rows** (the consumer's defaults
 for an instance without a stored value, GNOME's shape): `osk` → **`typed`** — the frame of the
@@ -240,7 +243,7 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
   zone −1 (cosmic-greeter, gtkgreet `-l`, phosh's lock all do exactly this); in lock mode as
   `ext_session_lock_surface_v1` per output (swaylock, cosmic-greeter's locker), which zxr composes
   as a band-5 head-frame member (spec §9).
-- **Frame:** `head`, at the spawn distance; docked: additionally flat on the docked output (ADR 0015).
+- **Frame:** `body` (the default — rev 0.5; the program asks for nothing), at the head config's distance: floating in front, head free, coming along when the wearer turns, so head-aim and dwell can reach every target (spatial-input §13); docked: additionally flat on the docked output (ADR 0015).
 - **Input floor:** operable by head ray + `hmdButtons.<selectRole>` and by dwell alone; targets sized
   for a 1.5° ray (research/37); a physical keyboard types into it; the OSK (§3.2) is its keyboard
   path.
@@ -327,7 +330,7 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
 - **Seams:** layer `overlay`, keyboard `none` for indicators (auto-close 3 s, cosmic-osd's), zone 0;
   the polkit dialog `exclusive` on `overlay`; triggers over D-Bus subscriptions (audio, backlight,
   the compositor's mode signals), never a private protocol (§2.4).
-- **Frame:** `head`. Indicators are exempt from the motion caps as small head-locked transients
+- **Frame:** `head` for the 3-s indicators only (small head-locked transients, exempt from the motion caps — research/36 §4; the one deliberate head placement besides toasts); the polkit dialog and anything the wearer must aim at: `body` (rev 0.5, spatial-input §13).
   (research/36 §4).
 
 ### 3.5 Notifications — carried (mako), then Mura
@@ -359,7 +362,7 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
 - **Seams:** layer `overlay`, keyboard `exclusive` while shown, zone −1 (fuzzel, cosmic-launcher);
   `xdg_activation` tokens on every launch; `zwp_text_input_v3` for its search field;
   `ext_foreign_toplevel_list` for running-app results.
-- **Frame:** `head` at the spawn distance when summoned.
+- **Frame:** `body` at the spawn distance when summoned (rev 0.5: an aimed-at scene is never head-locked, spatial-input §13; fuzzel and cosmic-launcher float where they were summoned).
 
 ### 3.7 Task switcher and places overview — Mura, after M1
 
