@@ -107,7 +107,7 @@ set inventoried in [research/11 §11](../research/11-display-managers-greeters.m
 picker below; free-text username entry; a **power menu** (power-off/reboot always; suspend/
 hibernate when login1 `Can*` says yes — granted without a root helper because the displayed
 greeter session is logind-*active* and `org.freedesktop.login1.*` is `allow_active=yes`); a
-**session chooser** from `wayland-sessions` `.desktop` files, hidden when only one session exists
+**session chooser** from the session list the module system writes (`/etc/greetd/environments` today, the gtkgreet mechanism; `wayland-sessions` `.desktop` files if a second shell ships — research/78 §4), hidden when only one session exists
 (GDM's rule); a **clock**; an **accessibility menu** (large text, high contrast, dwell timing,
 the on-screen keyboard toggle — the input-floor controls of [first-run-onboarding.md §4.4](first-run-onboarding.md));
 and a **network menu that can join Wi-Fi**. For that last item Mura ships the GDM rule: a polkit

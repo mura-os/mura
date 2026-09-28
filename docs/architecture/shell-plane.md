@@ -1,6 +1,10 @@
 # The shell plane — components as processes, the compositor's shell-layer half, and the toolkit
 
-**Status: DRAFT, rev 0.2 (2026-09-27; rev 0.1 + §2 the compositor's half made mechanical from
+**Status: DRAFT, rev 0.3 (2026-09-28; rev 0.2 + ADR 0007 amendment 2 and research/78 — §2.3 greeter
+mode is the socketpair kiosk, the lock is an `ext-session-lock` client under a user unit; §3.1 the
+program's modes, unit, seams and surface roles; §3.2 the OSK as zxr's child in every mode (KWin's IM
+shape); §4 the sctk platform with the AccessKit bridge and the Stage B gate; §6 items).
+Rev 0.2 (2026-09-27; rev 0.1 + §2 the compositor's half made mechanical from
 [research/77](../research/77-shell-layer-mechanics-from-comparables.md) — arrangement per frame in
 frame-pixel space, the initial configure, the focus rules, the trusted connection as the gate's
 exception, the filter as `ClientData` bits at insert, the still-pointer rule's placement; §2.6 the
@@ -157,14 +161,22 @@ Everything else (`xdg_wm_base`, seat, shm/dmabuf, `xdg_activation_v1`, `zwp_text
 
 ### 2.3 Restricted-mode admission
 
-In `--greeter` mode and while locked zxr composes **one trusted member**: the greeter/lock program,
-spawned by zxr as a child with one end of a `socketpair(AF_UNIX, SOCK_STREAM)` as `WAYLAND_SOCKET`
-(ADR 0007 amendment; kscreenlocker `ksldapp.cpp:377-422`). No listening socket exists in greeter
-mode (session-auth §5); while locked the public socket stays bound but the mode gate routes input
-only to the trusted member and the composition samples no window (I1). The OSK is admitted the same
-way in both restricted modes and the session (§3.2) — KWin's `InputMethod::startInputMethod` is the
-exact precedent (`kwin/src/inputmethod.cpp:864-926`). While the trusted member is absent the frame
-is an opaque scene and nothing unlocks (I3); its unit restarts it.
+**Greeter mode (rev 0.3; ADR 0007 amendment 2).** In `--greeter` mode zxr composes **trusted members
+only**: the greeter program and the OSK, each spawned by zxr as a child with one end of a
+`socketpair(AF_UNIX, SOCK_STREAM)` as `WAYLAND_SOCKET` (kscreenlocker `ksldapp.cpp:377-422`; KWin's
+`InputMethod::startInputMethod`, `kwin/src/inputmethod.cpp:864-926`). No listening socket exists
+(session-auth §5). The program speaks greetd itself over the inherited ``; when the
+**primary** trusted client (the program) exits — after `start_session`, or by crashing — zxr exits
+(cage's kiosk rule), and greetd starts the session or restarts the greeter (research/78 §4).
+
+**Lock mode is not restricted admission.** The in-session lock is `ext-session-lock-v1` on the public
+socket (§2.1's privileged set), from `mura-greeter --lock` running as a **user unit**
+(`Restart=on-failure`) like every other component of §3 — cosmic-session's resident locker, swaylock
+under sway (research/78 §3). While locked the mode gate routes input only to the lock surface and to
+trusted members (the OSK spawned by zxr in the session, §3.2), the composition samples no window (I1),
+`locked` follows the first such frame (I2), and the lock survives the client's death until the unit
+brings it back (I3). The trusted bit built in research/77 §4.3 therefore serves greeter mode and
+the OSK-on-lock case; the lock itself is the protocol's.
 
 ### 2.4 What the compositor tells the shell, and how
 
@@ -198,21 +210,31 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
 
 ### 3.1 Greeter and lock program — Mura
 
-- **Process:** `mura-greeter`, one program for both restricted modes (cosmic-greeter's shape,
-  selected by mode rather than by user name). In greeter mode it renders greetd's `auth_message`
+- **Process:** `mura-greeter`, one program for both modes, selected by `--lock` (cosmic-greeter's
+  one-binary shape, by argument rather than by user name since zxr and the unit both know the mode). In greeter mode it renders greetd's `auth_message`
   prompts per session-auth §2.3's style set (the digit pad keyed off `style=secret` plus the
-  non-secret numeric hint — ADR 0007/0018), the session list from `mura.xr.shell` (not a
-  `wayland-sessions` scan), the standard furniture of multi-user.md §2 (power menu over logind, clock,
+  non-secret numeric hint — ADR 0007/0018), the session list from the file the module system
+  writes (`/etc/greetd/environments`, gtkgreet's list; a `wayland-sessions` scan if a second shell
+  ever ships — research/78 §4), the standard furniture of multi-user.md §2 (power menu over logind, clock,
   session chooser, accessibility toggles), and the multi-user profile's create-guest flow (ADR 0018
-  decision 9). In lock mode it renders `mura-authd`'s prompt batches (session-auth §2). It never
-  links PAM (session-auth §1).
-- **Unit:** started by zxr (§2.3), not by systemd directly; its restart is its user unit's
-  `Restart=on-failure` in the session, greetd's `default_session` supervision in greeter mode.
-  *Open (session-auth §5):* whether zxr holds `$GREETD_SOCK` and relays, or the program speaks
-  greetd itself as gtkgreet/regreet do.
-- **Seams:** the socketpair only; `zwp_text_input_v3` for its fields; `xdg_activation` not needed.
-  Maps as a layer surface on `overlay`, all anchors, keyboard `exclusive`, zone −1 (cosmic-greeter,
-  kscreenlocker, phosh's lock all do exactly this).
+  decision 9). In lock mode it is resident, waits for logind's `Session.Lock`, locks through
+  `ext-session-lock-v1`, **spawns and reads `mura-authd`** (session-auth §2 rev 6; kscreenlocker's
+  worker, swaylock's PAM child), renders the prompt batches, and unlocks with `unlock_and_destroy`
+  after `success`; it sets logind's `LockedHint` on `locked` and re-locks on restart while the hint
+  is set (cosmic-greeter's recovery). It never links PAM (session-auth §1).
+- **Unit (rev 0.3, ADR 0007 amendment 2):** in the session, `mura-greeter-lock.service` — a user
+  unit, `PartOf=graphical-session.target`, `Restart=on-failure`, on the public socket (cosmic-session
+  runs its locker as a resident component the same way). In greeter mode, zxr's socketpair child;
+  zxr exits with it and greetd supervises (cage's rule). *Ruled (research/78 §9):* the program
+  speaks greetd itself; zxr relays nothing.
+- **Seams:** greeter mode — the socketpair and the inherited `$GREETD_SOCK`; lock mode — the public
+  socket, `ext_session_lock_manager_v1`, logind over the session bus (`Lock`/`Unlock`,
+  `SetLockedHint`, power), its own `mura-authd` socketpair; both — `zwp_text_input_v3` for its
+  fields (the OSK types into them); `xdg_activation` not needed.
+  In greeter mode it maps as a layer surface on `overlay`, all anchors, keyboard `exclusive`,
+  zone −1 (cosmic-greeter, gtkgreet `-l`, phosh's lock all do exactly this); in lock mode as
+  `ext_session_lock_surface_v1` per output (swaylock, cosmic-greeter's locker), which zxr composes
+  as a band-5 head-frame member (spec §9).
 - **Frame:** `head`, at the spawn distance; docked: additionally flat on the docked output (ADR 0015).
 - **Input floor:** operable by head ray + `hmdButtons.<selectRole>` and by dwell alone; targets sized
   for a 1.5° ray (research/37); a physical keyboard types into it; the OSK (§3.2) is its keyboard
@@ -232,8 +254,14 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
   virtual-keyboard Backspace, sends no preedit (research/75 §3.2). Then **`mura-osk`** in Slint,
   designed for the ray: large keys, dwell-friendly, the digit pad as a layout, the same two protocols
   and the same D-Bus name so the shell does not change.
-- **Unit:** spawned by zxr over a socketpair in every mode (§2.3; KWin's IM shape) so it exists
-  pre-login; `Restart=on-failure`.
+- **Unit (rev 0.3):** **zxr's socketpair child in every mode** — KWin's input-method shape exactly
+  (`kwin/src/inputmethod.cpp:864-926`: spawned with `WAYLAND_SOCKET`, restarted on crash up to five
+  times in 20 s, then stopped with a warning, `:88-96, 916-928`). It is the one component zxr
+  supervises rather than systemd, for the reason KWin does: the lock screen needs a keyboard, and
+  the protocols carry no trusted bit for an OSK (cosmic-comp invented `show_on_lock`, Hyprland
+  `above_lock` — research/77 §2.4); Mura's trusted connection is that bit, and it exists only for a
+  child. *Flagged (rule 4):* a trusted listening socket (research/78 §9 Q1 option b) would let the
+  OSK be a unit; no comparable has one.
 - **Frame:** `body` (research/60 §10: within reach, not on the head), or `hand_*` when a hand is
   tracked — a settings key when the Mura OSK lands. Unaware squeekboard lands on `head` by the
   default; the carried phase accepts that.
@@ -371,6 +399,26 @@ PasswordText / Button + Action, an AT-invoked action fires; nine scripts and emo
   libwayland-client and libxkbcommon — carried by the Nix package as rpath, the way `pkgs/zxr`
   carries libvulkan.
 
+**The platform (rev 0.3; owner ruling 2026-09-28).** Slint's stock Wayland backend is winit, which
+creates xdg toplevels only; the lock program must be an `ext-session-lock-v1` client and the
+greeter a layer-shell one (§3.1), so Mura's shell components run Slint on **one sctk platform**
+(`slint::platform::Platform` + `WindowAdapter` over `smithay-client-toolkit`: wl_shm buffers,
+`SoftwareRenderer`, seat keyboard/pointer/touch, `zwlr_layer_surface_v1`, `ext_session_lock_surface_v1`,
+`zwp_text_input_v3`) — the route libcosmic/iced took for the same reason; Slint's own non-winit
+`linuxkms` backend is the in-tree template. **Accessibility is restored at that boundary, not
+dropped:** Slint's AccessKit tree translation lives in its winit backend
+(`references/slint/internal/backends/winit/accesskit.rs`, whose own comment says "If we wanted to
+move this to corelib…", `:43-45`); Mura carries a Slint patch that extracts it into a
+backend-independent module and drives `accesskit_unix::Adapter` from the platform, upstreamed
+when accepted. Semantics (roles, names, values, actions, text runs) stay in the client;
+zxr owns secure lock, input routing, spatial placement and compositor-level accessibility
+(magnification, filters, assistive-technology input privileges). **Gate before the greeter is
+written** (Stage B): a three-widget scene on the platform maps as layer-shell and as a lock
+surface on nested zxr, takes ray/key/OSK input, and shows its AT-SPI tree; if the extraction is
+not a contained adapter change, GTK4 + gtk4-layer-shell (layer-shell and session-lock, mature
+AT-SPI) is the fallback brought to the owner. The `backend-winit-wayland` feature above is
+replaced by the platform crate; the measured qualification is re-taken on it.
+
 **Not chosen, and why (research/75 §5.1):** libcosmic/iced (the comparator; one shipping greeter,
 but a fork of iced, `a11y` off in the shipping greeter, `wayland` implies `iced_wgpu`); GTK4
 (mature a11y, the functional reference; C, dynamic, a large closure); Qt/QML (a JS engine); egui
@@ -390,8 +438,14 @@ Nothing in the compositor knows a component's name.
 
 ## 6. Open items (each names its decider)
 
-- **Who speaks greetd** — zxr relays, or the greeter program holds `$GREETD_SOCK` (gtkgreet/regreet's
-  shape). Decider: the greeter program's design at G1 (session-auth §5).
+- **Who speaks greetd** — ruled 2026-09-28: the program (research/78 §9; session-auth §5 rev 6).
+- **The Slint AccessKit patch** (§4): carried by Mura until upstream Slint exposes accessibility to
+  custom platforms; a fork is a maintenance cost. Decider: the owner, at each Slint upgrade.
+- **A trusted listening socket** for the OSK (§3.2) so it can be a unit rather than zxr's child;
+  no comparable has one (smithay's per-listener `ClientData` is the mechanism). Decider: the owner,
+  when the Mura OSK lands.
+- **`LockedHint` from zxr** when a trigger fires before any client has locked (session-auth §7).
+  Decider: the owner, at G3.
 - **The OSK's frame and its Slint successor's layout for a ray** (`body` vs `hand_*`, key size, dwell
   behaviour). Decider: the Mura OSK's design (research/36 §7 patterns), after the carried phase.
 - **Decoration chrome in 3D** — window-workspace-management's manipulation UI (research/75 Q6).

@@ -61,11 +61,11 @@ program shapes.
   keep PAM in a daemon-owned worker and feed the UI **typed prompts** over a channel the daemon
   hands it (two pipes in env, `lightdm/src/greeter-session.c:65-69`; a private D-Bus server,
   `gdm/daemon/gdm-session.c:2086-2122`). Mura's lock state machine, nonce revocation and I2/I3
-  are compositor invariants (session-auth §2.4, §3), so the daemon-owned shape is the one whose
-  reasons transfer: **zxr keeps the `mura-authd` conversation and relays session-auth's
-  `prompt_batch`/`respond_batch` to the program over a second fd in its environment** — LightDM's
-  channel, with session-auth's messages (already the same four styles as greetd's). Determination
-  (§9), flagged because it gives the program two backends of one shape.
+  were compositor invariants (session-auth §2.4, §3). *Superseded the same day (§9 det. 6, owner):*
+  the lock program is a **resident unit on the public socket** that locks through
+  `ext-session-lock-v1` and **owns its `mura-authd` conversation** (kscreenlocker's worker,
+  swaylock's PAM child, cosmic-greeter's PAM thread); the compositor keeps the lock state and its
+  triggers, and trusts the locker's `unlock_and_destroy` as every compositor does.
 - **Supervision of a socketpair child is the compositor's in every comparable that has one**
   (kscreenlocker restarts its greeter three times then shows an emergency window,
   `ksldapp.cpp:199-210`; KWin restarts its input method); the "user unit with
@@ -285,16 +285,26 @@ process, no thread, no bus in greeter mode; the lock relay is one fd on zxr's st
    hidden with one entry; `start_session.env` = `XDG_SESSION_TYPE=wayland`,
    the desktop names (values proposed, flagged).
 5. **Power over logind D-Bus**, `Can*`-gated, confirm with timeout (cosmic).
-6. **Lock mode: zxr owns the `mura-authd` conversation and relays typed prompt batches to the
-   program over a second fd in its environment** (LightDM's channel; GDM's typed prompts;
-   session-auth §2.4's revocation is the reason the compositor must be the reader of `success`).
-   *Flagged (rule 4):* this gives the program two backends of one shape rather than one; the
-   alternative — zxr relays greetd too — has no comparable and would move session enumeration
-   and `start_session` into the compositor.
+6. **Lock mode — superseded 2026-09-28 (owner):** the first version of this determination had
+   zxr own the `mura-authd` conversation and relay typed prompts to a socketpair child (LightDM's
+   channel), which kept the ADR's hybrid alive and inherited Q1. **Ruled:** the lock program is
+   a **resident user unit on the public socket** that locks through `ext-session-lock-v1`, waits
+   for logind's `Session.Lock`, **owns its `mura-authd` conversation** (kscreenlocker's worker,
+   swaylock's PAM child, cosmic-greeter's PAM thread — §3) and unlocks with `unlock_and_destroy`;
+   the compositor's triggers fire `loginctl lock-session` (swayidle's exec shape) and the
+   compositor keeps the lock on client death (every compositor, §3). The nonce discipline becomes
+   the program's; the compositor never vetoes an unlock — no comparable does, and a trigger during
+   a stale unlock simply re-locks. ADR 0007 amendment 2, session-auth rev 6, shell-plane rev 0.3.
 7. **The G1 harness is greetd's `fakegreet`**, unmodified.
 8. **One binary, `--lock` selects the mode** (cosmic selects by uid; zxr knows the mode).
 
-**Owner item — Q1: who restarts the lock program when it dies.** *Why a decision:* ADR 0007's
+**Q1 — who restarts the lock program when it dies — ruled 2026-09-28 (owner): the unit (option
+(c) below, the COSMIC/wlroots shape), because the comparables are unanimous *within each channel*
+— a socketpair child is supervised by its spawner (kscreenlocker, KWin's IM), a session component
+on the public socket by the session's supervisor (cosmic-session, systemd units) — and the ADR's
+hybrid existed nowhere. Greeter mode keeps the socketpair (greetd's kiosk); the OSK stays zxr's
+child in every mode with KWin's bounded restart (shell-plane §3.2). The question as put:**
+*Why a decision:* ADR 0007's
 amendment says "its own user unit with `Restart=on-failure`", but a client admitted over a
 socketpair is the compositor's child and no unit can hold that fd; every comparable with a
 socketpair child supervises it itself — kscreenlocker three restarts then an emergency window

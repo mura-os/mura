@@ -2,7 +2,8 @@
 
 **Status:** accepted (draft); **amended 2026-09-27 — the auth scene is a trusted client, not
 compositor-drawn** (see "Amendment 2026-09-27" at the end; the lock *authority* and the three
-invariants are unchanged)
+invariants are unchanged); **amended 2026-09-28 — the lock is an `ext-session-lock` client under a
+user unit, the socketpair is greeter mode's channel only** (Amendment 2 at the end)
 **Date:** 2026-09-22
 **Context sources:** [11-display-managers-greeters](../../research/11-display-managers-greeters.md),
 [12-lock-screens-and-appliance-login](../../research/12-lock-screens-and-appliance-login.md).
@@ -73,9 +74,9 @@ unlock, restart it (see the amendment). The invariants are unchanged:
 - **I3** — unlock happens only via a successful PAM conversation or an explicitly configured grace
   policy; a compositor/runtime crash restarts the session **into the locked state**.
 
-`ext-session-lock-v1` is **exposed only** in the dev/desktop profile and (behind privileged-client
-policy) for third-party headset lockers composed as a head-locked quad — never the mechanism for the
-built-in lock.
+`ext-session-lock-v1` **is the built-in lock's mechanism** (Amendment 2, 2026-09-28: the lock
+program is a unit-supervised client on the public socket; before that amendment this paragraph
+read "exposed only in the dev/desktop profile … never the mechanism for the built-in lock").
 
 ### PAM out of process
 
@@ -216,3 +217,56 @@ has no public socket to offer in greeter mode and wants one trusted locker, not 
 program is a new component (registry row); its toolkit is decided by a comparables + measurement
 pass before G1 starts. The `Mode` gate's destination becomes "the one trusted member" rather than
 "the auth scene"; its behaviour (consume everything but keys; keys to that member) is unchanged.
+
+## Amendment 2 — 2026-09-28 — the lock is an `ext-session-lock` client under a user unit; the socketpair is greeter mode's
+
+**What changes.** The in-session lock scene is **a resident user unit** (`mura-greeter --lock`,
+`Restart=on-failure`) on the **public** Wayland socket, locking through `ext-session-lock-v1`
+and owning its own `mura-authd` conversation; it waits for logind's `Session.Lock`, and the
+compositor's lock triggers (doff grace, idle, suspend) request the lock with
+`loginctl lock-session`. The pre-connected socketpair of the first amendment is **greeter
+mode's channel only**, where greetd's process is zxr and no public socket exists. The lock
+*authority* and I1–I3 stand, and are now the protocol's obligations plus `Mode::Locked`
+(which is how [research/12 §2.2](../../research/12-lock-screens-and-appliance-login.md) derived
+them in the first place). `ext-session-lock-v1` therefore stops being "the dev/desktop
+profile's seam only": it is the mechanism.
+
+**Why (comparables, rule 7; [research/78 §3, §9](../../research/78-greeter-program-from-comparables.md)).**
+The first amendment combined two channels no comparable combines. Where a compositor spawns
+its lock UI over a socketpair, the **compositor supervises it** — kscreenlocker restarts its
+greeter three times then draws an emergency window (`kscreenlocker/ksldapp.cpp:199-210`), KWin
+restarts its input method up to five crashes in 20 s then stops (`kwin/src/inputmethod.cpp:88-96,
+916-928`); no unit can hold a child's fd. Where the locker is a **session component on the
+public socket**, the session's supervisor owns it and the compositor merely keeps the lock:
+cosmic-session starts `cosmic-greeter` (its locker mode) as a resident supervised component
+beside `cosmic-osk` and `cosmic-bg` with unlimited restarts (`cosmic-session/src/main.rs:138,
+362-363`), it waits for logind's `Lock` signal and re-locks after a restart when the session is
+already locked (`cosmic-greeter/src/locker.rs:712-727`, `logind.rs:94-139`); swaylock and
+hyprlock are ordinary clients and sway/niri keep the lock when they die (research/77 §2.4).
+The lock UI's PAM lives in a process the UI owns in every comparable that is not the display
+manager itself — swaylock's forked PAM child, kscreenlocker's `kscreenlocker_worker`,
+cosmic-greeter's PAM thread — and the compositor trusts the locker's word for the unlock
+(`unlock_and_destroy`; kscreenlocker's exit 0). Mura's ruling for every other shell component is
+already the unit shape ([research/75 Q1](../../research/75-shell-plane-from-comparables.md)).
+**"Hand-rolled retries" stays rejected**: units restart, zxr keeps the lock, and the emergency
+window is not drawn — an opaque frame is the protocol's answer.
+
+**What moves.** `mura-authd` is spawned by the program (its `--fd` + nonce-in-env CLI is
+unchanged, `pkgs/mura-authd/src/main.rs:3-5`); the nonce discipline of
+[session-auth §2.4](../../../specs/session-auth.md) becomes the program's, and the compositor
+never vetoes an unlock — no comparable does; when a lock trigger fires during an in-flight
+conversation the compositor's move is to lock *again* after the unlock, not to refuse it. I2's
+external report (`SetLockedHint`) is the program's, sent when it receives the protocol's
+`locked` — which zxr sends only after a frame composed with no untrusted sample (spec §9,
+gate 8). Greeter mode keeps the first amendment's channel and adds **cage's rule**: zxr exits
+when its primary trusted client exits, so greetd's handoff (the session starts when the greeter
+process terminates, `greetd/man/greetd-ipc-7.scd:50`) and greetd's supervision
+(`Restart=always`, `greetd/greetd.service:11-14`) are one mechanism; the program speaks greetd
+itself over the inherited `GREETD_SOCK`, as every greetd greeter does (research/78 §2).
+
+**Consequences.** [specs/session-auth.md](../../../specs/session-auth.md) rev 6,
+[specs/zxr-core.md](../../../specs/zxr-core.md) §9 rev 3.13, [shell-plane.md](../shell-plane.md)
+rev 0.3 §2.3/§3.1/§3.2, [multi-user.md](../multi-user.md) §2, research/78 §9 and
+[implementation-path.md](../implementation-path.md) G1 are amended the same day. The trusted
+connection built for the shell-layer half (research/77 §4.3) serves greeter mode and the OSK's
+composition while locked; the session lock itself needs no trusted bit.

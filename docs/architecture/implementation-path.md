@@ -9,7 +9,7 @@ groundwork with no compositor dependency, verified in the rung-2 VM with stand-i
 by dependency class; G2 reduced to a recorded swap; the pre-groundwork specifications named in
 §5.1; **rev 4.1 same day — F2/F3/D2/D3 absorb first-run rev 2.5 / ADR 0017 rev 2.4: sshd
 upstream on every profile, `mura-setup` one program in two instances, the `setup-complete`
-marker, Cockpit dropped**; **rev 4.2, 2026-09-27 — G1 rewritten for ADR 0007's amendment: the auth scene is a trusted client (the greeter program, its toolkit a prerequisite research pass), zxr `--greeter` composes it over a socketpair and draws no UI**; **rev 4.3, same day — the shell-plane research and design (research/75, shell-plane.md) recorded as done in §3 G1's prerequisites and §5**; **rev 4.4, same day — M1's window-management floor and the seam recorded as landed** (§3 M1 status; §5 "The window manager": the floor, the grab and `zxr_window_management_v1` rev 1 built and gated; the shipped external managers remain ordered after the shell clients that need them).; **rev 4.5, same day — the shell-layer mechanics study (research/77) recorded and zxr's shell-layer half ordered with its nested gate** (§5 "The shell plane": arrangement per frame, the placement table, the trusted connection, the filter; the gate = squeekboard and mako mapping on zxr unmodified, spec §12 gate 8).
+marker, Cockpit dropped**; **rev 4.2, 2026-09-27 — G1 rewritten for ADR 0007's amendment: the auth scene is a trusted client (the greeter program, its toolkit a prerequisite research pass), zxr `--greeter` composes it over a socketpair and draws no UI**; **rev 4.3, same day — the shell-plane research and design (research/75, shell-plane.md) recorded as done in §3 G1's prerequisites and §5**; **rev 4.4, same day — M1's window-management floor and the seam recorded as landed** (§3 M1 status; §5 "The window manager": the floor, the grab and `zxr_window_management_v1` rev 1 built and gated; the shipped external managers remain ordered after the shell clients that need them).; **rev 4.5, same day — the shell-layer mechanics study (research/77) recorded and zxr's shell-layer half ordered with its nested gate** (§5 "The shell plane": arrangement per frame, the placement table, the trusted connection, the filter; the gate = squeekboard and mako mapping on zxr unmodified, spec §12 gate 8); **rev 4.6, 2026-09-28 — G1 restated for ADR 0007 amendment 2 and research/78** (the program speaks greetd, zxr exits with it; the lock is an `ext-session-lock` unit; the Stage B platform gate; `fakegreet` as the harness).
 **What this is:** the ordered build path from power-on to a zxr session, derived from the
 dependency graph ([desktop-environment.md §6](desktop-environment.md)) — not a replacement for
 it. Rungs are ordered only where a hard dependency exists; everything else is a parallel track.
@@ -260,28 +260,40 @@ component), but every authority-plane "specified" row becomes buildable on its s
 *Rev 2026-09-27 (ADR 0007 amendment): the auth scene is a **trusted client**, not
 compositor-drawn; G1 is therefore two deliverables and one prerequisite.*
 
-**Prerequisites — done and built.** *Done (rev 4.3):* the shell-plane research and design —
+**Prerequisites — done and built.** *Done (rev 4.6):* research/78 (the greeter program from
+comparables — the conversation rules, the channel decision, the lock shape) and the Stage B
+platform gate named below. *Done (rev 4.3):* the shell-plane research and design —
 [research/75](../research/75-shell-plane-from-comparables.md) (how the shipping shells are built;
 Slint 1.18 measured on nested zxr and ruled for Mura's own components) and
 [shell-plane.md](shell-plane.md). *Built before G1:* zxr's shell-layer half (shell-plane.md §2 —
 layer-shell + anchoring, the binding filter, the socketpair admission, the motion dedupe), because
 the greeter maps as a layer surface and its keyboard is a layer-shell OSK.
 
-**Deliverable 1 — `zxr --greeter` (restricted mode):** R0's OpenXR loop + renderer composing
-**one trusted member**: the greeter program, spawned by zxr with a pre-connected socketpair as
-`WAYLAND_SOCKET` (kscreenlocker's channel); **no Wayland listening socket** — assert it in the
-harness (`ss`/`lsof`, session-auth §6 items 6/6a; PAM is greetd's). While the client is absent
-the frame is an opaque scene and nothing unlocks; its unit restarts it. The `Mode` gate routes
-keys to that member and consumes everything else (as built, `input/mode.rs`). The greetd IPC
-over `$GREETD_SOCK` (a fake greetd in the harness): held by zxr and relayed, or spoken by the
-client — decided with deliverable 2 (session-auth §5).
+**Deliverable 1 — `zxr --greeter` (restricted mode; rev 4.6, ADR 0007 amendment 2, research/78):**
+R0's OpenXR loop + renderer composing **trusted members only**: the greeter program and the OSK,
+spawned by zxr with pre-connected socketpairs as `WAYLAND_SOCKET` (kscreenlocker's channel; the
+shell-layer half built this — gate 8 B); **no Wayland listening socket** — assert it in the harness
+(`ss`/`lsof`, session-auth §6 items 6/6a; PAM is greetd's). The `Mode` gate routes input to those
+members and consumes everything else (as built, `input/mode.rs`). **The program speaks greetd
+itself** over the inherited `` (ruled; every greetd greeter does), and **zxr exits when
+the program exits** — after `start_session` or by crashing — so greetd's handoff and supervision
+are one mechanism (cage's rule; `greetd/src/context.rs:294-297`). The harness is greetd's own
+`fakegreet`, unmodified. What zxr adds for G1: the primary-trusted-client exit rule, the OSK's
+bounded restart (KWin's), and the lock triggers (`loginctl lock-session`) for G3.
 
 **Deliverable 2 — the greeter program** (`mura-greeter`, Slint — shell-plane.md §3.1, §4; the toolkit from the
 prerequisite): generic prompt rendering per session-auth §2.3's style set — the digit pad keys
 off `style=secret` plus the user's mirrored `numeric-credential` hint, never prompt text; session
 list from a static config; the standard furniture of multi-user.md §2 (power menu, clock, session
 chooser, accessibility); large targets for a ray. The same program is the in-session lock's scene
-(G3).
+(G3): `mura-greeter --lock`, a resident user unit on the public socket that waits for logind's
+`Lock`, locks through `ext-session-lock-v1`, owns its `mura-authd` conversation and unlocks
+with `unlock_and_destroy` (ADR 0007 amendment 2). **Stage B, before the program:** Slint on one
+sctk platform (layer-shell and session-lock roles, wl_shm + software renderer, text-input) with
+Slint's AccessKit translation extracted to a backend-independent module and wired to
+`accesskit_unix` — a three-widget scene maps in both roles on nested zxr, takes ray/key/OSK
+input and shows its AT-SPI tree; if the extraction is not a contained adapter change, GTK4 +
+gtk4-layer-shell is the fallback brought to the owner (shell-plane §4).
 
 Exit: prompt → response → `start_session` acknowledged → clean teardown, on the simulated HMD,
 with `--rotate` proving the scene is really mura — **and the whole exit path driven at the input
