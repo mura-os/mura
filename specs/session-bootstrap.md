@@ -55,7 +55,7 @@ compositor unit) is the one kept.
 | `mura-session-shutdown.target` | user unit (Mura, static) | the one-way exit: `Conflicts=` the whole graphical session, `StopWhenUnneeded`; every Mura unit's `OnSuccess=`/`OnFailure=` (`replace-irreversibly`) |
 | `mura-session finalize` | the user, inside the compositor unit (zxr's child) | the readiness hook (§4.5, §7): publishes the compositor-created variables and sends `READY=1` on the unit's `NOTIFY_SOCKET` |
 | `monado.socket`/`monado.service` (user) | the user | socket-activated OpenXR runtime; the session's *own* Monado instance (`services.monado`) |
-| the compositor | the user | `zxr` (rev 4; sway was the stand-in through G2); binds its socket, then spawns `mura-session finalize WAYLAND_DISPLAY` to publish its variables and signal readiness (§4.5, §7) |
+| the compositor | the user | `zxr` (rev 4; sway was the stand-in through G2); binds its socket, then spawns `mura-session finalize` to publish its variables and signal readiness (§4.5, §7) |
 | `graphical-session-pre.target` / `graphical-session.target` | user units (upstream) | freedesktop's layering points; Mura adds nothing to them, only orders around them |
 
 ## 3. Environment: three classes, three publication moments
@@ -209,7 +209,7 @@ graphical-session.target: portals, pipewire/wireplumber, settings daemon, shell 
 
 **Rev 4.** `mura-compositor.service`'s `ExecStart` is `zxr`. Once the listening socket is bound
 and `WAYLAND_DISPLAY` is in its environment, zxr — when `NOTIFY_SOCKET` is set and the mode is not
-greeter — spawns **`mura-session finalize WAYLAND_DISPLAY`** as a child: the child runs
+greeter — spawns **`mura-session finalize`** as a child (its defaults are the compositor-created class): the child runs
 `systemctl --user set-environment`, `dbus-update-activation-environment --systemd` and sends
 `READY=1` over the inherited `NOTIFY_SOCKET` (`NotifyAccess=all`), exactly what the sway drop-in
 did; at teardown zxr writes `STOPPING=1` to the socket itself (`sd_notify(3)`'s datagram, no

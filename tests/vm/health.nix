@@ -26,7 +26,7 @@
         machine.succeed("grep -q 'FAIL P2 factory calibration' <(journalctl -b --no-pager -u mura-preflight)")
         machine.sleep(5)
         machine.fail("systemctl is-active greetd.service")
-        machine.fail("pgrep -x sway")
+        machine.fail("pgrep -x zxr")
         assert machine.succeed("cat /var/lib/mura/state/health/crashloop").strip() == "1"
         machine.fail("systemctl is-active mura-recovery.target")   # below the threshold
         machine.fail("systemctl is-active boot-complete.target")   # never blessed
@@ -58,7 +58,7 @@
         machine.start()
         machine.wait_for_unit("multi-user.target")
         machine.wait_for_unit("greetd.service")
-        machine.wait_until_succeeds("pgrep -u mura -x sway", timeout=120)
+        machine.wait_until_succeeds("pgrep -u mura -x zxr", timeout=120)
         machine.wait_for_unit("mura-readiness.service", timeout=360)
         machine.wait_for_unit("boot-complete.target", timeout=60)
         assert machine.succeed("cat /var/lib/mura/state/health/crashloop").strip() == "0"

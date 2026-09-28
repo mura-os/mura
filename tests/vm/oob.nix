@@ -24,7 +24,7 @@
 
     machine.start()
     machine.wait_for_unit("multi-user.target")
-    machine.wait_until_succeeds("pgrep -u mura -x sway", timeout=120)
+    machine.wait_until_succeeds("pgrep -u mura -x zxr", timeout=120)
 
     with subtest("D3: the USB gadget exists from the initrd; usb0 carries 172.16.42.1 with a DHCP server"):
         machine.succeed("journalctl -b --no-pager | grep -q 'gadget bound to dummy_udc'")

@@ -929,7 +929,18 @@ impl Zxr {
         let override_member = focus::layer_focus_override(self);
         // a `none` layer surface never takes the keyboard: the stack's member keeps it
         let id_accepts = id.map(|m| crate::shell::layer_accepts_focus(self, m).unwrap_or(true)).unwrap_or(true);
-        let effective = override_member.or(if id_accepts { id } else { self.focus.stack.restore(|m| self.scene.get(m).map(|x| x.m.mapped() && x.m.window.is_window()).unwrap_or(false)) });
+        // ext-session-lock: while locked the keyboard is the lock surface's and nothing else's
+        // ("input only to the lock surface"; sway `seat_is_input_allowed` admits only the lock's
+        // surfaces and `seat_set_focus` re-points at the lock's focused surface after every change,
+        // `sway/input/seat.c:1064-1069, 1268-1270`) —
+        // a layer surface mapping under the lock (the OSK asked for by the lock's own field) must
+        // not move it (found at G3: the OSK's map re-ran this and took the keyboard from the lock)
+        let lock_surface = if self.input.mode == crate::input::Mode::Locked {
+            self.shell.lock.surfaces.iter().map(|(m, _)| *m).find(|m| self.scene.get(*m).map(|x| x.m.mapped()).unwrap_or(false))
+        } else {
+            None
+        };
+        let effective = lock_surface.or(override_member).or(if id_accepts { id } else { self.focus.stack.restore(|m| self.scene.get(m).map(|x| x.m.mapped() && x.m.window.is_window()).unwrap_or(false)) });
         for (i, m) in self.scene.iter() {
             if let Some(t) = m.m.window.toplevel() {
                 t.with_pending_state(|s| {

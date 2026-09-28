@@ -140,7 +140,7 @@
         machine.succeed("timedatectl set-timezone UTC")
 
     with subtest("D4: logout tears the session down through the wrapper and returns to the greeter, without racing device release"):
-        sid = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
+        sid = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\" && $4==\"seat0\"{print $1}'").strip()
         machine.succeed("journalctl --rotate && journalctl --vacuum-time=1s >/dev/null 2>&1 || true")
         # a logout is: the session target stops -> the wrapper returns -> greetd restarts the greeter
         machine.succeed(userctl + "stop mura-session.target")

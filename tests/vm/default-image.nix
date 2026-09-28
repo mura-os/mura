@@ -72,7 +72,7 @@
 
     with subtest("D4: environment classes — static from environment.d, compositor-created after readiness"):
         env = machine.succeed(userctl + "show-environment")
-        for var in ("MURA_PROFILE=appliance", "XDG_SESSION_TYPE=wayland", "XDG_CURRENT_DESKTOP=mura", "WAYLAND_DISPLAY=", "SWAYSOCK="):
+        for var in ("MURA_PROFILE=appliance", "XDG_SESSION_TYPE=wayland", "XDG_CURRENT_DESKTOP=mura", "WAYLAND_DISPLAY="):
             assert var in env, f"{var} missing from the user manager environment:\n{env}"
         # WAYLAND_DISPLAY names a socket that is actually bound (no pre-readiness leak)
         wd = [l for l in env.splitlines() if l.startswith("WAYLAND_DISPLAY=")][0].split("=", 1)[1]
@@ -98,13 +98,13 @@
         assert 0 < took < 15, f"login took {took:.2f}s"
 
     with subtest("D4: a compositor crash restarts it inside the same session"):
-        sid_before = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
+        sid_before = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\" && $4==\"seat0\"{print $1}'").strip()
         pid_before = machine.succeed("pgrep -u mura -x zxr | head -1").strip()
         machine.succeed("pkill -9 -u mura -x zxr")
         machine.wait_until_succeeds(f"pgrep -u mura -x zxr | grep -qv '^{pid_before}$'", timeout=60)
         machine.wait_until_succeeds(userctl + "is-active mura-compositor.service", timeout=60)
         machine.wait_until_succeeds(userctl + "is-active graphical-session.target", timeout=60)
-        sid_after = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
+        sid_after = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\" && $4==\"seat0\"{print $1}'").strip()
         assert sid_before == sid_after, f"login session changed across the crash: {sid_before} -> {sid_after}"
 
     with subtest("D1: /persist is a stage-1 mount and the class skeleton exists"):
@@ -177,11 +177,14 @@
         return machine.succeed(f"systemd-run --quiet --user -M mura@ --pipe --wait --collect {cmd} 2>&1")
 
     with subtest("G3: the lock/unlock cycle on the real stack — loginctl lock-session -> mura-greeter-lock locks zxr; the password typed at the VT unlocks"):
-        sid = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\"{print $1}'").strip()
+        # the seated session (SSH sessions of earlier subtests are seatless)
+        sid = machine.succeed("loginctl list-sessions --no-legend | awk '$3==\"mura\" && $4==\"seat0\"{print $1}'").strip()
+        assert sid, machine.succeed("loginctl list-sessions")
         machine.succeed(userctl + "is-active mura-greeter-lock.service")
         listing = machine.succeed(ZXR_CTL.format("list"))
         assert "mode=Normal" in listing and 'lock="unlocked"' in listing, listing
-        assert "ns=osk layer=Top frame=body" in listing, listing  # the OSK is zxr's child in the session too
+        # the OSK is zxr's child in the session too: present, hidden until a field asks for it
+        assert "ns=osk layer=Top frame=body" in listing and "mapped=false trusted=true" in listing, listing
         machine.succeed(f"loginctl lock-session {sid}")
         # ext-session-lock: the lock unit's surface is composed, the mode gate closes (I1), logind's hint is set (I2)
         machine.wait_until_succeeds(ZXR_CTL.format("list") + " | grep -q 'mode=Locked'", timeout=30)
@@ -207,10 +210,12 @@
         machine.send_chars("x")                                   # one event, so the idle clock exists
         machine.wait_until_succeeds(ZXR_CTL.format("list") + " | grep -q 'mode=Locked'", timeout=60)
         machine.succeed(f"loginctl show-session {sid} -p LockedHint --value | grep -qx yes")
-        machine.send_chars("s3cret\n")
-        machine.wait_until_succeeds(ZXR_CTL.format("list") + " | grep -q 'mode=Normal'", timeout=30)
+        # back to the defaults while locked (nothing fires while locked), then unlock
         user(f"{S} reset session.lock.on_idle")
         user(f"{S} reset session.idle.delay_s")
+        machine.send_chars("s3cret\n")
+        machine.wait_until_succeeds(ZXR_CTL.format("list") + " | grep -q 'mode=Normal'", timeout=30)
+        machine.wait_until_succeeds(f"loginctl show-session {sid} -p LockedHint --value | grep -qx no", timeout=30)
 
     with subtest("D2: faillock really locks after the configured failures, counters on /persist"):
         machine.succeed("test -d /persist/mura/state/faillock")

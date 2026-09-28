@@ -38,7 +38,7 @@ impl WlrLayerShellHandler for Zxr {
         let id = self.scene.add(place, math::pose_identity(), Shape::Plane { size: [0.01, 0.01] }, Flags(0), payload).expect("place is live");
         self.scene.focus(prev);
         let serial = self.shell.next_serial();
-        self.shell.layers.push(LayerEntry { member: id, surface: ls, namespace: namespace.clone(), serial, frame: anchoring::Frame::Head, box_px: None, mapped: false, mapped_at_serial: 0 });
+        self.shell.layers.push(LayerEntry { member: id, surface: ls, namespace: namespace.clone(), serial, frame: anchoring::Frame::Body, box_px: None, mapped: false, mapped_at_serial: 0 });
         self.journal.layer_surfaces += 1;
         tracing::info!(member = id.0.index(), ?layer, %namespace, trusted, "layer surface created");
     }

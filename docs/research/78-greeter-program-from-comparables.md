@@ -501,6 +501,44 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   passthrough) host GPU for the VM, which would give Monado a real driver with display
   extensions; or accepting blindness and leaving pictures to hardware and `dev-session`. Recorded,
   not decided.
+- **F15 — two session bugs the G3 fixture found and fixed (2026-09-28).** (1) *The lock lost
+  the keyboard when the OSK mapped.* The lock surface took keyboard focus directly on map
+  (`shell/lock.rs`), outside the focus model; the lock's own password field then asked for the
+  OSK, the OSK's layer surface mapped, `layer_focus_changed` re-ran `focus_window(None)` and the
+  keyboard went nowhere — the password typed at the VT never reached the lock. G1's nested lock
+  test never saw it because squeekboard was mapped *before* the lock. sway's rule is the fix:
+  while a lock is held the keyboard is the lock surface's and every other focus change is
+  refused (`sway/input/seat.c:1064-1069, 1268-1270`) — `focus_window` resolves to the mapped lock
+  surface first while `Mode::Locked`. (2) *The idle rung never armed.* `activity::notify` was
+  called only on don and on consumed reserved presses; ordinary keys, buttons and motion recorded
+  nothing, so `activity.events()` stayed 0 and `due()` waited forever — `session.lock.on_idle`
+  could not lock a real session. KWin's `UserActivitySpy` is installed ahead of every filter and
+  sees every event (`kwin/src/input.cpp:3169-3172`); the tick now records every event sample
+  (not poses: a still head does not keep the session awake) before the chain runs. Both are
+  gate 11 rows now. (3) *The lock program's second lock never drew*: after `unlock_and_destroy`
+  the platform kept `frame_pending` from a frame callback that would never arrive and, the size
+  unchanged, its configure asked for no redraw — the surface never mapped, the compositor sent
+  `locked` over a blank scene (I2 holds vacuously), nothing had focus. Fixed in the platform:
+  every configure requests a draw and a gone surface resets the frame state. (4) *`finalize`
+  refused its own variable*: zxr passed `WAYLAND_DISPLAY` as an extra name, the wrapper listed it
+  twice, `systemctl set-environment` rejected the list and the user manager never saw the
+  display; the wrapper dedupes and zxr passes nothing.
+- **F16 — a start-time flake under lavapipe, seen once (2026-09-28).** In one run of the
+  settings fixture (two VMs and a build in parallel on the host) zxr's first three starts died in
+  `xrCreateVulkanDeviceKHR` with `VK_ERROR_EXTENSION_NOT_PRESENT` on the runtime-selected
+  `llvmpipe` (Monado's client-side device creation with its dma-buf/modifier/foreign-queue
+  extension list — the same list the fourth start and every other run accepted), within 13 s of
+  the session; `mura-compositor.service` hit its start limit, the session shut down as ADR 0007's
+  ladder says, greetd's autologin brought a fresh session and the fourth start succeeded — the
+  fixture never noticed. `radv/amdgpu: failed to initialize device` is logged twenty times per
+  start in every VM run (the RADV ICD probing virtio-gpu's render node), which makes the
+  client-side physical-device enumeration timing-dependent; a UUID-matched handle that does not
+  carry lavapipe's extension set is the suspect. Six other fixture runs today did not reproduce
+  it. Recorded for the owner: a VM-only concern (F14's driver), and the recovery ladder covered
+  it; not a G3 blocker.
+- **Also seen:** `input::theme` has two unit tests that both set `XCURSOR_THEME`/`XCURSOR_PATH`
+  and race under cargo's parallel test threads (green with `--test-threads=1`); pre-existing, a
+  test-hygiene item.
 
 ## 10. Sources
 

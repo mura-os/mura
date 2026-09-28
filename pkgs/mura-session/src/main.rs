@@ -241,7 +241,12 @@ fn sd_notify_ready() {
 
 fn finalize(extra: &[String]) -> ! {
     let mut names: Vec<String> = COMPOSITOR_VARS.iter().map(|s| s.to_string()).collect();
-    names.extend(extra.iter().cloned());
+    // a name given twice would be an invalid assignment list for set-environment
+    for n in extra {
+        if !names.contains(n) {
+            names.push(n.clone());
+        }
+    }
     let mut assignments = Vec::new();
     let mut present = Vec::new();
     for n in &names {

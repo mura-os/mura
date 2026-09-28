@@ -536,12 +536,22 @@ impl Input {
 /// batched to the tick; the tick-bound read is the recorded rethink candidate, not the default).
 /// XR samples still arrive at the tick (`tick`), since that is when the runtime has them. If no
 /// tick has run yet (no head pose), the sample is queued for the first one.
-pub fn dispatch(st: &mut Zxr, mut s: Sample, now_ns: u64) {
-    if st.input.head.is_none() {
-        st.input.queue.push(s);
+/// Every sample's intake, on both paths (the per-event `dispatch` and the tick's queue): the
+/// latency bookkeeping for an event — from its timestamp (libinput/EI/injector) to the moment it
+/// is processed, the input gate's number, `wake_to_end` covering the rest of the path to
+/// `xrEndFrame` (research/68 §9.1 trigger) — and **user activity**: every event is activity,
+/// recorded before any stage sees it (KWin's `UserActivitySpy` is installed ahead of its filters
+/// and sees what they go on to eat, `references/kwin/src/input.cpp:3169-3172`); a pose sample is
+/// not an event — a still wearer's head does not keep the session awake. The idle ladder
+/// (`shell/lock.rs`) and `ext-idle-notify` read the record. Found at G3: only don and the
+/// reserved presses had recorded activity, so the idle rung never armed in a real session
+/// (research/78 §9 F15). A dwell's synthesized commit is marked `A11Y` and counts, as KWin's
+/// dwell click does through its own device.
+fn intake(st: &mut Zxr, s: &Sample, now_ns: u64) {
+    if !s.is_event() {
         return;
     }
-    if s.is_event() && s.time_ns <= now_ns && s.time_ns > 0 {
+    if s.time_ns <= now_ns && s.time_ns > 0 {
         let age = now_ns - s.time_ns;
         st.journal.input_event_age_ns_total += age;
         st.journal.input_event_age_ns_max = st.journal.input_event_age_ns_max.max(age);
@@ -550,6 +560,15 @@ pub fn dispatch(st: &mut Zxr, mut s: Sample, now_ns: u64) {
         st.input.tick_event_count += 1;
         st.input.tick_event_time_sum_ns += s.time_ns as u128;
     }
+    activity::notify_flagged(st, s.time_ns.min(now_ns), s.flags);
+}
+
+pub fn dispatch(st: &mut Zxr, mut s: Sample, now_ns: u64) {
+    if st.input.head.is_none() {
+        st.input.queue.push(s);
+        return;
+    }
+    intake(st, &s, now_ns);
     let mut chain = std::mem::take(&mut st.input.chain);
     if let Some(slot) = chain.run(&mut s, st) {
         st.journal.input_consumed[slot as usize] += 1;
@@ -581,18 +600,7 @@ pub fn tick(st: &mut Zxr, head: xr::Posef, time: xr::Time, now_ns: u64) {
     let mut chain = std::mem::take(&mut st.input.chain);
     let mut queue = std::mem::take(&mut st.input.queue);
     for mut s in queue.drain(..) {
-        // intake latency: from the event's timestamp (libinput/EI/injector) to the tick that
-        // processes it — the input gate's number, with `wake_to_end` covering the rest of the
-        // path to `xrEndFrame` (research/68 §9.1 trigger)
-        if s.is_event() && s.time_ns <= now_ns && s.time_ns > 0 {
-            let age = now_ns - s.time_ns;
-            st.journal.input_event_age_ns_total += age;
-            st.journal.input_event_age_ns_max = st.journal.input_event_age_ns_max.max(age);
-            st.journal.input_events += 1;
-            st.input.tick_oldest_event_ns = Some(st.input.tick_oldest_event_ns.map_or(s.time_ns, |t| t.min(s.time_ns)));
-            st.input.tick_event_count += 1;
-            st.input.tick_event_time_sum_ns += s.time_ns as u128;
-        }
+        intake(st, &s, now_ns);
         if let Some(slot) = chain.run(&mut s, st) {
             st.journal.input_consumed[slot as usize] += 1;
         }

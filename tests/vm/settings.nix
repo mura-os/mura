@@ -1,6 +1,6 @@
 # The settings daemon (modules/os/settings.nix, pkgs/mura-settingsd; specs/settings-schema.md §9,
-# specs/settings-daemon.md §9) on the default-image fixture: `mura` autologins into the sway
-# stand-in, so a user manager and a session bus exist. Proves the contract's conformance items
+# specs/settings-daemon.md §9) on the default-image fixture: `mura` autologins into the zxr
+# session, so a user manager and a session bus exist. Proves the contract's conformance items
 # 1–9 (item 9 at the unit level: the migration table is empty at rev 1) and the daemon's 10–13:
 # D-Bus activation on first use, the generation hook through a NixOS specialisation switch, the
 # closure fence, and the measured footprint.

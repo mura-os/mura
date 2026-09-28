@@ -381,7 +381,7 @@ greetd `start_session` forks the **B6a session wrapper** (`mura-session start`),
 up `mura-session.target` (B6: Monado + zxr-session + shell services) under the environment and
 lifetime contract of [specs/session-bootstrap.md](../../specs/session-bootstrap.md) rev 4 — zxr
 replaces sway as `mura-compositor.service`'s `ExecStart` and, once its socket is bound, spawns
-`mura-session finalize WAYLAND_DISPLAY` to publish its variables and send `READY=1` (the one
+`mura-session finalize` to publish its variables and send `READY=1` (the one
 environment-publication path, session-bootstrap §7; `STOPPING=1` native), and the sway drop-in
 leaves with sway; ADR 0007's
 crash/restart and boot-locked-restart rules apply. Needs M1 (a session someone can use) + G2

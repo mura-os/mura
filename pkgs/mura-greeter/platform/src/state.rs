@@ -418,10 +418,19 @@ impl AppState {
     fn unlock(&mut self) {
         if let Some(lock) = self.session_lock.take() {
             lock.unlock();
-            self.surface = Surface::None;
-            self.configured = None;
+            self.drop_surface();
             self.shared.borrow_mut().locked = false;
         }
+    }
+
+    /// The surface is gone (unlock, `finished`): nothing of the old one may gate the next — a
+    /// frame callback that will never arrive would otherwise hold `frame_pending` and the next
+    /// lock surface would never draw (found at G3: the session's second lock stayed blank).
+    fn drop_surface(&mut self) {
+        self.surface = Surface::None;
+        self.configured = None;
+        self.frame_pending = false;
+        self.buffers = [None, None];
     }
 
     fn draw(&mut self, qh: &QueueHandle<Self>, adapter: &Rc<MuraWindowAdapter>) {
@@ -471,6 +480,11 @@ impl AppState {
         self.configured = Some((w, h));
         if let Some(adapter) = self.shared.borrow().adapter.clone() {
             adapter.set_physical_size(PhysicalSize::new(w * self.scale as u32, h * self.scale as u32));
+            // a configure is a fresh surface (the first, a remap, a second lock): its buffer must be
+            // drawn even when the size did not change — `set_physical_size` asks for a redraw only
+            // on a size change (found at G3: the second lock of a session never mapped, the
+            // adapter still held the first lock's 1920×1493, so nothing was drawn or focused)
+            adapter.window().request_redraw();
         }
     }
 
@@ -587,8 +601,7 @@ impl SessionLockHandler for AppState {
     fn finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
         tracing::warn!("ext_session_lock_v1: finished (lock refused or lost)");
         self.session_lock = None;
-        self.surface = Surface::None;
-        self.configured = None;
+        self.drop_surface();
         let mut s = self.shared.borrow_mut();
         s.locked = false;
         s.lock_events.push(LockEvent::Finished);

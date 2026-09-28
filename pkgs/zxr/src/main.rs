@@ -330,13 +330,13 @@ fn run() -> Result<i32, String> {
     }
     // readiness (session-bootstrap rev 4 §7; spec §9 rev 3.15): inside `mura-compositor.service`
     // (`NOTIFY_SOCKET` set) and not the greeter's kiosk, the socket is bound and the variables are
-    // final — `mura-session finalize WAYLAND_DISPLAY [DISPLAY]` publishes them to the user manager
+    // final — `mura-session finalize` publishes them (its defaults are exactly `WAYLAND_DISPLAY` and
+    // `DISPLAY`, the compositor-created class; a name given twice is an invalid assignment) to the user manager
     // and D-Bus and sends `READY=1` over the inherited socket. One code path for every
     // compositor the unit ever ran; the compositor itself knows no systemd beyond two variables.
     if !args.greeter && std::env::var_os("NOTIFY_SOCKET").is_some() {
         let bin = option_env!("MURA_SESSION").unwrap_or("mura-session");
-        let vars = if args.xwayland.is_some() { "WAYLAND_DISPLAY DISPLAY" } else { "WAYLAND_DISPLAY" };
-        match spawn_client(&format!("exec {bin} finalize {vars}"), &st.socket_name, args.xwayland.as_deref()) {
+        match spawn_client(&format!("exec {bin} finalize"), &st.socket_name, args.xwayland.as_deref()) {
             Ok(c) => {
                 tracing::info!(pid = c.id(), "readiness: mura-session finalize spawned (READY=1 follows the published variables)");
                 st.children.push(c);
