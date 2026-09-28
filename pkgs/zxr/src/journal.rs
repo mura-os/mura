@@ -175,6 +175,10 @@ pub struct Journal {
     pub lock_triggers: u64,
     /// `ext_session_lock_v1.lock` accepted after the previous locker died (Defunct)
     pub lock_relocks: u64,
+    /// ticks in which the body frame's yaw moved toward the head's (shell/body.rs)
+    pub body_reseat_ticks: u64,
+    /// re-poses of a `typed` member under a moving window (shell/mod.rs `typed_tick`)
+    pub osk_follows: u64,
     pub security_contexts: u64,
     pub pointer_motion_deduped: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
@@ -359,6 +363,8 @@ impl Journal {
             ("osk_raises", self.osk_raises),
             ("lock_triggers", self.lock_triggers),
             ("lock_relocks", self.lock_relocks),
+            ("body_reseat_ticks", self.body_reseat_ticks),
+            ("osk_follows", self.osk_follows),
             ("security_contexts", self.security_contexts),
             ("pointer_motion_deduped", self.pointer_motion_deduped),
         ] {

@@ -185,6 +185,9 @@ pub enum Space {
 pub enum FrameKind {
     World,
     Head,
+    /// the body: the head's position and yaw, pitch and roll removed, the yaw re-seated lazily
+    /// (shell/body.rs; the comparables' derived frame — no headset tracks a torso)
+    Body,
     LeftHand,
     RightHand,
     Anchor,
@@ -296,9 +299,10 @@ pub struct Scene<M> {
     pub places: Arena<Place>,
     pub members: Arena<Member<M>>,
     pub focused: Option<MemberId>,
-    /// the two frames every session has (spec §5: "M1 ships one world frame and one head frame")
+    /// the frames every session has (spec §5): world, head, and the body derived from the head
     pub world: FrameId,
     pub head: FrameId,
+    pub body: FrameId,
     /// the window tier's place until M1's engines: on the world frame, band 3
     pub default_place: PlaceId,
     pub submit: Submit,
@@ -319,9 +323,10 @@ impl<M> Scene<M> {
         let mut frames = Arena::default();
         let world = FrameId(frames.insert(Frame { space: Space::Base, kind: FrameKind::World, pose: math::pose_identity(), valid: true }));
         let head = FrameId(frames.insert(Frame { space: Space::Views, kind: FrameKind::Head, pose: math::pose_identity(), valid: false }));
+        let body = FrameId(frames.insert(Frame { space: Space::Service, kind: FrameKind::Body, pose: math::pose_identity(), valid: false }));
         let mut places = Arena::default();
         let default_place = PlaceId(places.insert(Place { frame: world, local: math::pose_identity(), band: 3, raised: false }));
-        Scene { frames, places, members: Arena::default(), focused: None, world, head, default_place, submit: Submit::default(), layout: Layout::default(), spawned: 0, handles: Vec::new() }
+        Scene { frames, places, members: Arena::default(), focused: None, world, head, body, default_place, submit: Submit::default(), layout: Layout::default(), spawned: 0, handles: Vec::new() }
     }
 
     // ---- frames ----
