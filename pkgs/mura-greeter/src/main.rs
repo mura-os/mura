@@ -10,9 +10,11 @@
 //! **Lock mode** (`mura-greeter --lock`): a resident user unit on the public socket. It waits for
 //! logind's `Session.Lock`, locks through `ext-session-lock-v1`, reports `SetLockedHint` after
 //! zxr's `locked` (I2), owns its `mura-authd` conversation, and unlocks with `unlock_and_destroy`
-//! (swaylock's and cosmic-greeter's shape). `--lock-now` locks at start and exits after the
-//! unlock — cosmic's fallback when logind has no session to wait on, and the nested harness's
-//! path.
+//! (swaylock's and cosmic-greeter's shape). Start-up follows cosmic-greeter (`locker.rs:712-727`):
+//! logind reachable ⇒ wait for `Lock`, re-locking at once when the session's `LockedHint` says
+//! it was locked when we went away; logind unreachable ⇒ lock immediately; a session that cannot
+//! be found (the unit's session is logind's `User.Display`) is a warning, never a lock.
+//! `--lock-now` locks at start and exits after the unlock — the nested harness's path.
 //!
 //! Budget: one process; resident only in lock mode, where idle is one thread parked on the bus
 //! and a one-second clock timer while a surface is mapped; the scene is redrawn only when Slint

@@ -39,7 +39,8 @@ must expose:
 |---|---|---|---|---|
 | Map anchor (`XR_EXT_spatial_anchor` family, ADR 0009) | survives reboot (encrypted store) | receives bounded corrections; **corrections move the frame, never the rendered world mid-frame** (ADR 0009) | static-world | mappable to peers (mode 5) |
 | LOCAL / STAGE (`XR_REFERENCE_SPACE_TYPE_LOCAL/STAGE`) | session (recenter re-seats it) | stable within session; recenter is an explicit event | static-world | no |
-| VIEW / head (`XR_REFERENCE_SPACE_TYPE_VIEW`) | none | perfectly stable by definition (it *is* the pose) | body-locked | no |
+| VIEW / head (`XR_REFERENCE_SPACE_TYPE_VIEW`) | none | perfectly stable by definition (it *is* the pose) | head-locked | no |
+| Body (derived: the head's position and yaw, pitch and roll removed; the yaw re-seated lazily with the follow keys — spec §5 rev 3.14, `shell/body.rs`) | session | follows the head's position every tick; its yaw holds until the head has turned past `threshold` for `delay`, then turns at `rate` and stops within `stop` (MRTK `Follow`, Overte's torso, wayvr's anchor, visionOS recenter all derive it so — no headset tracks a torso) | body-locked | no |
 | Hand / wrist (action spaces) | none | tracker-dependent; loss ⇒ fallback parent (head) | hand-locked | no |
 | Docked output plane (ADR 0015) | while docked | fixed to the connector's presentation | static-presentation | no |
 | Shared/peer frame (mode 5, [spatial-sharing.md §5](spatial-sharing.md)) | host-owned | host's map contract, mapped into visitor LOCAL | static-world (remote) | is the sharing mechanism |

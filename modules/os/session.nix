@@ -51,7 +51,8 @@ let
   # zxr in greeter mode as the `greeter` user; zxr spawns the program and the OSK over
   # socketpairs (the kiosk's primary and its keyboard) and exits with the program (cage's
   # rule). Defined here, wired at G2 (the `greeterCommand` flip is G2's exit criterion).
-  zxrGreeterCommand = "${lib.getExe pkgs.mura.zxr} --greeter --trusted ${lib.getExe pkgs.mura.greeter} --osk ${lib.getExe pkgs.squeekboard}";
+  # The picker's UID window rides the program's environment (`accounts.rs`), never login.defs.
+  zxrGreeterCommand = "${lib.getExe pkgs.mura.zxr} --greeter --trusted 'MURA_UID_MIN=${toString cfg.multiUser.uidRange.min} MURA_UID_MAX=${toString cfg.multiUser.uidRange.max} exec ${lib.getExe pkgs.mura.greeter}' --osk ${lib.getExe pkgs.squeekboard}";
 
   profileName = if cfg.autoLogin != null then "appliance" else "multi-user";
 
@@ -199,13 +200,23 @@ in
         };
       };
 
-      # The greeter picker's enumeration window is login.defs' (multi-user.md §2; the greeter
-      # reads UID_MIN/UID_MAX from /etc/login.defs — the SDDM/tuigreet pattern); the contract's
-      # `multiUser.uidRange` is written there rather than passed as flags.
-      security.loginDefs.settings = {
-        UID_MIN = cfg.multiUser.uidRange.min;
-        UID_MAX = cfg.multiUser.uidRange.max;
-      };
+      # The greeter's own state directory (multi-user.md §2; research/78 §9 F7): `last-user`
+      # preselection is written by the greeter itself after `start_session`, so the directory is
+      # the greeter user's — regreet's `/var/lib/regreet` and tuigreet's `/var/cache/tuigreet`,
+      # both created `greeter greeter 0755` by their NixOS modules (`programs/regreet.nix`,
+      # `services/display-managers/greetd.nix`). tmpfiles rather than the persist skeleton: it
+      # runs after the account database exists. Per-user metadata (`<user>/`) is not here — an
+      # open item (AccountsService's root-daemon shape; never a 1777 directory, since pre-auth
+      # display names and avatars must not be forgeable by any local user).
+      systemd.tmpfiles.rules = [ "d /var/lib/mura/state/accounts 0755 greeter greeter - -" ];
+
+      # The greeter picker's enumeration window is login.defs' (multi-user.md §2; the greeter reads
+      # UID_MIN/UID_MAX from /etc/login.defs — SDDM's and tuigreet's source). login.defs is NixOS's
+      # own (`security.loginDefs`: UID_MAX 29999, because the nixbld range starts at 30000 —
+      # misc/ids.nix); writing the contract's `multiUser.uidRange` there broke the multi-user VM's
+      # login (found 2026-09-28, research/78 §9 F9), so it is not written. The option reaches the
+      # greeter with G2's command line (`MURA_UID_MIN/MAX` in its environment), not through
+      # login.defs.
 
       # Static environment class (spec §3): read by the user manager from environment.d.
       # XDG_CURRENT_DESKTOP is set by `mura-session start` (step 2); XR_RUNTIME_JSON is not

@@ -71,6 +71,13 @@
         machine.succeed("loginctl list-sessions --no-legend | grep -w mura")
         machine.screenshot("multi-user-session")
 
+    with subtest("G1: the greeter's own state directory exists for last-user (regreet/tuigreet's shape)"):
+        assert machine.succeed("stat -c '%U:%G %a' /var/lib/mura/state/accounts").strip() == "greeter:greeter 755"
+        machine.succeed("su -s /bin/sh greeter -c 'echo mura > /var/lib/mura/state/accounts/last-user'")
+        assert machine.succeed("cat /var/lib/mura/state/accounts/last-user").strip() == "mura"
+        # no other local user may forge what the greeter shows pre-auth
+        machine.fail("su -s /bin/sh mura -c 'echo x > /var/lib/mura/state/accounts/last-user'")
+
     with subtest("D2: the greeter profile ships the one Mura polkit rule (greeter may add system Wi-Fi profiles)"):
         # -R: the rules file is a symlink into the store; -r would not follow it
         machine.succeed("grep -Rq 'NetworkManager.settings.modify.system' /etc/polkit-1/rules.d/")

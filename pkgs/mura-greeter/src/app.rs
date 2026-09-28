@@ -134,18 +134,31 @@ impl App {
                 self.username = user.clone();
                 ui.set_username(user.into());
                 self.handle.on_lock_event(|e| with(|a| a.on_lock_event(e)));
-                let watching = match &self.logind {
-                    Some(l) if l.has_session() => l.watch_session(|s| {
-                        let _ = slint::invoke_from_event_loop(move || with(|a| a.on_logind(s)));
-                    }).is_ok(),
-                    _ => false,
+                // cosmic-greeter's rules (`locker.rs:712-727`): logind reachable ⇒ wait for its
+                // `Lock`, re-locking at once if the session was already locked (its lockfile; here
+                // logind's own `LockedHint`, which this program sets); logind unreachable ⇒ lock
+                // immediately. A session lookup that fails is a warning, never a lock (`logind.rs:
+                // 91-93` warns and returns) — a unit that locked every login because it could not
+                // find its session would be the worst possible failure mode.
+                let (logind_ok, watching, was_locked) = match &self.logind {
+                    Some(l) => {
+                        let watching = l.has_session()
+                            && l.watch_session(|s| {
+                                let _ = slint::invoke_from_event_loop(move || with(|a| a.on_logind(s)));
+                            })
+                            .is_ok();
+                        if !watching {
+                            tracing::warn!("lock mode: no logind session to watch; resident, Lock signals will not arrive");
+                        }
+                        (true, watching, l.locked_hint())
+                    }
+                    None => (false, false, false),
                 };
-                // cosmic's fallback: no logind session to wait on ⇒ lock at once
-                if lock_now || !watching {
-                    tracing::info!(lock_now, watching, "lock mode: locking now");
+                if lock_now || !logind_ok || was_locked {
+                    tracing::info!(lock_now, logind_ok, was_locked, "lock mode: locking now");
                     self.lock();
                 } else {
-                    tracing::info!("lock mode: resident, waiting for logind's Lock");
+                    tracing::info!(watching, "lock mode: resident, waiting for logind's Lock");
                 }
             }
         }

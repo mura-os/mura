@@ -680,9 +680,14 @@ targets are read from `zxr ctl list` immediately before each aim.
   (§2.7); `PtrOp::Frame` follows only a sent event.
 - `pkgs/zxr/src/input/hit.rs:32-38` — already band-aware; no change.
 - `pkgs/zxr/src/scene.rs` — bands and flatten already sufficient; the head frame exists
-  (`Space::Views`, `:315`); body/hand/docked frames are not built (spec §5: "M1 ships one world
-  frame and one head frame") — the anchoring server presents `frames` = head|world until they
-  are, and every other request falls back per the protocol (§1).
+  (`Space::Views`, `:315`); hand/docked frames are not built (spec §5) — the anchoring server
+  presents `frames` = head|body|world, and every other request falls back per the protocol (§1).
+  *Rev 2026-09-28:* the **body frame is built** (`shell/body.rs`, spec §5 rev 3.14) as the
+  comparables derive it — the head's position and yaw, pitch and roll removed, re-seated lazily
+  (MRTK3 `Follow.cs:88-206`; Overte `MyAvatar.cpp:4478-4501, 5229-5243`; wayvr `windowing/
+  manager.rs:1130-1135`; visionOS recenter) — and the `osk` seed left it: research/36 §7's
+  convergence binds a keyboard to the panel it types into, and only wayvr's anchored keyboard
+  (this doc's source for the seed, §3.3a) placed one on a body-like anchor (research/78 §9 F8).
 - `pkgs/zxr/src/state.rs:59-65, 262, 339-340, 394-403` — `ClientState` grows two bits; the IM/VK
   filters get the predicate; `Payload.window` becomes the enum (§4.1); one `--shell-fd`/inherited
   fd path calls `insert_client` with `trusted`.
@@ -751,7 +756,9 @@ transients; keys `shell.head.{extent_h_deg,extent_v_deg,distance_m}`, defaults 9
 anchoring protocol's own example, `protocols/zxr-layer-anchoring-v1.xml:31-35`) at 0.5 m (WiVRn
 `client/constants.h:103`, WayVR `overlays/keyboard/mod.rs:110`) — a default, not a fork.
 **Q2, Q3** — should not have been asked (edge cases the evidence already settled): the world
-frame reports the head rectangle's extent at the spawn distance and honours no exclusive angles;
+frame reports the head rectangle's extent at the spawn distance and honours no exclusive angles
+(the body frame, built 2026-09-28, reports the head's rectangle at its own distance — the same
+extent, since it is the head's position with a lazier yaw);
 `bottom`/`background` may anchor to any frame, `background` accepted and not composed until the
 environment design admits a wallpaper client. **Also ruled:** OSD and notifications may be
 separate processes (the seam stays `org.freedesktop.Notifications`, mako or any daemon may own

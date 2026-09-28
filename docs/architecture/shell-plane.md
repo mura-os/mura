@@ -1,6 +1,6 @@
 # The shell plane — components as processes, the compositor's shell-layer half, and the toolkit
 
-**Status: DRAFT, rev 0.3 (2026-09-28; rev 0.2 + ADR 0007 amendment 2 and research/78 — §2.3 greeter
+**Status: DRAFT, rev 0.4 (2026-09-28; rev 0.3 + the body frame built and the OSK bound to the surface it types into — §2.6 the `typed` seed and the body frame's definition, §3.2 the OSK's frame, §6 the seed-provenance item; spec §4/§5 rev 3.14). Rev 0.3 (2026-09-28; rev 0.2 + ADR 0007 amendment 2 and research/78 — §2.3 greeter
 mode is the socketpair kiosk, the lock is an `ext-session-lock` client under a user unit; §3.1 the
 program's modes, unit, seams and surface roles; §3.2 the OSK as zxr's child in every mode (KWin's IM
 shape); §4 the sctk platform with the AccessKit bridge and the Stage B gate; §6 items).
@@ -139,10 +139,15 @@ head fallback (`shell.head.{extent_h_deg,extent_v_deg,distance_m}`, 90×70° at 
 anchoring protocol's own example and WiVRn/WayVR's distance). A grab on a shell plane (the WM
 branch's grab mechanics) writes the row; `mura-settings set shell.place:osk.frame body` is the same
 write by hand; `Reset`/`DeleteInstance` returns to the seed. **Seed rows** (the consumer's defaults
-for an instance without a stored value, GNOME's shape): `osk` → body, low-centre, pitched toward
-the wearer (WayVR's keyboard; research/60 §10); `notifications` → head, upper-right (mako's
-anchor; head-locked toasts, research/36 §4); a bar → body, bottom (research/60 §9). The frame set
-grows with the compositor (`frames` bitfield): a keyboard on the real desk is `frame = world` with
+for an instance without a stored value, GNOME's shape): `osk` → **`typed`** — the frame of the
+surface it types into (research/36 §7's convergence: WiVRn, xrdesktop, visionOS, Quest all bind
+the keyboard to the focused panel; wayvr's body-anchored keyboard, the previous seed's source, was
+the outlier — rev 0.4, spec §4 rev 3.14); `notifications` → head, upper-right (mako's anchor;
+head-locked toasts, research/36 §4); a bar → body, bottom (research/60 §9 — *the same provenance
+the OSK seed had; a rethink candidate, §6*). **The body frame is built** (rev 0.4; spec §5): the
+head's position and yaw, pitch and roll removed, the yaw re-seated lazily with the wearer's
+`wm.follow.*` — the shape MRTK's `Follow`, Overte's torso, wayvr's anchor and visionOS's recenter
+share, since no headset tracks a torso. The frame set grows with the compositor (`frames` bitfield): a keyboard on the real desk is `frame = world` with
 a pose now and a surface-detected frame when the perception plane offers one. Unaware clients
 (squeekboard, mako, waybar) are placed by the same rows — the namespace is theirs already.
 
@@ -262,9 +267,17 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
   `above_lock` — research/77 §2.4); Mura's trusted connection is that bit, and it exists only for a
   child. *Flagged (rule 4):* a trusted listening socket (research/78 §9 Q1 option b) would let the
   OSK be a unit; no comparable has one.
-- **Frame:** `body` (research/60 §10: within reach, not on the head), or `hand_*` when a hand is
-  tracked — a settings key when the Mura OSK lands. Unaware squeekboard lands on `head` by the
-  default; the carried phase accepts that.
+- **Frame (rev 0.4): the surface it types into** — the placement table's `typed` value, the seed
+  for `osk`. Research/36 §7's convergence: WiVRn hangs its keyboard at a fixed offset below its
+  GUI (`client/constants.h:87-88`: (0, −0.3, 0.1) m, pitch −0.6 rad), xrdesktop shows one per
+  focused window, visionOS and Quest float it near the field; none anchors it to the body (wayvr's
+  anchored keyboard was the one exception and the previous seed's source — research/78 §9 F8).
+  So: under the greeter or a body/head-frame panel the OSK is that frame's bottom band (its own
+  layer-shell anchors, zone respected — gate 9); under a world-frame window it is arranged against
+  the window's rectangle (the window's width) and hangs below it with WiVRn's offset, sized at the
+  window's distance, following the window when it moves (spec §4 rev 3.14; gate 9 (h)). A wearer's
+  row (`shell.place:osk.frame body`, or a grab) still wins. `hand_*` when a hand is tracked stays a
+  settings key for the Mura OSK.
 - **Visibility:** the protocol's — shown on `activate`, hidden on `deactivate`; `sm.puri.OSK0`
   `SetVisible` is a preference (phosh's rule: "any text input can make the keyboard show again");
   `input.osk.enabled` (declared, research/73) is the permanent suppression, `suppress_after_key_s`
@@ -469,8 +482,14 @@ Nothing in the compositor knows a component's name.
 ## 6. Open items (each names its decider)
 
 - **Who speaks greetd** — ruled 2026-09-28: the program (research/78 §9; session-auth §5 rev 6).
-- **The Slint AccessKit patch** (§4): carried by Mura until upstream Slint exposes accessibility to
-  custom platforms; a fork is a maintenance cost. Decider: the owner, at each Slint upgrade.
+- **The Slint AccessKit crate** (§4): a crate beside Slint on `i-slint-core`'s internals at the
+  pinned version until upstream exposes accessibility to custom platforms; re-pinned at each Slint
+  upgrade. Decider: the owner, at each Slint upgrade.
+- **The bar/panel seed row** (§2.6: body, bottom, −25°, pitch −5°, "research/60 §9's dock") has
+  the provenance the OSK seed had — a taxonomy entry with the comparables fitted afterwards, none
+  read for a dock's placement. Rethink candidate (rule 7): read the shells' dock placements
+  (Horizon's Navigator, visionOS's Home View, xrdesktop, wayvr's watch) before `mura-panel` lands.
+  Decider: the owner, with that reading.
 - **A trusted listening socket** for the OSK (§3.2) so it can be a unit rather than zxr's child;
   no comparable has one (smithay's per-listener `ClientData` is the mechanism). Decider: the owner,
   when the Mura OSK lands.

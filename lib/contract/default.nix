@@ -696,15 +696,18 @@ in
                 };
                 max = mkOption {
                   type = types.ints.unsigned;
-                  default = 60000;
-                  description = "Highest UID the greeter picker enumerates (login.defs UID_MAX convention).";
+                  default = 29999;
+                  description = "Highest UID the greeter picker enumerates (login.defs UID_MAX convention — NixOS's own UID_MAX, since the nixbld range starts at 30000; Debian's 60000 would overlap it).";
                 };
               };
             };
             default = { };
             description = ''
               The UID window the greeter picker enumerates (NSS iteration; the SDDM/
-              tuigreet login.defs-shaped pattern — multi-user.md §2). Enumeration only:
+              tuigreet login.defs-shaped pattern — multi-user.md §2). Reaches the greeter as
+              MURA_UID_MIN/MURA_UID_MAX on its command line (G2); never written to login.defs,
+              which is NixOS's own (writing it broke the multi-user login — research/78 §9 F9).
+              Enumeration only:
               free-text username entry is always available beside the picker, and the
               window never limits how many accounts exist.
             '';

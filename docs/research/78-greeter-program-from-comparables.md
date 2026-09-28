@@ -401,6 +401,60 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
 - **F6 — `mura-greeter-lock.service` is `wantedBy graphical-session.target`** in every profile
   (the lock exists whenever a session does); ADR 0007's `session.lock.enabled` governs the
   *triggers*, not the unit.
+- **F7 — last-user lives in the greeter's own directory (resolved 2026-09-28).** The program
+  wrote `state/accounts/last-user` but nothing created the directory, and multi-user.md §2 called
+  it root-owned state — no root writer exists (greetd runs the greeter as `greeter`). The
+  comparables: regreet writes `/var/lib/regreet/state.toml` as the greeter user
+  (`regreet/src/constants.rs:33-34`, `cache/mod.rs:52-63`), tuigreet `/var/cache/tuigreet/lastuser`
+  (`tuigreet/crates/tuigreet/src/info.rs:26-27`); both directories are created `greeter greeter
+  0755` by their NixOS modules (`programs/regreet.nix:176-188`, `greetd.nix:143-146`). SDDM's
+  root daemon writing `state.conf` does not transfer. Done as a tmpfiles rule in
+  `modules/os/session.nix` (tmpfiles runs after the account database; the persist skeleton runs
+  before it), asserted in `tests/vm/multi-user.nix`. Per-user `<user>/` metadata is an open item
+  (multi-user.md §2): not a `1777` directory — pre-auth names and avatars must not be forgeable
+  by any local user; AccountsService's root daemon is the shape to read when avatars land.
+- **F8 — the OSK follows the surface it types into, not a body seed (resolved 2026-09-28).**
+  The gate showed squeekboard "comically large and close": the `osk` seed row (body, −35°,
+  0.5 m, from wayvr's keyboard) resolved to the head frame because no body frame existed, and its
+  numbers were a loose conversion of wayvr's (0, −0.65, −0.5) m anyway. Reading the sources: the
+  body frame itself was a taxonomy entry in the wave-4 protocol draft (`698c151`) with the
+  comparables fitted to it afterwards; research/36 §7 had already found the keyboards' real
+  convergence — *bound to the focused panel* (WiVRn a fixed offset below its GUI,
+  `wivrn/client/constants.h:87-88`; xrdesktop per window; visionOS/Quest near the field; Meta's
+  virtual-keyboard API lets the runtime place it) — and wayvr was the outlier. Done: the
+  placement table's `typed` value as the `osk` seed (spec §4 rev 3.14; shell-plane §3.2), the OSK
+  under a world window arranged against the window's rectangle and hung below it with WiVRn's
+  offset, and the body frame built as every comparable derives it (spec §5 rev 3.14) so `body`
+  rows and the bar seed mean what they say. The bar seed keeps the old provenance — flagged in
+  shell-plane §6.
+- **F9 — a regression found and fixed (2026-09-28): the G1 commit wrote the contract's
+  `multiUser.uidRange` (1000–60000) into `/etc/login.defs`**, and `vm-test-multi-user`'s login
+  stopped working (the greeter's respawn stalled ≈20 s and the typed login was lost; bisected by
+  reverting the two module changes one at a time — the lock unit was innocent, `security.loginDefs`
+  was the cause). `nix flake check` builds the fixtures but does not run the VM tests, which is
+  how it slipped. NixOS's own `UID_MAX` is 29999 because its `nixbld` uid range starts at 30000
+  (`nixos/modules/misc/ids.nix`, `programs/shadow.nix:102-106`); Debian's 60000 overlaps it.
+  Fixed: login.defs is left NixOS's; the contract default becomes 29999 with that reason; the
+  option reaches the greeter as `MURA_UID_MIN`/`MURA_UID_MAX` in its environment (read by
+  `accounts.rs` over login.defs) on G2's greeter command line. The exact mechanism by which the
+  larger UID_MAX stalled the greeter session was not root-caused (flagged; the VM run is the
+  evidence, twice). **Lesson recorded:** a module change under `modules/os/` needs the VM test
+  that exercises it run before commit, not only `nix flake check`.
+- **F10 — a second regression found and fixed (2026-09-28): `mura-greeter-lock.service` locked
+  the session at every login.** `vm-test-default-image`'s D5 found it sideways (its `pgrep
+  mura-authd` picked up the *lock's* helper). Two mistakes in the program's start-up: (1) the
+  session lookup used `GetSessionByPID(0)`, which cannot work from a systemd user unit
+  (`user@UID.service` is outside every session scope; cosmic-greeter's `GetSessionByPID(parent)`,
+  `cosmic-greeter/src/logind.rs:91-93`, works only because its parent is cosmic-session *inside*
+  the scope); (2) "no session found ⇒ lock now" was my misreading of cosmic's fallback — cosmic
+  locks immediately only when **logind itself is unreachable** (`locker.rs:721-726`), re-locks at
+  start only when its lockfile says the session was already locked (`:712-717`), and a failed
+  session lookup is a warning (`logind.rs:94-96`). Fixed to cosmic's rules: the session is
+  `XDG_SESSION_ID` or logind's `User.Display` (the property logind keeps for exactly this
+  question), `LockedHint` true at start re-locks (the compositor or the locker came back while
+  locked — the hint this program sets), logind unreachable locks, a missing session warns and
+  stays resident. Verified on the host from outside the session scope (`Display=2`, resident,
+  no lock) and by both VM fixtures.
 
 ## 10. Sources
 

@@ -17,9 +17,11 @@ pub struct Account {
 
 pub const STATE: &str = "/var/lib/mura/state";
 
-/// `UID_MIN`/`UID_MAX` from `/etc/login.defs`, the contract default otherwise.
+/// `UID_MIN`/`UID_MAX`: the environment's `MURA_UID_MIN`/`MURA_UID_MAX` (the module's command line carries
+/// the contract's `multiUser.uidRange` at G2), else `/etc/login.defs` (NixOS's: 1000–29999, the nixbld
+/// range starting at 30000), else that default.
 pub fn uid_window() -> (u32, u32) {
-    let (mut lo, mut hi) = (1000u32, 60000u32);
+    let (mut lo, mut hi) = (1000u32, 29999u32);
     if let Ok(text) = std::fs::read_to_string("/etc/login.defs") {
         for line in text.lines() {
             let mut it = line.split_whitespace();
@@ -29,6 +31,12 @@ pub fn uid_window() -> (u32, u32) {
                 _ => {}
             }
         }
+    }
+    if let Some(v) = std::env::var("MURA_UID_MIN").ok().and_then(|v| v.parse().ok()) {
+        lo = v;
+    }
+    if let Some(v) = std::env::var("MURA_UID_MAX").ok().and_then(|v| v.parse().ok()) {
+        hi = v;
     }
     (lo, hi)
 }
@@ -70,8 +78,9 @@ pub fn last_user() -> Option<String> {
     (!s.is_empty()).then(|| s.to_string())
 }
 
-/// The greeter runs as `greeter`; the file is root-owned state written by the session side.
-/// Best effort: a read-only greeter simply keeps the previous value.
+/// The greeter's own directory (`persist.nix` creates `state/accounts` as `greeter:greeter 0755` —
+/// regreet's `/var/lib/regreet` and tuigreet's `/var/cache/tuigreet` shape). Best effort: with no
+/// directory (a nested run on a host) the previous value simply stays.
 pub fn remember_last_user(name: &str) {
     let _ = std::fs::create_dir_all(format!("{STATE}/accounts"));
     if let Err(e) = std::fs::write(format!("{STATE}/accounts/last-user"), format!("{name}\n")) {

@@ -94,8 +94,9 @@ past a handful of entries, and `/home` sizing/quotas are the administrator's bus
    overlay's `upper/` inherits `/etc`'s world-traversability (`getpwuid` is universal). No
    separate `userdb/` directory exists (rev 3.3).
 4. **Uid discipline:** the persisted files are the single allocation ledger both slots share.
-   The picker's enumeration window (§2) follows login.defs (`UID_MIN`/`UID_MAX`, typically
-   1000–60000 — the SDDM/tuigreet pattern, fidelity-checked against both trees); guest
+   The picker's enumeration window (§2) follows login.defs (`UID_MIN`/`UID_MAX`: NixOS's own
+   1000–29999 — its nixbld range starts at 30000; Debian's 60000 would overlap it — the SDDM/
+   tuigreet pattern, fidelity-checked against both trees); guest
    accounts allocate from a dedicated sub-range with a monotonic counter and no reuse before
    sweep completion (§4). Accepted and recorded: userborn's own diff state is slot-local
    (doc 41 §3.2 caveats) — harmless, since declared users are system components.
@@ -124,10 +125,20 @@ Extends the G1 auth scene; greetd needs zero changes for the picker because
 `create_session(username)` precedes authentication (doc 41 §1.4):
 
 - **Enumeration:** NSS iteration over the login.defs-shaped UID window (contract default
-  `1000–60000`). Free-text username entry is **always available** beside the picker (the
+  `1000–29999`, NixOS's own `UID_MAX`; the contract reaches the greeter as `MURA_UID_MIN/MAX` on
+  its command line and is never written to `/etc/login.defs` — doing so broke the multi-user
+  login, research/78 §9 F9). Free-text username entry is **always available** beside the picker (the
   gtkgreet fallback — an administrator may hide accounts from the list; hiding is not a lock).
-- **Metadata** (display name, avatar, last session) in `state/accounts/<user>/`; last-user
-  preselection (`state/accounts/last-user` — the SDDM/regreet pattern). Picker appears at ≥2
+- **Last-user preselection:** `state/accounts/last-user`, written by the greeter itself after
+  `start_session` into **its own directory** (`state/accounts`, `greeter:greeter 0755`, a
+  tmpfiles rule in `modules/os/session.nix`) — the regreet/tuigreet pattern (regreet
+  `/var/lib/regreet/state.toml`, tuigreet `/var/cache/tuigreet/lastuser`, both greeter-owned
+  directories their NixOS modules create; research/78 §9 F7). SDDM's root daemon writing
+  `state.conf` does not transfer: greetd has no root greeter daemon. Display names come from
+  GECOS (G1). **Per-user metadata** (avatar, last session) in `state/accounts/<user>/` is an
+  **open item**: a greeter-owned directory cannot hold it, a `1777` directory would let any local
+  user forge what the login screen shows pre-auth, and AccountsService's answer is a root daemon
+  writing on the user's behalf over D-Bus — decided when avatars land. Picker appears at ≥2
   entries or when guest is enabled; recorded as an accepted, Quest-independent disclosure that
   a login screen shows account names (GDM and SDDM do too) — the *lock* remains
   non-enumerating (session-auth §2.2), and greeter PAM failures are uniform (§3, the GDM

@@ -320,8 +320,9 @@ let
     multiUserDefaultOff = eval.config.mura.xr.session.multiUser.enable == false;
     # ADR 0018 rev 3: no account cap exists anywhere in the contract.
     multiUserNoCapOption = !(eval.options.mura.xr.session.multiUser ? maxAccounts);
+    # NixOS's own UID_MAX (nixbld starts at 30000; research/78 §9 F9 — Debian's 60000 broke the login)
     multiUserWindowLoginDefs =
-      eval.config.mura.xr.session.multiUser.uidRange.max == 60000;
+      eval.config.mura.xr.session.multiUser.uidRange.max == 29999;
     multiUserBadUidRangeFails = !assertsPass (evalContract multiUserBadUidRange);
     # research/42 §7 / first-run-onboarding §4.4: input-floor facts default to power +
     # volume with volumeUp as select (the PICO Head-Control-Mode shape); a dedicated select

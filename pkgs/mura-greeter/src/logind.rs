@@ -54,12 +54,35 @@ impl Logind {
         Ok(Logind { conn, manager, session })
     }
 
+    /// The session this program locks. `XDG_SESSION_ID` when the environment has one; else the
+    /// **user's display session** (`Manager.GetUser(uid)` → `User.Display`): a systemd user unit
+    /// runs in `user@UID.service`, outside every session scope, so cosmic-greeter's
+    /// `GetSessionByPID(parent)` (`cosmic-greeter/src/logind.rs:91-93`, its parent being
+    /// cosmic-session inside the scope) has no equivalent here — logind's `Display` is the
+    /// property it keeps for exactly this question.
     fn find_session(conn: &Connection, manager: &Proxy<'static>) -> zbus::Result<Proxy<'static>> {
         let path: OwnedObjectPath = match std::env::var("XDG_SESSION_ID") {
             Ok(id) => manager.call("GetSession", &(id,))?,
-            Err(_) => manager.call("GetSessionByPID", &(0u32,))?,
+            Err(_) => {
+                // SAFETY: getuid has no failure mode
+                let uid = unsafe { libc::getuid() };
+                let user_path: OwnedObjectPath = manager.call("GetUser", &(uid,))?;
+                let user = Proxy::new(conn, "org.freedesktop.login1", user_path, "org.freedesktop.login1.User")?;
+                let (id, path): (String, OwnedObjectPath) = user.get_property("Display")?;
+                if id.is_empty() {
+                    return Err(zbus::Error::Failure("the user has no display session yet".into()));
+                }
+                path
+            }
         };
         Proxy::new(conn, "org.freedesktop.login1", path, "org.freedesktop.login1.Session")
+    }
+
+    /// `Session.LockedHint`: true when the session was locked when we (or the compositor) went
+    /// away — cosmic-greeter's "recovering previous locked state" (`locker.rs:712-717`, a
+    /// lockfile there; logind's hint here, which the program itself sets).
+    pub fn locked_hint(&self) -> bool {
+        self.session.as_ref().and_then(|s| s.get_property::<bool>("LockedHint").ok()).unwrap_or(false)
     }
 
     /// `Can*` says "yes" (not "challenge": the greeter/lock runs without an authentication agent).

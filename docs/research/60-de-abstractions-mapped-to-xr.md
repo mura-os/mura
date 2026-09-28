@@ -253,8 +253,9 @@ restarts it on crash (`kwin/src/inputmethod.cpp:60-112`); cosmic-osd is a separa
 client. Research/36 §7 for the keyboard's spatial pattern; first-run §4.4 for the input floor.
 **Translation.** The compositor serves all three directions (text-input-v3 to apps; IM-v2 and VK
 to one privileged keyboard client — squeekboard's shape) and renders nothing itself; the
-keyboard is a layer-shell client anchored in the hand/body frame; the OSD a layer-shell client
-in the overlay band (cosmic's shape) fed over D-Bus (phosh's interface). **Class:** separate
+keyboard is a layer-shell client bound to the surface it types into (the placement table's
+`typed` frame — research/36 §7's convergence; rev 2026-09-28, previously "the hand/body frame"); the
+OSD a layer-shell client in the overlay band (cosmic's shape) fed over D-Bus (phosh's interface). **Class:** separate
 clients over standard seams; the privilege filter (which client may bind IM-v2/VK) is
 authority-only. **First bites:** G1 (the auth scene needs text input; the digit pad is
 in-compositor per session-auth), M1 for apps.
