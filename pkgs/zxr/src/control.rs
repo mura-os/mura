@@ -15,6 +15,8 @@ pub enum Command {
     List,
     Journal,
     Quit,
+    /// `lock`: run the lock command (`loginctl lock-session`; shell/lock.rs `request_lock`)
+    Lock,
     Close,
     Resize(i32, i32),
     Move(f32, f32, f32),
@@ -106,6 +108,7 @@ pub fn parse(line: &str) -> Command {
         (Some("list"), _) => Command::List,
         (Some("journal"), _) => Command::Journal,
         (Some("quit"), _) => Command::Quit,
+        (Some("lock"), _) => Command::Lock,
         (Some("quiet"), Some(v)) => Command::Quiet(v == "on" || v == "1"),
         (Some("primary"), Some(v)) => Command::Primary(v == "on" || v == "1"),
         (Some("grab"), Some(v)) => Command::Grab(v.to_string()),

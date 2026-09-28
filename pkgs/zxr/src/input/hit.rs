@@ -50,6 +50,10 @@ pub struct MemberHit {
     pub local: [f32; 2],
     pub distance: f32,
     pub class: Class,
+    /// the member's composition band and raise: the tie-break between coplanar planes of one
+    /// class is the painter's order (scene.rs flatten: band ascending, raised last)
+    pub band: Option<u8>,
+    pub raised: bool,
 }
 
 fn candidate_wins(candidate: MemberHit, current: MemberHit, epsilon_m: f32) -> bool {
@@ -60,6 +64,12 @@ fn candidate_wins(candidate: MemberHit, current: MemberHit, epsilon_m: f32) -> b
     }
     if bp > cp && current.distance <= candidate.distance + epsilon_m {
         return false;
+    }
+    // one class, coplanar (within the depth band): the one composed on top is the one hit — the
+    // composition order is band ascending (scene.rs flatten), so the higher band wins. Two layer
+    // surfaces on one frame (an OSK over a greeter) are exactly this case (research/78 §7a).
+    if (candidate.distance - current.distance).abs() <= epsilon_m && (candidate.band, candidate.raised) != (current.band, current.raised) {
+        return (candidate.band, candidate.raised) > (current.band, current.raised);
     }
     candidate.distance < current.distance
 }
@@ -90,7 +100,7 @@ pub fn hit_member_with<M>(
     epsilon_m: f32,
 ) -> Option<MemberHit> {
     let (member, local, distance) = scene.hit(origin, dir, |m| mapped(m))?;
-    let mut best = MemberHit { member, local, distance, class: class_of(member, scene.band(member)) };
+    let mut best = MemberHit { member, local, distance, class: class_of(member, scene.band(member)), band: scene.band(member), raised: scene.raised(member).unwrap_or(false) };
 
     for (id, member) in scene.iter() {
         if !mapped(&member.m) {
@@ -99,7 +109,7 @@ pub fn hit_member_with<M>(
         let Shape::Plane { size } = member.shape else { continue };
         let Some(world) = scene.world_pose(id) else { continue };
         let Some((distance, local)) = scene::ray_plane(origin, dir, world, [size[0] * 0.5, size[1] * 0.5]) else { continue };
-        let candidate = MemberHit { member: id, local, distance, class: class_of(id, scene.band(id)) };
+        let candidate = MemberHit { member: id, local, distance, class: class_of(id, scene.band(id)), band: scene.band(id), raised: scene.raised(id).unwrap_or(false) };
         if candidate_wins(candidate, best, epsilon_m) {
             best = candidate;
         }
@@ -279,5 +289,27 @@ mod tests {
         assert_eq!(hit.member, overlay);
         assert_ne!(hit.member, content);
         assert_eq!(hit.class, Class::Shell);
+    }
+
+    /// Two coplanar shell planes (an `overlay` greeter and a `top` OSK on one frame): the one the
+    /// flatten draws on top — higher band, then raised — is the one hit (research/78 §7a; phoc's
+    /// OSK rule in shell/mod.rs).
+    #[test]
+    fn coplanar_shell_planes_resolve_by_painters_order() {
+        let mut scene: Scene<bool> = Scene::new();
+        let overlay_place = scene.add_place(scene.world, math::pose_identity(), 5);
+        let top_place = scene.add_place(scene.world, math::pose_identity(), 4);
+        let greeter = scene.add(overlay_place, pose(-1.0), plane(), Flags::default(), true).unwrap();
+        let osk = scene.add(top_place, pose(-1.0), plane(), Flags::default(), true).unwrap();
+        let hit = hit_member(&scene, [0.0; 3], [0.0, 0.0, -1.0], |mapped| *mapped, |_, band| Class::from_band(band)).unwrap();
+        assert_eq!(hit.member, greeter, "overlay above top");
+        // phoc's raise: the OSK into the greeter's band, raised within it
+        scene.set_place_band(top_place, 5);
+        scene.set_place_raised(top_place, true);
+        let hit = hit_member(&scene, [0.0; 3], [0.0, 0.0, -1.0], |mapped| *mapped, |_, band| Class::from_band(band)).unwrap();
+        assert_eq!(hit.member, osk, "raised within the band wins");
+        // and the flatten agrees: the raised quad is submitted last (painter's order)
+        let submit = scene.flatten([0.0; 3], 8, |m| *m);
+        assert_eq!(submit.quads.last().map(|q| q.member), Some(osk));
     }
 }

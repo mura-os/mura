@@ -39,6 +39,7 @@ use smithay::desktop::utils::{send_frames_surface_tree, under_from_surface_tree}
 use smithay::desktop::{LayerSurface, Window, WindowSurfaceType};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::wayland::text_input::TextInputSeat;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor::{with_states, SurfaceData};
 use smithay::wayland::session_lock::LockSurface;
@@ -665,7 +666,7 @@ pub fn describe(st: &Zxr) -> String {
         s.push_str(&format!("zone: frame={:?} rect={}x{} extent={:.1}x{:.1}deg ppd={:.2} distance={:.2} usable={}x{}+{}+{}\n", r.frame, r.size.w, r.size.h, eh, ev, r.ppd, r.distance_m, r.usable.size.w, r.usable.size.h, r.usable.loc.x, r.usable.loc.y));
     }
     s.push_str(&format!(
-        "shell-counters: layers={} arranges={} configures={} focus_overrides={} override={:?} restricted={} trusted={} trusted_lost={} binds_filtered={} motion_deduped={} lock={:?} mode={:?} frames={} members_composed={}\n",
+        "shell-counters: layers={} arranges={} configures={} focus_overrides={} override={:?} restricted={} trusted={} trusted_lost={} binds_filtered={} motion_deduped={} lock={:?} relocks={} triggers={} mode={:?} frames={} members_composed={} osk_band={:?} osk_raised={:?} osk_raises={} osk_restarts={}\n",
         st.shell.layers.len(),
         st.shell.arranges,
         st.shell.configures,
@@ -677,9 +678,15 @@ pub fn describe(st: &Zxr) -> String {
         st.journal.binds_filtered,
         st.journal.pointer_motion_deduped,
         st.shell.lock.status(),
+        st.journal.lock_relocks,
+        st.journal.lock_triggers,
         st.input.mode,
         st.journal.frames,
-        st.journal.members_composed
+        st.journal.members_composed,
+        st.shell.layers.iter().find(|e| e.namespace == "osk").and_then(|e| st.scene.band(e.member)),
+        st.shell.layers.iter().find(|e| e.namespace == "osk").and_then(|e| st.scene.raised(e.member)),
+        st.journal.osk_raises,
+        st.journal.osk_restarts
     ));
     s
 }
@@ -775,5 +782,47 @@ mod tests {
         let s = plane_size_px((1920, 1493).into(), 1920.0 / 90.0, 0.5);
         // 90° at 0.5 m is 1 m wide
         assert!((s[0] - 1.0).abs() < 1e-3);
+    }
+}
+
+/// The OSK above the surface it types into — phoc's rule (`references/phoc/src/layer-shell.c:446-499`
+/// `phoc_layer_shell_update_osk`: while the focused layer surface's layer is ≥ the `osk`
+/// surface's and the input method is enabled on it, the OSK is composed on `overlay`, "as
+/// otherwise keyboard input isn't possible"; re-evaluated on every arrange, `:290-293`). zxr's
+/// terms: the surface with the **active text input** (smithay's word for an enabled
+/// `zwp_text_input_v3`) is a member with a band; while that band is ≥ the OSK's own, the OSK
+/// member's place moves to that band, **raised** within it (`Place::raised`: drawn last, hit
+/// first among coplanar planes — phoc's `overlay` with wlroots' later-on-top order); otherwise
+/// its own layer's band, not raised. A lock surface (band 5) and an `overlay` greeter (5) both
+/// raise a `top` OSK (4) into 5; an xdg toplevel (3) raises nothing. Band 6 is the compositor's
+/// own (the cursor) and stays out of reach. Per tick: one scan of the layer list and one mutex
+/// probe.
+pub fn update_osk_band(st: &mut Zxr) {
+    let Some(i) = st.shell.layers.iter().position(|e| e.namespace == "osk" && e.mapped) else { return };
+    let (osk_member, own_band) = {
+        let e = &st.shell.layers[i];
+        (e.member, band_of(e.surface.cached_state().layer))
+    };
+    let Some(place) = st.scene.get(osk_member).map(|m| m.place) else { return };
+    let mut typed: Option<WlSurface> = None;
+    st.seat.text_input().with_active_text_input(|_, surface| {
+        if typed.is_none() {
+            typed = Some(surface.clone());
+        }
+    });
+    let target_band = typed.and_then(|s| st.member_for_root(&s)).filter(|m| *m != osk_member).and_then(|m| st.scene.band(m));
+    let (want, raised) = match target_band {
+        Some(b) if b >= own_band => (b.min(5), true),
+        _ => (own_band, false),
+    };
+    if st.scene.band(osk_member) != Some(want) {
+        st.scene.set_place_band(place, want);
+    }
+    if st.scene.raised(osk_member) != Some(raised) {
+        st.scene.set_place_raised(place, raised);
+        if raised {
+            st.journal.osk_raises += 1;
+            tracing::info!(band = want, own = own_band, "OSK raised above the surface it types into (phoc's rule)");
+        }
     }
 }

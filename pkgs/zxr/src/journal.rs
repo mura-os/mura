@@ -167,6 +167,14 @@ pub struct Journal {
     pub clients_restricted: u64,
     pub clients_trusted: u64,
     pub trusted_lost: u64,
+    /// OSK child restarts (KWin's bound; filter.rs `restart_osk`)
+    pub osk_restarts: u64,
+    /// the OSK member raised above the surface it types into (phoc's rule; shell/mod.rs)
+    pub osk_raises: u64,
+    /// lock triggers fired: `session.lock.on_doff` after the grace, `on_idle` after the idle ladder, `zxr ctl lock`
+    pub lock_triggers: u64,
+    /// `ext_session_lock_v1.lock` accepted after the previous locker died (Defunct)
+    pub lock_relocks: u64,
     pub security_contexts: u64,
     pub pointer_motion_deduped: u64,
     /// whether the previous tick submitted GPU work (the timestamps are valid only then)
@@ -347,6 +355,10 @@ impl Journal {
             ("clients_restricted", self.clients_restricted),
             ("clients_trusted", self.clients_trusted),
             ("trusted_lost", self.trusted_lost),
+            ("osk_restarts", self.osk_restarts),
+            ("osk_raises", self.osk_raises),
+            ("lock_triggers", self.lock_triggers),
+            ("lock_relocks", self.lock_relocks),
             ("security_contexts", self.security_contexts),
             ("pointer_motion_deduped", self.pointer_motion_deduped),
         ] {

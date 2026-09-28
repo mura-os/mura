@@ -138,6 +138,12 @@ pub struct Zxr {
     pub shell: crate::shell::Shell,
     /// the trusted connections' data, read each tick for `disconnected`
     pub trusted_clients: Vec<Arc<ClientState>>,
+    /// the children zxr spawned over socketpairs, by role (filter.rs: the greeter-mode primary, the OSK)
+    pub trusted_children: Vec<crate::shell::filter::TrustedChild>,
+    /// greeter mode: the primary child exited — zxr ends with this status (cage's rule)
+    pub exit_status: Option<i32>,
+    /// `--lock-command`: what a lock trigger runs (`loginctl lock-session`; shell/lock.rs)
+    pub lock_command: String,
     pub popups: PopupManager,
     pub seat: Seat<Zxr>,
     pub output: Output,
@@ -498,6 +504,9 @@ impl Zxr {
             _security_context_state: security_context_state,
             shell: crate::shell::Shell::new(),
             trusted_clients: Vec::new(),
+            trusted_children: Vec::new(),
+            exit_status: None,
+            lock_command: "loginctl lock-session".into(),
             popups,
             seat,
             output,

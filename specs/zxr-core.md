@@ -625,13 +625,21 @@ so the case is a consequence. **A trusted client's exit** is `ClientData::discon
 one hook a client's death fires).
 
 **Rev 3.13 (ADR 0007 amendment 2; research/78; session-auth rev 6) — the two modes' shapes.**
-*Greeter mode* is greetd's kiosk: the **primary** trusted client is the greeter program
-(`--trusted-primary`, or the first `--trusted`); when it exits — after `start_session`, or by
-crashing — zxr tears down (§9's bounded teardown, within greetd's 5 s) and exits 0, so greetd
-starts the scheduled session or restarts the greeter (cage's rule, `cage/cage.c:157-206`;
-`greetd/src/context.rs:294-297, 344-385`). Other trusted children (the OSK) dying do not end the
-mode; zxr restarts them with KWin's bound (five crashes in 20 s, then stop —
-`kwin/src/inputmethod.cpp:88-96, 916-928`). *Lock mode* is **`ext-session-lock-v1`** on the public
+*Greeter mode* is greetd's kiosk: the **primary** trusted client is the greeter program (the
+first `--trusted`/`--shell-fd` in `--greeter` mode; `shell/filter.rs` `TrustedRole::Primary`); when
+it exits — after `start_session`, or by crashing — zxr tears down (§9's bounded teardown, within
+greetd's 5 s) and **exits with the child's status** (a signal death as 128 + signal), so greetd
+starts the scheduled session or restarts the greeter (cage's rule, `cage/cage.c:99-114, 200-215`;
+`greetd/src/context.rs:294-297, 344-385`). The OSK is a distinct child, **`--osk CMD`**
+(`TrustedRole::Osk`), in every mode; its death does not end the mode: a crash (signal death) is
+restarted while fewer than five crashes fell in the last 20 s, then given up with a warning; a
+plain exit is the OSK's own word and is not restarted (KWin's `InputMethod` exactly,
+`kwin/src/inputmethod.cpp:88-96, 916-928`). While the OSK's `top` surface would sit under the
+surface it types into — an `overlay` greeter or the lock surface on the same frame — zxr composes
+and hits it above that surface (`shell/mod.rs` `update_osk_band`: the `osk` member takes the typed
+surface's band, *raised* within it, while smithay's active text input belongs to a member of a band
+≥ the OSK's; phoc's `phoc_layer_shell_update_osk`, `phoc/src/layer-shell.c:446-499`; the hit test's
+coplanar tie-break follows the flatten's painter's order, `input/hit.rs`). *Lock mode* is **`ext-session-lock-v1`** on the public
 socket from a resident user unit (`mura-greeter --lock`): the manager is served through smithay's
 `SessionLockManagerState` behind the privileged filter (§10); `lock` enters `Mode::Locked` (I1) and
 is accepted while a previous lock is `Defunct` (cosmic-comp refuses only while the old client is
@@ -640,9 +648,12 @@ client's death leaves the lock `Defunct`, the mode `Locked` and the scene opaque
 red and keeps the lock, `lock.c:245-258`), and the unit's restart re-locks. **Triggers** are
 zxr's (ADR 0007's ladder from `session.lock.*` / `session.idle.*` prefs): doff past
 `doff_grace_s`, idle past `lock_delay_s`, and `zxr ctl lock` for the harness each **exec
-`loginctl lock-session`** (swayidle's shape; zxr has no bus) — logind's `Lock` reaches the unit,
-which locks. The compositor never unlocks on its own and never vetoes a client's
-`unlock_and_destroy`; a trigger during a stale unlock re-locks.
+`loginctl lock-session`** (swayidle's shape; zxr has no bus; `--lock-command CMD` substitutes it —
+the nested harness's hatch) — logind's `Lock` reaches the unit, which locks. One request is
+outstanding until the lock arrives or the wearer is present again (`shell/lock.rs` `triggers`,
+`due`); nothing fires while locked, in greeter mode, or with `session.lock.enabled` off. The
+compositor never unlocks on its own and never vetoes a client's `unlock_and_destroy`; a trigger
+during a stale unlock re-locks.
 
 **Quiet mode (DRAFT, 2026-09-26, forks ruled — [native-openxr-apps.md §4–§6](../docs/architecture/native-openxr-apps.md)):**
 while a native OpenXR application is Monado's primary, zxr submits no layers and runs no GPU
@@ -770,7 +781,12 @@ global was hidden), `clients_restricted`/`clients_trusted` (inserted with the bi
 (a trusted client's `disconnected`), `pointer_motion_deduped` (motions dropped by the still rule
 — the D3 number made visible); `zxr ctl list` adds a `shell:` line per layer member — namespace,
 layer, frame, arranged box, exclusive edge and zone, interactivity — and a `zone:` line per frame
-with its usable rectangle.
+with its usable rectangle. **Rev 3.13 (§9's two modes):** `osk_restarts` (the OSK child respawned
+within KWin's bound), `osk_raises` (the `osk` member raised above the surface it types into),
+`lock_triggers` (lock commands run: doff grace, idle ladder, `zxr ctl lock`), `lock_relocks`
+(a `lock` accepted after the previous locker died); the `shell-counters:` line carries
+`lock=`/`relocks=`/`triggers=` and `osk_band=`/`osk_raised=`/`osk_restarts=`; `zxr ctl lock` runs
+the lock command (refused, with the reason, while locked or gated).
 
 ## 12. Conformance — the R0 gates (research/39 §5, measured)
 
@@ -917,6 +933,29 @@ headset). Each gate is a written result with numbers in
    `mura-settings set shell.place:osk.elevation_deg 0` moved the mapped OSK live (the store watch →
    `take_prefs` → arrange), from (0.0, −0.34, −0.41) to eye level at 1.0 m. The harness's
    controller/head geometry is `docs/research/77` §7's note. The §12 fence holds.
+9. **The greeter gate (rev 3.13, research/78 §7a–§7b; G1).** greetd's `fakegreet`, unmodified,
+   runs `zxr --greeter --trusted mura-greeter --osk squeekboard` on the simulated HMD: (a) the
+   program maps `overlay`/`mura-greeter`, zone 0, `Exclusive`, as the primary trusted client and
+   the OSK as zxr's child; no listening socket; (b) the conversation `create_session` →
+   `Password:` → `7 + 2:` → `success` → `start_session` → `success` driven by the injector's
+   keys, by the controller ray on the scene's buttons (positions from the AT-SPI tree), and with
+   dwell on (the head ray's commits every second); the program exits 0 and **zxr exits with its
+   status** within the tick; a wrong answer → `cancel_session` + generic text + the same user's
+   `create_session`; (c) the program killed mid-scene → zxr exits with 128 + the signal, nothing
+   unlocked; (d) lock mode on the public socket: `lock` → `locked` → the `mura-authd` conversation
+   (the protocol's stand-in for the host) → wrong password → `failure{auth, delay}` honoured →
+   the locker killed ⇒ the mode stays, a second locker **relocks** (`lock_relocks` 1) → right
+   password → `unlock_and_destroy` → `Normal`; `zxr ctl lock` runs the lock command once and is
+   refused while locked or gated; (e) the OSK killed → restarted while fewer than five crashes
+   fell in 20 s, the fifth not (`osk_restarts` 4), and raised above the scene it types into
+   (`osk_raised`); (f) the AT-SPI tree is the scene (entries, buttons with `click`, panels) and
+   `DoAction` on `Log in` sends the response.
+   **Measured (host, 2026-09-28; research/78 §7b):** all of (a)–(f); the program 11.3 MB, RSS
+   25.8 MB / PSS 13.7 MB / 5 threads in greeter mode (27.6 / 14.5 / 6 in lock mode), 7 ms to its
+   first frame, 3.7 ms from `start_session` to zxr's exit, 2 partial redraws/s while a field is
+   focused (the caret) and none otherwise; zxr's own numbers unchanged from gate 8. The §12 fence
+   holds. Two harness findings flagged in research/78 §9 (F1 zone 0, F2 head-ray dwell on a
+   head-locked plane).
 
 Plus the fence (budget impact above) and the unit contract items already verified for sway by
 D4 (readiness, restart in the same session), re-run with zxr in the slot behind a flag.

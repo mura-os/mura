@@ -207,6 +207,10 @@ pub struct Place {
     pub local: xr::Posef,
     /// composition band, spec §4 (1 environment … 6 foreground); 2D windows are band 3
     pub band: u8,
+    /// above its band-mates: the OSK raised over the surface it types into (phoc's rule,
+    /// shell/mod.rs `update_osk_band`); the flatten draws raised last within a band and the hit
+    /// test prefers it among coplanar planes
+    pub raised: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -259,6 +263,7 @@ impl<M> Member<M> {
 pub struct QuadEntry {
     pub member: MemberId,
     pub band: u8,
+    pub raised: bool,
     pub world: xr::Posef,
     pub size: [f32; 2],
     pub dist2: f32,
@@ -315,7 +320,7 @@ impl<M> Scene<M> {
         let world = FrameId(frames.insert(Frame { space: Space::Base, kind: FrameKind::World, pose: math::pose_identity(), valid: true }));
         let head = FrameId(frames.insert(Frame { space: Space::Views, kind: FrameKind::Head, pose: math::pose_identity(), valid: false }));
         let mut places = Arena::default();
-        let default_place = PlaceId(places.insert(Place { frame: world, local: math::pose_identity(), band: 3 }));
+        let default_place = PlaceId(places.insert(Place { frame: world, local: math::pose_identity(), band: 3, raised: false }));
         Scene { frames, places, members: Arena::default(), focused: None, world, head, default_place, submit: Submit::default(), layout: Layout::default(), spawned: 0, handles: Vec::new() }
     }
 
@@ -346,7 +351,7 @@ impl<M> Scene<M> {
     // ---- places ----
 
     pub fn add_place(&mut self, frame: FrameId, local: xr::Posef, band: u8) -> PlaceId {
-        PlaceId(self.places.insert(Place { frame, local, band }))
+        PlaceId(self.places.insert(Place { frame, local, band, raised: false }))
     }
 
     /// `pin` / `grab-all` / `assign-to-frame`: one index write.
@@ -380,6 +385,23 @@ impl<M> Scene<M> {
             }
             None => false,
         }
+    }
+
+    /// Raise or lower a place within its band (`Place::raised`).
+    pub fn set_place_raised(&mut self, p: PlaceId, raised: bool) -> bool {
+        match self.places.get_mut(p.0) {
+            Some(pl) => {
+                pl.raised = raised;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Whether a member's place is raised within its band.
+    pub fn raised(&self, id: MemberId) -> Option<bool> {
+        let m = self.members.get(id.0)?;
+        Some(self.places.get(m.place.0)?.raised)
     }
 
     pub fn place_world(&self, p: PlaceId) -> Option<xr::Posef> {
@@ -566,10 +588,10 @@ impl<M> Scene<M> {
             }
             let world = math::pose_mul(math::pose_mul(fr.pose, pl.local), m.local);
             let d = [world.position.x - head[0], world.position.y - head[1], world.position.z - head[2]];
-            submit.scratch.push(QuadEntry { member: MemberId(h), band: pl.band, world, size, dist2: d[0] * d[0] + d[1] * d[1] + d[2] * d[2] });
+            submit.scratch.push(QuadEntry { member: MemberId(h), band: pl.band, raised: pl.raised, world, size, dist2: d[0] * d[0] + d[1] * d[1] + d[2] * d[2] });
         }
-        // band descending, nearest first: the allotment order
-        submit.scratch.sort_by(|a, b| b.band.cmp(&a.band).then(a.dist2.total_cmp(&b.dist2)).then(a.member.0.idx.cmp(&b.member.0.idx)));
+        // band descending, raised first, nearest first: the allotment order
+        submit.scratch.sort_by(|a, b| b.band.cmp(&a.band).then(b.raised.cmp(&a.raised)).then(a.dist2.total_cmp(&b.dist2)).then(a.member.0.idx.cmp(&b.member.0.idx)));
         for (i, q) in submit.scratch.iter().enumerate() {
             if i < budget {
                 submit.quads.push(*q);
@@ -577,8 +599,8 @@ impl<M> Scene<M> {
                 submit.overflow.push(*q);
             }
         }
-        // submission order: band ascending, nearest last
-        submit.quads.sort_by(|a, b| a.band.cmp(&b.band).then(b.dist2.total_cmp(&a.dist2)).then(a.member.0.idx.cmp(&b.member.0.idx)));
+        // submission order: band ascending, raised last within a band, nearest last
+        submit.quads.sort_by(|a, b| a.band.cmp(&b.band).then(a.raised.cmp(&b.raised)).then(b.dist2.total_cmp(&a.dist2)).then(a.member.0.idx.cmp(&b.member.0.idx)));
     }
 
     // ---- the hit test ----

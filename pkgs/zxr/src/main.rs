@@ -36,7 +36,7 @@ use state::{now_ns, spawn_client, DebugPanels, HoldPolicy, PanelSwapchain, TexRe
 use xr::math;
 use xr::{FrameTick, QuadLayer, XrCore};
 
-const USAGE: &str = "zxr [--socket NAME] [--greeter] [--trusted CMD]... [--shell-fd N]... [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--debug-panels projection] [--debug-hold replacement|tick|callback|fence] [--overlay PLACEMENT]\n       zxr ctl SOCKET COMMAND...";
+const USAGE: &str = "zxr [--socket NAME] [--greeter] [--trusted CMD]... [--shell-fd N]... [--osk CMD] [--lock-command CMD] [--control PATH] [--spawn CMD]... [--frames N] [--journal PATH] [--drm-node PATH] [--xwayland DISPLAY] [--debug-panels projection] [--debug-hold replacement|tick|callback|fence] [--overlay PLACEMENT]\n       zxr ctl SOCKET COMMAND...";
 
 struct Args {
     socket: Option<String>,
@@ -56,10 +56,15 @@ struct Args {
     trusted: Vec<String>,
     /// `--shell-fd N`: admit an inherited fd as a trusted client
     shell_fds: Vec<i32>,
+    /// `--osk CMD`: the on-screen keyboard, zxr's socketpair child in every mode, restarted within
+    /// KWin's bound (shell-plane §3.2; filter.rs)
+    osk: Option<String>,
+    /// `--lock-command CMD`: what the lock triggers run (default `loginctl lock-session`; shell/lock.rs)
+    lock_command: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, debug_panels: DebugPanels::Auto, hold: HoldPolicy::Replacement, overlay: None, greeter: false, trusted: Vec::new(), shell_fds: Vec::new() };
+    let mut a = Args { socket: None, control: None, spawn: Vec::new(), frames: None, journal: None, drm_node: None, xwayland: None, debug_panels: DebugPanels::Auto, hold: HoldPolicy::Replacement, overlay: None, greeter: false, trusted: Vec::new(), shell_fds: Vec::new(), osk: None, lock_command: None };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut val = || it.next().ok_or_else(|| format!("{arg} needs a value\n{USAGE}"));
@@ -70,6 +75,8 @@ fn parse_args() -> Result<Args, String> {
             "--greeter" => a.greeter = true,
             "--trusted" => a.trusted.push(val()?),
             "--shell-fd" => a.shell_fds.push(val()?.parse().map_err(|e| format!("--shell-fd: {e}"))?),
+            "--osk" => a.osk = Some(val()?),
+            "--lock-command" => a.lock_command = Some(val()?),
             "--frames" => a.frames = Some(val()?.parse().map_err(|e| format!("--frames: {e}"))?),
             "--journal" => a.journal = Some(val()?.into()),
             "--drm-node" => a.drm_node = Some(val()?),
@@ -108,13 +115,18 @@ fn main() {
         return;
     }
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into())).init();
-    if let Err(e) = run() {
-        eprintln!("zxr: {e}");
-        std::process::exit(1);
+    match run() {
+        Err(e) => {
+            eprintln!("zxr: {e}");
+            std::process::exit(1);
+        }
+        // greeter mode: the primary child's status is zxr's (cage's rule; greetd reads it)
+        Ok(code) if code != 0 => std::process::exit(code),
+        Ok(_) => {}
     }
 }
 
-fn run() -> Result<(), String> {
+fn run() -> Result<i32, String> {
     let args = parse_args()?;
     // Block the signals the loop handles *before* any thread exists (the wait thread, Mesa's
     // workers inherit the mask): otherwise the kernel may deliver SIGTERM to a thread without
@@ -238,6 +250,9 @@ fn run() -> Result<(), String> {
     let listener = UnixListener::bind(&control_path).map_err(|e| format!("control socket {control_path}: {e}"))?;
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     tracing::info!(path = %control_path, "control socket");
+    // the trusted children (the greeter program) reach the input floor's toggles through it
+    // (`zxr ctl a11y …`; first-run-onboarding §4.4) — no bus
+    std::env::set_var("ZXR_CONTROL", &control_path);
     event_loop
         .handle()
         .insert_source(Generic::new(listener, Interest::READ, CMode::Level), |_, listener, state| {
@@ -283,19 +298,41 @@ fn run() -> Result<(), String> {
             Err(e) => tracing::warn!(cmd, "spawn: {e}"),
         }
     }
-    // the trusted connections (spec §9 rev 3.12): inherited fds first, then the children
+    // the trusted connections (spec §9 rev 3.13): inherited fds first, then the children. In
+    // greeter mode the first of them is the kiosk's primary — the greeter program — whose exit
+    // ends zxr (cage's rule; filter.rs).
+    let mut primary_taken = false;
+    let mut role = |greeter: bool| {
+        if greeter && !primary_taken {
+            primary_taken = true;
+            shell::filter::TrustedRole::Primary
+        } else {
+            shell::filter::TrustedRole::Other
+        }
+    };
     for fd in &args.shell_fds {
-        if let Err(e) = shell::filter::admit_trusted_fd(&mut st, *fd) {
+        if let Err(e) = shell::filter::admit_trusted_fd(&mut st, *fd, role(args.greeter)) {
             tracing::warn!(fd, "--shell-fd: {e}");
         }
     }
     for cmd in &args.trusted {
-        if let Err(e) = shell::filter::spawn_trusted(&mut st, cmd) {
+        if let Err(e) = shell::filter::spawn_trusted(&mut st, cmd, role(args.greeter)) {
             tracing::warn!(cmd, "--trusted: {e}");
         }
     }
+    if let Some(cmd) = &args.osk {
+        if let Err(e) = shell::filter::spawn_trusted(&mut st, cmd, shell::filter::TrustedRole::Osk) {
+            tracing::warn!(cmd, "--osk: {e}");
+        }
+    }
+    if let Some(cmd) = &args.lock_command {
+        st.lock_command = cmd.clone();
+    }
     if args.greeter {
         st.input.mode = input::Mode::Greeter;
+        if !primary_taken {
+            tracing::warn!("--greeter without a trusted client: nothing can log in; greetd restarts the greeter when zxr exits");
+        }
     }
 
     // the loop: ticks, clients, control; flush after every dispatch
@@ -308,10 +345,12 @@ fn run() -> Result<(), String> {
         let _ = std::fs::write(p, &journal);
     }
     // orderly exit: session out of the running state first, then `Drop for Zxr` orders the rest
+    let exit_status = st.exit_status;
     st.xr.shutdown();
     drop(st);
     let _ = std::fs::remove_file(&control_path);
-    res.map_err(|e| e.to_string())
+    res.map_err(|e| e.to_string())?;
+    Ok(exit_status.unwrap_or(0))
 }
 
 /// One member's surface tree, walked this tick because its panel is dirty (or it overflowed
@@ -403,10 +442,27 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     if let Some(p) = st.xr.presence_event.take() {
         st.input.set_present(p);
         st.journal.input_presence_changes += 1;
+        shell::lock::note_presence(st, p, now_ns());
     }
     input::tick(st, head, time, now_ns());
-    // a trusted client that died since the last tick (ADR 0007 I3: nothing unlocks)
-    shell::filter::take_trusted_losses(st);
+    // a trusted client that died since the last tick (ADR 0007 I3: nothing unlocks). The primary's
+    // death ends greeter mode with its status (cage's rule); the OSK's restarts it within KWin's
+    // bound (filter.rs).
+    let losses = shell::filter::take_trusted_losses(st);
+    if let Some(status) = losses.primary {
+        if st.input.mode == input::Mode::Greeter && st.exit_status.is_none() {
+            st.exit_status = Some(status);
+            tracing::info!(status, "greeter mode: the greeter program exited — zxr exits with it, greetd starts the session or restarts the greeter");
+            st.loop_signal.stop();
+        }
+    }
+    if losses.osk {
+        shell::filter::restart_osk(st, now_ns());
+    }
+    // the OSK above the surface it types into (phoc's rule; shell-plane §3.2) and the lock triggers
+    // (doff grace, idle ladder; shell/lock.rs)
+    shell::update_osk_band(st);
+    shell::lock::triggers(st, now_ns());
     // the window-management floor's timed work: settings by generation, lazy-follow (wm §7)
     policy::tick(st, now_ns());
 
@@ -1108,6 +1164,13 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             }
             other => format!("unknown grab verb {other:?} (focused|end)"),
         },
+        Lock => {
+            if shell::lock::request_lock(st, "zxr ctl lock") {
+                format!("lock requested ({})", st.lock_command)
+            } else {
+                format!("lock not requested (lock {}, mode {:?})", st.shell.lock.status(), st.input.mode)
+            }
+        }
         Mode(m) => {
             let mode = match m.as_str() {
                 "normal" => Some(input::Mode::Normal),
