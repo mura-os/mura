@@ -338,6 +338,24 @@ Wi-Fi profile added at the greeter is a system connection; a passwordless declar
 in with no prompt and a digits-only one gets the digit pad; neither zxr nor the greeter program loads PAM
 symbols (session-auth §6.6).
 
+**Status (rev 4.9, 2026-09-28): the swap is done.** `default_session.command` is
+`zxr --greeter --trusted mura-greeter --osk mura-osk` (the OSK is Mura's, `pkgs/mura-osk`,
+shell-plane §3.2); cage and gtkgreet are gone and `tests/closure.nix` fence (d) keeps them out.
+**The VM is blind by construction:** lavapipe has no `VK_KHR_display` and there is no window
+system under the greeter, so Monado's compositor has nowhere to scan out; the virtual headset
+sets `XRT_COMPOSITOR_NULL=true` (Monado's null compositor, compiled into nixpkgs' build) and the
+XR chain runs end to end without a picture — the fixture proves the scene through processes,
+greetd's journal, the login typed at the VT (libseat → libinput → the greeter's exclusive layer)
+and the compositor's control socket; screenshots of the XR path exist only on hardware and in
+`dev-session` on a host (research/78 §9 F14; the owner may prefer a venus/virgl display path for
+the VM later — a decision, not a default). Measured: cold boot → `zxr`, `monado-service`,
+`mura-greeter`, `mura-osk` running as `greeter` 6 s after greetd; `mura⏎ mura⏎` at the VT →
+greetd opens the `mura` session. The Wi-Fi-at-the-greeter and power-menu criteria are the
+fixture's (§5 G2 rows) and run at G3's gate. *Flagged:* the greeter's Wi-Fi panel is not built
+(the program has no network UI yet — shell-plane §3.1 lists it; the polkit rule and NetworkManager
+are in place), so "a Wi-Fi profile added at the greeter is a system connection" is verified at the
+mechanism level (D2's rule) and not through the scene.
+
 ### M1 — the spatial 2D desktop (composition §7.5)
 
 The 2D tier on R0's skeleton, in the windowed dev backend: xdg-shell + baseline globals

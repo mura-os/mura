@@ -490,6 +490,17 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   compositor-visible rule only per *member*, not per widget — a client-side question for the
   greeter's buttons (a widget could ignore a press that arrives without a prior pointer enter)
   and an owner item.
+- **F14 — the VM's XR path is blind (2026-09-28, G2).** Monado's main compositor needs a target:
+  a Wayland/X window (none exists under the greeter or a zxr session — zxr *is* the compositor),
+  `VK_KHR_display` direct mode (lavapipe, the only Vulkan driver on virtio-gpu, has none), or the
+  null compositor (`target_instance.c:43,111-117`, compiled into nixpkgs' monado). The virtual
+  headset sets `XRT_COMPOSITOR_NULL=true`, so the chain runs and nothing is drawn: the fixtures
+  prove the greeter and the session through processes, journals, the VT keyboard path and the
+  control socket, never a screenshot of the scene. The sway/gtkgreet stand-ins were the last
+  thing the VM ever showed. Options the owner may weigh later: a venus (virtio-gpu Vulkan
+  passthrough) host GPU for the VM, which would give Monado a real driver with display
+  extensions; or accepting blindness and leaving pictures to hardware and `dev-session`. Recorded,
+  not decided.
 
 ## 10. Sources
 

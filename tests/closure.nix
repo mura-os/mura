@@ -65,6 +65,9 @@ let
     # (b) no interpreter on the system PATH (NixOS's environment.defaultPackages — perl rsync
     #     strace — is emptied in modules/os/default.nix; research/56 §10, ruled)
     if ls ${toplevel}/sw/bin | grep -E '^(python|perl)' ; then echo "FAIL ${name}: interpreter on PATH"; exit 1; fi
+    # (d) the stand-ins are gone (implementation-path §3 G2/G3 exit criteria): gtkgreet and cage
+    #     left with the greeter swap, squeekboard with mura-osk
+    if echo "$names" | grep -E '^(gtkgreet|cage|squeekboard)-[0-9]' ; then echo "FAIL ${name}: a stand-in is still in the closure"; exit 1; fi
     # (c) python3*-named paths == allowlist (normalised: minor version -> X, trailing version dropped)
     echo "$names" \
       | grep -E '^python3(\.[0-9]+)?(-|$)' \

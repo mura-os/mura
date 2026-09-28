@@ -26,9 +26,9 @@
 # path (AGENTS.md; specs/session-bootstrap.md §9). Unit semantics are copied 1:1 from uwsm's
 # templates (uwsm 0.26.7 lib/systemd/user/*) minus the per-compositor templating we do not need.
 #
-# Stand-ins (implementation-path §1, the stand-in rule): until the zxr compositor exists,
-# sway is the session body and cage+gtkgreet the greeter. Both are development fixtures
-# and never ship; each swap is an exit criterion (M1 for the session, G2 for the greeter).
+# Stand-ins (implementation-path §1, the stand-in rule): sway was the session body until G3
+# and cage+gtkgreet the greeter until G2 — development fixtures that never shipped; each swap
+# was an exit criterion.
 { lib, config, pkgs, ... }:
 let
   cfg = config.mura.xr.session;
@@ -43,14 +43,12 @@ let
   # `mura-session`.
   sessionCommand = "${lib.getExe pkgs.mura.session} start";
 
-  # STAND-IN — replaced at G2 by zxr --greeter (registry: zxr --greeter mode row;
-  # implementation-path §3 G2: gtkgreet and cage leave the closure at the swap).
-  greeterCommand = "${pkgs.cage}/bin/cage -s -- ${pkgs.gtkgreet}/bin/gtkgreet";
-
-  # G1's greeter command (specs/zxr-core.md §9 rev 3.13; session-auth rev 6 §5): greetd runs
+  # The greeter command (G2; specs/zxr-core.md §9 rev 3.15; session-auth rev 6 §5): greetd runs
   # zxr in greeter mode as the `greeter` user; zxr spawns the program and the OSK over
   # socketpairs (the kiosk's primary and its keyboard) and exits with the program (cage's
-  # rule). Defined here, wired at G2 (the `greeterCommand` flip is G2's exit criterion).
+  # rule). cage + gtkgreet were the D0–G1 stand-in and left the closure here (tests/closure.nix
+  # asserts it). Monado for the greeter is the greeter user's own socket-activated instance —
+  # greetd's PAM stack includes `login` (pam_systemd), so the greeter has a user manager.
   # The picker's UID window rides the program's environment (`accounts.rs`), never login.defs.
   zxrGreeterCommand = "${lib.getExe pkgs.mura.zxr} --greeter --trusted 'MURA_UID_MIN=${toString cfg.multiUser.uidRange.min} MURA_UID_MAX=${toString cfg.multiUser.uidRange.max} exec ${lib.getExe pkgs.mura.greeter}' --osk ${lib.getExe pkgs.mura.osk}";
 
@@ -240,9 +238,8 @@ in
         exec ${lib.getExe pkgs.mura.session} finalize SWAYSOCK I3SOCK
       '');
 
-      # gtkgreet's session list — the stand-in greeter offers the stand-in session, through
-      # the wrapper. (zxr --greeter enumerates sessions from mura.xr.shell instead;
-      # session-auth §5.)
+      # The greeter's session list (gtkgreet's and tuigreet's `environments` file, read by
+      # mura-greeter `sessions.rs`): one session, through the wrapper.
       environment.etc."greetd/environments".text = "mura-session start\n";
     }
 
@@ -267,7 +264,7 @@ in
     # module; the contract's declared-account assertion guarantees someone can log in.
     (lib.mkIf (cfg.greeter != "none") {
       services.greetd.settings.default_session = {
-        command = greeterCommand; # STAND-IN — replaced at G2 by zxr --greeter
+        command = zxrGreeterCommand;
         user = "greeter";
       };
     })

@@ -1,8 +1,11 @@
-# The multi-user fixture: profiles/multi-user.nix + the declared fixture account, the
-# stand-in greeter (cage + gtkgreet until G2). Subtests accumulate per D-track rung.
+# The multi-user fixture: profiles/multi-user.nix + the declared fixture account, the XR
+# greeter (G2: `zxr --greeter` composing mura-greeter and mura-osk as the `greeter` user).
+# Subtests accumulate per D-track rung.
 #
-# Note: nixpkgs wraps GTK programs, so gtkgreet's process name is `.gtkgreet-wrapped`;
-# match on the command line (`pgrep -f`), never `pgrep -x gtkgreet`.
+# The VM is blind on the XR path (research/78 §9 F14): Monado runs its null compositor, so the
+# greeter and the session are proven through processes, journals, the VT keyboard path
+# (libseat → libinput → the greeter's exclusive layer surface) and zxr's control socket —
+# never a screenshot of the scene. Screenshots here show the VT.
 { pkgs }:
 (import ./lib.nix { inherit pkgs; }) {
   name = "mura-vm-multi-user";
@@ -36,40 +39,71 @@
   ];
 
   testScript = ''
-    GREETER = "pgrep -u greeter -f bin/gtkgreet"
+    # the XR greeter: zxr in greeter mode composing the greeter program (its primary trusted
+    # child) and the OSK, all as the greeter user (spec §9; session-auth rev 6 §5)
+    GREETER = "pgrep -u greeter -x mura-greeter"
+    GREETER_ZXR = "pgrep -u greeter -x zxr"
+    # zxr's control socket for the greeter's instance (`zxr ctl`; spec §11), as the greeter user
+    ZXR_CTL = "su -s /bin/sh greeter -c '${pkgs.mura.zxr}/bin/zxr ctl $(ls -t /run/user/$(id -u greeter)/zxr-*.sock | head -1) {}'"
 
     machine.start()
     machine.wait_for_unit("multi-user.target")
 
-    with subtest("D0: greetd runs the stand-in greeter directly as the greeter user"):
+    with subtest("G2: greetd runs zxr --greeter directly as the greeter user; it composes mura-greeter and mura-osk over socketpairs"):
         machine.wait_for_unit("greetd.service")
-        machine.wait_until_succeeds(GREETER, timeout=120)
+        machine.wait_until_succeeds(GREETER_ZXR, timeout=120)
+        machine.wait_until_succeeds(GREETER, timeout=60)
+        machine.wait_until_succeeds("pgrep -u greeter -x mura-osk", timeout=60)
+        # the greeter's own Monado (socket-activated in the greeter's user manager; the null
+        # compositor in this VM) — the compositor is an OpenXR client of it
+        machine.wait_until_succeeds("pgrep -u greeter -x monado-service", timeout=60)
         machine.fail("pgrep -x sway")
+        machine.fail("pgrep -f gtkgreet")
+        machine.fail("pgrep -x cage")
+        # no listening Wayland socket in greeter mode (spec §9: the scene is the socketpair children)
+        machine.fail("ls /run/user/$(id -u greeter)/wayland-*")
+        # the scene: both trusted members mapped on the body frame, the greeter's exclusive layer
+        # taking the keyboard, the OSK's band shrinking the greeter's usable rectangle
+        listing = machine.wait_until_succeeds(ZXR_CTL.format("list"), timeout=60)
+        assert "ns=mura-greeter layer=Overlay frame=body" in listing and "mapped=true trusted=true" in listing, listing
+        assert "ns=osk layer=Top frame=body" in listing, listing
+        assert "mode=Greeter" in listing and "trusted=2" in listing, listing
         machine.screenshot("multi-user-greeter")
 
-    with subtest("D0: an undeclared username is refused uniformly and the greeter stays up"):
+    with subtest("G2: an undeclared username is refused uniformly and the greeter stays up (the VT keyboard reaches the scene through libseat/libinput)"):
         machine.send_chars("nobody-here\n")
         machine.sleep(2)
         machine.send_chars("wrong\n")
         machine.sleep(4)
         machine.succeed(GREETER)
+        machine.succeed(GREETER_ZXR)
         machine.fail("pgrep -x sway")
-        machine.screenshot("multi-user-refused")
+        machine.fail("loginctl list-sessions --no-legend | grep -w mura")
 
-    with subtest("D0: greetd respawns the greeter when it exits"):
-        old = machine.succeed(GREETER).strip()
-        machine.succeed("pkill -u greeter -f bin/gtkgreet")
-        machine.wait_until_succeeds(f"{GREETER} | grep -vqx '{old}'", timeout=60)
-        machine.sleep(2)  # a fresh prompt, independent of gtkgreet's post-error state
+    with subtest("G2: greetd respawns the greeter when it exits — zxr exits with its primary trusted client (cage's rule)"):
+        old = machine.succeed(GREETER_ZXR).strip()
+        machine.succeed("pkill -u greeter -x mura-greeter")
+        machine.wait_until_succeeds(f"{GREETER_ZXR} | grep -vqx '{old}'", timeout=60)
+        machine.wait_until_succeeds(GREETER, timeout=60)
+        machine.sleep(2)  # a fresh prompt
 
-    with subtest("D0: the declared account logs in through the greeter into the stand-in session"):
+    with subtest("G2: the OSK dies -> zxr restarts it within KWin's bound; the greeter stays"):
+        old = machine.succeed("pgrep -u greeter -x mura-osk").strip()
+        machine.succeed("pkill -9 -u greeter -x mura-osk")
+        machine.wait_until_succeeds(f"pgrep -u greeter -x mura-osk | grep -vqx '{old}'", timeout=30)
+        machine.succeed(GREETER)
+        assert "osk_restarts=1" in machine.succeed(ZXR_CTL.format("list"))
+
+    with subtest("G2: the declared account logs in through the XR greeter into the session"):
         machine.send_chars("mura\n")
         machine.sleep(2)
         machine.send_chars("mura\n")
         machine.wait_until_succeeds("pgrep -u mura -x sway", timeout=120)
         machine.wait_until_fails(GREETER)
+        machine.wait_until_fails(GREETER_ZXR)
         machine.succeed("loginctl list-sessions --no-legend | grep -w mura")
-        machine.screenshot("multi-user-session")
+        # the greeter remembered who logged in (regreet/tuigreet's last-user file, F7)
+        machine.wait_until_succeeds("test \"$(cat /var/lib/mura/state/accounts/last-user)\" = mura", timeout=30)
 
     with subtest("G1: the greeter's own state directory exists for last-user (regreet/tuigreet's shape)"):
         assert machine.succeed("stat -c '%U:%G %a' /var/lib/mura/state/accounts").strip() == "greeter:greeter 755"

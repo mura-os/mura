@@ -66,6 +66,15 @@
       # system builder is excluded from auto-discovery unless explicitly enabled
       # (monado target_builder_simulated.c).
       SIMULATED_ENABLE = "true";
+      # The VM has no display path Monado can scan out to: lavapipe (the only Vulkan driver on
+      # virtio-gpu) has no VK_KHR_display, and there is no window system under the greeter or
+      # the session — zxr *is* the compositor. Monado's null compositor (`XRT_COMPOSITOR_NULL`,
+      # `monado/src/xrt/targets/common/target_instance.c:43,111-117`; compiled into nixpkgs'
+      # monado) accepts sessions, swapchains and layers and displays nothing, so the XR chain
+      # runs end to end in the VM and is proven through the compositor's control socket, the
+      # journal and AT-SPI rather than screenshots. The picture exists on hardware and in
+      # `dev-session` on a host (G2, specs/zxr-core.md §12 gate 10; flagged in research/78 §9 F14).
+      XRT_COMPOSITOR_NULL = "true";
     };
   };
 
