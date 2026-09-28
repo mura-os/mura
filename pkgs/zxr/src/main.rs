@@ -328,6 +328,22 @@ fn run() -> Result<i32, String> {
     if let Some(cmd) = &args.lock_command {
         st.lock_command = cmd.clone();
     }
+    // readiness (session-bootstrap rev 4 §7; spec §9 rev 3.15): inside `mura-compositor.service`
+    // (`NOTIFY_SOCKET` set) and not the greeter's kiosk, the socket is bound and the variables are
+    // final — `mura-session finalize WAYLAND_DISPLAY [DISPLAY]` publishes them to the user manager
+    // and D-Bus and sends `READY=1` over the inherited socket. One code path for every
+    // compositor the unit ever ran; the compositor itself knows no systemd beyond two variables.
+    if !args.greeter && std::env::var_os("NOTIFY_SOCKET").is_some() {
+        let bin = option_env!("MURA_SESSION").unwrap_or("mura-session");
+        let vars = if args.xwayland.is_some() { "WAYLAND_DISPLAY DISPLAY" } else { "WAYLAND_DISPLAY" };
+        match spawn_client(&format!("exec {bin} finalize {vars}"), &st.socket_name, args.xwayland.as_deref()) {
+            Ok(c) => {
+                tracing::info!(pid = c.id(), "readiness: mura-session finalize spawned (READY=1 follows the published variables)");
+                st.children.push(c);
+            }
+            Err(e) => tracing::error!("readiness: mura-session finalize: {e} — the unit will time out"),
+        }
+    }
     if args.greeter {
         st.input.mode = input::Mode::Greeter;
         if !primary_taken {
@@ -344,13 +360,45 @@ fn run() -> Result<i32, String> {
     if let Some(p) = &st.journal_path {
         let _ = std::fs::write(p, &journal);
     }
-    // orderly exit: session out of the running state first, then `Drop for Zxr` orders the rest
+    // orderly exit: the unit told first (`STOPPING=1`, sd_notify(3) — systemd then treats the
+    // exit as deactivation, not a failure to watch), the session out of the running state next,
+    // then `Drop for Zxr` orders the rest
+    sd_notify(b"STOPPING=1\n");
     let exit_status = st.exit_status;
     st.xr.shutdown();
     drop(st);
     let _ = std::fs::remove_file(&control_path);
     res.map_err(|e| e.to_string())?;
     Ok(exit_status.unwrap_or(0))
+}
+
+/// `sd_notify(3)` without the library: one datagram to `$NOTIFY_SOCKET` (a path, or `@abstract`),
+/// nothing when the variable is absent (not under systemd). `READY=1` is `mura-session finalize`'s
+/// (it follows the variables it publishes); zxr sends only `STOPPING=1`.
+fn sd_notify(msg: &[u8]) {
+    let Some(sock) = std::env::var_os("NOTIFY_SOCKET") else { return };
+    use std::os::unix::ffi::OsStrExt;
+    let mut path = sock.as_bytes().to_vec();
+    let abstract_ns = path.first() == Some(&b'@');
+    if abstract_ns {
+        path[0] = 0;
+    }
+    // SAFETY: a plain AF_UNIX datagram send with a correctly sized sockaddr_un
+    unsafe {
+        let fd = libc::socket(libc::AF_UNIX, libc::SOCK_DGRAM | libc::SOCK_CLOEXEC, 0);
+        if fd < 0 {
+            return;
+        }
+        let mut addr: libc::sockaddr_un = std::mem::zeroed();
+        addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+        let n = path.len().min(addr.sun_path.len() - 1);
+        for (i, b) in path[..n].iter().enumerate() {
+            addr.sun_path[i] = *b as libc::c_char;
+        }
+        let len = std::mem::size_of::<libc::sa_family_t>() + n + if abstract_ns { 0 } else { 1 };
+        libc::sendto(fd, msg.as_ptr() as *const libc::c_void, msg.len(), 0, &addr as *const libc::sockaddr_un as *const libc::sockaddr, len as libc::socklen_t);
+        libc::close(fd);
+    }
 }
 
 /// One member's surface tree, walked this tick because its panel is dirty (or it overflowed

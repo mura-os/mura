@@ -16,6 +16,7 @@
 , openxr-loader
 , vulkan-loader
 , xwayland-satellite
+, mura
 }:
 rustPlatform.buildRustPackage {
   pname = "zxr";
@@ -44,6 +45,9 @@ rustPlatform.buildRustPackage {
   GLSLC = "${shaderc.bin}/bin/glslc";
   MURA_OPENXR_LOADER = "${openxr-loader}/lib/libopenxr_loader.so.1";
   MURA_XWAYLAND_SATELLITE = "${xwayland-satellite}/bin/xwayland-satellite";
+  # readiness inside mura-compositor.service (session-bootstrap rev 4 §7): the wrapper's
+  # `finalize` publishes the variables and sends READY=1
+  MURA_SESSION = "${mura.session}/bin/mura-session";
   # ash dlopens libvulkan.so.1; give the binary an rpath rather than a wrapper (the RSS and
   # thread numbers in the gates are of the bare process).
   postFixup = ''
