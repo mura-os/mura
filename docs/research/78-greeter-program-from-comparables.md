@@ -569,6 +569,122 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
 - **Also seen:** `input::theme` has two unit tests that both set `XCURSOR_THEME`/`XCURSOR_PATH`
   and race under cargo's parallel test threads (green with `--test-threads=1`); pre-existing, a
   test-hygiene item.
+- **F18 — Monado's MAIN compositor runs in the VM without venus; F14's "needs a target" was
+  incomplete (2026-09-29, F14 pass).** Monado has a fifth target F14 did not list: `debug_image`
+  (`monado/src/xrt/compositor/main/comp_window_debug_image.c`, in nixpkgs-xr's build f07dd13),
+  last in the factory list (`comp_compositor.c:816-842`), `requires_vulkan_for_create = false`,
+  always succeeds and renders the composited, distorted frame into an off-screen image
+  (`:426-430` prints "Debug image target used, if you wanted to see something in your headset
+  something is probably wrong with your setup"). The try loop (`:974-989`) reaches it after
+  direct-Wayland, Wayland, RandR and XCB fail — **but only if the XCB target is not selected
+  first as "deferred"** (`comp_window_xcb.c:498 is_deferred = true`; `comp_compositor.c:858-875,
+  :982-984`): with Monado's defaults the deferred XCB target is chosen without trying it, the
+  first `xrBeginSession` then fails ("Could not open X display", "Native compositor failed to
+  begin session") and no client ever renders — measured in the VM with `XRT_COMPOSITOR_NULL=false`
+  alone. With `XRT_COMPOSITOR_DISABLE_DEFERRED=true` (`comp_compositor.c:95`) as well, the main
+  compositor runs on lavapipe: greeter `zxr`+`monado-service`+`mura-greeter` up 2.5 s after
+  `multi-user.target`, `zxr ctl list` after ~30 s `frames=553 … layers_submitted=520`, Monado's
+  swapchains created (`896x1007` ×2 views, `1920x1493`, `1920x1133`, `1920x360`, `64x64`,
+  `VK_FORMAT_B8G8R8A8_SRGB`), the greeter scene composed — the whole compositor path (swapchain
+  import, layer composition, distortion) that the null compositor skips. **Cost, measured
+  (`ps`, greeter user, ~30 s after boot, 1 vCPU test VM):** `monado-service` RSS 239 MB / 52 % CPU
+  vs 150 MB / 5 % under the null compositor; zxr unchanged (160 vs 155 MB). Whether the sandboxed
+  fixtures should pay that to prove the main compositor (null → main+`debug_image` in
+  `devices/virtual-headset`) is the owner's call, not a default: the branch keeps the null
+  compositor in the sandbox and runs the main compositor in the out-of-sandbox variant
+  (`tests/vm/lib.nix` `interactive.nodes.machine`). No picture leaves `debug_image` (it is
+  mirrored only into Monado's SDL debug GUI, `u_var_add_native_images_debug`), so F14's
+  screenshot stays out of reach this way.
+- **F19 — venus works in the VM, and Monado's compositor cannot serve a client on it
+  (2026-09-29).** Out of the Nix sandbox, with the pinned nixpkgs' full `qemu` 11.1.1 (virglrenderer
+  1.3.0 built with venus, `pkgs/by-name/vi/virglrenderer/package.nix:70`, and its
+  `virgl_render_server`), `-device virtio-gpu-gl-pci,venus=on,blob=on,hostmem=4G -display
+  egl-headless` and the memfd memory backend qemu-vm.nix already sets
+  (`virtualisation.qemu.enableSharedMemory`, `qemu-vm.nix:754-756, 1295-1298`), the guest's Mesa
+  26.2.3 `virtio` ICD enumerates the host GPU: `vulkaninfo --summary` → `GPU0: deviceName =
+  Virtio-GPU Venus (AMD Radeon 8060S Graphics (RADV STRIX_HALO)), driverName = venus,
+  apiVersion 1.4.334` (the host's lavapipe is passed through as GPU1, the guest's own as GPU2).
+  Monado's main compositor selects it (`Selected 0 with uuid d4 82 5e 87 …`, `name: Virtio-GPU
+  Venus (AMD Radeon 8060S …)`), zxr's `xrGetVulkanGraphicsDeviceKHR` gets it (`runtime-selected
+  Vulkan device … RADV STRIX_HALO`), and then **`zxr: no usable swapchain format`** — every
+  `vk_csci_get_image_external_support` query fails with `VK_ERROR_FORMAT_NOT_SUPPORTED`
+  (`Format 'VK_FORMAT_B8G8R8A8_SRGB' as external image is not supported!`, all twelve formats).
+  Root cause, both sides read: Monado exports compositor swapchain images as **opaque fds with
+  `VK_IMAGE_TILING_OPTIMAL`** on Linux (`monado/src/xrt/auxiliary/vk/vk_compositor_flags.c:69,
+  251, 410`; `vk_image_allocator.c:64, 257`; `vk_bundle_init.c:356-367`), and venus **refuses
+  any external image whose tiling is not `VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT`** because its
+  renderer can only share dma-bufs ([external] Mesa 26.2.3
+  `src/virtio/vulkan/vn_physical_device.c:1042-1053` handle types, `:2734-2741` "venus doesn't
+  support legacy tiling for scanout purpose"). greetd then respawns the greeter every 0.5 s
+  ("greeter exited without creating a session"). So venus makes the XR path *worse* in this pin:
+  the fix is upstream Monado (modifier-tiled swapchain images, i.e. `VK_EXT_image_drm_format_modifier`
+  on the compositor's allocations) or a venus that accepts optimal-tiled opaque fds within one
+  renderer — neither is Mura's to write here. The RADV ICD's probing noise F16 blamed
+  (`radv/amdgpu: failed to initialize device`, `MESA: error: vdrm_device_connect failed`) is RADV's
+  *amdgpu native-context* path (`mesa/default.nix:222-224 amdgpu-virtio`) trying the virtio-gpu
+  render node; it persists under venus (8 per Monado start), so venus does not remove F16's
+  suspect either. venus's own measurement is therefore only level 3 minus its second half: the
+  passthrough device exists and Monado runs on it; no client can.
+- **F20 — the path to a picture, and why a screenshot could not capture it anyway
+  (2026-09-29).** (1) venus *does* advertise `VK_KHR_display`, `VK_EXT_direct_mode_display` and
+  `VK_EXT_acquire_drm_display` ([external] Mesa 26.2.3 `vn_instance.c:62-68`; confirmed in the
+  guest's `vulkaninfo`), but hands the common WSI **no DRM fd** (`vn_wsi.c:179-181` passes `-1`;
+  `wsi_common_display.c:3677-3695`), so `vkGetPhysicalDeviceDisplayPropertiesKHR` returns zero
+  connectors (`:896-900`) and Monado's `vk_display` target would say "No Vulkan displays found"
+  (`comp_window_vk_display.c:195-198`). The only way onto the virtio-gpu KMS through venus is
+  `vkGetDrmDisplayEXT`/`vkAcquireDrmDisplayEXT` with a DRM-master fd of `/dev/dri/card0`
+  (`wsi_common_display.c:4572-4652` adopts the fd; `drmModeAddFB2WithModifiers` on it,
+  `:1785-1810`) — which Monado only does in its `direct_wayland` target behind a `wp_drm_lease_v1`
+  compositor (`comp_window_direct_wayland.c`), i.e. never under zxr. A picture in the VM therefore
+  needs either a Monado target that acquires the DRM display itself (a small upstream target: open
+  the card via logind, `vkAcquireDrmDisplayEXT`, then `comp_target_swapchain` as `vk_display`
+  does) or a venus that opens the virtgpu primary node as its display fd — plus F19 fixed
+  first. (2) Even then the test driver's `machine.screenshot()` cannot see it: QEMU's
+  `screendump` on a GL-scanout console returns **`Error: no surface`** ([external] qemu 11.1.1
+  `ui/ui-qmp-cmds.c:359-364`; measured through the monitor in the venus VM) — with
+  `virtio-gpu-gl` the console is a texture/dma-buf scanout, and `egl-headless` reads it back into
+  its own surface, not the console's. A capture would need `-display egl-headless -vnc :N` and a
+  VNC snapshot on the host, tooling the harness does not have. (3) What the VM screen shows today
+  is zxr's own log on the VT (greetd runs the greeter on the console; screenshot `probe-a-greeter`
+  in the pass) — the last picture the VM has is text.
+- **F21 — the sandboxed test QEMU has no GL at all; venus is structurally an out-of-sandbox run
+  (2026-09-29).** `pkgs.testers.runNixOSTest` drives `hostPkgs.qemu_test`
+  (`nixos/lib/testing/driver.nix:147-151`) = `qemu.override { nixosTestRunner = true; }`
+  (`pkgs/top-level/all-packages.nix:7828-7832`), which turns off SDL, hence OpenGL, hence
+  virglrenderer (`pkgs/by-name/qe/qemu/package.nix:47 sdlSupport … !nixosTestRunner`, `:73
+  openGLSupport ? sdlSupport`, `:80 virglSupport ? openGLSupport`): `virtio-gpu-gl-pci` is not
+  even a device there, before the sandbox's missing `/dev/dri` matters. nixpkgs' own answer is the
+  **interactive driver**: `.driverInteractive` uses the full `hostPkgs.qemu`
+  (`nixos/lib/testing/interactive.nix:47`) and `interactive.nodes.<name>` carries the node config
+  that only makes sense there — the shape `tests/vm/lib.nix` now uses for venus. Two harness facts
+  the run depends on: the driver appends `-nographic` whenever `DISPLAY`/`WAYLAND_DISPLAY` are
+  unset (`test-driver/machine/__init__.py:186-193`), and QEMU parses it *after* `-display`,
+  forcing the display back to `none` (`system/vl.c` `QEMU_OPTION_nographic`) so the GL device
+  cannot initialise — the venus run must be started with `DISPLAY` set (any value; egl-headless
+  opens no window); and Mesa's venus ICD opens the **first** virtio_gpu render node and does not
+  fall through when it lacks 3D features ([external] `vn_renderer_virtgpu.c:1158-1180`
+  `virtgpu_open` breaks on the first `virtgpu_open_device` success, params are checked after) — a
+  second, plain `virtio-gpu-pci` next to the venus one silently disables venus (measured:
+  `renderD129` opened, `GETPARAM` then nothing), which is why the variant made the GPU one
+  replaceable option rather than an added device. **Not merged (2026-09-29):** the interactive-driver
+  variant that ran all this (branch `f14-venus`, commit `c2333d5`: `muraVmTest.gpu`, the venus
+  `interactive.nodes.machine`) was left out of master — venus is GPU passthrough, not a display
+  path, and the picture the VM needs comes from F23's route (Monado's Wayland window target into a
+  KMS display owner in the VM); the recipe is preserved in that commit and in this entry.
+- **F22 — `mura.xr.compositor.backend` is not wired to Monado, and Monado's default target
+  selection cannot reach `vk_display` (2026-09-29).** The contract option (`lib/contract/default.nix:390-398`,
+  default `vk-display`) is read only by `modules/os/health.nix:40`; `modules/xr/default.nix`
+  passes `mura.xr.environment` through and nothing maps the backend to Monado's
+  `XRT_COMPOSITOR_FORCE_*` variables (`comp_settings.c:23-29, 177-209`). Monado itself never
+  auto-detects `vk_display`: its `detect` returns false (`comp_window_vk_display.c:280-284`), it
+  is `requires_vulkan_for_create = true` and so skipped by the try loop (`comp_compositor.c:977-980`),
+  and it is selected only through `XRT_COMPOSITOR_FORCE_VK_DISPLAY=<index>`
+  (`comp_settings.c:183-186`). Without that variable a hardware device with no window system takes
+  exactly F18's path — the deferred XCB target, then a failed first session. The device that
+  first runs Monado on a panel needs the mapping (and `monado.service` shielded from a leaked
+  `WAYLAND_DISPLAY`/`DISPLAY` the way `mura-compositor.service` is, `modules/os/session.nix:128`,
+  since the Wayland targets come first in the factory list). Recorded for the Frame bring-up; not
+  touched here.
 
 ## 10. Sources
 

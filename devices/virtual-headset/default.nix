@@ -74,6 +74,14 @@
       # runs end to end in the VM and is proven through the compositor's control socket, the
       # journal and AT-SPI rather than screenshots. The picture exists on hardware and in
       # `dev-session` on a host (G2, specs/zxr-core.md §12 gate 10; flagged in research/78 §9 F14).
+      #
+      # The alternative measured on 2026-09-29 (research/78 §9 F18): Monado's MAIN compositor also
+      # runs here, on its off-screen `debug_image` target, when this is "false" AND
+      # `XRT_COMPOSITOR_DISABLE_DEFERRED = "true"` (otherwise Monado picks its deferred XCB target
+      # and the first session fails). That proves the real compositor path (swapchain import,
+      # layer composition, distortion) at ~10x Monado's CPU and +90 MB in the VM, still with no
+      # picture. Null vs main in the sandboxed fixtures is the owner's decision; the out-of-sandbox
+      # venus run (tests/vm/lib.nix, `interactive.nodes.machine`) uses the main compositor.
       XRT_COMPOSITOR_NULL = "true";
     };
   };

@@ -351,7 +351,14 @@ XR chain runs end to end without a picture — the fixture proves the scene thro
 greetd's journal, the login typed at the VT (libseat → libinput → the greeter's exclusive layer)
 and the compositor's control socket; screenshots of the XR path exist only on hardware and in
 `dev-session` on a host (research/78 §9 F14; the owner may prefer a venus/virgl display path for
-the VM later — a decision, not a default). Measured: cold boot → `zxr`, `monado-service`,
+the VM later — a decision, not a default). *The venus pass (2026-09-29, research/78 §9 F18–F22)
+narrowed this:* Monado's **main** compositor does run in the VM on its off-screen `debug_image`
+target once the deferred XCB target is disabled (F18 — the null-vs-main choice for the sandboxed
+fixtures is the owner's); venus (host-GPU Vulkan in the guest) works out of the sandbox through
+`tests/vm/lib.nix`'s interactive driver but Monado's optimal-tiled opaque-fd swapchains are
+refused by venus, so no client renders on it (F19 — upstream Monado work, not Mura's); a picture
+would additionally need a Monado target that acquires the DRM display itself, and QEMU cannot
+`screendump` a GL-scanout console (F20). Measured: cold boot → `zxr`, `monado-service`,
 `mura-greeter`, `mura-osk` running as `greeter` 6 s after greetd; `mura⏎ mura⏎` at the VT →
 greetd opens the `mura` session. The power-menu criterion is the
 fixture's (§5 G2 rows) and runs at G3's gate. *Rev 4.9 flagged* that the greeter's Wi-Fi panel
