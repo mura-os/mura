@@ -344,6 +344,17 @@ repos=(
   'phoc|https://gitlab.gnome.org/World/Phosh/phoc.git|'
   'gtk-layer-shell|https://github.com/wmww/gtk-layer-shell.git|'
   'layer-shell-qt|https://invent.kde.org/plasma/layer-shell-qt.git|'
+  # --- OpenXR extensions vs the zxr lineage (docs/research/79) ---
+  # godot = the only open *client* of XR_EXT_spatial_container(_self_rendering) and the
+  # EXT spatial-entity family (modules/openxr/extensions/{spatial_container,spatial_entities});
+  # displayxr-runtime = a Monado fork whose XR_DXR_spatial_workspace gives a privileged
+  # OpenXR session the workspace-controller role over a multi-app compositor — the one open
+  # "runtime + separate system shell" seam (src/xrt/state_trackers/oxr/oxr_workspace.c,
+  # docs/adr/); displayxr-extensions = its headers + extensions.json. Neither implements
+  # the EXT container pair runtime-side; no open runtime does at the pin.
+  'godot|https://github.com/godotengine/godot.git|'
+  'displayxr-runtime|https://github.com/DisplayXR/displayxr-runtime.git|'
+  'displayxr-extensions|https://github.com/DisplayXR/displayxr-extensions.git|'
 )
 
 mkdir -p .logs

@@ -223,5 +223,8 @@
   "sway": {"url": "https://github.com/swaywm/sway.git", "commit": "1652c54b73f67df17b7b4ab0b0f7048204aa8104", "ref": "master", "cloned": "2026-09-27T19:33:00Z"},
   "phoc": {"url": "https://gitlab.gnome.org/World/Phosh/phoc.git", "commit": "6bf71f77f43138136adb4efb4796c8e35d9fe3b2", "ref": "main", "cloned": "2026-09-27T19:33:00Z"},
   "gtk-layer-shell": {"url": "https://github.com/wmww/gtk-layer-shell.git", "commit": "eb7876471dea74697c0212198d1a8e6d83aa5583", "ref": "master", "cloned": "2026-09-27T19:33:00Z"},
-  "layer-shell-qt": {"url": "https://invent.kde.org/plasma/layer-shell-qt.git", "commit": "440e99dfff02460561a61312f4d90d5cc470b21d", "ref": "master", "cloned": "2026-09-27T19:33:00Z"}
+  "layer-shell-qt": {"url": "https://invent.kde.org/plasma/layer-shell-qt.git", "commit": "440e99dfff02460561a61312f4d90d5cc470b21d", "ref": "master", "cloned": "2026-09-27T19:33:00Z"},
+  "godot": {"url": "https://github.com/godotengine/godot.git", "commit": "941ea1816d654e4ffeac10a260d64a8555890cf6", "ref": "master", "cloned": "2026-09-29T09:33:08Z"},
+  "displayxr-runtime": {"url": "https://github.com/DisplayXR/displayxr-runtime.git", "commit": "81b3458705de860a63ebd6861f04a43f251378ce", "ref": "main", "cloned": "2026-09-29T09:33:08Z"},
+  "displayxr-extensions": {"url": "https://github.com/DisplayXR/displayxr-extensions.git", "commit": "d94d851db4312ee5160a86d9f52d8e5d82fcc17a", "ref": "main", "cloned": "2026-09-29T09:33:08Z"}
 }

@@ -65,6 +65,16 @@ flowchart LR
   SteamVR dashboard overlay); all run with no game present, so no role switch is ever needed.
   Placement: above any other overlay Mura ships (a stand-in value until another overlay exists).
   The owner's condition — "efficient and minimally taxing when it yields" — is §4's bound.
+  **The dependency's status (2026-09-29, [research/79 §1.2, §3 row 11](../research/79-openxr-extensions-and-zxr.md)):**
+  `XR_EXTX_overlay` is *provisional* in the pinned registry (1.1.63: `provisional="true"`,
+  revision 1 of 2018-11-05, last modified 2021-01-13). The ratified session model for the same
+  problem is `XR_EXT_spatial_container` + `_self_rendering` (#811/#814, ratified 2026-08),
+  under which the shell and a game are both container clients and the runtime orders them; a
+  game in an *immersive* container is by spec "the same as a full-screen and immersive app
+  created without spatial container usage" (`ext_spatial_container.adoc:647-650`) — this
+  model's experience, unchanged. Monado implements neither; every Linux shell in the corpus
+  runs on the provisional extension. The ruling stands; whether Mura's mechanism moves to the
+  container pair is research/79 §9 Q1 (decider: the owner).
 - **Consequences zxr manages:** its layers are always above the game's (the platforms' "windows
   render in front of immersive content", spec §4's layers 5–6 semantics); Monado marks overlay
   sessions visible and focused unconditionally (`ipc_server_process.c:562-567`), so zxr always

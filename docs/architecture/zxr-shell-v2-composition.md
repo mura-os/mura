@@ -166,16 +166,21 @@ Per the owner's instruction to distrust it, checked against primary sources:
   [10 §2.2](../research/10-xr-wayland-protocol-comparison.md)). The recovered spec is closer to
   Motorcar than the recollection suggested. The renderer-agnostic colour+depth model is *already*
   the lineage's design.
-- **FABRICATED / UNVERIFIED — "OpenXR 1.1.63 (Sept 1 2026) added `XR_EXT_spatial_container` +
-  `XR_EXT_spatial_container_self_rendering`."** `XR_EXT_spatial_container` is real and **ratified**
-  (registered #811, rev 1) but is a **container-*state*** extension only — `visible`,
-  `interactable`, `boundsMode` + change events
-  ([registry](https://registry.khronos.org/OpenXR/specs/1.1/man/html/XrSpatialContainerStateEXT.html)).
-  There is **no** `..._self_rendering` extension in the registry; the only "self-rendering spatial
-  windows" is DisplayXR's **provisional, unregistered** `XR_DXR_spatial_workspace` (a vendor
-  experimental extension, not core OpenXR). Treat the "2026 self-rendering spatial containers" claim
-  as not established. Its *conclusion* — containers give lifecycle/placement, **not** guaranteed
-  per-pixel cross-app depth interleaving — is nonetheless correct.
+- **VERIFIED at the pin (corrected 2026-09-29, [research/79 §1](../research/79-openxr-extensions-and-zxr.md)) —
+  "OpenXR 1.1.63 (Sept 1 2026) added `XR_EXT_spatial_container` +
+  `XR_EXT_spatial_container_self_rendering`."** Both exist and both are **ratified** in the pinned
+  registry (`references/openxr-docs` @ 1.1.63: `xr.xml:24456` #811, `:24536` #814 with
+  `depends="XR_EXT_spatial_container"`; specs last modified 2026-08-06). An earlier revision of
+  this bullet called the self-rendering half "fabricated" against an older registry; that was
+  wrong once 1.1.63 shipped. The *conclusion* stands and is now citable: containers give
+  lifecycle and placement, the runtime "may: precomposite each bounded spatial container's
+  composition layers into a single stereo quad layer"
+  (`ext_spatial_container_self_rendering.adoc:484-486`), and volume clipping by submitted depth
+  is "future extensions" (`:690-691`) — **no cross-app per-pixel depth interleaving**. The
+  DisplayXR `XR_DXR_spatial_workspace` mentioned here is provisional and unregistered as
+  stated, but it is a *workspace-controller* seam for the shell on a Monado fork, not a
+  self-rendering-windows extension for apps (research/79 §4a). How the pair maps onto
+  `zxr-shell-v2` element by element, and the fork it opens, are research/79 §3–§4 and §9.
 - **VERIFIED — depth-tested composition layers are vendor-only.** `XR_FB_composition_layer_depth_test`
   (Meta, registered #213, **not ratified**) and `XR_VARJO_composition_layer_depth_test` exist;
   `XR_KHR_composition_layer_depth` supplies depth but **explicitly does not change layer composition
