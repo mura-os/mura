@@ -764,8 +764,9 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   `XRT_COMPOSITOR_DISABLE_DEFERRED=true` per F18, `XRT_COMPOSITOR_FORCE_WAYLAND=true` —
   `comp_settings.c:29,203-208`, `comp_window_wayland.c`; the window is the HMD's `1280x720`
   halved to `640x360`, `imageExtent: {640, 360}`, and `xdg_toplevel_set_min/max_size` at
-  `comp_window_wayland.c:221-222` pins it there, so cage cannot grow it to the 1280x800 output
-  and the rest stays black). Two preconditions of running it as a headless root unit, each
+  `comp_window_wayland.c:221-222` pinned it there, so cage could not grow it to the 1280x800
+  output and the rest stayed black — *fixed on the fork the same day, F26: the picture now
+  fills the output*). Two preconditions of running it as a headless root unit, each
   found by a failed run: `HOME` (a static initialiser in `steamvr_lh.cpp:91` builds a
   `std::string` from `getenv("HOME")` — `basic_string: construction from null`), and
   `XRT_NO_STDIN=true` (`ipc_server_mainloop_linux.c:212-220` epolls stdin; `dev-session` sets the
@@ -776,9 +777,10 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   greeter `first frame committed w=1920 h=1133`, OSK `w=1920 h=360`; `zxr ctl list`: both trusted
   layers `frame=world`, `layers_submitted=1202` after ~30 s, `anchor_yaw_deg=-0.9` seeded from the
   simulated head; the screenshot is the scene. Assertions: the two journals, the listing, the
-  picture's colour count (1500–1800 distinct colours on the scanout across runs; a VT or a blank output is a
-  handful). Not OCR: upstream's cage test reads its xterm that way, but tesseract cannot read
-  a card 320 px wide per eye (tried; `wait_for_text` never matched), and the journal assertions
+  picture's colour count (1500–1800 distinct colours on the 640x360 corner, ~2800–2900 once F26
+  fills the output; a VT or a blank output is a handful). Not OCR: upstream's cage test reads its
+  xterm that way, but tesseract read nothing off the 320 px-per-eye corner and only the two
+  "space" bars off the full 1280x800 picture (F26, one run each), and the journal assertions
   already bind the picture to the scene. *What this does not change:* the login fixtures keep the null compositor and
   the VT typing path — cage cannot own the seat there, and the fixtures' subject is the login
   chain, not the picture; `devices/virtual-headset` is unchanged (the plan's "monado.service
@@ -786,6 +788,60 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   not the device's `monado.service`). *Left as observed, not fixed:* Mesa's `vdrm_device_connect
   failed` lines (F16/F19's RADV native-context probe) in both Monado's and zxr's logs, harmless
   here. `mura.xr.compositor.backend` remains unwired (F22).
+- **F26 — Monado's Wayland target now honours the compositor's size; the fork's first series
+  (2026-09-29).** F25's picture sat in a 640x360 corner of the 1280x800 output because Monado's
+  Wayland window target (a) created its swapchain at the compositor's preferred size, half the
+  HMD screen (`comp_settings.c:203-208`; the simulated HMD is 1280x720, `simulated_hmd.c:222-223`),
+  (b) pinned the toplevel there with `xdg_toplevel_set_min_size`+`set_max_size`
+  (`comp_window_wayland.c:221-222`), and (c) ignored the width/height of every
+  `xdg_toplevel.configure` (`:174-178`, `:355-362` — only a one-shot fullscreen request). cage
+  maximizes its primary view to the output (`cage/view.c:94-103`, `xdg_shell.c:172-178`) and
+  displayed the small buffer at the origin; `XRT_COMPOSITOR_XCB_FULLSCREEN` (honoured by the
+  Wayland window too) changed nothing because the size in the fullscreen configure was ignored as
+  well. The Vulkan Wayland WSI cannot rescue this: the surface's size is whatever the client
+  makes it (`currentExtent == 0xFFFFFFFF`, `comp_target_swapchain.c:182-189`), so acquire never
+  returns `VK_ERROR_OUT_OF_DATE_KHR` and the renderer's existing re-creation loop
+  (`comp_renderer.c:803-815`, `:857-859`) never runs — the XCB target resizes through exactly that
+  loop (upstream issue #588 shows it firing). *Upstream history* [external,
+  gitlab.freedesktop.org/monado/monado]: MR !158 (2019-11) "comp: make Wayland window unresizable
+  — This prevents the compositor from issuing resize requests. We ignore those anyway." (the pin
+  is a consequence of the missing handling, not a design); issue #152 (2022-02, open) "Compositor's
+  window isn't fullscreen under wayland … non resizable and making it fullscreen in sway doesn't
+  do anything" — this defect; no MR addresses it (all-state MR search "wayland", 2026-09-29).
+  **The fix**, ADR 0006 D13's shape — an upstream-shaped commit on `mura-os/monado` branch
+  `wayland-resize` off `main`, merged to `mura`, the flake pin bumped (`ccae7f3c1`; the fork's
+  first delta from upstream; the source is kept at `experiments/monado`): (1) generic, in
+  `comp_target_swapchain`: `override.recreate_pending`, set by `comp_target_swapchain_override_extents`
+  when a live swapchain's size differs from the new extent; the next acquire returns
+  `VK_ERROR_OUT_OF_DATE_KHR` once — the WSI's own signal, riding the renderer's loop unchanged;
+  configures before that acquire coalesce; (2) the Wayland target applies non-zero configure sizes
+  through `override_extents` (0x0 = "your choice" keeps the preferred size, per xdg-shell), drops
+  the min/max pin, and round-trips after the initial commit so a size the compositor picks up
+  front is used for the *first* swapchain (measured: `overrides … (1280x800) was (0x0 false)` →
+  `imageExtent: {1280, 800}`, no start-up re-creation); (3) **the ack is deferred** when a
+  configure needs new images: chained `create_images` acknowledges the serial once they exist.
+  Found by the live-resize check, not by the VM: the renderer acquires the *next* frame's image at
+  the end of each draw (`renderer_wait_for_present` → `renderer_acquire_swapchain_image`,
+  `comp_renderer.c:903`), so the frame after a configure is still the old size; acking up front
+  made a floating sway window (which follows the committed size) re-configure to the old size,
+  and Monado and sway then alternated sizes every frame — 181 re-creations in 3 s
+  (`WAYLAND_DEBUG` trace: `configure(700,400)` → `ack` → `attach` of a 780x440 buffer →
+  `configure(780,440)` → …). With the deferred ack the trace is `create_immed(900x500)` ×4 →
+  `ack_configure(7)` → `attach` of a 900x500 buffer, as xdg-shell wants. *Measured (host, nested
+  headless sway 1.12 with `for_window floating enable`, RADV, xrgears as the client):* 640x360 →
+  `resize set 900 500` → fullscreen 1600x900 → a five-resize burst: 7 configures, 3 re-creations
+  (`imageExtent` 900x500, 1600x900, 700x400), a same-size configure re-creates nothing, every
+  serial acked, no errors, both processes alive. A plain resizable Vulkan client (vkcube) under
+  the same burst was the control (sway coalesces to two sizes, no oscillation). *In the VM
+  (`vm-test-scene`):* the stereo mirror fills the 1280x800 scanout (`imageExtent: {1280, 800}`,
+  ~2800–2900 distinct colours; each eye 640 px wide; OCR still reads only the "space" bars, so the
+  assertions stay as F25 left them). *Also observed, not fixed:* on a headless sway
+  with `WLR_RENDERER=pixman` the host's RADV WSI fails with `VK_ERROR_SURFACE_LOST_KHR` (no
+  `linux-dmabuf` from a pixman compositor; lavapipe in the VM has a `wl_shm` path so cage+pixman
+  works there) and `monado-service` then segfaults in the failed-swapchain path
+  (`renderer_create_renderings_and_fences: Requested 0 command buffers`) — pre-existing, outside
+  this series. The GitLab MR is the owner's to open (D13); the branch and its message are shaped
+  for it.
 
 ## 10. Sources
 

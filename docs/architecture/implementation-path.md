@@ -1,6 +1,6 @@
 # The implementation path: distribution groundwork and the compositor, in dependency order
 
-**Status:** accepted plan of record (**rev 5, 2026-09-29 — the C-track (Monado's container pair on the `mura-os/monado` fork) as a third axis, M2–M4 re-cut onto it, the former `zxr-shell-v2` M2 withdrawn, ADR 0006 amendment 4; §5.1 the C-track rulings and the fork's creation registered;** 2026-09-23; rev 2 same day — the boot-to-desktop coverage
+**Status:** accepted plan of record (**rev 5.1, 2026-09-29 — the fork's first series, `wayland-resize`, registered in §5.1 (research/78 §9 F26); rev 5, same day — the C-track (Monado's container pair on the `mura-os/monado` fork) as a third axis, M2–M4 re-cut onto it, the former `zxr-shell-v2` M2 withdrawn, ADR 0006 amendment 4; §5.1 the C-track rulings and the fork's creation registered;** 2026-09-23; rev 2 same day — the boot-to-desktop coverage
 review absorbed: stages B1a/B1b/B6a/B9, the F-track from
 [first-run-onboarding.md](first-run-onboarding.md), and the lifecycle section; rev 3 / 3.1,
 2026-09-24 — ADR 0017 rev 2 and the research/42 review absorbed; **rev 4, 2026-09-24 — two
@@ -524,7 +524,12 @@ Wayland server, the WM policy and Monado's workspace controller
 ([specs/composition.md](../../specs/composition.md)). The former M2 ("`zxr-shell-v2` goes live")
 is withdrawn with the protocol. The Monado work is a third axis, carried as commits on the
 `mura-os/monado` fork (branch `mura`; one feature branch per series, each an upstream MR —
-ADR 0006 amd. 4 D13), each rung gated by composition.md §7:
+ADR 0006 amd. 4 D13), each rung gated by composition.md §7. *Rev 5.1 (2026-09-29): the fork's
+first series landed ahead of the C-track — `wayland-resize` (one commit, `ccae7f3c1`, merged to
+`mura`, pinned): Monado's Wayland window target honours the compositor's configured size, with
+the ack deferred to the re-created images; upstream #152, research/78 §9 F26. It is a bring-up
+fix for `vm-test-scene`'s picture, not a C rung, and follows the same discipline (upstream-shaped
+commit, `Fixes:` trailer, the MR the owner's to open).*
 
 - **C0 — peer identity and leases.** `SO_PEERCRED` at IPC accept; the controller role as a
   lease; the no-controller default = Monado's primary/overlay rule. Gate: composition §7.7.

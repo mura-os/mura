@@ -12,6 +12,11 @@
 # flake.lock and `nix flake update monado` is the bump. Per-device driver experiments that are
 # not yet on the fork still ride `mura.xr.monado.patches` (lib/contract) on top of this.
 #
+# Series on `mura` beyond upstream `main` (one branch each, newest last):
+#   - `wayland-resize` (2026-09-29, ccae7f3c1): the Wayland window target honours the
+#     compositor's configured size, acking a resize with its re-created images (upstream #152;
+#     research/78 §9 F26) — what lets tests/vm/scene.nix's picture fill the output.
+#
 # The version string carries the fork's short rev so `monado-service --version` and the closure
 # name say which Monado this is.
 monadoSrc: final: prev: {

@@ -17,6 +17,12 @@
 # libseat backend (root opens card0 directly), and the pixman renderer (no GL on virtio-gpu).
 # The VT typing path of the login fixtures is untouched because those fixtures do not import
 # this. Test-only, never in a fixture image; the picture on hardware is the HMD panel.
+#
+# The picture fills the output because Monado's Wayland target honours cage's configure size
+# (the fork's `wayland-resize` series, research/78 §9 F26; upstream Monado pinned its window to
+# half the HMD screen and showed a 640x360 corner). What is asserted is the journals, the
+# listing and the colour count; OCR, which upstream's cage test uses on an xterm, was tried at
+# this size and reads only the space bars — not a key the test can rest on.
 { pkgs }:
 let
   runtimeDir = "/run/mura-vm-scene";
@@ -104,6 +110,6 @@ in
         colours = int(subprocess.check_output(f"pngtopnm '{png}' | ppmhist -noheader | wc -l", shell=True).decode().strip())
         print(f"distinct colours on the scanout: {colours}")
         assert colours > 200, f"a VT or blank output has few colours; the composited scene has over a thousand (got {colours})"
-        # (OCR, as upstream's cage test does, cannot read this picture: each eye is 320 px wide.)
+        # (OCR — upstream's cage-test assertion — reads only "space" off this picture; see the header.)
   '';
 }
