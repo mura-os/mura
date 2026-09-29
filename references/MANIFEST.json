@@ -75,6 +75,7 @@
   "obs-vkcapture": {"url": "https://github.com/nowrep/obs-vkcapture.git", "commit": "8a2c43295fae2ede8ffd382a1581281ceb6153c0", "ref": "master", "cloned": "2026-09-24T08:52:43Z"},
   "libei": {"url": "https://gitlab.freedesktop.org/libinput/libei.git", "commit": "a9bf31da06f06bfce73702191c3db93aae289459", "ref": "main", "cloned": "2026-09-24T08:52:43Z"},
   "pipewire": {"url": "https://gitlab.freedesktop.org/pipewire/pipewire.git", "commit": "2943841e3b3dda964f524f0f480c522e40491ee2", "ref": "master", "cloned": "2026-09-24T08:52:43Z"},
+  "wireplumber": {"url": "https://gitlab.freedesktop.org/pipewire/wireplumber.git", "commit": "81606cbb32d29df20147d1b68b662c1082654d81", "ref": "master", "cloned": "2026-09-29T20:00:48Z"},
   "sunshine": {"url": "https://github.com/LizardByte/Sunshine.git", "commit": "0e87c4212c81f6828d8cd3f44c85f4f855207bb0", "ref": "master", "cloned": "2026-09-24T08:52:43Z"},
   "wolf": {"url": "https://github.com/games-on-whales/wolf.git", "commit": "a1edc1bf44cbb21d3a9b1c1da57294c508eebba9", "ref": "stable", "cloned": "2026-09-24T08:52:43Z"},
   "waypipe": {"url": "https://gitlab.freedesktop.org/mstoeckl/waypipe.git", "commit": "a1ffdd8d0f44cbdb25a3edd1c6adc0a30cfcf754", "ref": "master", "cloned": "2026-09-24T08:52:43Z"},

@@ -115,6 +115,7 @@ repos=(
   'obs-vkcapture|https://github.com/nowrep/obs-vkcapture.git|'
   'libei|https://gitlab.freedesktop.org/libinput/libei.git|'
   'pipewire|https://gitlab.freedesktop.org/pipewire/pipewire.git|'
+  'wireplumber|https://gitlab.freedesktop.org/pipewire/wireplumber.git|' # the PipeWire session manager: the grant side of module-access (research/80)
   # --- spatial sharing: streaming engines (docs/research/18) ---
   'sunshine|https://github.com/LizardByte/Sunshine.git|'
   'wolf|https://github.com/games-on-whales/wolf.git|'

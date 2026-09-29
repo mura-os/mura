@@ -1,6 +1,6 @@
 # The implementation path: distribution groundwork and the compositor, in dependency order
 
-**Status:** accepted plan of record (**rev 5.1, 2026-09-29 — the fork's first series, `wayland-resize`, registered in §5.1 (research/78 §9 F26); rev 5, same day — the C-track (Monado's container pair on the `mura-os/monado` fork) as a third axis, M2–M4 re-cut onto it, the former `zxr-shell-v2` M2 withdrawn, ADR 0006 amendment 4; §5.1 the C-track rulings and the fork's creation registered;** 2026-09-23; rev 2 same day — the boot-to-desktop coverage
+**Status:** accepted plan of record (**rev 5.2, 2026-09-29 — research/80 registered as C0's specification pass, C0 waits on its §10 rulings; the stale fork-creation entry in §5.1 closed; rev 5.1, same day — the fork's first series, `wayland-resize`, registered in §5.1 (research/78 §9 F26); rev 5, same day — the C-track (Monado's container pair on the `mura-os/monado` fork) as a third axis, M2–M4 re-cut onto it, the former `zxr-shell-v2` M2 withdrawn, ADR 0006 amendment 4; §5.1 the C-track rulings and the fork's creation registered;** 2026-09-23; rev 2 same day — the boot-to-desktop coverage
 review absorbed: stages B1a/B1b/B6a/B9, the F-track from
 [first-run-onboarding.md](first-run-onboarding.md), and the lifecycle section; rev 3 / 3.1,
 2026-09-24 — ADR 0017 rev 2 and the research/42 review absorbed; **rev 4, 2026-09-24 — two
@@ -531,9 +531,17 @@ the ack deferred to the re-created images; upstream #152, research/78 §9 F26. I
 fix for `vm-test-scene`'s picture, not a C rung, and follows the same discipline (upstream-shaped
 commit, `Fixes:` trailer, the MR the owner's to open).*
 
-- **C0 — peer identity and leases.** `SO_PEERCRED` at IPC accept; the controller role as a
-  lease; the no-controller default = Monado's primary/overlay rule. Gate: composition §7.7.
-  Prerequisite for every later rung and independently upstreamable.
+- **C0 — peer identity and leases.** Peer credentials at IPC accept (a pidfd where the kernel
+  gives one — the pid alone is racy, research/80 §4); the controller role as a lease; the
+  no-controller default = Monado's primary/overlay rule. Gate: composition §7.7. Prerequisite for
+  every later rung and independently upstreamable. *Its specification pass is
+  [research/80](../research/80-privileged-peer-identity-and-leases-from-comparables.md) (rev 5.2,
+  2026-09-29): the determinations (§9 — class at accept, error not disconnect, the existing
+  fallback is the default) are settled; C0 does not start until the owner rules §10's O1 (the
+  identity primitive: controller socket / peer's user unit / inherited fd), O2 (a second
+  controller: refuse / queue / disconnect) and O3 (the four existing verbs: gate now / flag /
+  new verbs only) — the same "a rung does not start before its specification exists" rule as the
+  D-track's.*
 - **C1 — `XR_EXT_spatial_container`.** Handle, state, six events, the IDLE-only session
   (`oxr_session.c` guards), container space, capabilities and graphics-presentation enumeration.
   Gate: composition §7.6 against a probe client; Godot's module creates and shows a container.
@@ -725,9 +733,10 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   §6; after C3); the cutout layer's shape re-grounded as a Monado layer
   (perception-passthrough-hands §1b; the passthrough rung). Until each is ruled the rung before
   it proceeds and the rung after it does not start.
-- **The `mura-os/monado` fork's creation** (D13) needs the owner's GitHub credentials for the
-  `mura-os` org; until the repository exists the flake input stays on nixpkgs-xr's Monado and
-  the `pkgs/monado` overlay is inert (it is written against the fork's intended URL).
+- **The `mura-os/monado` fork** (D13) exists, is pinned (`inputs.monado`, `pkgs/monado`) and
+  carries its first series (`wayland-resize`, rev 5.1); the former entry here — "needs the owner's
+  GitHub credentials … the overlay is inert" — is closed (rev 5.2). What still waits on it:
+  the C-track's own rulings (above) and, before C0 is written, research/80 §10's O1–O3.
 - **Pre-groundwork specifications, and the rule that binds them**: a D-track rung does not
   start before its specification exists — D0 needs `profiles/` and the module-ownership table
   ([repo-structure.md](repo-structure.md)); D2 needs the posture table
