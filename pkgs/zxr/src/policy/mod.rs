@@ -358,6 +358,9 @@ pub fn arrange(st: &mut Zxr, place: PlaceId) -> usize {
 /// `arrange_sphere`); pinned members exempt (`arrange` skips them). The runtime's own `LOCAL`
 /// re-anchor remains the Monado upstream item (native-openxr-apps §6).
 pub fn recenter(st: &mut Zxr) -> usize {
+    // the shell's world anchor comes along: the greeter, lock, bars re-seat in front of the wearer
+    // with the windows (research/64 §7: "a rigid re-seat of everything head-relative")
+    crate::shell::anchor::reseat(st);
     let place = current_place(st);
     st.policy.recenters += 1;
     arrange(st, place)

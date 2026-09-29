@@ -62,11 +62,11 @@
         machine.fail("pgrep -x cage")
         # no listening Wayland socket in greeter mode (spec §9: the scene is the socketpair children)
         machine.fail("ls /run/user/$(id -u greeter)/wayland-*")
-        # the scene: both trusted members mapped on the body frame, the greeter's exclusive layer
+        # the scene: both trusted members mapped on the world frame (the shell's anchor, seeded in front of the wearer), the greeter's exclusive layer
         # taking the keyboard, the OSK's band shrinking the greeter's usable rectangle
         listing = machine.wait_until_succeeds(ZXR_CTL.format("list"), timeout=60)
-        assert "ns=mura-greeter layer=Overlay frame=body" in listing and "mapped=true trusted=true" in listing, listing
-        assert "ns=osk layer=Top frame=body" in listing, listing
+        assert "ns=mura-greeter layer=Overlay frame=world" in listing and "mapped=true trusted=true" in listing, listing
+        assert "ns=osk layer=Top frame=world" in listing, listing
         assert "mode=Greeter" in listing and "trusted=2" in listing, listing
         machine.screenshot("multi-user-greeter")
 

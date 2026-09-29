@@ -1,6 +1,6 @@
 # Spatial input: targeting, hover, commit, focus, cursors, peripherals and text entry
 
-**Status: DRAFT rev 0.6 (2026-09-28; rev 0.5 + §13 the input floor as one rule for every surface, dwell global with its anchor on the hit point and progress on the reticle, and the body frame as the default placement — owner rulings; research/78 §7b, §9 F2). Rev 0.5 (2026-09-27; rev 0.4 + §6 layer-shell keyboard interactivity as the
+**Status: DRAFT rev 0.7 (2026-09-29; rev 0.6 + §13 the body frame withdrawn — the default is the **world** frame on the shell's anchor, seeded where the scene appears and re-seated only by recenter; no comparable has a body frame, research/78 §9 F23). Rev 0.6 (2026-09-28; rev 0.5 + §13 the input floor as one rule for every surface, dwell global with its anchor on the hit point and progress on the reticle, and the body frame as the default placement — owner rulings; research/78 §7b, §9 F2). Rev 0.5 (2026-09-27; rev 0.4 + §6 layer-shell keyboard interactivity as the
 focus module's rules — the exclusive override, `on_demand` as a stack member, `none` never, the
 mode gate's exception as the trusted connection — [research/77](../research/77-shell-layer-mechanics-from-comparables.md);
 rev 0.4 = same day; rev 0.3 + §5 a ray-owned pointer is **released when gaze
@@ -533,12 +533,19 @@ comparables that built head-aim UIs:
   that moves with the head (a head-frame member) keeps the same hit point while the head turns,
   so it never re-arms — the phantom click a second that gate 9 saw (research/78 §7b) was the
   direction anchor re-arming on a head-locked plane.
-- **A scene the head aims at is never head-locked.** PICO's Head Control Mode moves a crosshair
-  over UI that stays put (research/42 §4), Cardboard's guidelines forbid head-locked UI,
-  HoloLens tag-alongs and MRTK `Follow` lazily body-lock, visionOS's HIG names head-anchoring as
-  the thing not to do. Hence the **body frame is the default** for every layer surface and the
-  lock surface (shell-plane §2.6; spec §4): floating in front, head free, coming along when the
-  wearer turns. `head` is given only to a client that asks or a wearer's row.
+- **A scene the head aims at is never head-locked — and never follows unasked.** visionOS's HIG
+  names head-anchoring as the thing not to do and keeps windows world-fixed with a recenter;
+  Android XR panels and SteamVR's dashboard are world-fixed where placed or summoned [external];
+  HoloLens is world-fixed with a per-window *opt-in* Follow me (MRTK3 `Follow`, a behaviour on a
+  world object); wayvr's default `Positioning::Floating` "stays in place, recenters relative to HMD"
+  (`wlx-common/src/windowing.rs:8-16`); PICO's Head Control Mode moves a crosshair over UI that
+  stays put (research/42 §4). None has a body frame (OpenXR's spaces are `VIEW`/`LOCAL`/`STAGE`;
+  research/78 §9 F23). Hence the **world frame is the default** for every layer surface and the
+  lock surface (shell-plane §2.6; spec §4–§5): hung off the shell's anchor — the head's position
+  and heading captured when the scene appears, re-seated only by recenter — so the scene floats in
+  front where it was summoned, head free; following is the wearer's opt-in (`wm.follow.*`, Q6).
+  `head` is given only to a client that asks or a wearer's row. *(Rev 0.6 said "body frame";
+  withdrawn 2026-09-29.)*
 - **Progress is shown on the reticle** — Cardboard's fuse fills, KWin animates the cursor
   (`dwellclicker.cpp:91-114`), MRTK draws a ring (`InteractorDwellManager.cs`); none ships dwell
   silent. The compositor's reticle (§"cursor") fills over `onset + complete`.

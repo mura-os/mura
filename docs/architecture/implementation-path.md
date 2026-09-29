@@ -276,7 +276,7 @@ met and flagged* rather than met: the **dwell-only login** (the head ray dwelled
 centre — research/78 §9 F2) and **a hardware keyboard** (the injector's keys stand in; a real
 keyboard through libinput is a device-run item). *F2 resolved (rev 4.7, 2026-09-28, spatial-input
 §13 ruled):* the floor is one rule for every surface the compositor composes — nothing is
-head-locked unless it asks, so the greeter and the lock float in the **body** frame; dwell is the
+head-locked unless it asks, so the greeter and the lock float in the **world** frame (rev 4.11: on the shell's anchor — the body frame of rev 4.8 was withdrawn, research/78 §9 F23); dwell is the
 global commit, anchored on the hit point on the target at the plane's pixels; a reticle fill shows
 its progress. Gate 9 (j) re-measures the dwell-only login on that scene.
 `--rotate` was not the run's proof of "really Mura"; the trusted-member composition counters and

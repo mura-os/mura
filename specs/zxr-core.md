@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 3.16 (2026-09-29; rev 3.15 + research/79 — §7 the OpenXR extension set zxr enables as a normative table, `XR_EXTX_overlay`'s provisional status stated beside the ruling with the ratified container pair named, the `XR_EXT_view_configuration_views_change` handler specified; §14 the container fork and the rev-3 protocol candidates as open items with the owner as decider; rev 3.15 = 2026-09-28; rev 3.14 + G2 and G3 measured in the VM (§12 gates 10–11 green, F15's four fixes), the body frame as the default placement (§4: the fallback for a surface that asks for nothing, the lock surface with it — nothing head-locked unless it asks, spatial-input §13), §9 readiness through `mura-session finalize` spawned by the compositor and `STOPPING=1` native, §12 gate 9 row (j) F2 resolved and gates 10–11 — G2 in the VM with `mura-osk`, the handoff with zxr in `mura-compositor.service`; rev 3.14 = same day; rev 3.13 + the body frame and the typed OSK — §5 `Frame::Body` derived from the head (position + yaw, lazily re-seated with `wm.follow.*`; MRTK/Overte/wayvr/visionOS all derive it so), §4 the placement table's `typed` value and the OSK bound to the surface it types into (research/36 §7; WiVRn's offset under a world window), §11 `body_reseat_ticks`/`osk_follows`, §12 gate 9 rows (h)–(i); rev 3.13 = same day; rev 3.12 + ADR 0007 amendment 2 — §9 the two modes: greeter mode exits with its primary trusted client (cage's rule), the lock is `ext-session-lock-v1` from a resident unit, triggers exec `loginctl lock-session`, relock after `Defunct`; rev 3.12 = 2026-09-27; rev 3.11 + research/77 — the shell-layer half **normative**: §4 exclusive angular bands per frame in frame-pixel space (wlroots' arithmetic, sway's pass order), §8 layer-shell keyboard interactivity in the focus module (the exclusive override, `on_demand` as a stack member, `none` never) and the `wl_fixed` motion dedupe, §9 the trusted connection as the gate's exception and the socketpair as `insert_client`, §10 the filter as `ClientData` bits set at insert and the globals it covers, §4 the wearer's placement table `shell.place:<namespace>` over the client's request over the head fallback (owner ruling 2026-09-27), §11 shell counters, §12 the shell-layer gate rows, §14 what the ruling leaves; rev 3.11 = same day; rev 3.10 + the window-management floor and seam as built — §3 `policy` built (the `free` floor: angular-slot spawn, tidy, lifecycle, follow, recenter; the seam served, XML rev 1, one binder, river sequences, the disconnect contract), §8 `Grabs` as built (`input/grabs.rs`, research/76), §11 the grab / policy / seam counters and the `policy:` and `seam:` list lines, §12 gate 7 measured; rev 3.10 = same day; rev 3.9 + shell-plane.md — §10 the shell-layer half: layer-shell + anchoring as the shell seam, the privileged set filtered per connection, `security-context-v1` moved to the shell-layer work, the still-pointer idle rule; rev 3.9 = same day; rev 3.8 + ADR 0007's amendment — §3 `modes` / §9: the greeter and lock scene is one trusted client over a pre-connected socketpair, zxr draws no UI, an absent client means an opaque scene and never an unlock; rev 3.8 = same day; rev 3.7 + research/73 settings Phase B — §3 `mura-settingsd` as a library and no `zbus` in the compositor, §8 "Settings": the in-process consumer (Engine + one inotify fd on the state loop, `Prefs` by generation, every threshold a preference or a calibration key), §11 settings counters, §12 the settings gate row; rev 3.7 = same day; rev 3.6 + research/70 §9.2 — §8 a ray-owned pointer released when gaze takes the tier, the `input.cursor.ray` / `input.cursor.scale` preferences, §11 `input_pointer_releases`; rev 3.6 = same day; rev 3.5 + research/70 §9 — §8 the cursor as one composition layer in one fixed-size swapchain (ruled: one cursor element, the client's cursor over the ray's reticle, nothing under gaze), §11 cursor counters, §12 the cursor gate row; rev 3.5 = 2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3.17 (2026-09-29; rev 3.16 + the body frame withdrawn — §5 the shell's world anchor (seeded where the scene appears, re-seated only by recenter; no comparable has a body frame, research/78 §9 F23), §4 the **world** fallback, §11 `anchor_reseats`, §12 gate 9 row (k); `zxr-layer-anchoring-v1` rev 3 drops `body`); rev 3.16 (2026-09-29; rev 3.15 + research/79 — §7 the OpenXR extension set zxr enables as a normative table, `XR_EXTX_overlay`'s provisional status stated beside the ruling with the ratified container pair named, the `XR_EXT_view_configuration_views_change` handler specified; §14 the container fork and the rev-3 protocol candidates as open items with the owner as decider; rev 3.15 = 2026-09-28; rev 3.14 + G2 and G3 measured in the VM (§12 gates 10–11 green, F15's four fixes), the body frame as the default placement (§4: the fallback for a surface that asks for nothing, the lock surface with it — nothing head-locked unless it asks, spatial-input §13), §9 readiness through `mura-session finalize` spawned by the compositor and `STOPPING=1` native, §12 gate 9 row (j) F2 resolved and gates 10–11 — G2 in the VM with `mura-osk`, the handoff with zxr in `mura-compositor.service`; rev 3.14 = same day; rev 3.13 + the body frame and the typed OSK — §5 `Frame::Body` derived from the head (position + yaw, lazily re-seated with `wm.follow.*`; MRTK/Overte/wayvr/visionOS all derive it so), §4 the placement table's `typed` value and the OSK bound to the surface it types into (research/36 §7; WiVRn's offset under a world window), §11 `body_reseat_ticks`/`osk_follows`, §12 gate 9 rows (h)–(i); rev 3.13 = same day; rev 3.12 + ADR 0007 amendment 2 — §9 the two modes: greeter mode exits with its primary trusted client (cage's rule), the lock is `ext-session-lock-v1` from a resident unit, triggers exec `loginctl lock-session`, relock after `Defunct`; rev 3.12 = 2026-09-27; rev 3.11 + research/77 — the shell-layer half **normative**: §4 exclusive angular bands per frame in frame-pixel space (wlroots' arithmetic, sway's pass order), §8 layer-shell keyboard interactivity in the focus module (the exclusive override, `on_demand` as a stack member, `none` never) and the `wl_fixed` motion dedupe, §9 the trusted connection as the gate's exception and the socketpair as `insert_client`, §10 the filter as `ClientData` bits set at insert and the globals it covers, §4 the wearer's placement table `shell.place:<namespace>` over the client's request over the head fallback (owner ruling 2026-09-27), §11 shell counters, §12 the shell-layer gate rows, §14 what the ruling leaves; rev 3.11 = same day; rev 3.10 + the window-management floor and seam as built — §3 `policy` built (the `free` floor: angular-slot spawn, tidy, lifecycle, follow, recenter; the seam served, XML rev 1, one binder, river sequences, the disconnect contract), §8 `Grabs` as built (`input/grabs.rs`, research/76), §11 the grab / policy / seam counters and the `policy:` and `seam:` list lines, §12 gate 7 measured; rev 3.10 = same day; rev 3.9 + shell-plane.md — §10 the shell-layer half: layer-shell + anchoring as the shell seam, the privileged set filtered per connection, `security-context-v1` moved to the shell-layer work, the still-pointer idle rule; rev 3.9 = same day; rev 3.8 + ADR 0007's amendment — §3 `modes` / §9: the greeter and lock scene is one trusted client over a pre-connected socketpair, zxr draws no UI, an absent client means an opaque scene and never an unlock; rev 3.8 = same day; rev 3.7 + research/73 settings Phase B — §3 `mura-settingsd` as a library and no `zbus` in the compositor, §8 "Settings": the in-process consumer (Engine + one inotify fd on the state loop, `Prefs` by generation, every threshold a preference or a calibration key), §11 settings counters, §12 the settings gate row; rev 3.7 = same day; rev 3.6 + research/70 §9.2 — §8 a ray-owned pointer released when gaze takes the tier, the `input.cursor.ray` / `input.cursor.scale` preferences, §11 `input_pointer_releases`; rev 3.6 = same day; rev 3.5 + research/70 §9 — §8 the cursor as one composition layer in one fixed-size swapchain (ruled: one cursor element, the client's cursor over the ray's reticle, nothing under gaze), §11 cursor counters, §12 the cursor gate row; rev 3.5 = 2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -100,10 +100,10 @@ Composition order, back to front, each band an anchoring frame (`zxr-layer-ancho
 1. **environment** — passthrough, wallpaper or a virtual scene; content from a perception
    producer over the intake protocol (`specs/perception-intake.md`) or a wallpaper client on
    layer-shell `background`; drawn first, world frame.
-2. **bottom shell layer** — layer-shell `bottom` clients (docks behind windows), body/docked frames.
+2. **bottom shell layer** — layer-shell `bottom` clients (docks behind windows), world/docked frames.
 3. **the window tiers** — 2D planes (M1) and 3D clients' colour+depth (M2), depth-sorted into one
    depth buffer; the places' frames.
-4. **top shell layer** — layer-shell `top` (panels), body/head/docked frames, exclusive angular bands.
+4. **top shell layer** — layer-shell `top` (panels), world/head/docked frames, exclusive angular bands.
 5. **overlay** — layer-shell `overlay` (OSD, notifications), the lock/greeter scene; head frame.
 6. **foreground cutout** — the wearer's hands/limbs composited over everything from a perception
    mask (the contract's `handCutout`; name open, §14); compositor-internal, no client.
@@ -122,21 +122,21 @@ on the fallback cadence, §5a's not-composed rule). **Where it sits is the weare
 `shell.place:<namespace>` (a relocatable settings template — `frame`, `azimuth_deg`,
 `elevation_deg`, `distance_m`, `pitch_deg`, `width_deg`) wins when a row exists for the surface's
 namespace; otherwise the client's `zxr-layer-anchoring-v1` request applies; otherwise the
-**body fallback** (rev 3.15, ruled 2026-09-28: the body frame's rectangle is the head's extent
-at its distance, `shell.head.{extent_h_deg,extent_v_deg,distance_m}`, defaults 90×70° at
-0.5 m — floating in front of the wearer, head free, coming along when they turn; **nothing is
-head-locked unless it asks**: PICO's Head Control Mode, Cardboard, HoloLens tag-along and the
-visionOS HIG all keep the aimed-at scene off the head, spatial-input §13). The lock surface is
-placed the same way. A user grab on a shell plane writes the row (the WM branch's grab
+**world fallback** (rev 3.17, ruled 2026-09-29; rev 3.15 had said "body": the world frame's
+rectangle is the head's extent at its distance, `shell.head.{extent_h_deg,extent_v_deg,distance_m}`,
+defaults 90×70° at 0.5 m, hung off the shell's anchor (§5) — floating in front of the wearer where
+it was summoned, head free, brought back by recenter; **nothing is head-locked unless it asks**:
+visionOS, Android XR, HoloLens, SteamVR and wayvr all keep an aimed-at scene world-fixed,
+spatial-input §13). The lock surface is placed the same way. A user grab on a shell plane writes the row (the WM branch's grab
 mechanics; the plane is placeable, never tiled or resized). Seed rows for the carried
 components' namespaces (`osk` → `typed`; `notifications` → head, upper-right — the one
-deliberate head placement, research/36 §4's toasts, kept with its reason; a bar → body, bottom)
+deliberate head placement, research/36 §4's toasts, kept with its reason; a bar → world, bottom)
 are the consumer's defaults for instances without a stored value. **`typed` (rev 3.14; research/36 §7):** a compositor-only
 `frame` value — the frame of the surface holding smithay's *active* text input (an enabled
 `zwp_text_input_v3`). Every shipping keyboard is bound to the panel with the focused field
 (WiVRn a fixed offset below its GUI, `wivrn/client/constants.h:87-88`; xrdesktop per focused
 window; visionOS and Quest near the field), none to the body — wayvr's anchored keyboard was
-the outlier the previous seed followed. Under a head- or body-frame scene a `typed` member is
+the outlier the previous seed followed. Under a head- or world-frame scene a `typed` member is
 arranged in that frame's rectangle by its own layer-shell anchors (the greeter's OSK is the
 bottom band, gate 9); under a **world-frame window** it is arranged against the *window's*
 rectangle (so a 1920-px keyboard becomes the window's width) and posed below the window with
@@ -155,7 +155,7 @@ edge, the odd edge of a three-edge bar, or the client's `set_exclusive_edge`; co
 anchors reserve nothing (`wlr_layer_shell_v1.c:657-684`). Two passes in sway's order: every
 surface with a positive zone, then the rest, each overlay→top→bottom→background
 (`references/sway/sway/desktop/layer_shell.c:56-93`). The usable rectangle is **per frame**: a
-body-frame panel never shrinks the head frame. A bogus zone clamps the usable rectangle to zero
+world-frame panel never shrinks the head frame. A bogus zone clamps the usable rectangle to zero
 (wlroots, smithay), it never destroys the client (river's rule is not taken). `set_exclusive_angle`
 is the same zone in the same units, `degrees · ppd`. The arranged box maps back to the member:
 azimuth `((x + w/2) − W/2)/ppd`, elevation `(H/2 − (y + h/2))/ppd`, plane extents
@@ -193,26 +193,33 @@ layer in `xrEndFrame` and its alpha is the matte.
 ## 5. Places and frames (research/60 §2; places-model.md)
 
 The scene holds the frame graph — world (OpenXR LOCAL / LOCAL_FLOOR; STAGE where the runtime
-has one), head (VIEW), **body** (derived), hands, docked, shared — and places as `ext-workspace-v1`
+has one), head (VIEW), hands, docked, shared — and places as `ext-workspace-v1`
 workspaces whose group is a frame, with the spatial fields on `zxr-workspace-v1`. M1 ships one
-world frame, one head frame and the body frame and a fixed layout; the pager and place
+world frame, one head frame and the shell's **world anchor** and a fixed layout; the pager and place
 transitions are shell clients after M1. The runtime owns recentering (LOCAL's origin); the
 compositor owns currency and which frame a plane attaches to.
 
-**The body frame (rev 3.14, 2026-09-28; `shell/body.rs`).** No headset tracks a torso; every
-comparable derives "body" from the head and differs only in when its yaw re-seats — MRTK3's
-`Follow` solver (leash 30°/20°, yaw-only with `IgnoreReferencePitchAndRoll`,
-`mrtk3/…/Solvers/Follow.cs:88-206`), Overte's avatar torso (head with roll and pitch cancelled,
-re-rotated past 30° on a moving average, `overte/interface/src/avatar/MyAvatar.cpp:4478-4501,
-5229-5243`), wayvr's anchor (the HMD snapped upright, captured on show or grab,
-`wayvr/wayvr/src/windowing/manager.rs:1130-1135`), visionOS (head-seeded placement, explicit
-recenter). zxr's body frame is **the head's position and the head's yaw with pitch and roll
-removed; the yaw re-seats lazily** with the window manager's lazy-follow (`policy/follow.rs`'s
-`Follower`, the wearer's `wm.follow.*`: after `threshold` off for `delay`, at `rate`, stopping
-within `stop`); the first head pose seeds it. Written every tick after the head
-(`Space::Service`, `FrameKind::Body`); `frames_available` carries its bit, hand frames fall back
-to it. Counters `body_reseat_ticks`, the `shell-counters:` line's `body_yaw_deg=`. Budget: one
-`atan2` and one compare per tick, a slerp while re-seating.
+**No body frame (rev 3.17, 2026-09-29; the rev 3.14 body frame withdrawn — research/78 §9 F23).**
+No shipping platform has one: OpenXR's reference spaces are `VIEW`, `LOCAL`, `LOCAL_FLOOR`, `STAGE`
+(`openxr-docs …/spaces.adoc`); visionOS anchors content in the world and names head anchoring
+the thing not to do (research/64 §7); HoloLens is world-fixed with a per-window *opt-in* Follow
+me (MRTK3 `Solvers/Follow.cs` — a behaviour, not a frame); wayvr's default `Positioning::Floating`
+"stays in place, recenters relative to HMD" (`wlx-common/src/windowing.rs:8-16`); Android XR panels
+and SteamVR's dashboard are world-fixed where placed or summoned [external]. The only "body" in
+the corpus is Overte's avatar torso. Mura's rev 3.14 frame (the head's position every tick, its
+yaw re-seated lazily) had no comparable and is gone; following stays what Q6 ruled: opt-in per
+surface (`wm.follow.*`), never a frame.
+
+**The shell's world anchor (`shell/anchor.rs`; `FrameKind::Anchor`, `Space::Service`).** A child
+of the world frame whose pose is **the head's position and heading, pitch and roll removed,
+captured when the scene first appears and re-seated only by recenter** (`policy::recenter` — the
+reserved long press, `zxr ctl wm recenter`; research/64 §7: recenter is a rigid re-seat of
+everything head-relative). World-framed layer surfaces — the greeter, the lock surface, the OSK
+under them, a bar — hang off it (`Shell::frame_id(World)`), so they float where they were
+summoned, hold still while the wearer looks or moves, and come back in front on recenter; a
+`typed` member under a world *window* is posed in bare world coordinates instead. Hand frames
+fall back to the world frame. Counters `anchor_reseats`, the `shell-counters:` line's
+`anchor_yaw_deg=`. Budget: one pose write at the seed and one per recenter; nothing per tick.
 
 ### 5a. The scene data model (normative from rev 3.3, 2026-09-26 — research/62 §7, reconciled with §4 rev 3)
 
@@ -855,10 +862,10 @@ within KWin's bound), `osk_raises` (the `osk` member raised above the surface it
 `lock_triggers` (lock commands run: doff grace, idle ladder, `zxr ctl lock`), `lock_relocks`
 (a `lock` accepted after the previous locker died); the `shell-counters:` line carries
 `lock=`/`relocks=`/`triggers=` and `osk_band=`/`osk_raised=`/`osk_restarts=`; `zxr ctl lock` runs
-the lock command (refused, with the reason, while locked or gated). **Rev 3.14:** `body_reseat_ticks`
-(ticks the body frame's yaw moved toward the head's, §5), `osk_follows` (re-poses of a `typed`
-member under a moving window, §4); the `shell-counters:` line carries `body_yaw_deg=`, `typed=`
-(the typed surface's member) and `osk_follows=`.
+the lock command (refused, with the reason, while locked or gated). **Rev 3.14/3.17:** `anchor_reseats` (recenters that re-seated the shell's anchor, §5; rev 3.14's
+`body_reseat_ticks` went with the body frame), `osk_follows` (re-poses of a `typed` member under a
+moving window, §4); the `shell-counters:` line carries `anchor_yaw_deg=`, `typed=` (the typed
+surface's member) and `osk_follows=`.
 
 ## 12. Conformance — the R0 gates (research/39 §5, measured)
 
@@ -1041,6 +1048,9 @@ headset). Each gate is a written result with numbers in
    off re-seats after the delay and settles within `stop`). A `shell.place:osk.frame body` row
    overriding `typed` is the existing row precedence (unit-tested parse; not re-run nested —
    the host carries no settings artifact).
+   *Rows (h)–(j) and gates 10–11 below were measured on the rev 3.14–3.16 body frame; rev 3.17
+   replaced it with the world anchor (§5) — where they say `body`, read the world frame hung off
+   the anchor; the rev 3.17 re-measurement is row (k).*
    **(j), rev 3.15 (F2 resolved; spatial-input §13):** the greeter and the lock surface arrange on
    the **body** frame (the default for a surface that asks for nothing, §4); with dwell on and the
    simulated head wobbling, the head ray's dwell fires on a scene button — the anchor is the hit
@@ -1096,6 +1106,16 @@ headset). Each gate is a written result with numbers in
    error the client had not yet acted on) — the compositor hung; the child is now `try_wait`ed,
    sent SIGTERM, polled per tick and SIGKILLed after 1 s (`shell/filter.rs` `Reaping`; KWin's
    `terminate()`-then-`kill()`, cage's wait on the process).
+   **(k), rev 3.17 (the body frame withdrawn; F23) — measured nested (host, 2026-09-29, `--rotate`,
+   Monado's simulated HMD turning and drifting):** the greeter and the OSK arrange `frame=world`
+   on the shell's anchor (`zone: frame=World rect=1920×1493 … usable=1920×1133` — the OSK's band
+   still shrinks the greeter); `anchor: seeded from the first head pose … yaw_deg=0.26`; over 6 s
+   of head motion (position ±0.11 m, yaw ±3°) both members' world positions did not change
+   (`pos=(0.00,0.08,−0.49)` greeter, `(0.00,−0.22,−0.45)` OSK on every read — F11's slide is gone
+   by construction); `zxr ctl wm recenter` → `anchor: re-seated at the head yaw_deg=3.9
+   reseats=1`, both members moved with it (`pos=(0.03,0.03,−0.49)`, `(0.03,−0.27,−0.44)`),
+   `anchor_reseats=1`; a held controller takes the tier as before; typing reaches the greeter
+   (`activated: keyboard shown`). Nothing runs per tick for the anchor.
 11. **The handoff gate (rev 3.15; implementation-path §5 G3 / M1).** `mura-compositor.service`
    runs `zxr` (`Type=notify`): `WAYLAND_DISPLAY` reaches the user manager and the D-Bus activation
    environment through `mura-session finalize` spawned by the compositor (§9), the unit is `active`

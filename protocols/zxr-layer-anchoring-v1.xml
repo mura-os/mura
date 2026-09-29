@@ -59,25 +59,24 @@
     <enum name="frame">
       <description summary="reference frames for layer surfaces">
         The frame a layer surface is positioned in. Head-framed surfaces
-        follow the view. Body-framed surfaces follow the user's body: no
-        headset tracks a torso, so the body frame is derived from the
-        head — its origin is the head's position, its orientation the
-        head's yaw with pitch and roll removed, and that yaw re-seats
-        lazily (after the head has turned past a threshold for a delay,
-        at a rate, stopping within a band) rather than every frame; a
-        body-framed surface therefore stays put while the wearer looks
-        around and comes along when they turn. Hand-framed
-        surfaces follow a tracked hand or its held controller; world-framed
-        surfaces hold a pose in the local reference space; docked-framed
+        follow the view (the rare, explicit case: a toast, a transient
+        indicator). World-framed surfaces hold a pose in the local
+        reference space: the compositor seeds that pose in front of the
+        wearer when the surface first appears (position and heading of
+        the head at that moment, pitch and roll removed) and re-seats it
+        only on the wearer's recenter gesture — the surface stays where
+        it was summoned while the wearer looks or moves around. Hand-framed
+        surfaces follow a tracked hand or its held controller; docked-framed
         surfaces are presented on the docked output's plane (and only exist
-        while docked).
+        while docked). There is no body frame: no shipping platform has one
+        (world-fixed content, an explicit recenter, and opt-in following are
+        the convention).
       </description>
       <entry name="head" value="0" summary="follows the view"/>
-      <entry name="body" value="1" summary="follows the body, not the head"/>
-      <entry name="hand_left" value="2" summary="follows the left hand"/>
-      <entry name="hand_right" value="3" summary="follows the right hand"/>
-      <entry name="world" value="4" summary="fixed in the local space"/>
-      <entry name="docked" value="5" summary="the docked output's plane"/>
+      <entry name="hand_left" value="1" summary="follows the left hand"/>
+      <entry name="hand_right" value="2" summary="follows the right hand"/>
+      <entry name="world" value="3" summary="fixed in the local space; seeded in front of the wearer, re-seated on recenter"/>
+      <entry name="docked" value="4" summary="the docked output's plane"/>
     </enum>
 
     <request name="destroy" type="destructor">
@@ -123,11 +122,11 @@
       layer-shell state committed there.
 
       If a client never sets a frame, the compositor presents the surface
-      in the body frame — floating in front of the user, following them
-      when they turn, free of their head's motion — with a compositor-chosen
-      angular size; layer-shell clients unaware of this protocol therefore
-      remain usable unmodified, and nothing is head-locked unless it asks
-      to be.
+      in the world frame — floating in front of the wearer where it was
+      summoned, free of their head's motion, brought back by recenter —
+      with a compositor-chosen angular size; layer-shell clients unaware of
+      this protocol therefore remain usable unmodified, and nothing is
+      head-locked unless it asks to be.
     </description>
 
     <enum name="error">
@@ -153,7 +152,7 @@
         interpreted in. If the frame is currently unavailable (see
         zxr_layer_anchoring_v1.frames), the compositor presents the surface
         in that frame's fallback until it becomes available: hand frames
-        fall back to the body frame, the docked frame to the head frame.
+        fall back to the world frame, the docked frame to the head frame.
         Values set in this way are double-buffered, see wl_surface.commit.
       </description>
       <arg name="frame" type="uint" enum="zxr_layer_anchoring_v1.frame"/>

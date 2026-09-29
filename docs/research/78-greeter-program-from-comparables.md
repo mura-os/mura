@@ -431,9 +431,10 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   virtual-keyboard API lets the runtime place it) — and wayvr was the outlier. Done: the
   placement table's `typed` value as the `osk` seed (spec §4 rev 3.14; shell-plane §3.2), the OSK
   under a world window arranged against the window's rectangle and hung below it with WiVRn's
-  offset, and the body frame built as every comparable derives it (spec §5 rev 3.14) so `body`
+  offset, and the body frame built "as every comparable derives it" (spec §5 rev 3.14) so `body`
   rows and the bar seed mean what they say. The bar seed keeps the old provenance — flagged in
-  shell-plane §6.
+  shell-plane §6. *(2026-09-29: that last step was wrong — the comparables derive no body frame
+  at all; withdrawn, F23.)*
 - **F9 — a regression found and fixed (2026-09-28): the G1 commit wrote the contract's
   `multiUser.uidRange` (1000–60000) into `/etc/login.defs`**, and `vm-test-multi-user`'s login
   stopped working (the greeter's respawn stalled ≈20 s and the typed login was lost; bisected by
@@ -463,7 +464,8 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   stays resident. Verified on the host from outside the session scope (`Display=2`, resident,
   no lock) and by both VM fixtures.
 - **F11 — a controller-ray dwell on a body-framed surface rides the head's translation
-  (2026-09-28, gate 9 (j)).** The body frame takes the head's *position* every tick and only its
+  (2026-09-28, gate 9 (j)). Resolved 2026-09-29 by F23: the body frame is gone; a world-framed plane
+  under a world-fixed ray is stable by construction.** The body frame takes the head's *position* every tick and only its
   yaw lazily (zxr-core §5), so a world-fixed controller ray's hit point on a body-framed plane moves
   whenever the head translates; the dwell's 2° tolerance at 0.5 m is 1.7 cm, and Monado's
   simulated HMD drifts ≈ 8 cm/s, so a controller dwell never settles in the harness. A real
@@ -685,6 +687,36 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   `WAYLAND_DISPLAY`/`DISPLAY` the way `mura-compositor.service` is, `modules/os/session.nix:128`,
   since the Wayland targets come first in the factory list). Recorded for the Frame bring-up; not
   touched here.
+- **F23 — the body frame is withdrawn (ruled 2026-09-29).** Mura's `body` frame entered the corpus
+  from its own protocol draft (`zxr-layer-anchoring-v1` rev 2, research/60 §1 "Mura already
+  designed"), and rev 3.14 then built it "as every comparable derives it" — the head's position
+  every tick and its yaw re-seated lazily (F8). Checked against the comparables on the owner's
+  request, **none has a body frame**: OpenXR's reference spaces are `VIEW`, `LOCAL`, `LOCAL_FLOOR`,
+  `STAGE` (+ vendor `UNBOUNDED`/`STATIONARY`; `openxr-docs …/chapters/spaces.adoc`); visionOS
+  anchors content in the world and re-seats it on the Crown long-press (research/64 §7); HoloLens
+  is world-fixed with a per-window *opt-in* Follow me (MRTK3 `Solvers/Follow.cs` — a solver on a
+  world object, which even then holds position until a distance/angle leash trips,
+  `Follow.cs:392-396`); wayvr's `Positioning` enum is `Floating` (default: "stays in place, recenters
+  relative to HMD"), `Anchored`, `Static`, `FollowHead`, `FollowHand` (`wlx-common/src/windowing.rs:8-16`)
+  — placement and recenter policies on a world position, never a frame; kwin-vr rotates its
+  cluster about the head on a leash and never translates it (`vrfollowmode.cpp:334-369`);
+  Android XR/Galaxy XR panels and SteamVR's dashboard are world-fixed where placed or summoned,
+  with a system recenter [external]. The only "body" anywhere is Overte's avatar torso and a wrist
+  watch (research/36 §4). The convention is therefore **two frames and a behaviour**: world
+  (default, where placed or summoned), head (the rare explicit case: toasts, transient indicators),
+  and recenter as the one gesture re-seating world content in front of the wearer; following is an
+  opt-in behaviour on a world surface (Q6, `wm.follow.*`). Done: `shell/body.rs` deleted;
+  `shell/anchor.rs` — the shell's **world anchor**, a world child seeded from the first head pose
+  and re-seated only by `policy::recenter`, off which world-framed layer surfaces hang; `body`
+  removed from the protocol (rev 3, values renumbered), the placement seeds (`bar → world`), the
+  scene (`FrameKind::Body`), the diagnostics (`anchor_yaw_deg`, `anchor_reseats`); the world frame's
+  rectangle is the head's extent at the head distance and honours exclusive bands (research/77 §9
+  Q2's spawn-distance world rectangle described world surfaces among windows, a case `typed` now
+  covers per window); a `typed` member under a world window stays in bare world coordinates.
+  Measured: spec §12 gate 9 row (k) — the scene holds under head motion, recenter re-seats it,
+  the OSK's band still shrinks the greeter. F11 and F13's drift residue dissolve with it. *Judgment,
+  flagged:* the anchor node is an internal scene detail (wayvr's word); the wearer-facing taxonomy
+  is head/hand/world/docked.
 
 ## 10. Sources
 

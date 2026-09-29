@@ -184,7 +184,7 @@
         listing = machine.succeed(ZXR_CTL.format("list"))
         assert "mode=Normal" in listing and 'lock="unlocked"' in listing, listing
         # the OSK is zxr's child in the session too: present, hidden until a field asks for it
-        assert "ns=osk layer=Top frame=body" in listing and "mapped=false trusted=true" in listing, listing
+        assert "ns=osk layer=Top frame=world" in listing and "mapped=false trusted=true" in listing, listing
         machine.succeed(f"loginctl lock-session {sid}")
         # ext-session-lock: the lock unit's surface is composed, the mode gate closes (I1), logind's hint is set (I2)
         machine.wait_until_succeeds(ZXR_CTL.format("list") + " | grep -q 'mode=Locked'", timeout=30)

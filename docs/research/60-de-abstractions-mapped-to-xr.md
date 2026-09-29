@@ -42,14 +42,14 @@ immediate feedback" (`kwin/src/effect/globals.h:164-177`, `layers.cpp:30-40`). m
 `mura.xr.passthrough.handCutout.upperLimbVisibility` already mirrors) is the only shipping
 precedent for a *foreground* cutout layer — [external], closed platform, engineering evidence
 only.
-**Mura already designed.** `zxr-layer-anchoring-v1` rev 2: frames head/body/hand/world/docked +
+**Mura already designed.** `zxr-layer-anchoring-v1` rev 2: frames head/body/hand/world/docked (rev 3, 2026-09-29: `body` withdrawn — no comparable has one, research/78 §9 F23) +
 angular size/pose + exclusive angular bands (`protocols/zxr-layer-anchoring-v1.xml:59-75`);
 `perception-passthrough-hands.md` (the environment layer and the hand cutout as compositor
 layers fed by perception services over the intake protocol, `specs/perception-intake.md`).
 **Translation.** The four wlr layers become **depth bands relative to the 2D/3D window tier**,
 each band an anchoring frame: *environment* (background: passthrough, wallpaper, a virtual
 scene — fed by a perception producer through the intake, drawn first), *bottom* and *top* shell
-layers (panels, docks — separate clients over layer-shell + anchoring, in head/body/docked
+layers (panels, docks — separate clients over layer-shell + anchoring, in head/world/docked
 frames), the window tiers between, *overlay* (OSD, notifications, the lock/greeter scene — head
 frame, drawn last), and one layer with no 2D analogue: the **foreground cutout** (the wearer's
 hands/limbs composited over everything by the compositor from a perception mask; name to be
@@ -237,7 +237,7 @@ cosmic-launcher is a layer-shell client that mints activation tokens before spaw
 (research/30 §3.5).
 **Translation.** As is, on the standard seams (list + activation; control through an extension
 until `ext-foreign-toplevel-management` exists), with placement through anchoring frames: a
-dock in the body frame, an overview as a place transition (`zxr-workspace-v1`). **Class:**
+dock in the world frame (rev 3: the shell's anchor; was "body"), an overview as a place transition (`zxr-workspace-v1`). **Class:**
 separate clients; the list/activation globals are the compositor's. **First bites:** M1 for the
 globals (M1's acceptance needs launching a terminal and an editor), post-M1 for the clients.
 

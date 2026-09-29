@@ -45,18 +45,16 @@ mod generated {
 pub enum Frame {
     #[default]
     Head = 0,
-    Body = 1,
-    HandLeft = 2,
-    HandRight = 3,
-    World = 4,
-    Docked = 5,
+    HandLeft = 1,
+    HandRight = 2,
+    World = 3,
+    Docked = 4,
 }
 
 impl Frame {
     pub fn parse(s: &str) -> Option<Frame> {
         Some(match s {
             "head" => Frame::Head,
-            "body" => Frame::Body,
             "hand_left" => Frame::HandLeft,
             "hand_right" => Frame::HandRight,
             "world" => Frame::World,
@@ -68,7 +66,6 @@ impl Frame {
     pub fn name(self) -> &'static str {
         match self {
             Frame::Head => "head",
-            Frame::Body => "body",
             Frame::HandLeft => "hand_left",
             Frame::HandRight => "hand_right",
             Frame::World => "world",
@@ -80,7 +77,6 @@ impl Frame {
         use zxr_layer_anchoring_v1::Frame as W;
         match f {
             W::Head => Frame::Head,
-            W::Body => Frame::Body,
             W::HandLeft => Frame::HandLeft,
             W::HandRight => Frame::HandRight,
             W::World => Frame::World,
@@ -168,7 +164,7 @@ pub fn send_extent(surface: &WlSurface, horizontal: f32, vertical: f32) {
     });
 }
 
-/// `frames` to every bound manager (the set changed: a frame came or went — the body/hand/docked
+/// `frames` to every bound manager (the set changed: a frame came or went — the hand/docked
 /// frames of M1; nothing calls it while only head and world exist).
 #[allow(dead_code)]
 pub fn broadcast_frames(st: &Zxr) {
@@ -384,7 +380,7 @@ mod tests {
 
     #[test]
     fn frame_names_round_trip() {
-        for f in [Frame::Head, Frame::Body, Frame::HandLeft, Frame::HandRight, Frame::World, Frame::Docked] {
+        for f in [Frame::Head, Frame::HandLeft, Frame::HandRight, Frame::World, Frame::Docked] {
             assert_eq!(Frame::parse(f.name()), Some(f));
         }
     }

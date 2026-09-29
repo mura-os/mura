@@ -54,16 +54,16 @@ impl PlaceRow {
 /// The seed row for a namespace, if one ships.
 ///
 /// - `osk` → `typed`: the frame of the surface it types into (research/36 §7's convergence;
-///   shell-plane §3.2). Under a head- or body-frame scene the OSK is that frame's bottom band
-///   (its own layer-shell anchors); under a world-frame window it hangs below the window
-///   (`typed_pose`, WiVRn's offset). The wayvr body seed this replaced was the one outlier.
+///   shell-plane §3.2). Under a head- or world-frame scene (the greeter, the lock) the OSK is that
+///   frame's bottom band (its own layer-shell anchors); under a world-frame window it hangs below
+///   the window (`typed_pose`, WiVRn's offset). The wayvr body seed this replaced was the one outlier.
 /// - `notifications` → head, upper-right (mako's own anchor; research/36 §4's head-locked toasts)
-/// - `waybar` / `panel` / `bar` → body, bottom (research/60 §9's body-frame dock)
+/// - `waybar` / `panel` / `bar` → world, bottom (research/60 §9's dock, on the shell's anchor)
 pub fn seed(namespace: &str) -> Option<PlaceRow> {
     match namespace {
         "osk" => Some(PlaceRow { frame: Some(PlaceFrame::Typed), ..PlaceRow::default() }),
         "notifications" => Some(PlaceRow { frame: Some(PlaceFrame::Frame(Frame::Head)), azimuth_deg: None, elevation_deg: None, distance_m: None, pitch_deg: None, width_deg: None }),
-        "waybar" | "panel" | "bar" => Some(PlaceRow { frame: Some(PlaceFrame::Frame(Frame::Body)), azimuth_deg: Some(0.0), elevation_deg: Some(-25.0), distance_m: None, pitch_deg: Some(-5.0), width_deg: None }),
+        "waybar" | "panel" | "bar" => Some(PlaceRow { frame: Some(PlaceFrame::Frame(Frame::World)), azimuth_deg: Some(0.0), elevation_deg: Some(-25.0), distance_m: None, pitch_deg: Some(-5.0), width_deg: None }),
         _ => None,
     }
 }
@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn seeds_are_by_namespace_not_program() {
         assert_eq!(seed("osk").and_then(|r| r.frame), Some(PlaceFrame::Typed), "the OSK follows the surface it types into");
-        assert_eq!(seed("bar").and_then(|r| r.frame), Some(PlaceFrame::Frame(Frame::Body)));
+        assert_eq!(seed("bar").and_then(|r| r.frame), Some(PlaceFrame::Frame(Frame::World)));
         assert_eq!(PlaceFrame::parse("typed"), Some(PlaceFrame::Typed));
         assert_eq!(PlaceFrame::parse("world"), Some(PlaceFrame::Frame(Frame::World)));
         assert!(seed("something-else").is_none());

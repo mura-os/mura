@@ -470,8 +470,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
     let head = head_pose(&views);
     let head_id = st.scene.head;
     st.scene.set_frame_pose(head_id, head, true);
-    // the body frame: the head's position and yaw, re-seated lazily (shell/body.rs; spec §5)
-    shell::body::tick(st, head, now_ns());
+    // the shell's world anchor: seeded from the first head pose, re-seated on recenter (shell/anchor.rs; spec §5)
+    shell::anchor::tick(st, head);
     {
         let ids: Vec<scene::FrameId> = st.scene.xr_frames().map(|(id, _)| id).collect();
         if !ids.is_empty() {

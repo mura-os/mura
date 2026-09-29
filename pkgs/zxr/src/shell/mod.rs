@@ -12,12 +12,13 @@
 //! edge (`wlr_layer_shell_v1.c:657-684`). Two passes in sway's order — positive zones first, then
 //! the rest, each overlay→top→bottom→background (`references/sway/sway/desktop/layer_shell.c:56-93`).
 //! It runs on a layer surface's commit, map and unmap, never per tick. The usable rectangle is
-//! per frame: a body-frame panel never shrinks the head frame (research/77 §3.2).
+//! per frame: a world-frame panel never shrinks the head frame (research/77 §3.2).
 //!
 //! **Where a surface sits is the wearer's** (owner ruling 2026-09-27; research/77 §3.3a): a
-//! `shell.place:<namespace>` row wins, else the client's anchoring request, else the **body**
-//! fallback (the head's extent `shell.head.*` on the body frame — floating in front, head free;
-//! nothing is head-locked unless it asks, spatial-input §13, ruled 2026-09-28). Hyprland's layer rules by namespace are the precedent
+//! `shell.place:<namespace>` row wins, else the client's anchoring request, else the **world**
+//! fallback (the head's extent `shell.head.*` on the shell's anchor — floating in front of the wearer
+//! where it was summoned, head free, re-seated on recenter; nothing is head-locked unless it asks,
+//! spatial-input §13, ruled 2026-09-28/29; anchor.rs). Hyprland's layer rules by namespace are the precedent
 //! (`references/hyprland/src/desktop/rule/layerRule/LayerRule.cpp:96-115`). Seed rows for the
 //! carried components' namespaces are `place::seed`.
 //!
@@ -26,8 +27,8 @@
 //! per registry/bind; the still-pointer rule (input/pointer.rs) removes 62 wake-ups/s per resting
 //! client. No thread, no per-tick work.
 
+pub mod anchor;
 pub mod anchoring;
-pub mod body;
 pub mod filter;
 pub mod layer;
 pub mod lock;
@@ -219,8 +220,8 @@ pub struct Shell {
     pub focus_overrides: u64,
     pub last_override: Option<MemberId>,
     pub lock: lock::LockState,
-    /// the body frame's yaw and re-seat timer (body.rs)
-    pub body: body::Body,
+    /// the shell's world anchor: seeded from the first head pose, re-seated on recenter (anchor.rs)
+    pub anchor: anchor::Anchor,
     /// a `typed` member hanging below a world-frame window: re-posed when the window moves
     pub typed_follow: Option<TypedFollow>,
     /// the typed surface's member at the last arrange: a change re-arranges (the OSK's frame moves)
@@ -229,7 +230,7 @@ pub struct Shell {
 
 impl Shell {
     pub fn new() -> Self {
-        Shell { frames_available: (1 << Frame::Head as u32) | (1 << Frame::Body as u32) | (1 << Frame::World as u32), ..Default::default() }
+        Shell { frames_available: (1 << Frame::Head as u32) | (1 << Frame::World as u32), ..Default::default() }
     }
 
     pub fn next_serial(&mut self) -> u64 {
@@ -253,30 +254,25 @@ impl Shell {
         self.rects.iter().find(|r| r.frame == frame)
     }
 
-    /// The frame a request resolves to: head, body and world exist (spec §5; the body derived from
-    /// the head, body.rs); hand → body and docked → head are the protocol's fallbacks.
+    /// The frame a request resolves to: head and world exist (spec §5; the world for a layer surface
+    /// is the shell's anchor, anchor.rs); hand → world and docked → head are the protocol's fallbacks.
     pub fn resolve_frame(&self, wanted: Frame) -> Frame {
         if self.frames_available & (1 << wanted as u32) != 0 {
             return wanted;
         }
         match wanted {
-            Frame::HandLeft | Frame::HandRight | Frame::Body => {
-                if self.frames_available & (1 << Frame::Body as u32) != 0 {
-                    Frame::Body
-                } else {
-                    Frame::Head
-                }
-            }
+            Frame::HandLeft | Frame::HandRight => Frame::World,
             Frame::Docked | Frame::Head => Frame::Head,
             Frame::World => Frame::World,
         }
     }
 
-    /// The `FrameId` in the scene for a resolved frame.
+    /// The `FrameId` in the scene for a resolved frame: a world-framed layer surface hangs off the
+    /// shell's anchor (seeded in front of the wearer, re-seated on recenter — anchor.rs), so the
+    /// scene's bare world frame carries only the window tiers' places.
     pub fn frame_id(&self, scene: &crate::scene::Scene<crate::state::Payload>, frame: Frame) -> FrameId {
         match frame {
-            Frame::World => scene.world,
-            Frame::Body => scene.body,
+            Frame::World => scene.anchor,
             _ => scene.head,
         }
     }
@@ -386,7 +382,7 @@ pub fn shrink_usable(s: &LayerSurfaceCachedState, zone_px: i32, usable: &mut Rec
 }
 
 /// A quaternion about +X (pitch, radians; positive tilts the top away).
-fn quat_pitch(p: f32) -> xr::Quaternionf {
+pub fn quat_pitch(p: f32) -> xr::Quaternionf {
     let (s, c) = (p * 0.5).sin_cos();
     xr::Quaternionf { x: s, y: 0.0, z: 0.0, w: c }
 }
@@ -430,17 +426,16 @@ pub fn take_prefs(st: &mut Zxr) {
     }
 }
 
-/// The pixel rectangle of a frame this arrange (research/77 §3.1, §9 Q2: the world frame reports
-/// the head rectangle's extent at the spawn distance and honours no exclusive angles).
+/// The pixel rectangle of a frame this arrange (research/77 §3.1): the head rectangle's extent at
+/// the head distance for every frame — the world frame's layer surfaces hang off the shell's
+/// anchor at the same distance the head frame's do (rev 3.16; research/77 §9 Q2's spawn-distance
+/// world rectangle described world surfaces placed among windows, a case the `typed` rule now
+/// covers per window). Exclusive bands apply in both.
 fn frame_rect(st: &Zxr, frame: Frame) -> FrameRect {
     let h = st.shell.head;
     let size = head_mode_size(&h);
     let ppd = FRAME_PX_W as f32 / h.extent_h_deg.max(1.0);
-    let distance = match frame {
-        Frame::World => st.policy.cfg.spawn.distance_m.max(0.1),
-        _ => h.distance_m,
-    };
-    FrameRect { frame, size, ppd, distance_m: distance, usable: Rectangle::from_size(size) }
+    FrameRect { frame, size, ppd, distance_m: h.distance_m, usable: Rectangle::from_size(size) }
 }
 
 /// Arrange every layer member (the doc comment above): per frame, two passes in sway's order;
@@ -451,7 +446,7 @@ pub fn arrange(st: &mut Zxr) {
     st.shell.arranges += 1;
     st.journal.layer_arranges += 1;
     st.shell.typed_follow = None;
-    // resolve every entry's frame first (row > client > seed > body)
+    // resolve every entry's frame first (row > client > seed > world)
     let typed = typed_target(st);
     st.shell.typed_member = typed.map(|t| t.member);
     let mut typed_members: Vec<MemberId> = Vec::new();
@@ -459,8 +454,8 @@ pub fn arrange(st: &mut Zxr) {
         let mut fs = Vec::new();
         for i in 0..st.shell.layers.len() {
             let e = &st.shell.layers[i];
-            // the wearer's row > the client's request > the seed row > body (shell-plane §2.6:
-            // seeds are the defaults for clients that ask nothing — the unaware ones; the body
+            // the wearer's row > the client's request > the seed row > world (shell-plane §2.6:
+            // seeds are the defaults for clients that ask nothing — the unaware ones; the world
             // because nothing the wearer aims at is head-locked, spatial-input §13)
             let asked = st.shell.rows.get(&e.namespace).and_then(|r| r.frame).or_else(|| anchoring::requested_frame(e.surface.wl_surface()).map(PlaceFrame::Frame)).or_else(|| place::seed(&e.namespace).and_then(|r| r.frame));
             let wanted = match asked {
@@ -470,13 +465,16 @@ pub fn arrange(st: &mut Zxr) {
                     typed_members.push(e.member);
                     typed.map(|t| t.frame).unwrap_or(e.frame)
                 }
-                None => Frame::Body,
+                None => Frame::World,
             };
             let f = st.shell.resolve_frame(wanted);
             st.shell.layers[i].frame = f;
-            // the member's place follows the frame
+            // the member's place follows the frame; a `typed` member hanging below a world *window*
+            // is posed in world coordinates (`typed_pose`, `typed_tick`), so its place is the bare
+            // world frame rather than the shell's anchor
             let member = st.shell.layers[i].member;
-            let fid = st.shell.frame_id(&st.scene, f);
+            let under_window = typed.map(|t| t.window).unwrap_or(false) && typed_members.contains(&member);
+            let fid = if under_window { st.scene.world } else { st.shell.frame_id(&st.scene, f) };
             if let Some(place) = st.scene.get(member).map(|m| m.place) {
                 st.scene.reparent_place(place, fid);
             }
@@ -484,8 +482,8 @@ pub fn arrange(st: &mut Zxr) {
                 fs.push(f);
             }
         }
-        // the head and body rectangles always exist: the lock surface and the window tiers read them
-        for f in [Frame::Head, Frame::Body] {
+        // the head and world rectangles always exist: the lock surface and the window tiers read them
+        for f in [Frame::Head, Frame::World] {
             if !fs.contains(&f) {
                 fs.push(f);
             }
@@ -540,7 +538,7 @@ pub fn arrange(st: &mut Zxr) {
                 _ => 0,
             };
             let mapped = st.shell.layers[i].mapped;
-            if mapped && zone_px > 0 && frame != Frame::World && window_rect.is_none() {
+            if mapped && zone_px > 0 && window_rect.is_none() {
                 shrink_usable(&s, zone_px, &mut usable);
             }
             // the size the client is asked for (arrange → configure, research/77 §2.2)
@@ -607,7 +605,7 @@ pub fn arrange(st: &mut Zxr) {
 /// The surface being typed into, as the arrangement sees it (`PlaceFrame::Typed`; research/36 §7:
 /// every shipping keyboard is bound to the panel with the focused field). smithay's *active*
 /// text input (an enabled `zwp_text_input_v3`) names the surface; its member gives the frame —
-/// a layer member's arranged frame, a window's the world, the lock surface's the body.
+/// a layer member's arranged frame, a window's the world, the lock surface's the world (anchor).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TypedTarget {
     pub member: MemberId,
@@ -631,7 +629,7 @@ pub fn typed_target(st: &Zxr) -> Option<TypedTarget> {
     if m.m.window.is_window() {
         Some(TypedTarget { member, frame: Frame::World, window: true })
     } else {
-        Some(TypedTarget { member, frame: Frame::Body, window: false })
+        Some(TypedTarget { member, frame: Frame::World, window: false })
     }
 }
 
@@ -697,18 +695,18 @@ fn box_centre_deg(bx: Rectangle<i32, Logical>, rect: &FrameRect) -> (f32, f32) {
     (cx / rect.ppd, cy / rect.ppd)
 }
 
-/// The head and body frames' exclusive bands as the window tiers see them (spec §4: the tiers
-/// honour the wearer-carried frames' usable rectangles at spawn): the reserved strips, in
-/// head-relative angles, for the free engine's occupancy pass. The body frame is the head's
-/// yaw-only derivative (body.rs), so its strips are the same arithmetic turned by the yaw the body
-/// currently lags the head by; the free engine's basis is the head's horizontal forward.
+/// The head and world (anchor) frames' exclusive bands as the window tiers see them (spec §4: the
+/// tiers honour the shell frames' usable rectangles at spawn): the reserved strips, in
+/// head-relative angles, for the free engine's occupancy pass. The anchor is upright at the
+/// heading it was seeded with (anchor.rs), so its strips are the same arithmetic turned by the yaw
+/// the head currently differs from it; the free engine's basis is the head's horizontal forward.
 pub fn exclusive_occupancy(st: &Zxr) -> Vec<crate::policy::free::AngularBounds> {
     let mut out = Vec::new();
-    let head_yaw = st.input.head.map(|h| body::yaw_of(h.orientation)).unwrap_or(0.0);
-    // a body-frame azimuth `a` (positive right) sits at head-azimuth `a + (head_yaw − body_yaw)`:
-    // a head turned left of the body sees the body's forward to its right
-    let body_offset_deg = if st.shell.body.seated { body::yaw_delta(st.shell.body.yaw, head_yaw).to_degrees() } else { 0.0 };
-    for (frame, az_offset) in [(Frame::Head, 0.0), (Frame::Body, body_offset_deg)] {
+    let head_yaw = st.input.head.map(|h| anchor::yaw_of(h.orientation)).unwrap_or(0.0);
+    // an anchor-frame azimuth `a` (positive right) sits at head-azimuth `a + (head_yaw − anchor_yaw)`:
+    // a head turned left of the anchor sees the anchor's forward to its right
+    let anchor_offset_deg = if st.shell.anchor.seated { anchor::yaw_delta(st.shell.anchor.yaw, head_yaw).to_degrees() } else { 0.0 };
+    for (frame, az_offset) in [(Frame::Head, 0.0), (Frame::World, anchor_offset_deg)] {
         let Some(r) = st.shell.rect(frame) else { continue };
         frame_strips(r, az_offset, &mut out);
     }
@@ -812,7 +810,7 @@ pub fn describe(st: &Zxr) -> String {
         s.push_str(&format!("zone: frame={:?} rect={}x{} extent={:.1}x{:.1}deg ppd={:.2} distance={:.2} usable={}x{}+{}+{}\n", r.frame, r.size.w, r.size.h, eh, ev, r.ppd, r.distance_m, r.usable.size.w, r.usable.size.h, r.usable.loc.x, r.usable.loc.y));
     }
     s.push_str(&format!(
-        "shell-counters: layers={} arranges={} configures={} focus_overrides={} override={:?} restricted={} trusted={} trusted_lost={} binds_filtered={} motion_deduped={} lock={:?} relocks={} triggers={} mode={:?} frames={} members_composed={} osk_band={:?} osk_raised={:?} osk_raises={} osk_restarts={} body_yaw_deg={:.1} body_reseat_ticks={} typed={:?} osk_follows={}\n",
+        "shell-counters: layers={} arranges={} configures={} focus_overrides={} override={:?} restricted={} trusted={} trusted_lost={} binds_filtered={} motion_deduped={} lock={:?} relocks={} triggers={} mode={:?} frames={} members_composed={} osk_band={:?} osk_raised={:?} osk_raises={} osk_restarts={} anchor_yaw_deg={:.1} anchor_reseats={} typed={:?} osk_follows={}\n",
         st.shell.layers.len(),
         st.shell.arranges,
         st.shell.configures,
@@ -833,8 +831,8 @@ pub fn describe(st: &Zxr) -> String {
         st.shell.layers.iter().find(|e| e.namespace == "osk").and_then(|e| st.scene.raised(e.member)),
         st.journal.osk_raises,
         st.journal.osk_restarts,
-        st.shell.body.yaw.to_degrees(),
-        st.journal.body_reseat_ticks,
+        st.shell.anchor.yaw.to_degrees(),
+        st.journal.anchor_reseats,
         st.shell.typed_member.map(|m| m.0.index()),
         st.journal.osk_follows
     ));

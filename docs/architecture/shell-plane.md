@@ -1,6 +1,6 @@
 # The shell plane — components as processes, the compositor's shell-layer half, and the toolkit
 
-**Status: DRAFT, rev 0.6 (2026-09-28; rev 0.5 + §3.2 `mura-osk` built — the OSK on the platform's `input-method` feature, squeekboard's shape, measured nested at G2). Rev 0.5 (2026-09-28; rev 0.4 + the body frame as the **default placement** — nothing head-locked unless it asks (§2.6, §3.1, §3.4, §3.6; spatial-input §13) — and the input floor as one rule for every surface). Rev 0.4 (2026-09-28; rev 0.3 + the body frame built and the OSK bound to the surface it types into — §2.6 the `typed` seed and the body frame's definition, §3.2 the OSK's frame, §6 the seed-provenance item; spec §4/§5 rev 3.14). Rev 0.3 (2026-09-28; rev 0.2 + ADR 0007 amendment 2 and research/78 — §2.3 greeter
+**Status: DRAFT, rev 0.7 (2026-09-29; rev 0.6 + the body frame withdrawn — §2.6 the **world** fallback on the shell's anchor, seeded where the scene appears and re-seated only by recenter; every `body` frame in §3 is `world`; no comparable had a body frame, research/78 §9 F23). Rev 0.6 (2026-09-28; rev 0.5 + §3.2 `mura-osk` built — the OSK on the platform's `input-method` feature, squeekboard's shape, measured nested at G2). Rev 0.5 (2026-09-28; rev 0.4 + the body frame as the **default placement** — nothing head-locked unless it asks (§2.6, §3.1, §3.4, §3.6; spatial-input §13) — and the input floor as one rule for every surface). Rev 0.4 (2026-09-28; rev 0.3 + the body frame built and the OSK bound to the surface it types into — §2.6 the `typed` seed and the body frame's definition, §3.2 the OSK's frame, §6 the seed-provenance item; spec §4/§5 rev 3.14). Rev 0.3 (2026-09-28; rev 0.2 + ADR 0007 amendment 2 and research/78 — §2.3 greeter
 mode is the socketpair kiosk, the lock is an `ext-session-lock` client under a user unit; §3.1 the
 program's modes, unit, seams and surface roles; §3.2 the OSK as zxr's child in every mode (KWin's IM
 shape); §4 the sctk platform with the AccessKit bridge and the Stage B gate; §6 items).
@@ -39,7 +39,7 @@ toolkit Mura's own components are written with and the components Mura carries i
 for `xdg-activation`/`xdg-decoration` and the freedesktop *specifications* (desktop entries, base
 directories) for entries and configuration — never xdg-desktop-portal, which is the service
 plane's. Frames are [places-model.md](places-model.md)'s and `protocols/zxr-layer-anchoring-v1.xml`'s
-(`head`, `body`, `hand_left`/`hand_right`, `world`, `docked`; XrSpace-grounded). systemd unit
+(`head`, `hand_left`/`hand_right`, `world`, `docked`; XrSpace-grounded; rev 0.7: no `body`). systemd unit
 vocabulary is systemd's (`PartOf=`, `Restart=`, `graphical-session.target`).
 
 **Budget impact** (overview invariant 9; [budgets.md §3](budgets.md): the shell plane is
@@ -82,7 +82,7 @@ one compositor cost found is a *saving*: motion dedupe for a still pointer (§2.
    binary names exists; a third-party panel the administrator installs is as unrestricted as Mura's.
 4. **It is placed by a frame, not an output edge.** Layer-shell keeps its four layers and its
    exclusive-zone and keyboard-interactivity semantics; `zxr-layer-anchoring-v1` adds the frame
-   (`head`, `body`, `hand_*`, `world`, `docked`) and the *exclusive angular band* that is the
+   (`head`, `hand_*`, `world`, `docked`) and the *exclusive angular band* that is the
    exclusive zone's XR form. A layer-shell client that knows nothing of anchoring is placed on the
    **head** frame (the protocol's default, `zxr-layer-anchoring-v1.xml:118-120`), so waybar, mako or
    squeekboard run unmodified.
@@ -111,7 +111,7 @@ or 5 (`overlay`) of the layer list (spec §4); `background` is the environment's
 wallpaper client's (accepted, not composed until the environment design admits it — spec §14).
 Its frame is the anchoring request's or **head** by default. **Arrangement** is wlroots'
 arithmetic in sway's pass order, run per frame in the frame's pixel rectangle on the surface's
-commit/map/unmap and never per tick: the usable rectangle is per frame (a body-frame panel never
+commit/map/unmap and never per tick: the usable rectangle is per frame (a world-frame panel never
 shrinks the head frame); a positive zone reserves `zone + margin` on the surface's one exclusive
 edge; `set_exclusive_angle` is the same zone in degrees; the client is configured with the
 arranged pixel size on its first commit *after* arranging, so unaware clients' own sizing
@@ -135,22 +135,25 @@ The table is the relocatable settings template **`shell.place:<namespace>`** wit
 (any frame the compositor advertises), `azimuth_deg`, `elevation_deg`, `distance_m`, `pitch_deg`,
 `width_deg` (0 = compositor's choice). **Precedence:** a row wins over the client's
 `zxr-layer-anchoring-v1` request; without a row the client's request applies; without either the
-**body fallback** (rev 0.5, ruled 2026-09-28: the body frame's rectangle is the head's extent at
-its distance, `shell.head.{extent_h_deg,extent_v_deg,distance_m}`, 90×70° at 0.5 m — the anchoring
-protocol's own example and WiVRn/WayVR's distance). Nothing is head-locked unless it asks: the
-scenes the head aims at stay put while the head moves (PICO Head Control Mode, Cardboard, HoloLens
-tag-along, the visionOS HIG — spatial-input §13); the lock surface is placed the same way. A grab on a shell plane (the WM
-branch's grab mechanics) writes the row; `mura-settings set shell.place:osk.frame body` is the same
+**world fallback** (rev 0.7, ruled 2026-09-29; rev 0.5 had said "body": the world frame's rectangle
+is the head's extent at its distance, `shell.head.{extent_h_deg,extent_v_deg,distance_m}`, 90×70° at
+0.5 m — the anchoring protocol's own example and WiVRn/WayVR's distance — hung off the shell's **world
+anchor**: the head's position and heading captured when the scene first appears, re-seated only by
+recenter, spec §5). Nothing is head-locked unless it asks, and nothing follows unless the wearer
+turns following on: an aimed-at scene stays where it was summoned (visionOS, Android XR, HoloLens,
+SteamVR's dashboard, wayvr's `Floating` — spatial-input §13); the lock surface is placed the same way. A grab on a shell plane (the WM
+branch's grab mechanics) writes the row; `mura-settings set shell.place:osk.frame head` is the same
 write by hand; `Reset`/`DeleteInstance` returns to the seed. **Seed rows** (the consumer's defaults
 for an instance without a stored value, GNOME's shape): `osk` → **`typed`** — the frame of the
 surface it types into (research/36 §7's convergence: WiVRn, xrdesktop, visionOS, Quest all bind
 the keyboard to the focused panel; wayvr's body-anchored keyboard, the previous seed's source, was
 the outlier — rev 0.4, spec §4 rev 3.14); `notifications` → head, upper-right (mako's anchor;
-head-locked toasts, research/36 §4); a bar → body, bottom (research/60 §9 — *the same provenance
-the OSK seed had; a rethink candidate, §6*). **The body frame is built** (rev 0.4; spec §5): the
-head's position and yaw, pitch and roll removed, the yaw re-seated lazily with the wearer's
-`wm.follow.*` — the shape MRTK's `Follow`, Overte's torso, wayvr's anchor and visionOS's recenter
-share, since no headset tracks a torso. The frame set grows with the compositor (`frames` bitfield): a keyboard on the real desk is `frame = world` with
+head-locked toasts, research/36 §4); a bar → world, bottom (research/60 §9 — *the same provenance
+the OSK seed had; a rethink candidate, §6*). **There is no body frame** (rev 0.7; spec §5;
+research/78 §9 F23): rev 0.4–0.6 built one — the head's position every tick, its yaw re-seated
+lazily — and no comparable has it (OpenXR's spaces, visionOS, HoloLens, Android XR, SteamVR, wayvr
+are all world + recenter, with following opt-in); the world anchor replaces it and `wm.follow.*`
+stays the wearer's opt-in per surface (Q6). The frame set grows with the compositor (`frames` bitfield): a keyboard on the real desk is `frame = world` with
 a pose now and a surface-detected frame when the perception plane offers one. Unaware clients
 (squeekboard, mako, waybar) are placed by the same rows — the namespace is theirs already.
 
@@ -245,7 +248,7 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
   zone −1 (cosmic-greeter, gtkgreet `-l`, phosh's lock all do exactly this); in lock mode as
   `ext_session_lock_surface_v1` per output (swaylock, cosmic-greeter's locker), which zxr composes
   as a band-5 head-frame member (spec §9).
-- **Frame:** `body` (the default — rev 0.5; the program asks for nothing), at the head config's distance: floating in front, head free, coming along when the wearer turns, so head-aim and dwell can reach every target (spatial-input §13); docked: additionally flat on the docked output (ADR 0015).
+- **Frame:** `world` (the default — rev 0.7; the program asks for nothing), at the head config's distance on the shell's anchor: floating in front where it appeared, head free, brought back by recenter, so head-aim and dwell can reach every target (spatial-input §13); docked: additionally flat on the docked output (ADR 0015).
 - **Input floor:** operable by head ray + `hmdButtons.<selectRole>` and by dwell alone; targets sized
   for a 1.5° ray (research/37); a physical keyboard types into it; the OSK (§3.2) is its keyboard
   path.
@@ -283,11 +286,11 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
   GUI (`client/constants.h:87-88`: (0, −0.3, 0.1) m, pitch −0.6 rad), xrdesktop shows one per
   focused window, visionOS and Quest float it near the field; none anchors it to the body (wayvr's
   anchored keyboard was the one exception and the previous seed's source — research/78 §9 F8).
-  So: under the greeter or a body/head-frame panel the OSK is that frame's bottom band (its own
+  So: under the greeter or a world/head-frame panel the OSK is that frame's bottom band (its own
   layer-shell anchors, zone respected — gate 9); under a world-frame window it is arranged against
   the window's rectangle (the window's width) and hangs below it with WiVRn's offset, sized at the
   window's distance, following the window when it moves (spec §4 rev 3.14; gate 9 (h)). A wearer's
-  row (`shell.place:osk.frame body`, or a grab) still wins. `hand_*` when a hand is tracked stays a
+  row (`shell.place:osk.frame head`, or a grab) still wins. `hand_*` when a hand is tracked stays a
   settings key for the Mura OSK.
 - **Visibility:** the protocol's — shown on `activate`, hidden on `deactivate`; `sm.puri.OSK0`
   `SetVisible` is a preference (phosh's rule: "any text input can make the keyboard show again");
@@ -321,7 +324,7 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
 - **Seams:** layer `top`, keyboard `none` (or `on_demand` while a popover is open), exclusive
   angular band = its height; `ext_foreign_toplevel_list` for a task strip if it has one;
   `xdg_activation` for launches; StatusNotifier, UPower, login1, NetworkManager over D-Bus.
-- **Frame:** `body` at the periphery (research/60 §1: bands with windows between); docked: the
+- **Frame:** `world` at the periphery (research/60 §1: bands with windows between); docked: the
   docked output's edge.
 - **Not** cosmic-panel's nested-server design: applets are not separate processes behind the panel
   (flagged in research/75 §3.3 as the one structural novelty; it costs a second compositor). A
@@ -338,7 +341,7 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
 - **Seams:** layer `overlay`, keyboard `none` for indicators (auto-close 3 s, cosmic-osd's), zone 0;
   the polkit dialog `exclusive` on `overlay`; triggers over D-Bus subscriptions (audio, backlight,
   the compositor's mode signals), never a private protocol (§2.4).
-- **Frame:** `head` for the 3-s indicators only (small head-locked transients, exempt from the motion caps — research/36 §4; the one deliberate head placement besides toasts); the polkit dialog and anything the wearer must aim at: `body` (rev 0.5, spatial-input §13).
+- **Frame:** `head` for the 3-s indicators only (small head-locked transients, exempt from the motion caps — research/36 §4; the one deliberate head placement besides toasts); the polkit dialog and anything the wearer must aim at: `world` (rev 0.7, spatial-input §13).
   (research/36 §4).
 
 ### 3.5 Notifications — carried (mako), then Mura
@@ -370,7 +373,7 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
 - **Seams:** layer `overlay`, keyboard `exclusive` while shown, zone −1 (fuzzel, cosmic-launcher);
   `xdg_activation` tokens on every launch; `zwp_text_input_v3` for its search field;
   `ext_foreign_toplevel_list` for running-app results.
-- **Frame:** `body` at the spawn distance when summoned (rev 0.5: an aimed-at scene is never head-locked, spatial-input §13; fuzzel and cosmic-launcher float where they were summoned).
+- **Frame:** `world` where summoned (rev 0.7: an aimed-at scene is never head-locked and never follows unasked, spatial-input §13; fuzzel and cosmic-launcher float where they were summoned).
 
 ### 3.7 Task switcher and places overview — Mura, after M1
 
@@ -496,7 +499,7 @@ Nothing in the compositor knows a component's name.
 - **The Slint AccessKit crate** (§4): a crate beside Slint on `i-slint-core`'s internals at the
   pinned version until upstream exposes accessibility to custom platforms; re-pinned at each Slint
   upgrade. Decider: the owner, at each Slint upgrade.
-- **The bar/panel seed row** (§2.6: body, bottom, −25°, pitch −5°, "research/60 §9's dock") has
+- **The bar/panel seed row** (§2.6: world, bottom, −25°, pitch −5°, "research/60 §9's dock") has
   the provenance the OSK seed had — a taxonomy entry with the comparables fitted afterwards, none
   read for a dock's placement. Rethink candidate (rule 7): read the shells' dock placements
   (Horizon's Navigator, visionOS's Home View, xrdesktop, wayvr's watch) before `mura-panel` lands.
@@ -506,7 +509,7 @@ Nothing in the compositor knows a component's name.
   when the Mura OSK lands.
 - **`LockedHint` from zxr** when a trigger fires before any client has locked (session-auth §7).
   Decider: the owner, at G3.
-- **The OSK's frame and its Slint successor's layout for a ray** (`body` vs `hand_*`, key size, dwell
+- **The OSK's frame and its Slint successor's layout for a ray** (`world` vs `hand_*`, key size, dwell
   behaviour). Decider: the Mura OSK's design (research/36 §7 patterns), after the carried phase.
 - **Decoration chrome in 3D** — window-workspace-management's manipulation UI (research/75 Q6).
 - **The polkit agent's co-location** with the OSD: cosmic-osd's shape adopted; revisit if the agent
