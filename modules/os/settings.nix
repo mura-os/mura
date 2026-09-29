@@ -88,15 +88,16 @@ in
     # `shell.place:<namespace>` instances, one per layer-shell namespace (`osk`, `notifications`,
     # `waybar`, …), written by the wearer's grab on a shell plane or by hand. A row wins over the
     # client's zxr-layer-anchoring request; without a row the request applies; without either the
-    # head fallback (`shell.head.*`). Hyprland's layer rules by namespace are the precedent. The
-    # template's defaults are the head fallback; zxr's seed rows for the carried components'
+    # world fallback (the head rectangle `shell.head.*` hung off the shell's anchor; specs/zxr-core.md
+    # §4–§5). Hyprland's layer rules by namespace are the precedent. The template's defaults are that
+    # fallback; zxr's seed rows for the carried components'
     # namespaces (research/77 §3.3a) apply to an instance with no stored value. Class
     # `preference` (the default): a row is the wearer's intent whether typed or grabbed into place
     # (settings-schema.md §2 — GNOME's favorite-apps shape), and it lives where zxr's one inotify
     # watch looks (`$XDG_CONFIG_HOME/mura/settings`).
     mura.settings.templates."shell.place" = {
       keys = {
-        frame = { type = "enum"; values = [ "head" "body" "hand_left" "hand_right" "world" "docked" "typed" ]; default = "head"; description = "The anchoring frame (zxr-layer-anchoring-v1's enum), or `typed`: the frame of the surface being typed into — the OSK's seed (research/36 §7: every shipping keyboard is bound to the focused panel). An unavailable frame falls back per the protocol (hand → body, docked → head)."; };
+        frame = { type = "enum"; values = [ "head" "hand_left" "hand_right" "world" "docked" "typed" ]; default = "world"; description = "The anchoring frame (zxr-layer-anchoring-v1's enum), or `typed`: the frame of the surface being typed into — the OSK's seed (research/36 §7: every shipping keyboard is bound to the focused panel). An unavailable frame falls back per the protocol (hand → world, docked → head); no frame at all is the world (spatial-input §13: nothing the wearer aims at is head-locked unless it asks)."; };
         azimuth_deg = { type = "double"; default = 0.0; range = { min = -180.0; max = 180.0; }; description = "Centre azimuth in the frame, degrees (positive = right)."; };
         elevation_deg = { type = "double"; default = 0.0; range = { min = -90.0; max = 90.0; }; description = "Centre elevation in the frame, degrees (positive = up)."; };
         distance_m = { type = "double"; default = 0.5; range = { min = 0.2; max = 5.0; }; description = "Presentation distance from the frame origin, metres."; };

@@ -175,7 +175,7 @@ pub struct Journal {
     pub lock_triggers: u64,
     /// `ext_session_lock_v1.lock` accepted after the previous locker died (Defunct)
     pub lock_relocks: u64,
-    /// ticks in which the body frame's yaw moved toward the head's (shell/body.rs)
+    /// re-seats of the shell's world anchor by recenter (shell/anchor.rs `reseat`)
     pub anchor_reseats: u64,
     /// re-poses of a `typed` member under a moving window (shell/mod.rs `typed_tick`)
     pub osk_follows: u64,

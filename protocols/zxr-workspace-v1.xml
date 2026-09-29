@@ -199,12 +199,12 @@
       <description summary="place kinds">
         The lifecycle kind of the place. A transient place exists only while
         it has members; a pinned place is a persistent named object that may
-        be empty; an overlay place is attached to a body-relative frame and
+        be empty; an overlay place is attached to a wearer-carried frame (head or hand) and
         never competes for location-derived currency.
       </description>
       <entry name="transient" value="0" summary="implicit, evaporates when empty"/>
       <entry name="pinned" value="1" summary="persistent, may be empty"/>
-      <entry name="overlay" value="2" summary="body-relative, always present"/>
+      <entry name="overlay" value="2" summary="wearer-carried frame (head or hand), always present"/>
     </enum>
 
     <enum name="anchor_state">
