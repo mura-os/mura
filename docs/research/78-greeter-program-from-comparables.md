@@ -212,8 +212,9 @@ Mura mode:
 - **Furniture:** clock (all), power menu over **logind D-Bus** (cosmic; SDDM's daemon; LightDM's
   `power.c` — not shell commands: `allow_active` is what makes it work without a helper,
   multi-user §2), suspend/hibernate only when `Can*` says yes, confirm dialogs with a timeout
-  (cosmic `greeter.rs:1657-1696`), caps-lock indicator (cosmic, tuigreet), battery and network
-  (cosmic UPower/NM; multi-user §2's Wi-Fi join with the GDM polkit rule), the a11y menu
+  (cosmic `greeter.rs:1657-1696`), caps-lock indicator (cosmic, tuigreet), battery (cosmic
+  UPower) — *not* network: cosmic's is a read-only status icon (`networkmanager.rs:60-63`) and the
+  Wi-Fi join multi-user §2 once listed with GDM's polkit rule was ruled out 2026-09-29 (§9 F17), the a11y menu
   (first-run-onboarding §4.4's input-floor controls; cosmic's screen reader/magnifier/
   high-contrast), the OSK as a sibling trusted client, not the program's own widget.
 - **Layouts:** cosmic's keyboard-layout switcher rides a cosmic protocol; Mura's seat keymap is
@@ -317,9 +318,10 @@ pinned version, and the compiler's `EmbedTextures` hack is sidestepped by carryi
   mode is `Greeter`); lock mode needs the relay fd (`--lock` spawn variant of
   `shell/filter.rs::spawn_trusted` with a second socketpair) once the lock machine exists; the
   program itself is a new package (`pkgs/mura-greeter`, Slint).
-- `modules/os/session.nix` — G2's one-line swap (`greeterCommand`), plus the polkit rule for the
-  greeter user's Wi-Fi (multi-user §2, research/11 §11.I), plus `XDG_CURRENT_DESKTOP` in the
-  environments line if the program is to pass it.
+- `modules/os/session.nix` — G2's one-line swap (`greeterCommand`), plus `XDG_CURRENT_DESKTOP` in
+  the environments line if the program is to pass it. (This list once also named the polkit rule
+  for the greeter user's Wi-Fi — multi-user §2, research/11 §11.I; it lived in `policy.nix` and
+  was withdrawn by ruling 2026-09-29, §9 F17.)
 
 ## 9. Determinations and owner items
 
@@ -536,6 +538,34 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   carry lavapipe's extension set is the suspect. Six other fixture runs today did not reproduce
   it. Recorded for the owner: a VM-only concern (F14's driver), and the recovery ladder covered
   it; not a G3 blocker.
+- **F17 — Wi-Fi leaves the greeter; the greeter polkit rule is withdrawn (ruled 2026-09-29).**
+  Multi-user §2 rev 3.1–3.7 listed "a network menu that can join Wi-Fi" in the standard set and
+  D2 shipped GDM's rule for it (`settings.modify.system` for `greeter` when `subject.local &&
+  subject.active`, `modules/os/policy.nix`); the program never built the menu (implementation-path
+  rev 4.9 flagged it). Evidence re-read for the ruling: among the inventoried greeters **only GDM**
+  has a pre-auth network UI (research/11 §11.D) — and it has one because its greeter is gnome-shell,
+  whose `gdm` session mode simply keeps `networkAgent` and `quickSettings`
+  (`gnome-shell/js/ui/sessionMode.js:56-62`); GDM 48 then added the polkit rule so the connection
+  that menu makes outlives the login (`gdm/NEWS:283-285` "Allow changing global network settings",
+  `gdm/data/polkit-gdm.rules.in:1-8`; the Ubuntu bug that drove it says why: without the rule the
+  connection "will only be usable from the login screen, which is quite useless" — [external],
+  Launchpad #2098016). Every greeter without such a UI ships no such rule: SDDM, LightDM, gtkgreet,
+  regreet, tuigreet (§11.D), and cosmic-greeter, whose `networkmanager` feature is a status icon
+  computed from `active_connections()` with no connect path (`cosmic-greeter/src/networkmanager.rs:60-63`;
+  `Cargo.toml:60-61, 99-102`). The rule was therefore a grant with no consumer; the owner ruled
+  "drop Wi-Fi from the greeter and leave Wi-Fi to onboarding". Consequences encoded: the rule and
+  its comment removed from `policy.nix` (the wheel time-zone rule stays); the multi-user fixture's
+  D2 subtest asserts no rule names `greeter` while `mura-setup`'s `settings.modify.system` grant
+  (oob.nix, every profile) and the wheel rule remain; the G2 exit criterion "a Wi-Fi profile added
+  at the greeter is a system connection" withdrawn; multi-user §2/§3.1, ADR 0018 decision 9,
+  first-run §5 and check 13, shell-plane §3.1, the registry rows, research/11 §11.D/§11.I and doc
+  42 §7.3 annotated. What the `greeter` session can still do under NetworkManager's stock policy
+  — activate existing connections, scan, add `permissions=user:greeter` ones (`policy.in:67-85,
+  105-113`) — is unchanged and unused: `pkgs/mura-greeter` has no NetworkManager client
+  (`grep -ri networkmanager pkgs/mura-greeter` is empty). *Judged, not derived:* the ruling itself
+  is the owner's; the rule's removal follows from "no UI ⇒ no consumer" plus every no-UI
+  comparable shipping no rule, and is recorded here so it can be reversed with the rule text in
+  the git history if a network menu is ever built.
 - **Also seen:** `input::theme` has two unit tests that both set `XCURSOR_THEME`/`XCURSOR_PATH`
   and race under cargo's parallel test threads (green with `--test-threads=1`); pre-existing, a
   test-hygiene item.

@@ -224,7 +224,9 @@ third-party program shipped as is (rule 5 makes it replaceable); "Mura" means wr
   non-secret numeric hint — ADR 0007/0018), the session list from the file the module system
   writes (`/etc/greetd/environments`, gtkgreet's list; a `wayland-sessions` scan if a second shell
   ever ships — research/78 §4), the standard furniture of multi-user.md §2 (power menu over logind, clock,
-  session chooser, accessibility toggles), and the multi-user profile's create-guest flow (ADR 0018
+  session chooser, accessibility toggles — **no network menu**: ruled 2026-09-29, multi-user rev 3.8;
+  Wi-Fi before a user exists is `mura-setup`'s, first-run-onboarding §5, and after login the
+  panel's, §3.3), and the multi-user profile's create-guest flow (ADR 0018
   decision 9). In lock mode it is resident, waits for logind's `Session.Lock`, locks through
   `ext-session-lock-v1`, **spawns and reads `mura-authd`** (session-auth §2 rev 6; kscreenlocker's
   worker, swaylock's PAM child), renders the prompt batches, and unlocks with `unlock_and_destroy`

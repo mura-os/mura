@@ -350,6 +350,8 @@ and `wifi.scan` `any=auth_admin / inactive=yes / active=yes` (`:67-83`); `settin
 `inactive=no / active=yes` (`:40-45,87-101`). Any active greeter session may activate existing
 connections and add *own* ones without auth; system-wide ones need a distro rule like GDM's —
 **a discretionary policy choice for Mura** (AGENTS.md rule 4), recorded in doc 42 §7.3.
+*Ruled 2026-09-29: dropped* — the greeter carries no network menu and no such rule (multi-user
+rev 3.8 §2; research/78 §9 F17); GDM's rule serves GDM's own UI (`gdm/NEWS:283-285`).
 
 ### 11.E Clock / banner / hostname
 
@@ -415,7 +417,8 @@ no greeter ships `nullok` itself, and GDM alone forbids null tokens (remote disp
 - **Pre-auth Wi-Fi scope**: parity with GDM needs a Mura polkit rule for the greeter user
   (`settings.modify.system` when `subject.local && subject.active`); otherwise pre-login
   connections are `permissions=user:greeter` and invisible to the logged-in user. Discretionary
-  (doc 42 §7.3).
+  (doc 42 §7.3). *Ruled 2026-09-29: dropped* — no network menu in the greeter, no rule;
+  pre-user Wi-Fi is onboarding's (multi-user rev 3.8 §2, research/78 §9 F17).
 - **Breeze SDDM theme** not pinned (`plasma-login-manager` [external]).
 - gnome-session's `CanShutdown` → login1 mapping, lightdm-gtk-greeter a11y, and polkit's
   session-activeness backend are [external].

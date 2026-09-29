@@ -5,7 +5,9 @@ credential — `pam_mura_pin` withdrawn) and decision 7 (per-user state), and ad
 (greeter furniture + Wi-Fi rule), following the [research/42](../../research/42-input-bootstrap.md)
 review and [ADR 0017 rev 2](0017-first-run-provisioning.md); **rev 3.3 (same day, D1)** amends
 decision 2 — the account database persists through a mutable `/etc` overlay on `/persist`, not
-`passwordFilesLocation` + symlinks. Rev 3 is the Linux-native reframe: rev 2 had imported
+`passwordFilesLocation` + symlinks; **rev 3.4 (2026-09-29)** amends decision 9 — the network
+menu and its polkit rule leave the greeter (owner's ruling; multi-user rev 3.8). Rev 3 is the
+Linux-native reframe: rev 2 had imported
 policy from closed consumer platforms — an account cap, PIN-as-the-login-credential, an "owner"
 role above ordinary Unix — in violation of what became [AGENTS.md](../../AGENTS.md) /
 overview invariant 10. Those are **rescinded**. Rev 2's engineering corrections (userborn boot
@@ -79,11 +81,16 @@ appliance. Everything else about multi-user is a solved Linux problem and is tre
    token gate is provisiond's *only* load-bearing job.
 9. **The greeter is an ordinary Linux greeter at parity with the standard set** *(rev 3.1;
    research/11 §11)*: power menu (login1 `allow_active`, no root helper), session chooser,
-   clock, accessibility menu, free-text entry, and a network menu that can join Wi-Fi — for
-   which Mura ships GDM's polkit rule granting the `greeter` user
-   `NetworkManager.settings.modify.system` when local and active, so a network joined at the
-   greeter is a system connection the logged-in user can use. Every element operable at the
-   input floor of first-run-onboarding §4.4.
+   clock, accessibility menu, free-text entry. Every element operable at the
+   input floor of first-run-onboarding §4.4. **Rev 3.4 (2026-09-29) — no network menu.** Rev
+   3.1 also listed "a network menu that can join Wi-Fi" and shipped GDM's polkit rule
+   (`settings.modify.system` for the `greeter` user when local and active). The owner ruled it
+   out: of the inventoried greeters only GDM has a pre-auth network UI, and it does because its
+   greeter is gnome-shell with the menu already on board — the rule exists to serve that UI
+   (research/11 §11.D; `gdm/NEWS:283-285`). Mura's greeter has no such UI and needs no network;
+   Wi-Fi before any user exists is `mura-setup`'s (first-run-onboarding §5, its own scoped
+   rule), and after login the session panel's (shell-plane §3.3). The rule was removed from
+   `modules/os/policy.nix` as a grant with no consumer (multi-user §3.1).
 
 ## Rescinded from rev 2 (and why)
 

@@ -19,7 +19,9 @@ finish; Wi-Fi joined by a passwordless session user is user-scoped) and the time
 rewritten as derived-after-Connect with its authority an open item surveyed in research/54**;
 **rev 2.7, 2026-09-25 — the time-zone authority ruled from research/56 §9 (`50-mura-timedate.rules`,
 wheel members in active local sessions); the hotspot idle default sourced to AOSP; the USB
-identity posture ruled and its work scheduled (research/55)**).
+identity posture ruled and its work scheduled (research/55)**; **rev 2.8, 2026-09-29 — the
+greeter has no network menu (multi-user rev 3.8): the setup web app is *the* pre-user Wi-Fi path
+(§5), the session panel the post-login one; conformance check 13 restated**).
 Decision record: [ADR 0017](adr/0017-first-run-provisioning.md) (amended in place).
 **What this covers:** everything between "the image was flashed" and "a person is using their
 session": what an installer would collect and where it lives here (§1), the persistent-state
@@ -342,7 +344,13 @@ profile — through the two mechanisms a Linux PC has, and nothing more is inven
   for a wearer who cannot yet use the headset display. It is the phone-facing instance of the
   one `mura-setup` program (§5.1), reached over the **USB gadget** or over a **headset-hosted
   Wi-Fi hotspot with a captive portal**, and **never over the LAN** (LAN access to the device is
-  SSH — or Cockpit, if the wearer installs it; not ours). Its authorisation is possession — the
+  SSH — or Cockpit, if the wearer installs it; not ours). **It is the only place Wi-Fi is joined
+  before a user exists** (rev 2.8, ruled 2026-09-29): its Connect card writes a *system*
+  connection under `50-mura-setup.rules` (`settings.modify.system` for the `mura-setup`
+  identity, [multi-user.md §3.1](multi-user.md)), so the network is there for whoever logs in.
+  The greeter carries no network menu and no polkit rule ([multi-user.md §2](multi-user.md) rev
+  3.8); after login, Wi-Fi is the session panel's ([shell-plane.md §3.3](shell-plane.md)) and the
+  welcome surface's Connect card (§4.2). Its authorisation is possession — the
   cable, or the hotspot's PSK — the same trust as SSH over the cable: "you plugged it in / you
   read the code off the display". Both the hotspot and the web app exist **until setup is
   finished** (below); afterwards both are ordinary administrator settings, never automatic
@@ -461,7 +469,7 @@ of password is theirs (§1). Per-service posture (the table is the specification
 | Greeter / autologin (`greetd`) | `allowNullPassword` (NixOS's own default for greetd); faillock | a passwordless account logs in without a prompt — that is the default image |
 | Lock (`mura-lock` via authd) | `allowNullPassword`; faillock | no credential ⇒ no lock engages (ADR 0007); a numeric one renders the digit pad |
 | **`sudo`** | **standard — no `nullok`**, `wheelNeedsPassword` default | a passwordless `mura` is a full *user*; **administration requires a password**. `nullok` here would make `sudo -S <<< ""` from any session process, or any shell obtained as `mura`, into root |
-| **polkit `auth_admin` actions** | **standard** — no Mura rule relaxes them for sessions | same reasoning; Mura's polkit rules are the greeter's NetworkManager rule ([multi-user.md §2](multi-user.md)) and the `mura-setup` identity's scoped set (§5.1) |
+| **polkit `auth_admin` actions** | **standard** — no Mura rule relaxes them for sessions | same reasoning; Mura's polkit rules are the `mura-setup` identity's scoped set (§5.1) and the wheel time-zone rule ([multi-user.md §3.1](multi-user.md)); the greeter has none (rev 2.8 — its NetworkManager rule went with the network menu, multi-user rev 3.8) |
 | Setting the first password | **`passwd`** (own account; the welcome surface drives it in a pty); the web app via AccountsService `user-administration` under `mura-setup`'s rule | NixOS's PAM `password` stack has `nullok`: no old password is asked. This is the admin gate. No polkit own-password rule (an escalation vector) |
 | **sshd** | **upstream defaults** — on, `PasswordAuthentication yes` and `KbdInteractiveAuthentication yes` on every interface, `PermitEmptyPasswords no`; faillock on its PAM stack; no `Match` blocks (rev 2.5) | a regular Linux PC. The empty password is not a credential anywhere, so a passwordless account gets SSH after `passwd` or with a declared key. `PermitEmptyPasswords` is not merely left at its default, it is *unusable* here (D2 finding): with it, sshd's initial `none` method runs a real PAM authenticate with an empty password in the parent process, the actual authentication runs in a *forked* helper, and the parent's PAM handle keeps the failed probe as its cached chain — `pam_setcred` then fails **every** password login the moment the account *has* a password (measured in the D2 VM test) |
 | **`mura-setup` (web app)** | no login; served on the gadget and hotspot addresses only; scoped polkit for its identity (§5.1) | authorisation is possession of the cable or the in-headset PSK — TTY-equivalent trust, the SSH-over-USB argument; never on the LAN, where the empty password would otherwise become "set `mura`'s password" for anyone on the network |
@@ -600,8 +608,9 @@ by overview invariant 10**: this machine has root, and it belongs to its wearer.
     greeter and lock; a mixed password yields the keyboard path; the greeter reads a hint from
     `state/credential-hint/<user>` only when that file is owned by `<user>`. (VM tests
     `vm-test-default-image` / `vm-test-multi-user`.)
-13. A Wi-Fi network joined at the greeter, or through the `mura-setup` web app, is a system
-    connection visible to the user who then logs in ([multi-user.md §2](multi-user.md)); one
+13. A Wi-Fi network joined through the `mura-setup` web app is a system connection visible to
+    the user who then logs in (§5; `50-mura-setup.rules`); the greeter offers no way to join one
+    and no polkit rule names the `greeter` user (rev 2.8, [multi-user.md §2](multi-user.md)); one
     joined in the welcome surface by a passwordless user is that user's own connection, and a
     system connection once the caller can satisfy `settings.modify.system`. The welcome
     surface's time-zone card prompts through the polkit agent and succeeds only once a password

@@ -778,7 +778,9 @@ app-store dependency is the ethos cost. Nothing in the survey requires one.
 - **Passwordless default user** (A9) — the user.
 - **Greeter Wi-Fi scope**: connections made pre-login are `permissions=user:greeter` unless a GDM-style
   polkit rule lifts the greeter to `settings.modify.system` (doc 11 addendum §D) — the user
-  (discretionary policy).
+  (discretionary policy). *Ruled 2026-09-29: dropped* — the greeter joins no Wi-Fi at all, so
+  the question is moot; the rule shipped 2026-09-24 was withdrawn (multi-user rev 3.8 §2,
+  research/78 §9 F17).
 - **Device-contract input facts** implied: per-target HMD buttons (codes, which is "select"),
   controller class (none / 3DoF-IMU / optical), Bluetooth presence, concurrent AP+STA support,
   proximity sensor source — decider: Phase 4 contract round.

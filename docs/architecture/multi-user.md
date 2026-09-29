@@ -18,7 +18,10 @@ faillock rules are spelled out with `conf=` (§3, §3.1). **Rev 3.6 (same day, D
 without `nullok`, faillock for an unprivileged caller (§3.1). **Rev 3.5 (same day):** the
 regular-Linux-PC correction — sshd with upstream defaults on every interface (the key-only
 scoping withdrawn), the password is the user's choice, Cockpit gone, the `mura-setup` polkit
-rule set added and the "no rule for sessions" principle stated (§3, §3.1).
+rule set added and the "no rule for sessions" principle stated (§3, §3.1). **Rev 3.8
+(2026-09-29):** the network menu leaves the greeter's furniture and `50-mura-greeter-network.rules`
+is withdrawn — Wi-Fi before a user exists is onboarding's, after login the session panel's (§2,
+§3.1; owner's ruling).
 **Decision record:** [ADR 0018](adr/0018-multi-user-accounts.md).
 **Evidence base:** [research/41](../research/41-multi-user-login-landscape.md) — its Linux
 mechanics sections (§1, §3); the closed-platform sections are context and anti-patterns.
@@ -110,14 +113,23 @@ hibernate when login1 `Can*` says yes — granted without a root helper because 
 greeter session is logind-*active* and `org.freedesktop.login1.*` is `allow_active=yes`); a
 **session chooser** from the session list the module system writes (`/etc/greetd/environments` today, the gtkgreet mechanism; `wayland-sessions` `.desktop` files if a second shell ships — research/78 §4), hidden when only one session exists
 (GDM's rule); a **clock**; an **accessibility menu** (large text, high contrast, dwell timing,
-the on-screen keyboard toggle — the input-floor controls of [first-run-onboarding.md §4.4](first-run-onboarding.md));
-and a **network menu that can join Wi-Fi**. For that last item Mura ships the GDM rule: a polkit
-rule granting the `greeter` user `org.freedesktop.NetworkManager.settings.modify.system` when
-`subject.local && subject.active`, so a network joined at the greeter is a *system* connection
-that the person who then logs in can use — without it the profile would be `permissions=user:greeter`
-and useless (research/11 §11.D; `gdm/data/polkit-gdm.rules.in`). It is `zxr --greeter`, launched
-directly by greetd's `default_session` — nothing dispatches around it, and it never hosts
-onboarding. Every element is operable at the input floor (head-aim + HMD button; dwell). It must
+the on-screen keyboard toggle — the input-floor controls of [first-run-onboarding.md §4.4](first-run-onboarding.md)).
+**No network menu** *(ruled 2026-09-29, rev 3.8; rev 3.1–3.7 listed "a network menu that can
+join Wi-Fi" with GDM's polkit rule)*: of every greeter inventoried in research/11 §11.D only GDM
+carries a pre-auth network UI — because GDM's greeter *is* gnome-shell, which brings its network
+menu along (`gnome-shell/js/ui/sessionMode.js:56-62`), and GDM 48 added the polkit rule to make
+that already-present menu useful after login (`gdm/NEWS:283-285` "Allow changing global network
+settings"; `gdm/data/polkit-gdm.rules.in:1-8`). SDDM, LightDM, gtkgreet, regreet, tuigreet ship
+no network UI; cosmic-greeter shows a read-only status icon (`cosmic-greeter/src/networkmanager.rs:60-63`,
+active connections only, no connect path). Mura's greeter has no such menu and nothing else in
+it needs the network: **Wi-Fi before any user exists is onboarding's path** — the `mura-setup`
+web app over the gadget or the provisioning hotspot ([first-run-onboarding.md §5](first-run-onboarding.md),
+its `50-mura-setup.rules` carrying `settings.modify.system`) — **and after login it is the
+session panel's** ([shell-plane.md §3.3](shell-plane.md)). The GDM-parity rule that rev 3.1
+shipped for the greeter user is therefore withdrawn as a grant with no consumer (§3.1). It is
+`zxr --greeter`, launched directly by greetd's `default_session` — nothing dispatches around it,
+and it never hosts onboarding. Every element is operable at the input floor (head-aim + HMD
+button; dwell). It must
 still render when it finds **zero pickable accounts** (corrupted userdb, userborn failure):
 free-text username entry and the power menu stay available, never a dark headset.
 
@@ -212,13 +224,13 @@ NixOS's default. `nullok` = `security.pam.services.<n>.allowNullPassword`.
 
 | polkit rule | Grants | To | Condition | Why |
 |---|---|---|---|---|
-| `50-mura-greeter-network.rules` | `org.freedesktop.NetworkManager.settings.modify.system` | the `greeter` user | `subject.local && subject.active` | GDM parity (`gdm/data/polkit-gdm.rules.in`): a Wi-Fi network joined at the greeter becomes a system connection the logged-in user can use (research/11 §11.D). Needed because upstream NM keeps `modify.system` at `auth_admin_keep` even for active sessions (`references/networkmanager/data/org.freedesktop.NetworkManager.policy.in:115-123`) |
+| *(no rule for the `greeter` user — rev 3.8, ruled 2026-09-29)* | — | — | — | Rev 3.1–3.7 shipped `50-mura-greeter-network.rules` (`settings.modify.system` for `greeter` when `subject.local && subject.active`, GDM's `polkit-gdm.rules.in:1-8`). Withdrawn: the greeter carries no network menu (§2), so the grant had no consumer — GDM ships its rule because its greeter has the UI (`gdm/NEWS:283-285`), and every greeter without one ships no such rule (research/11 §11.D). What the displayed greeter session can still do under NetworkManager's **own** defaults (`references/networkmanager/data/org.freedesktop.NetworkManager.policy.in`): activate existing connections (`network-control`, `allow_active=yes`, `:67-75`), scan (`wifi.scan`, `:77-85`), and add connections scoped to itself (`settings.modify.own`, `allow_active=yes`, `:105-113`); `settings.modify.system` stays `auth_admin_keep` (`:115-123`). Nothing in `pkgs/mura-greeter` calls NetworkManager |
 | `50-mura-setup.rules` (rev 3.5; lands with `mura-setup`, D3) | exactly: `org.freedesktop.NetworkManager.settings.modify.system`, `org.freedesktop.timedate1.set-timezone`, `org.freedesktop.hostname1.set-static-hostname`, `org.freedesktop.accounts.user-administration`, BlueZ agent registration | the `mura-setup` system identity only (`subject.user`) | none beyond the identity — the service itself exists only while `state/setup/setup-complete` is absent | the gnome-initial-setup pattern (`references/gnome-initial-setup/data/20-gnome-initial-setup.rules.in:8-30`, which grants its setup user whole action prefixes; Mura names the exact actions). The privileged work is done by the standard daemons; the setup web app has no root helper (first-run §5.1) |
 
 | `50-mura-timedate.rules` (rev 3.7; D-track sweep, [research/56 §9](../research/56-defaults-from-comparables.md)) | exactly: `org.freedesktop.timedate1.set-timezone`, `org.freedesktop.hostname1.set-static-hostname`, `org.freedesktop.hostname1.set-hostname` | members of `wheel` | `subject.local && subject.active && subject.isInGroup("wheel")` | Ubuntu's `policykit-desktop-privileges` grant and reason — *"Administrators … without being asked for their password … It does not change privileges for non-Administrators … the user has full control over the hardware anyway"* (`com.ubuntu.desktop.pkla:11-14,41-44`, [external]) — with phosh's condition set (`phosh-mobile-settings/data/phosh-mobile-settings.rules.in`); narrower than the appliance comparables (SteamOS `allow_any=yes` helper, pmOS Plasma `org.kde.timezone.rules` YES for anyone). On the appliance profile the passwordless seat user is in wheel, so the in-headset time-zone confirm never prompts; on the multi-user profile wheel members get the same and others keep systemd's `auth_admin_keep`. `set-ntp` is not included (Mura's zone is derived; flagged in research/56 §9) |
 
-That is the whole list: the greeter rule, `mura-setup`'s scoped set, and the wheel time-zone
-rule. The rev-3.6 "pending" row (`50-mura-session-timedate.rules` on `subject.local &&
+That is the whole list: `mura-setup`'s scoped set and the wheel time-zone rule (the greeter
+rule of rev 3.1–3.7 is gone, rev 3.8). The rev-3.6 "pending" row (`50-mura-session-timedate.rules` on `subject.local &&
 subject.active` alone, from research/54's SteamOS reading) was superseded by research/56 §9: no
 shipping system grants the clock on session state alone — appliances grant everyone, desktops
 grant the admin group. **No other rule relaxes anything for ordinary sessions** — the welcome
