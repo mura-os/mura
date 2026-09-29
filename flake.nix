@@ -129,6 +129,7 @@
             vm-test-recovery = import ./tests/vm/recovery.nix { pkgs = pkgsFor system; };
             vm-test-settings = import ./tests/vm/settings.nix { pkgs = pkgsFor system; };
             vm-test-perception-intake = import ./tests/vm/perception-intake.nix { pkgs = pkgsFor system; };
+            vm-test-scene = import ./tests/vm/scene.nix { pkgs = pkgsFor system; };
           }
         // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
           # Steam Frame uefi-rauc artifacts (build with `nix run .#frame-build`).

@@ -66,22 +66,23 @@
       # system builder is excluded from auto-discovery unless explicitly enabled
       # (monado target_builder_simulated.c).
       SIMULATED_ENABLE = "true";
-      # The VM has no display path Monado can scan out to: lavapipe (the only Vulkan driver on
-      # virtio-gpu) has no VK_KHR_display, and there is no window system under the greeter or
-      # the session — zxr *is* the compositor. Monado's null compositor (`XRT_COMPOSITOR_NULL`,
-      # `monado/src/xrt/targets/common/target_instance.c:43,111-117`; compiled into nixpkgs'
-      # monado) accepts sessions, swapchains and layers and displays nothing, so the XR chain
-      # runs end to end in the VM and is proven through the compositor's control socket, the
-      # journal and AT-SPI rather than screenshots. The picture exists on hardware and in
-      # `dev-session` on a host (G2, specs/zxr-core.md §12 gate 10; flagged in research/78 §9 F14).
+      # The login chain's Monado has no display path to scan out to: lavapipe (the only Vulkan
+      # driver on virtio-gpu) has no VK_KHR_display, and there is no window system under the
+      # greeter or the session — zxr *is* the compositor. Monado's null compositor
+      # (`XRT_COMPOSITOR_NULL`, `monado/src/xrt/targets/common/target_instance.c:43,111-117`;
+      # compiled into nixpkgs' monado) accepts sessions, swapchains and layers and displays
+      # nothing, so the XR chain runs end to end in the VM and is proven through the compositor's
+      # control socket, the journal and AT-SPI. The picture of the scene in the VM is
+      # tests/vm/scene.nix's: a test-only cage owning the virtio-gpu KMS output with a second
+      # `monado-service` (main compositor, Wayland-window target) as its child and a zxr against it
+      # (research/78 §9 F25, closing F14) — not this `monado.service`, which serves the login chain
+      # that holds the seat.
       #
-      # The alternative measured on 2026-09-29 (research/78 §9 F18): Monado's MAIN compositor also
-      # runs here, on its off-screen `debug_image` target, when this is "false" AND
+      # Also measured (research/78 §9 F18): Monado's MAIN compositor runs here without a window
+      # too, on its off-screen `debug_image` target, when this is "false" AND
       # `XRT_COMPOSITOR_DISABLE_DEFERRED = "true"` (otherwise Monado picks its deferred XCB target
-      # and the first session fails). That proves the real compositor path (swapchain import,
-      # layer composition, distortion) at ~10x Monado's CPU and +90 MB in the VM, still with no
-      # picture. Null vs main in the sandboxed fixtures is the owner's decision; the out-of-sandbox
-      # venus run (tests/vm/lib.nix, `interactive.nodes.machine`) uses the main compositor.
+      # and the first session fails), at ~10x Monado's CPU and +90 MB in the VM with no picture.
+      # Null vs main for the login chain's Monado is the owner's decision.
       XRT_COMPOSITOR_NULL = "true";
     };
   };

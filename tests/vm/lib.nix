@@ -8,8 +8,10 @@
 #
 # Test-only overrides (never in a fixture or a shipped image):
 #   - `-vga none -device virtio-gpu-pci`: a real DRM device in the test VM (upstream
-#     nixos/tests/cage.nix does the same) — the VT console, logind's seat; the XR path itself
-#     is blind here (Monado's null compositor, devices/virtual-headset; research/78 §9 F14).
+#     nixos/tests/cage.nix does the same) — the VT console, logind's seat. The login fixtures run
+#     the XR path blind (Monado's null compositor, devices/virtual-headset); scene.nix is the
+#     one that draws it, through Monado's Wayland target into a cage on this KMS output
+#     (research/78 §9 F14, closed by F25).
 { pkgs }:
 { name
 , profileModules # e.g. [ ../../profiles/default.nix ]

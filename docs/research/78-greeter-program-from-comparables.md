@@ -506,7 +506,9 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   thing the VM ever showed. Options the owner may weigh later: a venus (virtio-gpu Vulkan
   passthrough) host GPU for the VM, which would give Monado a real driver with display
   extensions; or accepting blindness and leaving pictures to hardware and `dev-session`. Recorded,
-  not decided.
+  not decided. **Closed by F25 (2026-09-29):** `tests/vm/scene.nix` screenshots the scene through
+  Monado's Wayland-window target inside a KMS-owning cage; the login fixtures stay on the null
+  compositor by design (they hold the seat).
 - **F15 — two session bugs the G3 fixture found and fixed (2026-09-28).** (1) *The lock lost
   the keyboard when the OSK mapped.* The lock surface took keyboard focus directly on map
   (`shell/lock.rs`), outside the focus model; the lock's own password field then asked for the
@@ -673,8 +675,8 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   replaceable option rather than an added device. **Not merged (2026-09-29):** the interactive-driver
   variant that ran all this (branch `f14-venus`, commit `c2333d5`: `muraVmTest.gpu`, the venus
   `interactive.nodes.machine`) was left out of master — venus is GPU passthrough, not a display
-  path, and the picture the VM needs comes from F23's route (Monado's Wayland window target into a
-  KMS display owner in the VM); the recipe is preserved in that commit and in this entry.
+  path, and the picture the VM needs comes from F25's route (Monado's Wayland window target into a
+  KMS display owner in the VM — built, `tests/vm/scene.nix`); the recipe is preserved in that commit and in this entry.
 - **F22 — `mura.xr.compositor.backend` is not wired to Monado, and Monado's default target
   selection cannot reach `vk_display` (2026-09-29).** The contract option (`lib/contract/default.nix:390-398`,
   default `vk-display`) is read only by `modules/os/health.nix:40`; `modules/xr/default.nix`
@@ -744,6 +746,46 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   with no toggle; no dwell with a select declared; F13's landing zone (0 empty submissions). Unit
   tests for the gate and `floor_dwell`. *Also:* `input::theme`'s two env-setting tests now share a
   `Mutex` (the "also seen" hygiene item), green at the default thread count.
+- **F25 — the VM has a picture; F14 is closed (2026-09-29).** `tests/vm/scene.nix`
+  (`nix build .#vm-test-scene`) screenshots zxr's composited greeter scene inside the sandboxed
+  test VM: the stereo view Monado's **main** compositor draws — the greeter card (clock, host
+  name, the response field, the dwell chip) over the OSK, both eyes side by side. The route is
+  the one F18–F21 left standing: a compositor that owns the VM's virtio-gpu KMS output, and
+  Monado's Wayland-window target drawing into it. Mechanism, each part measured in the pass:
+  (1) **cage** (`references/cage`, 0.3.1; upstream's own VM test runs it exactly so —
+  `nixos/tests/cage.nix:17-24,40` [external]: `-device virtio-gpu-pci`, one child program,
+  screenshot/OCR of its window) as a root unit with `WLR_BACKENDS=drm` (wlroots otherwise picks
+  the nested Wayland backend whenever `WAYLAND_DISPLAY` is in its environment),
+  `LIBSEAT_BACKEND=builtin` (root opens `card0` without a logind session — the greetd chain keeps
+  the seat and the VT; zxr never holds `card0`'s master, only the render node, so the master is
+  free), `WLR_RENDERER=pixman` (no GL on virtio-gpu), `WLR_LIBINPUT_NO_DEVICES=1` (no input: the
+  fixture's input is the injector's). (2) **`monado-service` as cage's child**, not zxr: cage
+  scans out only what its child maps, and the window is Monado's (`XRT_COMPOSITOR_NULL=false`,
+  `XRT_COMPOSITOR_DISABLE_DEFERRED=true` per F18, `XRT_COMPOSITOR_FORCE_WAYLAND=true` —
+  `comp_settings.c:29,203-208`, `comp_window_wayland.c`; the window is the HMD's `1280x720`
+  halved to `640x360`, `imageExtent: {640, 360}`, and `xdg_toplevel_set_min/max_size` at
+  `comp_window_wayland.c:221-222` pins it there, so cage cannot grow it to the 1280x800 output
+  and the rest stays black). Two preconditions of running it as a headless root unit, each
+  found by a failed run: `HOME` (a static initialiser in `steamvr_lh.cpp:91` builds a
+  `std::string` from `getenv("HOME")` — `basic_string: construction from null`), and
+  `XRT_NO_STDIN=true` (`ipc_server_mainloop_linux.c:212-220` epolls stdin; `dev-session` sets the
+  same). (3) **zxr** as a second unit, `--greeter --trusted mura-greeter --osk mura-osk`, with
+  `XR_RUNTIME_JSON` pointing at Monado's manifest and the same `XDG_RUNTIME_DIR` (the IPC
+  socket `monado_comp_ipc`), `ZXR_NO_LIBINPUT=1`. Measured: cage modesets `Virtual-1 1280x800`;
+  Monado creates the Wayland swapchain; zxr `session created views=2 w=896 h=1007`, `FOCUSED`;
+  greeter `first frame committed w=1920 h=1133`, OSK `w=1920 h=360`; `zxr ctl list`: both trusted
+  layers `frame=world`, `layers_submitted=1202` after ~30 s, `anchor_yaw_deg=-0.9` seeded from the
+  simulated head; the screenshot is the scene. Assertions: the two journals, the listing, the
+  picture's colour count (1500–1800 distinct colours on the scanout across runs; a VT or a blank output is a
+  handful). Not OCR: upstream's cage test reads its xterm that way, but tesseract cannot read
+  a card 320 px wide per eye (tried; `wait_for_text` never matched), and the journal assertions
+  already bind the picture to the scene. *What this does not change:* the login fixtures keep the null compositor and
+  the VT typing path — cage cannot own the seat there, and the fixtures' subject is the login
+  chain, not the picture; `devices/virtual-headset` is unchanged (the plan's "monado.service
+  env drop-in" was the wrong shape once cage had to be Monado's parent — a test-only unit pair,
+  not the device's `monado.service`). *Left as observed, not fixed:* Mesa's `vdrm_device_connect
+  failed` lines (F16/F19's RADV native-context probe) in both Monado's and zxr's logs, harmless
+  here. `mura.xr.compositor.backend` remains unwired (F22).
 
 ## 10. Sources
 

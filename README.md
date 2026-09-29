@@ -64,7 +64,8 @@ tree — delete it for a fresh boot.
 ([tests/vm/](tests/vm/)); `oob` drives the USB gadget (`dummy_hcd`, both ends in the VM), the
 provisioning hotspot (`mac80211_hwsim`, a second radio as the phone) and the `mura-setup` stub;
 `health` forces a hard preflight failure and walks the crash-loop ladder to the recovery target
-and back. On demand only — they
+and back; `.#vm-test-scene` is the one with a picture — Monado's main compositor drawing zxr's
+greeter scene into a test-only cage on the VM's KMS output, screenshotted and asserted. On demand only — they
 boot a VM and take minutes, so they are not part of `nix flake check`.
 
 **Rung 3 — `nix run .#frame-vm-run -- <image.raw[.zst]>`** (image/update machinery only): the

@@ -2,10 +2,11 @@
 # greeter (G2: `zxr --greeter` composing mura-greeter and mura-osk as the `greeter` user).
 # Subtests accumulate per D-track rung.
 #
-# The VM is blind on the XR path (research/78 §9 F14): Monado runs its null compositor, so the
-# greeter and the session are proven through processes, journals, the VT keyboard path
-# (libseat → libinput → the greeter's exclusive layer surface) and zxr's control socket —
-# never a screenshot of the scene. Screenshots here show the VT.
+# This fixture runs the XR path blind: Monado's null compositor, so the greeter and the session
+# are proven through processes, journals, the VT keyboard path (libseat → libinput → the
+# greeter's exclusive layer surface) and zxr's control socket. Screenshots here show the VT —
+# the seat is the login chain's. The picture of the scene is tests/vm/scene.nix's
+# (research/78 §9 F14, closed by F25).
 { pkgs }:
 (import ./lib.nix { inherit pkgs; }) {
   name = "mura-vm-multi-user";
