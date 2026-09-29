@@ -2,7 +2,8 @@
 #
 # XR components come from nixpkgs-xr (pulled as a flake input, per ADR 0005) rather
 # than being repackaged here. This overlay is for Mura-specific packages:
-# per-device Monado driver builds (monado-rev + patch series), kernels, and tooling.
+# kernels and tooling; Monado itself comes from the mura-os/monado fork through the sibling
+# overlay pkgs/monado (ADR 0006 amendment 4 D13), applied after this one in flake.nix.
 # Empty in the scaffold beyond a marker attribute.
 final: prev: {
   mura = (prev.mura or { }) // {

@@ -29,9 +29,9 @@ legible to render. The research settled the mechanics:
   real shared resources (DRM master, hidraw) are brokered by logind/seatd, and greetd's
   exit-then-start sequencing means there is never live two-compositor contention
   ([11 §4, §7](../../research/11-display-managers-greeters.md)).
-- **A lock screen maps cleanly onto internal compositor state**: because our compositor composites
-  everything and submits one projection layer, "locked" is just "compose only the lock scene, route
-  input only to it" — the `ext-session-lock-v1` obligations translate into an internal state machine,
+- **A lock screen maps cleanly onto internal compositor state**: because our compositor owns every layer it submits (its quads; since ADR 0006 amendment 4
+  the 3D tier is Monado's containers, whose visibility zxr sets over the controller seam),
+  "locked" is just "submit only the lock scene, hide every container, route input only to it" — the `ext-session-lock-v1` obligations translate into an internal state machine,
   and the protocol's own `finished` clause anticipates compositors that authenticate internally
   ([12 §2.4](../../research/12-lock-screens-and-appliance-login.md)). Android's shell-integrated
   Keyguard is the consumer-scale proof.

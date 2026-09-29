@@ -35,7 +35,7 @@ flowchart TB
     subgraph adapt [Hardware boundary - per device adaptation bundle]
         native["Native backend: Mesa/Freedreno, V4L2, IIO, PipeWire, mac80211"]
         android["Android-compat backend (optional, per subsystem): libhybris / HAL bridges / late LXC"]
-        xrdrv["Device XR driver: monado-rev + patch series"]
+        xrdrv["Device XR driver: the mura-os/monado fork, pinned by rev"]
     end
     subgraph hw [Kernel + firmware]
         kernel["Kernel + modules + DTB (buildLinux, contract-gated)"]
@@ -70,9 +70,13 @@ flowchart TB
 The XR shell/compositor, OpenXR applications, and 2D Wayland applications. Talks only OpenXR and
 Wayland. Knows nothing about specific hardware.
 
-The shell is the Mura XR compositor — a Wayland-native, client-renders / compositor-composites
-design continuing the wxrc `zxr` protocol lineage as `zxr-shell-v2`, itself an OpenXR client of
-Monado, serving `xdg-shell` for 2D apps and `zxr-shell-v2` for 3D apps in one depth-tested space.
+The shell is the Mura XR compositor, zxr — a Wayland compositor that is itself an OpenXR client
+of Monado: it serves `xdg-shell` to 2D apps and submits each window to Monado as a quad layer;
+3D apps are OpenXR clients hosted by Monado as spatial containers (`XR_EXT_spatial_container` +
+`_self_rendering`, ratified 1.1.63) and **Monado composites everything** — zxr is the Wayland
+server, the window/places policy for every window, and Monado's workspace controller
+([ADR 0006 amendment 4](adr/0006-compositor-strategy.md), [specs/composition.md](../../specs/composition.md);
+the wxrc `zxr-shell-v2` lineage protocol is a retired reserved hook).
 This resolves the previously-open "2D apps in a headset session" question from
 [docs/research/05-xr-userspace.md](../research/05-xr-userspace.md) §11. The decision, its
 alternatives (StardustXR and WayVR are packaged as optional sessions, not the backbone), the Vulkan
@@ -116,8 +120,9 @@ backend kinds **per subsystem** (display/GPU, camera, sensors/IMU, audio, Wi-Fi/
   `libgbinder` IPC, or a late-starting, optional LXC container. Never a boot dependency.
 - **device-specific** — a dedicated implementation, typically for tracking or display control.
 
-The device's XR driver is part of this layer, expressed as a pinned Monado revision plus a patch
-series (Monado has no stable out-of-tree driver ABI). Realized under `modules/adaptation/`, `soc/`,
+The device's XR driver is part of this layer, expressed as commits on the `mura-os/monado` fork
+(branch `mura` = upstream + Mura's upstream-shaped series, pinned by rev in the flake; Monado has no
+stable out-of-tree driver ABI — ADR 0006 amendment 4 D13). Realized under `modules/adaptation/`, `soc/`,
 `families/`, and `devices/<vendor-model>/`.
 
 ### Kernel + firmware layer (per device)

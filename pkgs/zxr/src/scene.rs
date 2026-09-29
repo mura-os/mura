@@ -217,7 +217,8 @@ pub struct Place {
 pub enum Shape {
     /// a 2D plane; extents in metres
     Plane { size: [f32; 2] },
-    /// a 3D client's volume (M2); half extents in metres
+    /// a container proxy: a Monado-hosted 3D app's bounds, tracked for hit-test and arrangement,
+    /// never drawn by zxr (ADR 0006 amd. 4; specs/composition.md §5); half extents in metres
     Volume { half: [f32; 3] },
 }
 

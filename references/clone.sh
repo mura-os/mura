@@ -344,17 +344,15 @@ repos=(
   'phoc|https://gitlab.gnome.org/World/Phosh/phoc.git|'
   'gtk-layer-shell|https://github.com/wmww/gtk-layer-shell.git|'
   'layer-shell-qt|https://invent.kde.org/plasma/layer-shell-qt.git|'
-  # --- OpenXR extensions vs the zxr lineage (docs/research/79) ---
-  # godot = the only open *client* of XR_EXT_spatial_container(_self_rendering) and the
-  # EXT spatial-entity family (modules/openxr/extensions/{spatial_container,spatial_entities});
-  # displayxr-runtime = a Monado fork whose XR_DXR_spatial_workspace gives a privileged
-  # OpenXR session the workspace-controller role over a multi-app compositor — the one open
-  # "runtime + separate system shell" seam (src/xrt/state_trackers/oxr/oxr_workspace.c,
-  # docs/adr/); displayxr-extensions = its headers + extensions.json. Neither implements
-  # the EXT container pair runtime-side; no open runtime does at the pin.
+  # --- OpenXR spatial containers (docs/research/79; ADR 0006 amendment 4; specs/composition.md) ---
+  # godot = the only open *client* of XR_EXT_spatial_container(_self_rendering) and of the EXT
+  # spatial-entity family (modules/openxr/extensions/{spatial_container,spatial_entities}) —
+  # the conformance substitute for Mura's Monado implementation until Khronos publishes the
+  # container CTS extension. No open runtime implements the pair at the pin; Mura's series
+  # lives on the mura-os/monado fork (a flake input, not a reference clone — references/monado
+  # stays the upstream study pin). DisplayXR was pinned briefly and dropped: non-standard
+  # extension, Windows compositor, nothing that transfers; its ADR-035 audit is cited [external].
   'godot|https://github.com/godotengine/godot.git|'
-  'displayxr-runtime|https://github.com/DisplayXR/displayxr-runtime.git|'
-  'displayxr-extensions|https://github.com/DisplayXR/displayxr-extensions.git|'
 )
 
 mkdir -p .logs

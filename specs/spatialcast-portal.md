@@ -4,9 +4,9 @@
 review absorbed — frontend path made real, WORKSPACE moved out of ScreenCast, RGBD negotiation
 specified, SPA metadata properly typed).
 **Design sources:** [research/17 §9](../docs/research/17-sharing-capture-stack.md),
-[spatial-sharing.md](../docs/architecture/spatial-sharing.md) §2/§6/§8; depth mapping identical
-to `zxr_frame_slot_v2.set_depth_range` and
-[perception-intake §2](perception-intake.md) (the one canonical depth vocabulary).
+[spatial-sharing.md](../docs/architecture/spatial-sharing.md) §2/§6/§8; depth mapping identical to
+[perception-intake §2](perception-intake.md)'s `depth_range` record (the one canonical depth
+vocabulary; formerly also `zxr_frame_slot_v2.set_depth_range`, retired).
 **Grounding:** "XDG" = **xdg-desktop-portal** (sense (c)). This spec extends the portal
 *additively and honestly*: the pinned frontend rejects unknown `SelectSources.types` bits, so §1
 defines the carrier as a Mura **frontend patch** (our normal patch-series model) with
@@ -55,7 +55,7 @@ Per-stream vendor properties in the `Streams` reply:
 - `spatial_presence_mode` (`u`) — the *effective* mode.
 - `spatial_passthrough` (`b`) — effective inclusion.
 - `spatial_depth` (`(ddddb)`: near_m, far_m, min_stored, max_stored, reversed) — `APP_VOLUME`;
-  the canonical reciprocal-distance mapping shared with `zxr_frame_slot_v2.set_depth_range`.
+  the canonical reciprocal-distance mapping shared with perception-intake's `depth_range`.
 
 All vendor keys carry the `spatial_` prefix; signatures are canonical D-Bus strings.
 

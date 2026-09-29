@@ -47,6 +47,15 @@
     experimental phase. Backward incompatible changes may be added without
     bumping the major version of the extension. As such, gating usage on the
     protocol's presence is discouraged outside Mura itself.
+
+    Status: retired to a reserved hook (Mura ADR 0006 amendment 4,
+    2026-09-29). No compositor advertises this global and no client binds it.
+    Mura's contract for three-dimensional applications is OpenXR's ratified
+    XR_EXT_spatial_container and XR_EXT_spatial_container_self_rendering,
+    implemented by the runtime, which composites every application; this
+    protocol is kept, validated, for the one case those leave open: a
+    Wayland-native application that wants a three-dimensional surface and the
+    desktop's clipboard and input-method integration in the same connection.
   </description>
 
   <interface name="zxr_shell_v2" version="1">

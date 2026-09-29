@@ -854,7 +854,8 @@ fn on_tick(st: &mut Zxr, tick: FrameTick) -> Result<(), String> {
                 bp.passes += 1;
             }
         }
-        // the projection pass: overflow members (and, from M2, volumes / environment / cutout)
+        // the projection pass: overflow members only (ADR 0006 amd. 4 — volumes, environment and
+        // cutout are Monado's; the wider predicate below is inert until then)
         if depth {
             let projection_indices = xr.acquire_images()?;
             let flip = math::flip_y();

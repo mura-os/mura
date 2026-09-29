@@ -1,6 +1,7 @@
 //! The renderer (specs/zxr-core.md §3 `render`, §6): ash on the runtime-created device. Planes
 //! are textured quads drawn into the runtime's swapchain images with one depth buffer per view
-//! (the 2D tier writes depth so the 3D tier slots in at M2). Client buffers become textures:
+//! (depth is written for the overflow pass only — 3D content is Monado's, in spatial containers,
+//! ADR 0006 amd. 4). Client buffers become textures:
 //! shm by one upload per commit, dmabuf by import with the buffer's modifier (zero CPU copies —
 //! counted). Frame N+1 waits frame N's fence before the buffers frame N sampled are released,
 //! so a client gets its buffer back when the GPU is done with it and not before (§6.5).

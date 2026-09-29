@@ -26,7 +26,7 @@ seams so later work has a home; the assistive components themselves remain regis
 
 No existing stack models what an AT needs when the "screen" is a scene
 (doc 37's sharpest finding). The **zxr spatial-a11y extension** — reserved here as the third
-zxr extension family beside zxr-shell-v2 and zspatial-toplevel-export — exposes, read-only, to
+zxr extension family beside zspatial-toplevel-export (and the retired zxr-shell-v2 hook) — exposes, read-only, to
 authorized ATs:
 
 - **window poses and spatial relations** ("the terminal is left of the browser, 2 m away"),

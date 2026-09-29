@@ -41,7 +41,7 @@ signal.
    (verdict 2). Numbers come from the device contract and settings, never from code.
 3. **Planes scale angularly; volumes scale physically** (verdict 3). A plane keeps its apparent
    size as it moves in depth so legibility and target size — angular quantities — hold; a 3D
-   client volume keeps its metres because it is a physical object.
+   container (a Monado-hosted OpenXR app, ADR 0006 amd. 4) keeps its metres because it is a physical object; its bounds are pushed to Monado over the controller seam (specs/composition.md §5).
 4. **No window cap — ruled by the owner (2026-09-26): "the user's responsibility."** Off-view
    planes are budgeted by the compositor (frame-callback throttling, texture GC); clutter is
    managed (§8), not prevented.
@@ -88,7 +88,7 @@ independently — "position is managed by its parent, not the WM".
   `[size.min, size.max]` from the contract; density `density.px_per_cm` (stand-in 20 px/cm — the
   two Linux XR shells' value) converts logical pixels to metres *at the spawn distance*; from
   then on the plane's apparent size is angular (§3 principle 3), so "resize" changes pixels and
-  "move in depth" changes metres. Volumes (M2) take their metres from the client.
+  "move in depth" changes metres. Containers take their metres from the app's `suggestedBounds` (which the runtime "may: ignore", `ext_spatial_container.adoc:181-187`) and thereafter from zxr's bounds over the seam.
 - **Keys** (`org.mura.Settings1`, schema owned by this doc; values from the device contract's
   `display` group as defaults): `wm.spawn.distance` (m), `wm.spawn.elevation` (deg below eye
   line), `wm.spawn.overlap` (0–1), `wm.spawn.sibling_offset` (m), `wm.density.px_per_cm`,
@@ -178,7 +178,7 @@ States a member can be in, and their protocol meaning:
 | minimized | **ruled (2026-09-26):** hidden, state kept, shown on the launcher/dock client with an indicator ("transitions the app to the background without quitting"); when no dock client runs the system degrades to close-is-the-verb with relaunch-into-place | `set_minimized` from clients is an event to the manager (river), never applied by the compositor | manager |
 | maximized | fills the place's engine slot (`arc`/`dock`/`band`) or the spawn size × `wm.size.maximized` (`free`) | `maximized` configure state | manager on request |
 | fullscreen | fills the *band* of its place; other members of the place hidden while fullscreen | `fullscreen` configure state | manager on request |
-| exclusive | **ruled:** the client's scene takes the environment layer (§9 mechanism 1); native OpenXR apps are Monado's primary session with zxr as overlay (§9 mechanism 2) | `exclusive_requested` → `grant_exclusive` on the seam; a zxr-shell-v2 request for 3D clients | manager grants; the wearer's reserved system input always returns the shell (exit path: research pending) |
+| exclusive | **ruled:** the client's scene takes the environment layer (§9 mechanism 1); native OpenXR apps are immersive containers — Monado's primary session with zxr as overlay until Monado has the container pair (§9 mechanism 2; ADR 0006 amd. 4) | `exclusive_requested` → `grant_exclusive` on the seam; a zxr-shell-v2 request for 3D clients | manager grants; the wearer's reserved system input always returns the shell (exit path: research pending) |
 | closed | `xdg_toplevel` destroyed | — | client; the manager's `close` sends `xdg_toplevel.close` |
 
 **Built (2026-09-27, `policy/lifecycle.rs`).** The states are the floor's `Life` enum
@@ -270,12 +270,21 @@ Space), and the compositor may refuse.
 **Exclusivity — ruled by the owner (2026-09-26): yes.** "This is analogous to fullscreen on the
 desktop and most games will require this." Two mechanisms exist and both are Mura's:
 
-1. **A zxr client's scene takes the environment layer** — a zxr-shell-v2 3D client (or a plane
-   client's fullscreen scene) is *granted* the environment layer (`grant_exclusive` on the seam;
-   the request arrives as `exclusive_requested`); at most one grant at a time; other apps'
-   planes may be hidden by the manager; layers 4–6 (shell, overlay, foreground) stay presented
-   in front (visionOS's rule for progressive/full: "helps people avoid losing track of windows
-   behind virtual content").
+1. **A client's scene takes the environment layer** — a bounded container requesting
+   `xrRequestSpatialContainerBoundsModeEXT(IMMERSIVE)` (asynchronous, deniable with
+   `XrEventDataSpatialContainerBoundsModeRequestDeniedEXT`, may wait on a consent UI —
+   `ext_spatial_container.adoc:690-705`; ADR 0006 amd. 4) or a plane client's fullscreen scene
+   is *granted* the environment layer (`grant_exclusive` on the seam; the request arrives as
+   `exclusive_requested`, which for a container the controller seam raises from the
+   bounds-mode request); at most one grant at a time; other apps' planes may be hidden by the
+   manager (the spec's own rule: runtimes "may: hide other spatial containers while an immersive
+   spatial container is visible", `:655-662`); layers 4–6 (shell, overlay, foreground) stay
+   presented in front (visionOS's rule for progressive/full: "helps people avoid losing track of
+   windows behind virtual content"). The container spec's request-and-deny pattern — requests
+   are asynchronous, may be deferred without an event, denials are events, no-op requests queue
+   nothing (`:360-380`); the app's first show is its own, every later visibility change may be
+   the system's (`:482-489`) — is the comparable for this seam's `limits` and refusal semantics
+   (§11).
 2. **A native OpenXR application** (a game with its own OpenXR session) is not zxr's client at
    all: Monado's multi-client compositor decides which session is *primary* and *visible*
    (`ipc_handle_system_set_primary_client`, `monado-ctl -p <id>`; `xrt_syscomp_set_z_order`,
@@ -302,7 +311,7 @@ plus a force chord.
 | kind | scale | placement | resize | facing | precedent |
 |---|---|---|---|---|---|
 | plane (2D window) | angular | §3 | pixels (client), apparent size held | billboard while moving | visionOS window, Horizon panel, Android XR spatial panel |
-| volume (3D client, M2) | physical (metres) | §3 spawn pose; clipped to its half-size box | scale handle only | viewpoints, no rotation | visionOS volume, motorcar `CUBOID`, zen `bounded` |
+| container (Monado-hosted OpenXR app, bounded; ADR 0006 amd. 4) | physical (metres) | §3 spawn pose; Monado clips to the projected 2D bounds (`self_rendering.adoc:673-677`); zxr holds a proxy node | scale handle only (bounds over the seam) | viewpoints, no rotation | visionOS volume, motorcar `CUBOID`, zen `bounded`, the container spec |
 | environment | — | the environment layer | — | — | visionOS immersive space, motorcar `PORTAL`, zen `expansive` |
 
 ## 11. The bounded seam — `zxr_window_management_v1`
@@ -358,7 +367,7 @@ now is, where it sharpened the text above, and the two judgments it had to make:
 - **Rev 1 of the XML.** Places are announced by a `place` event (new object), the way windows
   are — `get_place` is gone; `state` and `assign` carry the `zxr_managed_place_v1` object, not
   an index. The first binder gets the whole picture before its first `manage_start`:
-  `capabilities` (advertised: `focus`, `hide`, `engine`; `emphasis` and `exclusive` are M2's
+  `capabilities` (advertised: `focus`, `hide`, `engine`; `emphasis` and `exclusive` await containers (ADR 0006 amd. 4)
   and unadvertised, their requests ignored), `limits` (the contract's comfort values), every
   mapped toplevel (`window`, `kind`, `app_id`, `title`, `parent`, `dimensions`, `state`) in
   the floor's most-recently-used order, every place (`engine`, `member_enter`…, `done`).

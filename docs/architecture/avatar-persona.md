@@ -23,7 +23,7 @@ flowchart LR
         sensing[headset sensing via Monado] --> driver[avatar driver service]
         asset --> runtime[avatar runtime renderer]
         driver -->|"versioned control vector"| runtime
-        runtime -->|"colour+depth zxr client"| zxr[zxr-shell-v2 compositor]
+        runtime -->|"OpenXR spatial container (self rendering)"| monado[Monado composites]
     end
 ```
 
@@ -34,7 +34,7 @@ flowchart LR
 3. **The driver** (live) — headset sensing → control vector. Entirely device-dependent; a
    device-contract problem ([25 §3](../research/25-avatar-driving-sensing.md)).
 4. **The runtime** (live) — control vector → deformed Gaussians → stereo colour+depth, submitted
-   as an ordinary zxr client ([composition §7.2](zxr-shell-v2-composition.md)).
+   as an ordinary OpenXR container app (ADR 0006 amendment 4; [specs/composition.md §3](../../specs/composition.md); formerly a zxr-shell-v2 client).
 
 **Mura owns only the asset format, the driver service, and the runtime renderer.** The
 enrollment pipeline is a separate desktop tool whose only OS-visible obligation is emitting a
@@ -177,11 +177,16 @@ calibration, emits `ControlFrame`s. Two obligations beyond pass-through:
   gap today: Monado's state tracker already routes `XRT_INPUT_FB_FACE_TRACKING2_AUDIO`, but no
   device registers it.
 
-## The runtime renderer: a zxr client
+## The runtime renderer: an OpenXR container app (re-grounded 2026-09-29)
 
-The avatar runtime is a **zxr-shell-v2 3D client** — it renders the peer's (or in mirror mode,
-the user's own) head into pooled colour+depth images for the compositor's atomic frame
-submission ([composition §7.2](zxr-shell-v2-composition.md)). **One real compositor-facing
+The avatar runtime is an **OpenXR application in a bounded spatial container** (ADR 0006
+amendment 4; [specs/composition.md §3](../../specs/composition.md)) — it renders the peer's (or in
+mirror mode, the user's own) head into its own swapchains and submits a projection layer with
+`XR_KHR_composition_layer_depth` per frame; zxr places the container, Monado composites it.
+(Until 2026-09-29 this section said "a zxr-shell-v2 3D client … pooled colour+depth images for
+the compositor's atomic frame submission", [composition §7.2](zxr-shell-v2-composition.md),
+superseded; the reasoning below transfers unchanged — the interleave is now Monado's depth policy,
+composition.md §4.3.) **One real compositor-facing
 gap (review):** Gaussian splatting is alpha rendering, and zxr's T1 baseline is nearest-*opaque*
 composition ([composition §2–3](zxr-shell-v2-composition.md)) — hair, lashes, and silhouettes
 have partial coverage that a single colour+depth cannot interleave against other clients. v1

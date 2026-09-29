@@ -1,6 +1,6 @@
 # The implementation path: distribution groundwork and the compositor, in dependency order
 
-**Status:** accepted plan of record (2026-09-23; rev 2 same day — the boot-to-desktop coverage
+**Status:** accepted plan of record (**rev 5, 2026-09-29 — the C-track (Monado's container pair on the `mura-os/monado` fork) as a third axis, M2–M4 re-cut onto it, the former `zxr-shell-v2` M2 withdrawn, ADR 0006 amendment 4; §5.1 the C-track rulings and the fork's creation registered;** 2026-09-23; rev 2 same day — the boot-to-desktop coverage
 review absorbed: stages B1a/B1b/B6a/B9, the F-track from
 [first-run-onboarding.md](first-run-onboarding.md), and the lifecycle section; rev 3 / 3.1,
 2026-09-24 — ADR 0017 rev 2 and the research/42 review absorbed; **rev 4, 2026-09-24 — two
@@ -134,12 +134,20 @@ flowchart TD
         R0 --> M1["M1 spatial 2D desktop in a window\nxdg-shell, ray-to-pointer, move/rotate/resize"]
         G1 --> G2["G2 = the swap\nzxr --greeter replaces the stand-in in D0's module\ngtkgreet leaves the closure"]
         M1 --> F2["F2 welcome surface\nshell content, per-item gated"]
-        M1 --> M2["M2 mixed 2D/3D composition\nzxr-shell-v2 protocol goes live"]
         G2 --> G3["G3 full handoff\nzxr greeter -> wrapper -> zxr session"]
         M1 --> G3
-        M2 --> M3["M3 renderer-agnostic proof"]
+        C3 --> M2["M2 first container app placed by zxr\nGodot spatial-container sample"]
+        M2 --> M3["M3 depth policy proven\ntwo depth-submitting containers interleave"]
         M3 --> M4["M4 headset output via Monado"]
     end
+    subgraph cmonado [Monado axis: the C-track, mura-os/monado]
+        C0["C0 peer identity + leases\nSO_PEERCRED, controller lease, no-controller default"] --> C1["C1 XR_EXT_spatial_container\nhandle, state, events, IDLE-only session"]
+        C1 --> C2["C2 _self_rendering\nper-container views, grouped xrEndFrame, retain/clear"]
+        C2 --> C3["C3 controller seam\nlibmonado or comp_multi listener; zxr as controller"]
+        C3 --> C4["C4 depth policy\nread KHR_composition_layer_depth in the squasher"]
+        C1 -.-> C5["C5 dmabuf-import swapchain\nzxr panel pass removed"]
+    end
+    M1 -.-> C3
     D0 -.-> G2
     D4 -.-> G3
     D5 -.-> G3
@@ -508,16 +516,44 @@ bitmaps. VM: `nix build .#vm-test-health` forces a P2 failure — no greeter, co
 boot → threshold (2 in the test) → `mura-recovery.target` with SSH reachable; a passing boot is
 blessed and the counter returns to 0.
 
-### M2–M4 — widening the session (composition §7.5, unchanged)
+### The C-track — Monado's container pair, and M2–M4 re-cut (rev 5, 2026-09-29; ADR 0006 amendment 4)
 
-M2: the `zxr-shell-v2` protocol server goes live (generated from the rev-2 XML via the
-`checks.protocols`-validated scanner path) — a GL ray-march client and a Vulkan raster client
-intersect and pass in front of/behind M1 windows, no CPU readback. M3: the CPU reference client
-against a single-process ground truth (catches matrix/depth-origin/clip bugs). M4: headset
-output via Monado — head motion drives all clients from one frame snapshot; stopping a client
-never creates an unresolved GPU wait; a rootless Xwayland app participates. M4 runs entirely in
-rung 1 (simulated HMD); real-HMD output stays behind the display-path feasibility gate
-(desktop-environment §6.6).
+The 3D tier is Monado's, not zxr's: OpenXR-native apps are spatial containers
+(`XR_EXT_spatial_container` + `_self_rendering`), Monado composites everything, zxr is the
+Wayland server, the WM policy and Monado's workspace controller
+([specs/composition.md](../../specs/composition.md)). The former M2 ("`zxr-shell-v2` goes live")
+is withdrawn with the protocol. The Monado work is a third axis, carried as commits on the
+`mura-os/monado` fork (branch `mura`; one feature branch per series, each an upstream MR —
+ADR 0006 amd. 4 D13), each rung gated by composition.md §7:
+
+- **C0 — peer identity and leases.** `SO_PEERCRED` at IPC accept; the controller role as a
+  lease; the no-controller default = Monado's primary/overlay rule. Gate: composition §7.7.
+  Prerequisite for every later rung and independently upstreamable.
+- **C1 — `XR_EXT_spatial_container`.** Handle, state, six events, the IDLE-only session
+  (`oxr_session.c` guards), container space, capabilities and graphics-presentation enumeration.
+  Gate: composition §7.6 against a probe client; Godot's module creates and shows a container.
+- **C2 — `_self_rendering`.** Per-container `comp_multi` slot; `xrLocateSpatialContainerViewsEXT`
+  with bounds-fitted FOV and decay; grouped `xrEndFrame` with submit/clear/retain; pixel
+  clipping. Gate: composition §7.3 (Godot renders into it) and §7.2 (fast path preserved).
+- **C3 — the controller seam.** `libmonado` verbs or the `comp_multi` listener (owner's ruling,
+  composition §5.2); zxr's `controller` module (zxr-core §3) drives visible / interactable /
+  bounds / pose / z-order from `policy`. Gate: composition §7.4 — **this is M2**: "first
+  container app placed by zxr" (spawn below the eye line, tidy, focus-on-commit, close from the
+  menu).
+- **C4 — the depth policy.** Read `XrCompositionLayerDepthInfoKHR` in the squasher and resolve
+  depth-carrying container layers per pixel (composition §4.3; the required-vs-opt-in choice
+  ruled by then). Gate: composition §7.5 — **this is M3**: "two depth-submitting containers
+  interleave", measured against a single-process ground truth (the former M3 method).
+- **C5 — dmabuf-import swapchain** (composition §2.5): removes zxr's per-commit panel pass.
+  Gated on the first-hardware panel-cost measurement (§5 below), not on C1–C4.
+- **M4 — headset output via Monado** is unchanged in content (head motion drives every
+  container and quad from Monado's one frame; stopping a client never creates an unresolved GPU
+  wait; a rootless Xwayland app participates) and now needs no zxr render pass to prove; it runs
+  in rung 1 (simulated HMD); real-HMD output stays behind the display-path feasibility gate
+  (desktop-environment §6.6).
+
+zxr's own windows move from `XR_EXTX_overlay` quads to container-hosted quads (composition §6)
+when the owner rules the per-toplevel vs whole-shell question — after C3, on no other rung.
 
 ## 3b. Lifecycle: resume, doff, logout, user switch
 
@@ -676,6 +712,17 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
 
 ### 5.1 Deferred by this path
 
+- **The C-track's rulings (ADR 0006 amendment 4, 2026-09-29; decider: the owner, each before
+  the rung that needs it):** the depth policy — `XR_KHR_composition_layer_depth` required from a
+  container app to be interleaved, or opt-in (composition §4.3; before C4); the controller-seam
+  shape — `libmonado` verbs or the `comp_multi` listener (composition §5.2; before C3); zxr's
+  own windows as containers — one per Wayland toplevel or one for the whole shell (composition
+  §6; after C3); the cutout layer's shape re-grounded as a Monado layer
+  (perception-passthrough-hands §1b; the passthrough rung). Until each is ruled the rung before
+  it proceeds and the rung after it does not start.
+- **The `mura-os/monado` fork's creation** (D13) needs the owner's GitHub credentials for the
+  `mura-os` org; until the repository exists the flake input stays on nixpkgs-xr's Monado and
+  the `pkgs/monado` overlay is inert (it is written against the fork's intended URL).
 - **Pre-groundwork specifications, and the rule that binds them**: a D-track rung does not
   start before its specification exists — D0 needs `profiles/` and the module-ownership table
   ([repo-structure.md](repo-structure.md)); D2 needs the posture table
@@ -731,8 +778,8 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   settings key and the controller-vs-hand order are owner items (spec §14); gaze targeting
   lands with the first eye-tracking target's Monado driver (research/29: Galaxy XR, Play For
   Dream, Steam Frame); the `XR_EXT_hand_interaction` device in Monado is an upstream item raised
-  before M1's hand work so the bridge can delete; 3D-client input (spatial-input §11) is M2's
-  protocol revision.
+  before M1's hand work so the bridge can delete; 3D-app input is Monado's action system
+  (spatial-input §11), the interactable container designated at C3 — no zxr protocol revision.
 - **Places implementation** beyond what M1's window model needs; the model is specified
   (ADR 0016) and its protocol drafted (`zxr-workspace-v1`), but residency/currency machinery
   waits for a session that has windows worth organizing.
@@ -797,8 +844,8 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
 - **First-hardware verification of the frame path** ([research/65](../research/65-embedded-frame-path-efficiency.md)
   §5 — everything labelled *hardware-deferred*): the Monado IPC round-trip time on the device
   and whether `monado-service` contends for the compositor's cores; tile-GPU time per pass for
-  the projection and quad panel paths and Monado's squasher at panel resolution; the panel
-  blit's cost per commit; RSS with the device's single ICD; wake-ups and CPU under the device's
+  the quad panel path and Monado's squasher at panel resolution and with N containers
+  (composition §7.8); the panel pass's cost per commit — the C5 gate; RSS with the device's single ICD; wake-ups and CPU under the device's
   power management; big-core affinity for the state loop and wait thread. Runs on the first
   device that boots the compositor; until then the host numbers in
   [budgets.md §5](budgets.md) stand with their labels.
@@ -840,7 +887,8 @@ claim that the gated work waits:
 ## 6. Standing references
 
 The dependency graph that orders this: [desktop-environment.md §6](desktop-environment.md).
-Milestone acceptance: [zxr-shell-v2-composition.md §7.5](zxr-shell-v2-composition.md).
+Milestone acceptance: [specs/composition.md §7](../../specs/composition.md) (the C-track and M2–M4; the
+former composition-doc §7.5 is superseded).
 R0 gates and base evidence: [research/39 §5](../research/39-compositor-base-landscape.md).
 Session/greeter/lock contracts: [ADR 0007](adr/0007-session-greeter-lock.md) +
 [specs/session-auth.md](../../specs/session-auth.md) + [specs/session-bootstrap.md](../../specs/session-bootstrap.md).

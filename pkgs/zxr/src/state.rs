@@ -217,7 +217,8 @@ pub struct Zxr {
     /// `HoldPolicy::Callback`: released when the member's frame callback is sent
     pub held_callback: Vec<(MemberId, HeldBuffer)>,
     /// depth-content hooks (spec §7 rev 3): counts of what needs zxr's projection layer. All zero
-    /// until M2 (volumes) and the passthrough rung (environment, cutout sources).
+    /// in the ruled design: volumes are container proxies (Monado draws them), environment and
+    /// cutout are Monado-side layers (ADR 0006 amd. 4) — only panel overflow can set `depth` (spec §7).
     pub volumes_mapped: u32,
     pub environment_source: bool,
     pub cutout_source: bool,

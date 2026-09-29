@@ -1,8 +1,11 @@
-# ADR 0006: XR compositor strategy — revive the zxr lineage as `zxr-shell-v2`, Wayland-native, on Monado
+# ADR 0006: XR compositor strategy — revive the zxr lineage as `zxr-shell-v2`, Wayland-native, on Monado (amended 2026-09-29: the container pair)
 
 **Status:** accepted (draft); **base library ratified 2026-09-23** (Rust + smithay, see §The
-compositor base; evidence in [39-compositor-base-landscape](../../research/39-compositor-base-landscape.md))
-**Date:** 2026-09-22 (amended 2026-09-23; amended 2026-09-26 — §Program shape, below)
+compositor base; evidence in [39-compositor-base-landscape](../../research/39-compositor-base-landscape.md));
+**amended 2026-09-29 (Amendment 4, below): the 3D-client contract is `XR_EXT_spatial_container`
++ `_self_rendering` implemented in Monado; `zxr-shell-v2` is retired to a reserved hook.**
+**Date:** 2026-09-22 (amended 2026-09-23; amended 2026-09-26 — §Program shape, below; amended
+2026-09-29 — Amendment 4)
 **Context sources:** [08-wxrc](../../research/08-wxrc.md) (Motorcar→wxrc→wxrd lineage + code),
 [09-wxrc-ecosystem-gap-2026](../../research/09-wxrc-ecosystem-gap-2026.md) (2026 patch archaeology),
 [10-xr-wayland-protocol-comparison](../../research/10-xr-wayland-protocol-comparison.md) (five-model
@@ -64,7 +67,7 @@ of wxrd (option 2), and **not** adopting StardustXR's substrate (option 3). Star
 instead **packaged as optional alternative sessions** ([adr/0005](0005-flake-layout-and-outputs.md),
 [05 §9.7](../../research/05-xr-userspace.md)).
 
-### The protocol: `zxr-shell-v2`
+### The protocol: `zxr-shell-v2` (superseded by Amendment 4, 2026-09-29 — the XML stays as a retired reserved hook)
 
 Per [10 §4.4](../../research/10-xr-wayland-protocol-comparison.md), refill the zxr skeleton with the
 flesh motorcar had and the mechanisms 2026 provides:
@@ -149,7 +152,7 @@ Xwayland) against measured gates, but it cannot change the base choice. The prot
 client-rendered / Monado-client / Vulkan decisions above were always base-independent, and the
 ratification does not alter them.
 
-### Sequencing: ship the 2D tier first
+### Sequencing: ship the 2D tier first (the "then the 3D-native tier" half superseded by Amendment 4 — the 3D tier is Monado's container pair, implementation-path.md §3 C-track)
 
 Per [10 §4.4](../../research/10-xr-wayland-protocol-comparison.md) and WayVR's evidence, the
 2D-panels-in-XR tier needs no new protocol and is independently useful. Ship it first (xdg-shell
@@ -336,3 +339,113 @@ GNOME/KDE:
   `libmonado`; `request_exit` then kill the scope. zxr's death does not take the game with it.
 - **Upstream (Monado)**: reservation of `/input/system/click` for a system client; a real
   `set_focused_client`. Recorded on ADR 0013's upstream list shape.
+
+## Amendment 4 (2026-09-29) — the container pair replaces `zxr-shell-v2` as the 3D contract; Monado composites; zxr is the workspace controller
+
+**Context.** When this ADR was written the corpus believed no ratified multi-app contract existed
+in OpenXR ([zxr-shell-v2-composition.md §6](../zxr-shell-v2-composition.md) called the
+self-rendering half "fabricated"). At the pinned registry (OpenXR 1.1.63, 2026-09-01) both
+`XR_EXT_spatial_container` (#811) and `XR_EXT_spatial_container_self_rendering` (#814) are
+**ratified** (`references/openxr-docs/specification/registry/xr.xml:24456,24536`); Godot master
+implements the client side (`references/godot/modules/openxr/extensions/spatial_container/`);
+Google's Android XR runtime — Monado-derived — is the one known runtime implementation (closed;
+Godot PRs #123124 and #123736 [external]); no open runtime implements it (Monado's main
+branches, its 200 most-active public forks and its open MRs surveyed, [research/79 §4c](../../research/79-openxr-extensions-and-zxr.md)).
+Under AGENTS rule 7 that is a rethink candidate, not a patch. The rethink is
+[research/79 §3–§4](../../research/79-openxr-extensions-and-zxr.md); the owner ruled the
+following on 2026-09-29.
+
+### Decisions
+
+1. **The 3D-client contract is the container pair, implemented in Monado.** OpenXR-native
+   applications (Godot, Unity, StereoKit, LÖVR, anything that speaks the standard) are hosted as
+   spatial containers by the runtime. Implemented as Mura's patch series over upstream Monado,
+   written for upstreaming (the spec's contributors include Monado's author and maintainer,
+   `ext_spatial_container.adoc:24,36`). Not a Mura-private extension. Mura would be the first
+   open implementation.
+2. **Monado composes and presents everything.** The specification fixes this ownership —
+   "composition layers allow an application to offload the composition of the final image to a
+   runtime-supplied compositor" (`rendering.adoc:1210`); a compositor outside the runtime is a
+   second composition pass by construction. **zxr does not composite 3D content.** Its 2D windows
+   are already quad layers to Monado (Amendment 2). zxr's roles: the Wayland server (`xdg-shell`,
+   layer-shell, IME, clipboard, session lock, Xwayland satellite), the places/window-management
+   policy for every window — 2D or 3D — and Monado's **workspace controller**. The normative
+   statement of how a quad and a container reach the display is [specs/composition.md](../../../specs/composition.md).
+3. **`zxr-shell-v2` is retired to a reserved hook.** Wayland-native 3D clients are a non-goal:
+   no engine speaks a Wayland 3D protocol and every prior attempt (motorcar, wxrc, zwin,
+   StardustXR — research/10) died on adoption; containers have Godot and Unity today. The XML
+   stays in `protocols/`, CI-validated, status "retired — reserved, not served"; the hook exists
+   for the one gap containers leave (a Wayland-native app wanting a 3D surface *and* the
+   desktop's clipboard/IME). §"The protocol: `zxr-shell-v2`" and §"Sequencing … then the
+   3D-native tier" of this ADR are superseded; everything else stands (Rust + smithay, Vulkan,
+   quads always, the program shape, Amendment 3's overlay session as a transitional mechanism).
+4. **Motorcar's per-pixel cross-client occlusion is a Monado runtime policy.** The spec fixes who
+   composes, not how: the runtime "may: composite containers in any order they choose" and
+   *may* precomposite each to a quad (`ext_spatial_container_self_rendering.adoc:476-486`);
+   applications may attach `XR_KHR_composition_layer_depth` to container projection layers;
+   Monado's compute path already binds that depth and never reads it (`comp_render_cs.c:250-261`,
+   research/65 §7). Reading it and depth-testing container layers in the squasher is Mura's
+   runtime policy. **Open (decider: the owner):** depth required from container apps to be
+   interleaved, or opt-in with quad order otherwise.
+5. **The controller seam is Monado-native** — `libmonado` extended with per-container verbs
+   (`monado.c:348-403` today: primary/focused/io) and/or the `comp_multi` listener interface
+   upstream has already sketched (MR !1354 "Bubble compositor events through the multi",
+   `wallbraker/monado-collabora:jakob/comp/multi-interface` [external]). Never an OpenXR
+   extension of the DisplayXR `XR_DXR_spatial_workspace` kind. **Open (decider: the owner):**
+   which of the two shapes.
+6. **Prerequisites before any seam:** server-derived peer identity at IPC accept
+   (`SO_PEERCRED`; Monado's `ipc_app_state.pid` is client-asserted today, `ipc_protocol.h:399`)
+   and a lease table whose default policy, with no controller present, is Monado's existing
+   primary/overlay rule. DisplayXR's ADR-035 audit of a Monado fork that grew a multi-client
+   shell without these [external] is the record of the failure mode.
+7. **zxr's session is `XR_EXTX_overlay` transitionally** (provisional at the pin,
+   `extx_overlay.adoc:316`) until Monado has the pair; then zxr is a container-session client.
+   **Open (decider: the owner):** one container per Wayland toplevel, or one for the whole shell.
+8. **Zero-copy 2D:** a Monado-private dmabuf-import swapchain extension removes zxr's per-commit
+   blit (Monado has `create_swapchain_from_native` internally, `ipc_protocol.h:406`). A Monado
+   work item behind a measurement gate ([specs/composition.md §2](../../../specs/composition.md)).
+9. **Evidence posture.** Android XR is the closest comparable — mechanism evidence only (rule 2),
+   internals not cited. Godot's `spatial_container` module and the `godot_openxr_vendors`
+   spatial-container sample are the conformance substitute until Khronos publishes the container
+   test extension (OpenXR-CTS has none at the pin). **DisplayXR is unpinned**: a non-standard,
+   Windows-compositor Monado fork; only its ADR-035 audit is cited, [external].
+10. **System rendering** (Android XR's `KHRX1_system_renderer` / SceneCore, PICO's spatial engine)
+    is a non-goal: it puts the engine inside the runtime.
+11. **Retain, per-frame should-submit/recommended-extent hints and bounds-fitted frusta with mono
+    decay** are Monado implementation items under the spec, not `zxr-shell-v2` deltas
+    (research/79 §7a-1..3 withdrawn).
+12. **Perception layers** (passthrough, hand cutout — ADR 0008, Monado-side) lose the "zxr
+    projection pass" fallback; they are Monado layers. The cutout-shape item stays open at the
+    passthrough rung (spec §14), re-grounded.
+13. **Monado is carried as a fork under the `mura-os` GitHub org** (`mura-os/monado`): `main` a
+    mirror of upstream; branch `mura` = upstream `main` + Mura's series, rebased on every upstream
+    bump; one feature branch per upstreamable series (`containers`, `controller-seam`,
+    `dmabuf-swapchain`, per-device drivers), each the source of a GitLab MR. The flake pins the
+    fork by rev (a `flake = false` input overriding `xrSources.monado`'s `src` — nixpkgs-xr's
+    own mechanism, `references/nixpkgs-xr/pkgs/overrides/monado.nix:6-8`). Comparables: WiVRn
+    (pinned rev + in-tree `patches/monado/*.patch`, `references/wivrn/patches/monado/`) — the
+    shape this tree named until now; kwin-vr and `monado-galaxyxr` (fork repo + feature branch,
+    both pinned as study clones); DisplayXR (hard fork that deleted upstream's drivers —
+    rejected). The ruling takes the fork-repo shape with WiVRn's discipline: every commit
+    upstream-shaped, the fork is where Mura's work waits for review, not where it diverges.
+    `references/monado` stays the upstream study pin.
+
+### Consequences
+
+- One composition pass fewer on the device for 3D content: the app's pixels are read once by
+  Monado's squasher and once by distortion, never by zxr. Research/65's ruling ("quads always")
+  taken to its end.
+- Two authorities become one: placement, focus and arrangement for every window are zxr's; every
+  pixel is Monado's. Container input is Monado's action system, routed to the container zxr
+  marks interactable; Wayland input stays zxr's seat (research/68's ruling unchanged).
+- The Monado work is on the critical path for any bounded 3D app on Mura — the **C-track** in
+  [implementation-path.md §3](../implementation-path.md) replaces M2–M4's protocol milestones.
+- `pkgs/zxr` changes nothing today: no `zxr-shell-v2` server was ever built; `Shape::Volume`
+  becomes a container proxy the scene tracks for hit-test and arrangement.
+
+**Budget impact** (overview invariant 9): frame path — removes the projection pass zxr would have
+run for 3D content (a full-resolution read of every client per eye per frame on a tiler), adds
+nothing to the quad path; Monado's squasher cost per extra client is measured (research/67 §2:
++0.33 ms/frame at 16 quads, equal for 1–4); memory — no zxr-side colour+depth slots per 3D
+client; IPC — the seam is per policy change, not per frame; gates in
+[specs/composition.md §7](../../../specs/composition.md).

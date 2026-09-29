@@ -57,7 +57,7 @@ flowchart TB
     sat["xwayland-satellite<br/>(process, X11 → xdg-shell)"] --> frontend
     x11["X11 apps"] --> sat
     ctl["harness / developer<br/>control socket, SIGUSR1"] --> loopT
-    xr -- "one projection layer<br/>(2 views, colour)" --> monado["Monado"]
+    xr -- "quad layers (M1; R0: one projection layer)<br/>containers via the seam later" --> monado["Monado: composites, presents"]
     monado -- "display timing" --> wait
     settings["org.mura.Settings1"] -. "preferences (M1)" .-> policy
 ```
@@ -106,11 +106,13 @@ Every `FrameTick` from the wait thread runs this once, in order, on the state lo
    orthographic pass of the whole tree into it (bounds = geometry ∪ popups). Every dmabuf drawn
    gets a foreign-queue **acquire** barrier before and **release** barrier after (wlroots' shape,
    `render/vulkan/pass.c:337-359`).
-5. **Depth content present?** (a mapped 3D volume, an environment or cutout source, or panel
-   overflow past `maxLayerCount − 1`). *No:* submit the panel passes on the slot fence, release
+5. **Overflow present?** (panel overflow past `maxLayerCount − 1` — since 2026-09-29 the only
+   predicate: volumes are Monado's containers, environment and cutout Monado-side layers, ADR 0006
+   amendment 4; the as-built R0/M1 code still tests the wider predicate and is correct because
+   none of the other sources exists yet). *No:* submit the panel passes on the slot fence, release
    the panel images, `xrEndFrame(quads)` — no projection images acquired, no scene pass; with no
    commit in the tick, nothing reaches the GPU. *Yes:* acquire the projection images, record the
-   scene pass (volumes, environment, cutout, overflow planes) alongside the panel passes, submit,
+   scene pass (overflow planes) alongside the panel passes, submit,
    release, `xrEndFrame(projection, quads)`. Quads ordered by band then distance; the projection
    layer first.
 6. `wl_surface.frame` callbacks — visibility-gated (frustum test on the quad pose), with a
@@ -179,9 +181,9 @@ them, so splitting later is a file move, not a redesign.
 | spec §3 module | R0 file | present at R0 | absent at R0 (condition that adds it) |
 |---|---|---|---|
 | `xr` | `src/xr.rs` | instance → system → runtime-created Vulkan instance/device → session → per-view swapchains → `LOCAL` space; the wait thread + handshake; `math` (column-major mat4, asymmetric-fov projection, pose inverse, ray rotate) | `STAGE`/hand spaces (with hands, M1); session restart (with `modes`) |
-| `render` | `src/render.rs` | render pass + pipeline (push constants, alpha blend, depth), shm staging path, dmabuf import with DRM modifiers, per-view depth + framebuffers, 2 frame slots (cmd + fence), timestamp queries, `sampled_modifiers` for the feedback table | 3D clients' colour+depth composition (M2, zxr-shell-v2); damage-aware upload |
+| `render` | `src/render.rs` | render pass + pipeline (push constants, alpha blend, depth), shm staging path, dmabuf import with DRM modifiers, per-view depth + framebuffers, 2 frame slots (cmd + fence), timestamp queries, `sampled_modifiers` for the feedback table | 3D content (Monado's containers, ADR 0006 amd. 4 — never zxr's); damage-aware upload |
 | `frontend` | `src/state.rs` (handler half) | every smithay delegate state + handler impl (compositor, buffer, shm, dmabuf, syncobj, xdg-shell, seat, data-device, DnD, output, pointer-constraints); `ClientState`; the acquire hook; dmabuf validation; the one `wl_output` | layer-shell and the M1 protocol set (spec §10); `--greeter` mode |
-| `scene` | `src/scene.rs` (arenas, verbs, flatten, hit) + `src/state.rs` (the member payload: window, panel, dirty) | `Arena<T>` with generational handles; `frames` / `places` / `members` (spec §5a normative); `add / remove / reparent / set_local / set_flags / focus`; `flatten` → band-ordered quad list + overflow, budget by band priority; full-pose ray→plane→surface hit; fan placement as the stand-in policy | 3D nodes (M2); the WM `free` engine (M1) |
+| `scene` | `src/scene.rs` (arenas, verbs, flatten, hit) + `src/state.rs` (the member payload: window, panel, dirty) | `Arena<T>` with generational handles; `frames` / `places` / `members` (spec §5a normative); `add / remove / reparent / set_local / set_flags / focus`; `flatten` → band-ordered quad list + overflow, budget by band priority; full-pose ray→plane→surface hit; fan placement as the stand-in policy | container proxy nodes (bounds/pose from the controller seam; no draw); the WM `free` engine (M1) |
 | `input` | `src/input/` (22 files): `mod.rs` types + `Chain` + `Input` + injector; `reserved.rs`, `mode.rs`, `a11y.rs`, `activity.rs`, `stabilize.rs`, `tier.rs` + `quality.rs` + `held.rs` + `loss.rs`, `hit.rs`, `seat.rs` + `touch.rs` + `pointer.rs` + `cursor.rs` + `emphasis.rs` + `theme.rs`, `actions.rs` + `bridge.rs`, `focus.rs`, `text.rs`, `libinput.rs`, `ei.rs` | the module of spatial-input §1a as built (research/70 §1): nine static slots in KWin's order over a closed `SourceKind` enum; one action set (`actions.rs`) as the XR seam, the §10 joint bridge; smithay `InputBackend` for libinput (libseat) and EIS; `wl_touch` + `wl_pointer` transports; one cursor layer as a band-5 quad from one fixed swapchain — the client cursor, the ray's reticle, or both in one image (research/70 §9); focus/activation, text-entry seam, presence, idle activity; per-event dispatch, XR at the tick; no input thread (trigger measured, not met) | the `Grabs` slot's WM policy (window-workspace-management); the poke indicator and ray line; the theme/size settings key; every stand-in's value (first hardware) |
 | `policy` | `Scene::add` (the fan) | — (a stand-in, §6) | placement rules and comfort caps from research/36; preferences from `org.mura.Settings1`; the bounded `zxr_window_management` face (ADR 0012 amendment) |
 | `modes`, `unit` | — | — | `--greeter` restricted scene, `sd_notify`, variable publication (M1; session-bootstrap rev 3) |
@@ -210,7 +212,7 @@ mechanism the bring-up showed was missing, no comparable needed, recorded for th
 | xwayland-satellite for X11; smithay `X11Wm` the recorded fallback | determined; re-examined against the virtual-desktop modes at the owner's request and **stands** (nested DEs are Wayland clients; delegated X11 windows carry the *producer's* X11 issues; satellite's fatal set is in the R0 protocol set) | research/59 §9 + §9a |
 | no compositor-side windowed backend; Monado's mirror is the dev view | ruled | research/59; spec §1 |
 | painter's order across layers; depth test only within the projection layer | determined | research/59 §2 (`rendering.adoc:1143-1147`; Monado `comp_render.h:42-43`) |
-| **2D planes are runtime quad layers; the projection layer exists only with depth content** (volumes, environment, cutout, or panel overflow) — a windows-only session has no render pass | **ruled** 2026-09-26 (ADR 0006 amendment 2) on research/65 §2: equal pass counts on Monado, −47 % CPU / −48 % wake-ups / 0 GPU for static UI under head motion, the spec's quad-for-UI text, wayvr; accepted: one GPU copy per commit, painter's order only; **the cutout is the last layer — hands above all windows** (shape open, perception-passthrough-hands §1a) | ADR 0006 amendment 2; spec §4, §6.2, §7 |
+| **2D planes are runtime quad layers; the projection layer exists only for panel overflow** (narrowed 2026-09-29 from "depth content" — volumes, environment and cutout are Monado's, ADR 0006 amd. 4) — a windows-only session has no render pass | **ruled** 2026-09-26 (ADR 0006 amendment 2) on research/65 §2: equal pass counts on Monado, −47 % CPU / −48 % wake-ups / 0 GPU for static UI under head motion, the spec's quad-for-UI text, wayvr; accepted: one GPU copy per commit, painter's order only; **the cutout is the last layer — hands above all windows** (shape open, perception-passthrough-hands §1a) | ADR 0006 amendment 2; spec §4, §6.2, §7 |
 | acquire via fd blockers (syncobj eventfd, else implicit fence) | determined | research/59 §4–5; cosmic-comp shape |
 | release = drop held `Buffer` after the frame's fence | determined | research/59 §5; smithay `InnerBuffer::drop` |
 | one `VkImage` per `wl_buffer` (dmabuf), one texture per surface (shm) | determined | research/59 §4 (niri/cosmic/wlroots caches are per buffer) |

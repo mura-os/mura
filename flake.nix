@@ -11,19 +11,30 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # The Monado Mura runs: the mura-os/monado fork, branch `mura` = upstream main + Mura's
+    # upstream-shaped series (ADR 0006 amendment 4 D13; the C-track lands here). Source only —
+    # nixpkgs-xr's package is kept and its `src` swapped (pkgs/monado). Pinned by rev in the lock.
+    monado = {
+      url = "github:mura-os/monado/mura";
+      flake = false;
+    };
+
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-xr, treefmt-nix, ... }:
+  outputs = { self, nixpkgs, nixpkgs-xr, treefmt-nix, monado, ... }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAll = nixpkgs.lib.genAttrs systems;
+      # The overlay stack every Mura evaluation uses: nixpkgs-xr's XR packages, then Mura's
+      # packages, then the Monado source swap for the mura-os/monado fork.
+      overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) (import ./pkgs/monado monado) ];
       pkgsFor = system: import nixpkgs {
         inherit system;
-        overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ];
+        inherit overlays;
       };
 
       treefmtEval = forAll (system:
@@ -53,7 +64,7 @@
         device = ./devices/virtual-headset;
         system = "x86_64-linux";
         extraModules = [
-          { nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }
+          { nixpkgs.overlays = overlays; }
           ./profiles/default.nix
         ];
       };
@@ -61,7 +72,7 @@
         device = ./devices/virtual-headset;
         system = "x86_64-linux";
         extraModules = [
-          { nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }
+          { nixpkgs.overlays = overlays; }
           ./profiles/multi-user.nix
           # VM FIXTURE ONLY: the declared account (mura / mura) — see the file's header.
           ./tests/vm/fixture-user.nix
@@ -74,7 +85,7 @@
       nixosConfigurations.valve-steam-frame = muraSystem {
         device = ./devices/valve-steam-frame;
         system = "aarch64-linux";
-        extraModules = [{ nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }];
+        extraModules = [{ nixpkgs.overlays = overlays; }];
       };
       # TEST-ONLY deckard image: forces P2 hard, cycles failure 1, then exercises the production
       # threshold → LoaderEntryOneShot → recovery.conf → mura-recovery.target path.
@@ -82,7 +93,7 @@
         device = ./devices/valve-steam-frame;
         system = "aarch64-linux";
         extraModules = [
-          { nixpkgs.overlays = [ nixpkgs-xr.overlays.default (import ./pkgs) ]; }
+          { nixpkgs.overlays = overlays; }
           ./tests/frame/recovery-proof.nix
         ];
       };

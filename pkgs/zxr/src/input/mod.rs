@@ -8,7 +8,7 @@
 //! **The two seams** (research/68 §5): sources enter through the OpenXR action set (XR devices —
 //! a new controller is a bindings entry, not code) and smithay's `InputBackend` (libinput, EI);
 //! inside zxr every source is one of a **closed set of kinds** ([`SourceKind`]) and every event
-//! is one [`Sample`], so the stages are kind-agnostic and M2's forwarding to 3D clients is a copy.
+//! is one [`Sample`], so the stages are kind-agnostic (3D apps' input is Monado's, never forwarded — ADR 0006 amd. 4).
 //!
 //! **The stages** ([`Slot`], in order — KWin's `InputFilterOrder` with the XR stages inserted
 //! where their inputs exist, `references/kwin/src/input.h:366-393`): reserved system input →
@@ -197,7 +197,7 @@ pub struct Values {
 
 /// One input event or per-tick state from one source (spatial-input §1a). One struct for every
 /// kind — a few fields are unused per kind — so the stages are kind-agnostic and §11's forwarding
-/// to 3D clients is a copy (plan judgment 4).
+/// to any future consumer is a copy (plan judgment 4; 3D apps' input is Monado's, ADR 0006 amd. 4).
 #[derive(Clone, Copy, Debug)]
 pub struct Sample {
     pub kind: SourceKind,

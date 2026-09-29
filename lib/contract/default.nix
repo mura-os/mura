@@ -401,15 +401,21 @@ in
           type = types.nullOr types.str;
           default = null;
           description = ''
-            Pinned Monado revision for this device's XR driver (monado-rev + patch
-            series, the WiVRn pinning pattern; Monado has no stable out-of-tree
-            driver ABI). null = the default packaged Monado.
+            Pinned revision in the mura-os/monado fork for this device's XR driver
+            (ADR 0006 amendment 4 D13: the fork's branch `mura` is upstream main plus
+            Mura's upstream-shaped series; a device may pin a feature branch's rev while
+            its driver series is in review; Monado has no stable out-of-tree driver
+            ABI). null = the flake's pinned `monado` input (flake.lock).
           '';
         };
         patches = mkOption {
           type = types.listOf types.path;
           default = [ ];
-          description = "Per-device Monado patch series (patches/monado/<device>/...).";
+          description = ''
+            Per-device Monado patch series applied on top of the fork's rev
+            (patches/monado/<device>/...) — for experiments not yet committed on the
+            fork; the destination of every patch here is a fork branch and an upstream MR.
+          '';
         };
         drivers = mkOption {
           type = types.attrsOf (types.submodule {
@@ -443,9 +449,10 @@ in
         default = "none";
         description = ''
           The XR shell/compositor session run above the OpenXR runtime (ADR 0006).
-          - zxr: the Mura compositor (Wayland-native, continues the wxrc zxr lineage
-            as zxr-shell-v2; xdg-shell 2D apps + zxr-shell-v2 3D apps in one depth-tested space).
-            Ships the 2D tier first, then the 3D-native tier (docs/research/10).
+          - zxr: the Mura compositor (Wayland server for xdg-shell 2D apps, submitted to Monado as
+            quad layers; the window/places policy for every window; Monado's workspace controller
+            for 3D apps, which are OpenXR spatial containers Monado composites — ADR 0006 amendment 4,
+            specs/composition.md; the wxrc zxr-shell-v2 lineage protocol is a retired reserved hook).
           - stardust: StardustXR as a packaged alternative session (not the backbone).
           - wayvr: WayVR as a packaged 2D-panels-in-XR overlay session.
           - none: headless/bring-up (the virtual-headset VM default until the compositor exists).

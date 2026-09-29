@@ -58,7 +58,7 @@ pub const UNRESPONSIVE_NS: u64 = 5_000_000_000;
 
 /// The capabilities this compositor honours (§11): focus with a serial, hide/show, engine +
 /// arrange. Not yet: emphasis (`wm.focus.{dim,sibling_alpha}` have no value), exclusive (the
-/// grant path is native-apps §4's, M2).
+/// grant path is native-apps §4's; for a container, its IMMERSIVE bounds-mode request over the seam).
 fn capabilities() -> zxr_window_manager_v1::Capability {
     zxr_window_manager_v1::Capability::Focus | zxr_window_manager_v1::Capability::Hide | zxr_window_manager_v1::Capability::Engine
 }
@@ -802,7 +802,7 @@ impl Dispatch<ZxrManagedWindowV1, MemberId> for Zxr {
                     }
                 }
             }
-            R::GrantExclusive { .. } => {} // capability not advertised: ignored (M2)
+            R::GrantExclusive { .. } => {} // capability not advertised: ignored until containers (ADR 0006 amd. 4)
         }
     }
 }

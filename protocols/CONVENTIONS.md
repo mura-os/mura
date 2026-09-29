@@ -32,8 +32,9 @@ is internally inconsistent, the picked side is marked **[picked]** and the alter
   never a bare collective. When a protocol continues prior work, stack lineage copyright lines
   the way upstream does: ext-workspace-v1.xml:3-6 credits Billington 2019 / Bozhinov 2020 /
   Brekenfeld 2022 across three generations, linux-drm-syncobj-v1.xml:4-7 credits
-  Chromium/Intel/Collabora/Ser across five years. A `zxr-shell-v2` that continues wxrc's
-  zxr-shell-v1 keeps the 2019 Status Research & Development GmbH line.
+  Chromium/Intel/Collabora/Ser across five years. A `zxr-shell-v2` that continued wxrc's
+  zxr-shell-v1 keeps the 2019 Status Research & Development GmbH line (the protocol is now a retired
+  reserved hook, ADR 0006 amd. 4; the attribution rule stands for it and for any successor).
 - **Protocol-level `<description>`**: optional upstream (absent from xdg-shell,
   presentation-time, ext-workspace; present in linux-drm-syncobj-v1.xml:29-56). **[picked]**
   Required here, because our files must carry the experimental disclaimer: state what the

@@ -1,6 +1,6 @@
 # Native OpenXR applications beside zxr — the fullscreen-game model and the reserved system input
 
-**Status: DRAFT, rev 0.3 (2026-09-26; the five forks ruled by the owner the same day — §10; rev 0.2 adds the efficiency findings of [research/67](../research/67-overlay-efficiency-beside-native-apps.md): zero layers measured and the placeholder forbidden, the quiet-loop bound measured, the quiet-mode client rule, the summoned-footprint rule, the cutout lifetime rule, the client-list cadence; rev 0.3 records the cutout-over-games default as an open question with its options and costs tabled in §4(b), decided by the owner on the first device with the real matte pipeline over a real game).**
+**Status: DRAFT, rev 0.4 (2026-09-29 — §1 the container-pair framing per ADR 0006 amendment 4: bounded containers are windows zxr places through the seam, an immersive container is this document's game; rev 0.3 = 2026-09-26; the five forks ruled by the owner the same day — §10; rev 0.2 adds the efficiency findings of [research/67](../research/67-overlay-efficiency-beside-native-apps.md): zero layers measured and the placeholder forbidden, the quiet-loop bound measured, the quiet-mode client rule, the summoned-footprint rule, the cutout lifetime rule, the client-list cadence; rev 0.3 records the cutout-over-games default as an open question with its options and costs tabled in §4(b), decided by the owner on the first device with the real matte pipeline over a real game).**
 Derived from [research/66](../research/66-native-openxr-apps-and-the-system-input.md) under the
 owner's framing: *zxr is a desktop environment's compositor, and a native OpenXR application is
 what a fullscreen game is to GNOME/KDE.* Design docs specify; ordering lives only in
@@ -30,6 +30,21 @@ shell is summoned over a game, as on every platform. The reserved input adds no 
 an existing button reaching zxr instead of an app.
 
 ## 1. The model in one paragraph
+
+**Rev 0.4 (2026-09-29, ADR 0006 amendment 4).** The model below is the *immersive* half of a
+larger one. Under the ratified `XR_EXT_spatial_container` pair, implemented in Monado, every
+OpenXR-native application is a **container** client: a *bounded* container is a window — zxr
+places, shows, hides and focuses it through the controller seam exactly as it does a Wayland
+plane ([specs/composition.md §5](../../specs/composition.md)); an *immersive* container is "the
+same as a full-screen and immersive app created without spatial container usage"
+(`ext_spatial_container.adoc:647-650`) — **this document's game**, unchanged in experience.
+The "main session / overlay session" mechanism below is Monado's until it has the pair;
+afterwards zxr is itself a container client and the ordering is one rule (composition.md §4.2).
+Every ruling in §10 carries over: the reserved system input, quiet mode, VISIBLE-not-FOCUSED,
+launch/close, and the one experience for both exclusivity mechanisms (§8) — the second mechanism
+is now a bounded container's `xrRequestSpatialContainerBoundsModeEXT(IMMERSIVE)`, asynchronous
+and deniable (`ext_spatial_container.adoc:690-705`), which the seam surfaces to zxr's
+`exclusive_requested` path.
 
 Monado has one **main** session — the game — and any number of **overlay** sessions whose
 layers are always composited above it (`extx_overlay.adoc:65-67`). zxr is an overlay session,
@@ -272,7 +287,7 @@ from the OSD layer (§4, Q-D) — the one perception layer the wearer, not the g
 | shell layers 5–6 | drawn by zxr in the same pass | drawn by zxr's overlay session when needed |
 | input to the app | zxr's seat, as any client | the game's own OpenXR actions; `io_blocks` when the shell is up |
 | summon shell | reserved input → zxr draws layers 4–6 over the granted scene; the client's input paused by zxr | reserved input → zxr draws layers 4–6; game → VISIBLE |
-| quit | `xdg_toplevel.close` / zxr-shell-v2 close → kill | `request_exit` → kill scope |
+| quit | `xdg_toplevel.close` → kill (Wayland); container close via the seam → `XrEventDataSpatialContainerClosedEXT` → kill (container) | `request_exit` → kill scope |
 | recenter | zxr re-seats; the granted scene is head-relative content | runtime re-seats `LOCAL` |
 
 The wearer sees one behaviour; the shell's "back to it / switch / quit" surface is the same

@@ -95,7 +95,10 @@ leave the process); boundary enforcement (dim/cut client content at the guardian
 
 ### 4. The zxr-private protocol surface (kept minimal)
 
-One small family of shell-integration extensions beside `zxr-shell-v2`, covering only genuinely
+One small family of shell-integration extensions (beside the retired `zxr-shell-v2` hook —
+ADR 0006 amendment 4; the 3D tier's contract is OpenXR's container pair between app and Monado,
+and zxr's part of it, the **controller seam**, is a Monado-native library call, not a Wayland
+protocol — [specs/composition.md §5](../../../specs/composition.md)), covering only genuinely
 spatial semantics ([30 §6](../../research/30-wayland-de-anatomy-protocol-seams.md)):
 
 1. spatial workspace metadata + compositor-rendered space-preview sources (extends ext-workspace);
@@ -175,7 +178,7 @@ system.
 - **Non-goal recorded: desktop icons.** The environment is not an icon surface; the launcher (a
   phone-style app grid / "start menu" scene) owns application icons, fed by the desktop-entry +
   icon-theme XDG specs. No desktop-icons component will be built.
-- The zxr shell-integration protocol family (§4) is a deliverable beside zxr-shell-v2, versioned
+- The zxr shell-integration protocol family (§4) is a deliverable beside the (retired) zxr-shell-v2 hook, versioned
   and documented like it; its workspace/preview extension is an upstreaming candidate.
 - Known gaps accepted: no merged ext foreign-toplevel *management* (we ship the wlr shim and
   migrate); layer-shell's ext successor is a draft (wlr-layer-shell is fine, Mutter-only tools
@@ -247,7 +250,7 @@ From [research/64](../../research/64-window-workspace-management-from-comparable
   as `limits` and applied by clamping; they are never on the wire as verbs.
 - **Exclusivity exists — ruled: "analogous to fullscreen on the desktop and most games will
   require this."** Two mechanisms, both Mura's: a zxr client's scene granted the environment
-  layer (`grant_exclusive` on the seam; a zxr-shell-v2 request for 3D clients), at most one at a
+  layer (`grant_exclusive` on the seam; for a 3D container, its `xrRequestSpatialContainerBoundsModeEXT(IMMERSIVE)` surfaced by the controller seam — ADR 0006 amd. 4), at most one at a
   time, layers 4–6 always presented in front; and a native OpenXR application as Monado's
   primary session with zxr as an `XR_EXTX_overlay` session — zxr is the shell that switches
   Monado's primary client (its IPC hook exists for this). The exit path is the reserved system

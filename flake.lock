@@ -35,6 +35,23 @@
         "type": "github"
       }
     },
+    "monado": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790549365,
+        "narHash": "sha256-hk1JEzp7OepcV3r15376pCmjanZzW5+9ihd4dVzB4Xg=",
+        "owner": "mura-os",
+        "repo": "monado",
+        "rev": "9950e2a5f5751eb7960ce64f72545b189da6beb5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mura-os",
+        "ref": "mura",
+        "repo": "monado",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1789921291,
@@ -108,6 +125,7 @@
     },
     "root": {
       "inputs": {
+        "monado": "monado",
         "nixpkgs": "nixpkgs",
         "nixpkgs-xr": "nixpkgs-xr",
         "treefmt-nix": "treefmt-nix_2"

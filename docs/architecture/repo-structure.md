@@ -66,7 +66,7 @@ pkgs/                          # overlay: XR components, kernels, tools (nixpkgs
 assets/
   branding/                    # checked-in artwork: recovery-mode.png (the mascot; 2048², 8 bpc RGBA, black background)
 patches/                       # patch sets, organized per upstream + per donor build (see below)
-protocols/                     # Mura Wayland protocol XMLs (zxr-shell-v2, the zspatial
+protocols/                     # Mura Wayland protocol XMLs (zxr-shell-v2 — retired hook, the zspatial
                                # shell-integration family incl. zspatial-toplevel-export) + governance
                                # notes + CONVENTIONS.md; CI: wayland-scanner + xmllint (tests/protocols.nix)
 specs/                         # normative non-Wayland contracts (IPC framings, storage formats,
@@ -152,8 +152,15 @@ Rules:
    express the change.
 2. **Patches are pinned data with provenance.** Each patch series lives under `patches/<upstream>/`
    or `patches/<donor-buildid>/`, applied via `applyPatches`/`FetchContent`-equivalent at build time.
-   The XR per-device driver is a `monado-rev` file + `patches/monado/<device>/*.patch` — exactly
-   WiVRn's proven 11-patch pattern ([05](../research/05-xr-userspace.md) §9 item 2).
+   **Monado is the exception (ADR 0006 amendment 4 D13, 2026-09-29):** Mura's Monado series lives
+   as commits on the `mura-os/monado` fork — branch `mura` = upstream `main` + the series, rebased
+   on every upstream bump; one feature branch per upstreamable piece (the container pair, the
+   controller seam, the depth policy, the dmabuf-import swapchain, each device driver), each the
+   source of a GitLab MR — pinned by rev as the flake's `monado` input and swapped into
+   nixpkgs-xr's package by `pkgs/monado`. The discipline is WiVRn's (every commit upstream-shaped,
+   `references/wivrn/patches/monado/`), the shape is kwin-vr's and `monado-galaxyxr`'s (a fork repo
+   with a feature branch). `patches/monado/<device>/*.patch` via `mura.xr.monado.patches` remains
+   only for experiments not yet committed on the fork.
 3. **Isolate per-donor-release patch directories** with automated rebase checking in the update
    pipeline, so a donor bump surfaces broken patches loudly
    ([04](../research/04-nix-imaging.md) §10 item 2).

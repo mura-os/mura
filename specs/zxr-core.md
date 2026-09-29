@@ -1,6 +1,6 @@
 # specs/zxr-core: the compositor as a program — process, loops, modules, and the R0 gates
 
-**Status:** rev 3.19 (2026-09-29; rev 3.18 + §12 gate 10 measured with a picture — `tests/vm/scene.nix`, research/78 §9 F25 closing F14). Rev 3.18 (2026-09-29; rev 3.17 + dwell in two layers — §8 the accessibility toggle and the input floor's automatic head-ray dwell when no select button exists (`Peripherals::floor_dwell`), §12 gate 9 row (l), the `settings:` line's `dwell_floor=`; spatial-input §13 ruled). Rev 3.17 (2026-09-29; rev 3.16 + the body frame withdrawn — §5 the shell's world anchor (seeded where the scene appears, re-seated only by recenter; no comparable has a body frame, research/78 §9 F23), §4 the **world** fallback, §11 `anchor_reseats`, §12 gate 9 row (k); `zxr-layer-anchoring-v1` rev 3 drops `body`); rev 3.16 (2026-09-29; rev 3.15 + research/79 — §7 the OpenXR extension set zxr enables as a normative table, `XR_EXTX_overlay`'s provisional status stated beside the ruling with the ratified container pair named, the `XR_EXT_view_configuration_views_change` handler specified; §14 the container fork and the rev-3 protocol candidates as open items with the owner as decider; rev 3.15 = 2026-09-28; rev 3.14 + G2 and G3 measured in the VM (§12 gates 10–11 green, F15's four fixes), the body frame as the default placement (§4: the fallback for a surface that asks for nothing, the lock surface with it — nothing head-locked unless it asks, spatial-input §13), §9 readiness through `mura-session finalize` spawned by the compositor and `STOPPING=1` native, §12 gate 9 row (j) F2 resolved and gates 10–11 — G2 in the VM with `mura-osk`, the handoff with zxr in `mura-compositor.service`; rev 3.14 = same day; rev 3.13 + the body frame and the typed OSK — §5 `Frame::Body` derived from the head (position + yaw, lazily re-seated with `wm.follow.*`; MRTK/Overte/wayvr/visionOS all derive it so), §4 the placement table's `typed` value and the OSK bound to the surface it types into (research/36 §7; WiVRn's offset under a world window), §11 `body_reseat_ticks`/`osk_follows`, §12 gate 9 rows (h)–(i); rev 3.13 = same day; rev 3.12 + ADR 0007 amendment 2 — §9 the two modes: greeter mode exits with its primary trusted client (cage's rule), the lock is `ext-session-lock-v1` from a resident unit, triggers exec `loginctl lock-session`, relock after `Defunct`; rev 3.12 = 2026-09-27; rev 3.11 + research/77 — the shell-layer half **normative**: §4 exclusive angular bands per frame in frame-pixel space (wlroots' arithmetic, sway's pass order), §8 layer-shell keyboard interactivity in the focus module (the exclusive override, `on_demand` as a stack member, `none` never) and the `wl_fixed` motion dedupe, §9 the trusted connection as the gate's exception and the socketpair as `insert_client`, §10 the filter as `ClientData` bits set at insert and the globals it covers, §4 the wearer's placement table `shell.place:<namespace>` over the client's request over the head fallback (owner ruling 2026-09-27), §11 shell counters, §12 the shell-layer gate rows, §14 what the ruling leaves; rev 3.11 = same day; rev 3.10 + the window-management floor and seam as built — §3 `policy` built (the `free` floor: angular-slot spawn, tidy, lifecycle, follow, recenter; the seam served, XML rev 1, one binder, river sequences, the disconnect contract), §8 `Grabs` as built (`input/grabs.rs`, research/76), §11 the grab / policy / seam counters and the `policy:` and `seam:` list lines, §12 gate 7 measured; rev 3.10 = same day; rev 3.9 + shell-plane.md — §10 the shell-layer half: layer-shell + anchoring as the shell seam, the privileged set filtered per connection, `security-context-v1` moved to the shell-layer work, the still-pointer idle rule; rev 3.9 = same day; rev 3.8 + ADR 0007's amendment — §3 `modes` / §9: the greeter and lock scene is one trusted client over a pre-connected socketpair, zxr draws no UI, an absent client means an opaque scene and never an unlock; rev 3.8 = same day; rev 3.7 + research/73 settings Phase B — §3 `mura-settingsd` as a library and no `zbus` in the compositor, §8 "Settings": the in-process consumer (Engine + one inotify fd on the state loop, `Prefs` by generation, every threshold a preference or a calibration key), §11 settings counters, §12 the settings gate row; rev 3.7 = same day; rev 3.6 + research/70 §9.2 — §8 a ray-owned pointer released when gaze takes the tier, the `input.cursor.ray` / `input.cursor.scale` preferences, §11 `input_pointer_releases`; rev 3.6 = same day; rev 3.5 + research/70 §9 — §8 the cursor as one composition layer in one fixed-size swapchain (ruled: one cursor element, the client's cursor over the ray's reticle, nothing under gaze), §11 cursor counters, §12 the cursor gate row; rev 3.5 = 2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
+**Status:** rev 3.20 (2026-09-29; rev 3.19 + ADR 0006 amendment 4 — §1 zxr composites no 3D content: 3D apps are Monado's spatial containers (`XR_EXT_spatial_container` + `_self_rendering`), Monado composites containers and quads, zxr is the Wayland server + WM policy + Monado's workspace controller ([specs/composition.md](composition.md)); §3 the reserved `controller` module; §4 the projection layer narrowed to overflow only, band 3's 3D content Monado's; §5a `Volume` members as container proxies; §7 the overflow-only predicate; §8 container input is Monado's; §10 `zxr-shell-v2` off the milestone list (retired hook) and the controller seam named as a non-Wayland seam; §14 the fork ruled, three open items (depth policy, seam shape, zxr's windows as containers)). Rev 3.19 (2026-09-29; rev 3.18 + §12 gate 10 measured with a picture — `tests/vm/scene.nix`, research/78 §9 F25 closing F14). Rev 3.18 (2026-09-29; rev 3.17 + dwell in two layers — §8 the accessibility toggle and the input floor's automatic head-ray dwell when no select button exists (`Peripherals::floor_dwell`), §12 gate 9 row (l), the `settings:` line's `dwell_floor=`; spatial-input §13 ruled). Rev 3.17 (2026-09-29; rev 3.16 + the body frame withdrawn — §5 the shell's world anchor (seeded where the scene appears, re-seated only by recenter; no comparable has a body frame, research/78 §9 F23), §4 the **world** fallback, §11 `anchor_reseats`, §12 gate 9 row (k); `zxr-layer-anchoring-v1` rev 3 drops `body`); rev 3.16 (2026-09-29; rev 3.15 + research/79 — §7 the OpenXR extension set zxr enables as a normative table, `XR_EXTX_overlay`'s provisional status stated beside the ruling with the ratified container pair named, the `XR_EXT_view_configuration_views_change` handler specified; §14 the container fork and the rev-3 protocol candidates as open items with the owner as decider; rev 3.15 = 2026-09-28; rev 3.14 + G2 and G3 measured in the VM (§12 gates 10–11 green, F15's four fixes), the body frame as the default placement (§4: the fallback for a surface that asks for nothing, the lock surface with it — nothing head-locked unless it asks, spatial-input §13), §9 readiness through `mura-session finalize` spawned by the compositor and `STOPPING=1` native, §12 gate 9 row (j) F2 resolved and gates 10–11 — G2 in the VM with `mura-osk`, the handoff with zxr in `mura-compositor.service`; rev 3.14 = same day; rev 3.13 + the body frame and the typed OSK — §5 `Frame::Body` derived from the head (position + yaw, lazily re-seated with `wm.follow.*`; MRTK/Overte/wayvr/visionOS all derive it so), §4 the placement table's `typed` value and the OSK bound to the surface it types into (research/36 §7; WiVRn's offset under a world window), §11 `body_reseat_ticks`/`osk_follows`, §12 gate 9 rows (h)–(i); rev 3.13 = same day; rev 3.12 + ADR 0007 amendment 2 — §9 the two modes: greeter mode exits with its primary trusted client (cage's rule), the lock is `ext-session-lock-v1` from a resident unit, triggers exec `loginctl lock-session`, relock after `Defunct`; rev 3.12 = 2026-09-27; rev 3.11 + research/77 — the shell-layer half **normative**: §4 exclusive angular bands per frame in frame-pixel space (wlroots' arithmetic, sway's pass order), §8 layer-shell keyboard interactivity in the focus module (the exclusive override, `on_demand` as a stack member, `none` never) and the `wl_fixed` motion dedupe, §9 the trusted connection as the gate's exception and the socketpair as `insert_client`, §10 the filter as `ClientData` bits set at insert and the globals it covers, §4 the wearer's placement table `shell.place:<namespace>` over the client's request over the head fallback (owner ruling 2026-09-27), §11 shell counters, §12 the shell-layer gate rows, §14 what the ruling leaves; rev 3.11 = same day; rev 3.10 + the window-management floor and seam as built — §3 `policy` built (the `free` floor: angular-slot spawn, tidy, lifecycle, follow, recenter; the seam served, XML rev 1, one binder, river sequences, the disconnect contract), §8 `Grabs` as built (`input/grabs.rs`, research/76), §11 the grab / policy / seam counters and the `policy:` and `seam:` list lines, §12 gate 7 measured; rev 3.10 = same day; rev 3.9 + shell-plane.md — §10 the shell-layer half: layer-shell + anchoring as the shell seam, the privileged set filtered per connection, `security-context-v1` moved to the shell-layer work, the still-pointer idle rule; rev 3.9 = same day; rev 3.8 + ADR 0007's amendment — §3 `modes` / §9: the greeter and lock scene is one trusted client over a pre-connected socketpair, zxr draws no UI, an absent client means an opaque scene and never an unlock; rev 3.8 = same day; rev 3.7 + research/73 settings Phase B — §3 `mura-settingsd` as a library and no `zbus` in the compositor, §8 "Settings": the in-process consumer (Engine + one inotify fd on the state loop, `Prefs` by generation, every threshold a preference or a calibration key), §11 settings counters, §12 the settings gate row; rev 3.7 = same day; rev 3.6 + research/70 §9.2 — §8 a ray-owned pointer released when gaze takes the tier, the `input.cursor.ray` / `input.cursor.scale` preferences, §11 `input_pointer_releases`; rev 3.6 = same day; rev 3.5 + research/70 §9 — §8 the cursor as one composition layer in one fixed-size swapchain (ruled: one cursor element, the client's cursor over the ray's reticle, nothing under gaze), §11 cursor counters, §12 the cursor gate row; rev 3.5 = 2026-09-26; rev 3.4 + research/70 — §8 normative: the input module as built (the nine-slot chain, the closed `SourceKind` enum, the action set, per-event dispatch, the two transports, cursors as quads, the test-only injector; stand-ins listed), §11 input counters, §12 the M1 input gate rows measured; rev 3.4 = rev 3.3 + research/69 — §5a: a member zxr is not composing holds no buffers, release at replacement, `xdg_toplevel.suspended` while quiet or hidden, `hidden` payload state; §7: the quiet buffer-hold policy ruled; rev 3.3 = rev 3.2 + §5a normative — the scene arenas reconciled with the composition ruling: layer-list output, band-priority budget, commit-driven dirtiness, grow-only panel swapchains; rev 3.2 = rev 3 + research/67: §7 the quiet shape and the overlay session; rev 3 = rev 2.1 + ADR 0006 amendment 2 — the composition ruling: §4 two transports, §6.2 the panel pass, §7 the two tick shapes and the overflow rule, §12 the panels-path gate, §14 the M2 occlusion and cutout-reach items). The program-level specification ADR 0006 and composition §7 left
 unwritten, derived from [research/59](../docs/research/59-xr-compositor-architecture-from-comparables.md)
 (the mechanisms, the motorcar/wxrc lineage first) and [research/60](../docs/research/60-de-abstractions-mapped-to-xr.md)
 (the desktop environment's abstractions), under the 2026-09-26 rulings (ADR 0006 and ADR 0012
@@ -28,11 +28,17 @@ time recorded. R0 measures against this fence and rev 2 tightens it.
 One OpenXR client of Monado — the session that is always present, an overlay session so that
 native OpenXR applications may be Monado's *main* session beside it
 ([native-openxr-apps.md](../docs/architecture/native-openxr-apps.md), draft) — and one Wayland
-compositor. It serves `xdg-shell` to 2D clients and,
-from M2, `zxr-shell-v2` to 3D clients; it composites every client itself — planes for the 2D
-tier, colour+depth for the 3D tier — into one scene with one depth buffer, and submits **one
-stereo projection layer** per frame. It never receives client geometry and never re-renders
-client content (the lineage's model; research/59 §0, §3). In `--greeter` mode it is the same
+compositor. It serves `xdg-shell` to 2D clients and submits each mapped window to Monado as a
+**quad layer** (ADR 0006 amendment 2); **it does not composite 3D content** — 3D applications
+are OpenXR clients hosted by Monado as spatial containers (`XR_EXT_spatial_container` +
+`_self_rendering`, ADR 0006 amendment 4, 2026-09-29), and Monado composites every container
+and every quad into the frame it presents ([specs/composition.md](composition.md)). zxr's third
+role, once Monado has the pair, is Monado's **workspace controller**: the placement, visibility
+and interactability of every container come from zxr's places/WM policy over the controller
+seam (composition.md §5). It never receives client geometry and never re-renders client
+content (the lineage's model; research/59 §0, §3); a projection layer exists only for panel
+overflow (§7). `zxr-shell-v2` is a retired reserved hook (`protocols/README.md`), not served.
+In `--greeter` mode it is the same
 binary with a restricted scene and no client socket (ADR 0007). It is `mura-compositor.service`'s
 `ExecStart` (session-bootstrap rev 3) once M1 replaces sway.
 
@@ -48,7 +54,7 @@ flowchart LR
     end
     clients["Wayland clients"] --> loop
     sat["xwayland-satellite (process)"] --> loop
-    loop -->|"one projection layer"| monado["Monado"]
+    loop -->|"quad layers (containers later); the controller seam"| monado["Monado: composites containers + quads, presents"]
     monado -->|"predicted display time"| wait
 ```
 
@@ -76,12 +82,13 @@ flowchart LR
 |---|---|---|
 | `frontend` | smithay `wayland_frontend`: globals, `xdg-shell`, layer-shell, seat, dmabuf feedback, syncobj, the M1 protocol set (§10) | renders; decides placement |
 | `xr` | openxrs: instance, system, session on the runtime-created Vulkan device, reference spaces, swapchains, the wait thread, `xrLocateViews` | touches Wayland state |
-| `render` | ash: the device from `xrCreateVulkanDeviceKHR`, dmabuf → `VkImage` import with modifiers, shm upload, the scene pass (planes, then 3D clients' colour+depth at M2) into the runtime's swapchain images, timestamps | owns buffers' lifetime (the scene does) |
+| `render` | ash: the device from `xrCreateVulkanDeviceKHR`, dmabuf → `VkImage` import with modifiers, shm upload, the scene pass (planes into their panel swapchains; the projection pass only for overflow — never 3D content, ADR 0006 amd. 4) into the runtime's swapchain images, timestamps | owns buffers' lifetime (the scene does) |
 | `scene` | the layer model (§4), the frame graph and places boundary (§5), the three arenas and their mutation API (§5a), stacking, per-member panel handle and dirty state, the per-tick layer list, buffer references and release-point signalling | protocol objects; Vulkan and Wayland types (the member payload is the frontend's) |
-| `input` | the ray from head/hand pose or the dev pointer → plane hit → `wl_pointer`/`wl_keyboard`/touch through the seat; the input floor (head-aim + `hmdButtons.<selectRole>`, dwell); 6DoF events for 3D clients at M2 | policy about focus (scene's) |
+| `input` | the ray from head/hand pose or the dev pointer → plane hit → `wl_pointer`/`wl_keyboard`/touch through the seat; the input floor (head-aim + `hmdButtons.<selectRole>`, dwell); container input is Monado's action system, routed to the container zxr marks interactable — zxr never sees it | policy about focus (scene's) |
 | `policy` | **built (rev 3.11, `src/policy/`)** — window-management policy in-process (ADR 0012 §2, amended), specified in [window-workspace-management.md](../docs/architecture/window-workspace-management.md) rev 0.2: placement and sizing over the scene's mutation API (§5a) — head-relative spawn below the eye line at first commit (the mapped size, never the 1×1 request), siblings and children beside their parent, the angular-slot allocator (kwin-vr `SpaceAllocator3D`'s search: the eye-line band first within ±60° of forward, then the bands, then the sphere), apps never place themselves; the one in-process layer-3 engine (`free`; `arc`/`dock`/`band` are shipped default external managers over the seam) with one-shot `arrange` (tidy: MRU onto free slots, pinned untouched); lifecycle (`Life`: hidden / minimized / maximized / fullscreen with saved geometry; minimize is policy — `wm.minimize`, dock else close, never a compositor state); attachment (rigid default; opt-in lazy-follow with threshold / delay / rate / stop, paused while grabbed; billboard while moving); recenter (rigid re-seat, pinned exempt); the comfort limits every pose is clamped through; `Prefs` by generation. Its external face is `protocols/zxr-window-management-v1.xml` **rev 1, served** (`policy/seam.rs`, wayland-scanner codegen from the XML): one privileged binder (a second hears `unavailable`), the full picture at bind, river's manage/render sequences with requests applied at `*_finish`, `interaction` serials from every commit and `focus(window, serial)` through the activation rule, proposals clamped to `limits`, `custom` hands a place's spawn to the manager; disconnect (death, `destroy`, 5 s unresponsive, protocol error) keeps placements, frees engines, shows what the manager hid, and the floor continues. Proven by `zxr-test-manager` (`--features test-manager`; not in the closure). | authority (focus rules, boundary, frames, comfort limits, perception layers — the compositor's, reported to the manager, never delegated) |
 | `modes` | `--greeter`/lock restricted scene (ADR 0007 as amended 2026-09-27, session-auth rev 5 §2–§5): no listening socket; the auth scene is **one trusted client** (the greeter program) over a pre-connected socketpair, composed as the only member — zxr draws no UI; when it is absent, an opaque scene and never an unlock; `mura-authd` over a seqpacket pair; normal mode | PAM; any UI of its own |
 | `unit` | `sd_notify(READY=1)` after the socket is bound and variables published; `WAYLAND_DISPLAY`/`DISPLAY` publication; the crash/restart contract (session-bootstrap rev 3) | — |
+| `controller` | **reserved (rev 3.20, ADR 0006 amd. 4)** — the Monado controller seam: per container, push visible / interactable / bounds / pose (space) / z-order / recommended-extent scale from `policy` and `scene`; receive created / closed / visibility-request / bounds-mode-request events into the scene's proxy nodes; over `libmonado` or the `comp_multi` listener (composition.md §5; shape open). Exists only when Monado advertises `XR_EXT_spatial_container`; until then `libmonado`'s primary/focused calls at 1 Hz (research/67) are its whole surface. | composition; input to containers (Monado's); placement decisions (`policy`'s) |
 | `trace` | spans + the frame journal (§11) | — |
 
 Crate shape: one binary, modules as Rust modules; `libc` where it counts; dependencies: smithay
@@ -101,8 +108,8 @@ Composition order, back to front, each band an anchoring frame (`zxr-layer-ancho
    producer over the intake protocol (`specs/perception-intake.md`) or a wallpaper client on
    layer-shell `background`; drawn first, world frame.
 2. **bottom shell layer** — layer-shell `bottom` clients (docks behind windows), world/docked frames.
-3. **the window tiers** — 2D planes (M1) and 3D clients' colour+depth (M2), depth-sorted into one
-   depth buffer; the places' frames.
+3. **the window tiers** — 2D planes (M1) as quads, and 3D containers (Monado-owned, composed by Monado; zxr holds a proxy node per container for hit-test and arrangement, ADR 0006 amd. 4); planes and proxies share
+   the places' frames; nothing in this band is depth-composited by zxr.
 4. **top shell layer** — layer-shell `top` (panels), world/head/docked frames, exclusive angular bands.
 5. **overlay** — layer-shell `overlay` (OSD, notifications), the lock/greeter scene; head frame.
 6. **foreground cutout** — the wearer's hands/limbs composited over everything from a perception
@@ -176,14 +183,17 @@ transports, chosen per band by whether the content has depth:
   renders **only when the plane's surface tree commits**; the runtime samples it every display
   frame at the display pose. Order among quads is submission order = this list's band order,
   then depth within a band (painter's algorithm, `rendering.adoc:1143-1147`).
-- **zxr's projection layer**: band 1 (environment), 3D clients' colour+depth in band 3, and band
-  6 (the cutout) — everything that has depth of its own — composited by zxr into one stereo
-  projection layer, submitted *before* the quads. **It exists only while such content exists**
-  (or while panel overflow puts planes into it, §7); a session of 2D planes alone submits no
-  projection layer and runs no render pass.
+- **zxr's projection layer is reserved for overflow only (rev 3.20, ADR 0006 amd. 4).** Band 3's
+  3D content is Monado's (containers); band 1 (environment/passthrough) and band 6 (the cutout)
+  are Monado-side perception layers (ADR 0008) — none of them is composited by zxr. The
+  projection pass exists only while panel overflow puts planes into it (§7, research/65's
+  rule); a session of 2D planes alone submits no projection layer and runs no render pass.
+  Rev 3–3.16's "everything that has depth of its own is composited by zxr" is withdrawn.
 
-Consequences the rule accepts: quads always composite over the projection layer (a plane a 3D
-volume should hide cannot be — §14, M2); one copy per commit into the panel swapchain (§6.2).
+Consequences the rule accepts: quads composite in Monado's order beside containers (whether a
+plane a container should hide *is* hidden is Monado's depth policy, composition.md §4 — open,
+decider the owner); one copy per commit into the panel swapchain (§6.2) until the dmabuf-import
+swapchain lands (composition.md §2).
 **The foreground cutout (band 6) is a runtime layer submitted after every quad: hands composite
 above all windows** (ruled 2026-09-26). Its shape — view-aligned cutout projection layer,
 per-hand billboard quads, or depth-correct ordering — is open ([perception-passthrough-hands.md
@@ -261,9 +271,11 @@ submit:  { quads: Vec<QuadEntry>, projection: Vec<DrawItem> }   // per-tick scra
   M4), M1 anchors arrive from the mapping service as poses in LOCAL — the `Service` arm; one
   extra query per tick.
 - **The per-tick output is a layer list, not a draw list.** Every mapped member of bands 2–5
-  becomes one `QuadEntry` (its panel swapchain, world pose, size in metres); members of band 1,
-  3D volumes in band 3 and band 6 become `DrawItem`s for the projection pass, which exists only
-  when that list is non-empty (§7 predicate). Quads are ordered **band ascending, then
+  becomes one `QuadEntry` (its panel swapchain, world pose, size in metres); only overflow planes
+  become `DrawItem`s for the projection pass, which exists only when that list is non-empty (§7
+  predicate). **`Volume` members are container proxies (rev 3.20, ADR 0006 amd. 4):** a
+  Monado-owned container the scene tracks — its bounds and pose from the controller seam — for
+  hit-test, arrangement and the WM seam; they produce no draw item and no layer. Quads are ordered **band ascending, then
   nearest-last within a band** — submission order is composition order (`rendering.adoc:1143-1147`)
   and planes alpha-blend (CSD shadows), so painter's order within a band is required.
 - **The quad budget is allotted by band priority.** `maxLayerCount − 1` quads (one reserved for
@@ -439,11 +451,11 @@ does not read it (research/65 §4.4).
 every tick:   xrBeginFrame → xrLocateViews → gaze/hand input → wait slot fence, release held buffers
               → for each plane whose surface tree committed since its last panel image:
                   acquire its panel swapchain image → record the panel pass (tree → image) → release
-              → depth content present?  (a mapped 3D volume | environment source | cutout source
-                                          | panel overflow past maxLayerCount − 1)
+              → overflow?  (planes past maxLayerCount − 1; rev 3.20: the only predicate — volumes
+                            are Monado's containers, environment and cutout are Monado-side layers)
                   no:  submit the panel passes on the slot fence (if any) → xrEndFrame(quads)
-                  yes: acquire the projection images → record the scene pass (volumes, environment,
-                       cutout, overflow planes) with the panel passes → submit on the slot fence →
+                  yes: acquire the projection images → record the scene pass (overflow planes)
+                       with the panel passes → submit on the slot fence →
                        release → xrEndFrame(projection, quads)
               → frame callbacks (§6.6) → journal
 ```
@@ -499,7 +511,7 @@ them: `XR_KHR_locate_spaces` (batched space location), `XR_EXT_user_presence` (d
 `XR_EXT_eye_gaze_interaction` (the gaze tier), `XR_MNDX_system_buttons` (Monado's controller
 system buttons, by name), `XR_EXTX_overlay` under `--overlay`. Rule for adding one: it earns a
 row in research/79 §10 as `zxr-consumes` with the mechanism it serves named here. Candidates
-recorded there and not enabled: `XR_KHR_visibility_mask` (M2 projection pass),
+recorded there and not enabled: `XR_KHR_visibility_mask` (the overflow projection pass, if it ever carries enough to matter),
 `XR_EXT_local_floor` (the floor frame, §5), `XR_FB_display_refresh_rate` (the refresh-rate
 setting, §14), `XR_KHR_convert_timespec_time`, `XR_EXT_performance_settings` — each behind a
 measured gate, none ruled.
@@ -550,7 +562,7 @@ stand-ins' values and sources are research/70 §5, the first-hardware list.
   long recenter, double show/hide, chord quit — stand-in windows); greeter/lock consume every
   non-keyboard sample below them (ADR 0007 I1); presence off (`XR_EXT_user_presence`) suspends the
   XR kinds, cancels open contacts and sends `xdg_toplevel.suspended`; dwell-as-commit and pointer
-  gain are transforms ahead of targeting. Dwell is two layers sharing one machine (rev 3.17;
+  gain are transforms ahead of targeting. Dwell is two layers sharing one machine (rev 3.18;
   spatial-input §13): `input.dwell.enabled` — the accessibility toggle on any targeting pointer —
   and the input floor's automatic head-ray dwell when no select button exists
   (`Peripherals::floor_dwell`; every target has a select, so the floor is the fault case P7 names).
@@ -636,8 +648,11 @@ stand-ins' values and sources are research/70 §5, the first-hardware list.
   `pointer-constraints`, `relative-pointer`, `pointer-gestures` (libinput's touchpad gestures),
   `cursor-shape`, `xdg-activation`, `keyboard-shortcuts-inhibit`, `text-input-v3` /
   `input-method-v2`; `pointer-warp-v1` is honoured per its own rule (focus + valid enter serial).
-- **3D clients (M2)**: `zxr-shell-v2` input takes `XR_EXT_hand_interaction`'s shape (poses,
-  values, `ready`) with exclusive capture; gaze not delivered by default (permission model open).
+- **3D containers (rev 3.20, ADR 0006 amd. 4)**: input to a container is Monado's action system
+  (`xrSyncActions` in the app's session); zxr designates the interactable container(s) through
+  the controller seam and never sees their input. The gaze-permission question for 3D apps is
+  Monado's `XR_EXT_eye_gaze_interaction` gating, not zxr's. (Rev 3.5–3.16's `zxr-shell-v2`
+  input objects are withdrawn with the protocol.)
 - **Settings (rev 3.8, 2026-09-27 — research/73; spatial-input §14 is the key table).** Every
   threshold above is a key on the settings artifact, of one of two kinds. The wearer's
   **preferences** (`input.*`, `wm.*`, `system.*`, `games.*`, `ui.reduced_motion`,
@@ -770,8 +785,15 @@ session that owns those images. The field order of the state struct encodes the 
   keyboard client), `ext-idle-notify`, `idle-inhibit`, `keyboard-shortcuts-inhibit`,
   `pointer-constraints`, `relative-pointer`, `cursor-shape`, `pointer-gestures`.
 - **After M1**: `security-context-v1` (sandboxed and proxied clients), `ext-image-capture-source`
-  + `ext-image-copy-capture` (spatial-sharing.md), `zxr-shell-v2` (M2), `zspatial-toplevel-export-v1`
+  + `ext-image-copy-capture` (spatial-sharing.md), `zspatial-toplevel-export-v1`
   consumer (ADR 0014 M-A), the bounded `zxr_window_management` (ADR 0012 amendment).
+  `zxr-shell-v2` is **not** on this list (rev 3.20): retired to a reserved hook, never served
+  (ADR 0006 amd. 4).
+- **Not a Wayland protocol — the Monado controller seam (rev 3.20, ADR 0006 amd. 4):** the 3D
+  tier's contract is `XR_EXT_spatial_container` + `_self_rendering` between the *application* and
+  *Monado*; zxr's part is the controller seam ([specs/composition.md §5](composition.md)) over
+  `libmonado` or the `comp_multi` listener — a library call from the state loop, not a global on
+  the Wayland socket. It exists only when Monado advertises the pair.
 - **The shell-layer half (rev 3.10, [shell-plane.md §2](../docs/architecture/shell-plane.md)):**
   `wlr-layer-shell` + `zxr-layer-anchoring-v1` are the shell plane's seam — a layer surface is a
   member of band 2/4/5 with its exclusive zone as an exclusive angular band on its frame (`head`
@@ -1212,17 +1234,18 @@ Hyprland-shape disconnect are ruled (ADR 0012 amendment (ii)); the reserved syst
 leaves an exclusive scene is ruled too (research/66; native-openxr-apps.md §6, §10).
 **The composition fork — ruled** (ADR 0006 amendment 2, 2026-09-26; §4, §6.2, §7,
 [research/65 §2.4](../docs/research/65-embedded-frame-path-efficiency.md)): quads always, the
-projection layer only with depth content. **Open from it (M2, decider: the owner, with volumes
-present):** a plane that a 3D volume should occlude cannot be under painter's order; candidate
-rule — a plane whose quad intersects a volume is drawn in the projection layer that frame.
+projection layer only with depth content — **narrowed by rev 3.20 / ADR 0006 amd. 4 to overflow
+only**: volumes are Monado's containers, environment and cutout are Monado-side layers (§4).
+The former M2 item (a plane a volume should occlude) is now Monado's depth policy
+(composition.md §4; open, decider the owner — see below).
 **Open from it (passthrough rung, decider: the owner):** the cutout layer's *shape* — hands
 above windows is ruled (§4); which of the three recorded shapes (perception-passthrough-hands
 §1a) delivers it at acceptable edge quality and bandwidth is decided on measurement. Determinations from
 research/65 recorded for the next revision that touches them: depth as a transient, lazily-allocated
 attachment (§7); the compositor's scheduling request through the unit (minimum RT priority,
 `RESET_ON_FORK`; §9); no depth-layer submission while the runtime does not read it (§7);
-multiview for the projection pass once it carries 3D content (M2); display refresh rate as a
-user setting (settings-schema).
+display refresh rate as a user setting (settings-schema); the multiview item lapses with the 3D
+projection pass (rev 3.20).
 **Open from the input floor (rev 3.5, research/70 §5–§6; decider: the owner):** ~~the cursor
 theme and size key~~ (`input.cursor.{theme,size}`, rev 3.8);
 whether a held controller outranks a hand ray when both target (spatial-input §3 says so and the
@@ -1234,10 +1257,13 @@ one-layer cursor (rev 3.6, research/70 §9; decider: the owner):** the second co
 ray while the first owns the pointer (spatial-input §5) — a second cursor element by design, not
 built; the cursor stand-ins (64 px panel, 1 mm lift, the image at theme pixels inside the 1.5°
 span) at first hardware.
-**Open from research/79 (rev 3.16; decider: the owner):** where OpenXR-native *bounded* apps
-land — `XR_EXT_spatial_container(_self_rendering)` implemented in Monado with zxr as the
-controller (the DisplayXR shape), translated by an API layer into `zxr-shell-v2` clients (the
-OpenComposite shape), or not implemented (§9 Q1 there); which of the three container semantics
-enter `zxr-shell-v2` rev 3 — per-frame retain, per-frame should-submit/recommended-extent
-hints, bounds-fitted frusta with mono decay (§7a-1..3, Q2); the policy-seam shape if Monado
-implements (privileged session vs `libmonado`, Q3). Until ruled, §1 and §10 are unchanged.
+**Ruled from research/79 (rev 3.20, ADR 0006 amendment 4, 2026-09-29):** OpenXR-native 3D apps
+are Monado's spatial containers; Monado composites everything; zxr is the Wayland server, the
+WM policy and Monado's workspace controller; `zxr-shell-v2` is a retired reserved hook; retain,
+per-frame hints and fitted frusta are Monado's under the spec (the rev-3.16 Q2 lapses).
+**Open from it (decider: the owner):** (a) Monado's depth policy — `XR_KHR_composition_layer_depth`
+required from a container app to be interleaved, or opt-in with quad order otherwise
+(composition.md §4); (b) the controller-seam shape — `libmonado` verbs or the `comp_multi`
+listener (composition.md §5); (c) zxr's own windows once Monado has the pair — one container per
+Wayland toplevel or one for the whole shell (composition.md §6). Until (c) is ruled, zxr's
+session stays the `XR_EXTX_overlay` quad submitter of §7.

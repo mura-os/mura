@@ -1,20 +1,29 @@
 # OpenXR extensions and the zxr lineage — the registry at 1.1.63 read against Mura
 
-**Date:** 2026-09-29. **Status:** research; §7a carries proposed deltas per draft document,
-§9 the owner questions. Nothing in the protocols, specs or ADRs changes on this doc's authority.
+**Date:** 2026-09-29. **Status:** research, **rev 2** (same day) — rev 1's fork (§4) and
+questions (§9) were ruled by the owner as [ADR 0006 amendment 4](../architecture/adr/0006-compositor-strategy.md):
+the container pair is Mura's 3D-client contract, implemented in Monado; Monado composites
+everything; zxr is the Wayland server, the WM policy and Monado's workspace controller;
+`zxr-shell-v2` is a retired reserved hook. Rev 2 records the ruling and its reasons in §4,
+the verified runtime-implementation state in §4c, the disposition of rev 1's proposed deltas
+in §7a, and the three items still open in §9. The normative result is
+[specs/composition.md](../../specs/composition.md).
 **Sources studied** (pinned in `references/MANIFEST.json`): `openxr-docs` @ `5a82d45` =
 "OpenXR Specification 1.1.63 (2026-09-01)" — `specification/registry/xr.xml` and
 `specification/sources/chapters/extensions/*/*.adoc`; `monado` @ `b9883f2` (2026-09-19);
-`godot` @ `941ea18` (master, newly pinned); `displayxr-runtime` @ `81b3458` and
-`displayxr-extensions` @ `d94d851` (newly pinned); `openxrs`; `pkgs/zxr/src` (what zxr enables
-today); `protocols/zxr-shell-v2.xml`, `zxr-window-management-v1.xml`, `zxr-workspace-v1.xml`.
+`godot` @ `941ea18` (master, pinned for this doc — the open container client); `openxrs`;
+`pkgs/zxr/src` (what zxr enables today); `protocols/zxr-shell-v2.xml`,
+`zxr-window-management-v1.xml`, `zxr-workspace-v1.xml`.
 **[external]** where named: the supplied catalogue
 (`openxr_spatial_api_catalogue_2026-09-29.md`, an LLM-produced summary — every claim used here
 was re-read at the pin), the Khronos SIGGRAPH 2026 BOF slides, GitHub/GitLab API listings
-(Monado MRs, the CTS tree), Godot's project-settings docs.
+(Monado's branches, forks and MRs; the CTS tree; Godot's PRs), Google's Android XR extension
+list, the Khronos runtime inventory, Godot's project-settings docs, DisplayXR's ADR-035 (a
+Monado fork's audit; rev 1 had pinned that repository — unpinned in rev 2 as non-standard and
+unusable as code).
 **Grounding:** "XDG" does not occur in this doc; spatial terms are used in OpenXR's `XrSpace`
 sense; Wayland protocol terms with their upstream meanings (ADR 0012 §4). **Budget impact:**
-none of its own — §4's shapes each carry one.
+none of its own — the ruling's is in ADR 0006 amd. 4 and composition.md.
 
 ## 0. Discipline, counts, baselines
 
@@ -58,9 +67,9 @@ none of its own — §4's shapes each carry one.
    clipping based the 3D volume bounds if depth information is submitted"
    (`self_rendering.adoc:690-691`) — i.e. **no cross-app per-pixel depth today**. The
    "DisplayXR `XR_DXR_spatial_workspace`" aside in the same bullet was right about its status
-   (provisional, unregistered — `displayxr-runtime/docs/specs/extensions/XR_DXR_spatial_workspace.md:8`)
-   but wrong about its shape: it is not a self-rendering-windows extension for apps, it is a
-   *workspace-controller* extension for the shell (§4a). Corrected in this pass.
+   (provisional, unregistered — its own spec's status line [external]) but wrong about its
+   shape: it is not a self-rendering-windows extension for apps, it is a *workspace-controller*
+   extension for the shell (§4a). Corrected in this pass.
 2. **`XR_EXTX_overlay` is still provisional** (`xr.xml`: `provisional="true"`; spec revision 1
    dated 2018-11-05, last modified 2021-01-13, `extx/extx_overlay.adoc:9,316`). research/59
    §7 says so (`59:476`); [native-openxr-apps.md §2](../architecture/native-openxr-apps.md)
@@ -123,90 +132,68 @@ for — per-pixel cross-client occlusion with geometry never crossing the wire �
 three runtime-side conveniences that cost nothing to adopt in a compositor: bounds-fitted
 per-surface frusta with mono decay, an explicit retain/clear per frame, and per-frame
 should-submit/recommended-extent hints. Everything else is the same design arrived at from the
-other side.
+other side. **Rev 2 addendum:** the one superset property is not tied to the protocol — the
+spec leaves depth to the runtime, and Mura's runtime is Monado. That is why the table supported
+retiring `zxr-shell-v2` rather than extending it (§4).
 
-## 4. Who could implement containers on Mura — the fork, from comparables
+## 4. Where 3D applications land — ruled 2026-09-29 (ADR 0006 amendment 4)
 
-Three shapes, each a comparable's actual position. **Decider: owner (§9 Q1).**
+Rev 1 of this doc framed a three-way fork about where *OpenXR-native bounded apps* land and left
+`zxr-shell-v2` fixed. The owner reframed it: the question is whether Mura needs a Wayland 3D-client
+protocol at all once the runtime hosts 3D applications under a ratified contract. Read that way,
+the comparison in §3 answers itself:
 
-- **(A) The runtime implements the pair and delegates policy to a system shell.** The
-  Android XR / Horizon OS shape [external — closed]; the *open* instance of the architecture is
-  DisplayXR (§4a). Monado does not implement it (§4b). Mura's zxr becomes the controller
-  (policy + its own Wayland clients as content) and Monado the multi-app compositor. **Budget
-  impact:** the game's and every 3D app's layers stay in Monado's compositor (no extra hop);
-  zxr's own scene stays one projection layer; the WM seam becomes IPC to Monado (one RPC per
-  policy change, not per frame); the cost line is Monado's squasher, already measured
-  (research/67 §2: any second client's layer leaves the fast path; +0.33 ms/frame at 16 quads).
-  Gate: the same bench with N container clients.
-- **(B) An implicit OpenXR API layer translates the pair into `zxr-shell-v2`/`xdg-shell`.**
-  The OpenComposite/xrizer shape (translation in the app's process; both pinned). The layer
-  implements the container entry points, allocates the app's swapchains as dmabuf-exportable
-  images, and is a Wayland client of zxr. **Budget impact:** one extra process-boundary hop
-  per frame for container apps (app → zxr → Monado instead of app → Monado), zero-copy if the
-  swapchain images are dmabufs; the cross-app depth interleave is preserved. Gate: research/61's
-  R0 client bench with the layer as the client. Needs OpenXR-SDK-Source pinned (loader/layer
-  mechanics) — not done, by the plan's rule.
-- **(C) `zxr-shell-v2` only; the container pair unimplemented on Mura.** The lineage today.
-  Engines that speak containers (Godot master, §4c) get the 1.x path — one immersive session —
-  which is exactly native-openxr-apps.md's model. **Budget impact:** none. Cost: no bounded
-  multi-app from container-native engines until (A) or (B) exists.
+- **Ruled — the container pair is Mura's 3D-client contract, implemented in Monado; Monado
+  composites everything; zxr is the Wayland server, the WM policy and Monado's workspace
+  controller; `zxr-shell-v2` is retired to a reserved hook.** Reasons, in the order they carried:
+  (1) the specification fixes who composes — "offload the composition of the final image to a
+  runtime-supplied compositor" (`rendering.adoc:1210`) — so a compositor outside the runtime is a
+  second pass by construction, and research/65 already found the runtime path cheaper for 2D
+  (−47 % CPU, the "quads always" ruling); (2) adoption — Godot master and Unity 6.6 speak
+  containers today, no engine speaks or will speak a Wayland 3D protocol, and every prior Linux
+  attempt (motorcar, wxrc, zwin, StardustXR — research/10) died there; (3) motorcar's one
+  property containers lack, per-pixel cross-client occlusion, is implementable *inside* the
+  container model as the runtime's policy (the spec leaves order and depth to the runtime,
+  `self_rendering.adoc:476-486`, `:690-691`; Monado already binds `KHR_composition_layer_depth`
+  and never reads it, `comp_render_cs.c:250-261`); (4) one composition pass fewer on a tiler;
+  (5) rule 1 — the standard mechanism exists. The normative result is
+  [specs/composition.md](../../specs/composition.md); the ADR records twelve decisions and three
+  open items (depth policy required vs opt-in; seam shape; zxr's windows as containers).
+- **Rejected — (B) an OpenXR API layer translating containers into `zxr-shell-v2` clients** (the
+  OpenComposite/xrizer shape): keeps one compositor and the depth interleave, but adds a
+  process hop and a composition pass per frame for every 3D app, makes Mura own a second
+  OpenXR-facing codebase, and preserves a protocol nobody else speaks. It was the more
+  "motorcar-literal" shape; the ruling puts motorcar's depth resolve in the runtime instead.
+- **Rejected — (C) nothing** (the lineage as documented): container apps would run only as
+  immersive 1.x sessions; no bounded multi-app from any engine.
 
-These are not exclusive: (A) and (B) both keep zxr-shell-v2 for Wayland-native 3D clients; the
-question is where *OpenXR-native* bounded apps land.
+What zxr stays: everything built through M1 and G3 — the Wayland server, the places/WM policy,
+the seat, the shell plane — plus, once Monado advertises the pair, a `controller` module driving
+the seam (zxr-core §3). What zxr loses: nothing built; the never-built 3D projection pass and the
+never-served `zxr-shell-v2` server.
 
-### 4a. DisplayXR's workspace controller, read from source
+### 4a. The one open comparable for "runtime + separate shell", and what it teaches
 
-`displayxr-runtime` is a Monado fork (`NOTICE:4-7`; `README.md:16`: "Built on Monado …
-strips away headset-centric infrastructure"; the `src/xrt/{state_trackers/oxr,ipc,compositor}`
-layout is Monado's). It targets tracked 3D displays, not headsets; the multi-app path ships on
-a D3D11 service compositor (`docs/roadmap/workspace-runtime-contract.md:2-9`), Linux is a
-Vulkan/Wayland preview; the reference shell `displayxr-shell-pvt` is closed. What is open is
-the **seam**, and it is the only open one of its kind:
-
-- **The contract.** `XR_DXR_spatial_workspace` (spec v23, provisional, DXR tag registered
-  July 2026 — `docs/specs/extensions/XR_DXR_spatial_workspace.md:3-11`): "the runtime owns
-  mechanism (atlas composition, IPC, hit-test geometry, swapchain plumbing) and the workspace
-  controller owns policy (which apps exist, where their windows go, how they animate, what
-  chrome looks like, what the cursor does)" (`:17`). A privileged session calls
-  `xrActivateSpatialWorkspaceDXR` — "at most one per system" (`:27`) — which requires an
-  **IPC-mode** session (`oxr_workspace.c:287-290`) and is authorised server-side by
-  orchestrator-PID match / verified controller class (`ipc_server_handler.c:4055-4080`). The
-  surface: enumerate clients + per-client info (`spec:81-82`), window pose/size in metres +
-  visibility (`:38-40`), focus (`:54-55`), input-event drain (POINTER/KEY/SCROLL/MOTION/
-  FRAME_TICK/FOCUS_CHANGED/WINDOW_POSE_CHANGED, `:59-67`), pointer capture (`:67-68`),
-  per-client frame-rate cap (`ipc_server_handler.c:4732`), request exit / fullscreen
-  (`spec:76-77`), controller-drawn chrome as ordinary swapchains with hit regions (`:84-95`),
-  an event-driven wakeup handle (`:104-106`), a per-client style struct (`:108-117`).
-  `oxr_workspace.c` is 1 619 lines; the server handlers `ipc_server_handler.c:4055-5350`.
-- **What they learned, in their words.** Hit-testing *moved to the controller* in v22: "the
-  workspace controller now owns hit-testing end to end (it already ran the same eye→cursor
-  raycast for click policy) and the runtime no longer raycasts" (`spec:45`); the runtime keeps
-  only the cursor sprite's depth (`:49-50`). Every keyboard shortcut moved to the controller by
-  v23 (`:60`, `ADR-014:25-39`). ADR-018 had argued the opposite (raycast as plumbing at the
-  data) and named the drag/resize/rotation state machines as "the real layering violation"
-  (`ADR-018:43-62`); the code followed ADR-018's second half and then overtook its first. This
-  is research/68's "the seat is the compositor's" arrived at by a runtime team the hard way.
-- **What broke.** ADR-035 (`:18-48`) is the audit of a Monado fork after it grew a multi-app
-  shell: "identity and authorization do not exist … 111 of 131 handlers are unauthenticated;
-  the gates that exist fail *open* without an orchestrator"; "the compositor has two modes
-  selected by one process-global bool"; "shared display state has ~10 writers and no owner";
-  "capacity is 8 connections"; "the IPC core is stock Monado: blocking pipes with no timeouts,
-  one global mutex held across pipe I/O"; "input arbitration is per-provider, not per-consumer
-  … there is no input focus". Their decisions: server-derived peer identity and verified client
-  *classes* (`ADR-035:81-95`), **leases held by the service** with a built-in default policy
-  when no controller is present (`:97-113`), one always-on compositor pipeline (`:115`).
-  Option 2 — "controller-owned arbitration — the shell decides … the service obeys" — was
-  rejected as *primary* because it "fails the moment there is no shell" (`:55-59`).
-- **Transfer to Mura.** Everything above the display processor transfers: the privileged
-  session as the WM seam; per-client pose/visibility/focus/frame-rate cap; the input drain
-  (Mura's answer is the Wayland seat + `xrSyncActions`, but the *shape* — runtime delivers,
-  controller decides — is the same); chrome as swapchains (Mura's chrome is Wayland surfaces).
-  What does not: Kooima projection, weave, HWND capture/puppeting (`ADR-013`), the 2D-window
-  capture path. The lessons transfer in full: identity from `SO_PEERCRED` at accept (Monado's
-  IPC has the socket; research/68 already wants it for the trusted socketpair), leases with a
-  default policy when zxr is absent (Monado's existing primary/overlay rule *is* that default),
-  no second compositor mode.
-
+Every runtime that hosts multiple apps behind a system shell is closed (Android XR, Horizon OS,
+visionOS, PICO). The one open instance is **DisplayXR** [external]: a Monado fork for 3D
+displays whose provisional `XR_DXR_spatial_workspace` gives a privileged OpenXR session the
+"workspace controller" role — set other clients' window pose/size/visibility/focus, drain input,
+request exit. It is non-standard, Windows-first, and implements neither container extension;
+it is **not** pinned and nothing of its API transfers. Its **ADR-035** — the audit of what broke
+when that fork grew a multi-client shell — is the evidence used, and it is the record of skipping
+the prerequisites: "identity and authorization do not exist … caller identity is a client-
+asserted PID; 111 of 131 handlers are unauthenticated; the gates that exist fail *open* without
+an orchestrator"; "the compositor has two modes selected by one process-global bool"; "shared
+display state has ~10 writers and no owner"; "capacity is 8 connections"; "the IPC core is stock
+Monado: blocking pipes with no timeouts, one global mutex"; "input arbitration is per-provider,
+not per-consumer … there is no input focus". Their remedies — server-derived peer identity,
+verified client classes, ownership as leases held by the service with a built-in default policy
+when no controller is present, one always-on compositor pipeline, and the explicit rejection of
+"the shell decides, the service obeys" because it "fails the moment there is no shell" — are
+ADR 0006 amd. 4's D6 and composition.md §5.3, stated as conformance items before any seam is
+built. Their second lesson — hit-testing and every keyboard shortcut migrated *from* the runtime
+*to* the controller over twenty spec revisions — is research/68's "the seat is the compositor's",
+reached by a runtime team the hard way.
 ### 4b. Implementing `XR_EXT_spatial_container(_self_rendering)` on Monado — the gap, file by file
 
 What Monado already has:
@@ -224,44 +211,72 @@ What Monado already has:
   state, `set_client_primary`/`set_client_focused`/`toggle_client_io_active`/
   `set_client_io_blocks` (`monado.c:348-403`), all over `ipc_call_system_*`; zxr polls it at
   1 Hz today (research/67). `ipc_app_state` (`ipc_protocol.h:387-401`) carries
-  `primary_application`, `session_visible/focused/overlay`, `io_blocks`, `z_order`, `pid`.
-  `IPC_MAX_CLIENTS` is 32 (`ipc_protocol.h:41`) — four times DisplayXR's wire cap.
+  `primary_application`, `session_visible/focused/overlay`, `io_blocks`, `z_order`, `pid` (the
+  pid client-asserted — the D6 item). `IPC_MAX_CLIENTS` is 32 (`ipc_protocol.h:41`).
 - **The session state machine** in one place (`oxr_session.c:365` `oxr_session_change_state`;
   `oxr_session_begin:414`, `_end:519`, `_request_exit:595`, `_locate_views:827`,
   `_frame_wait:1077`, `_frame_begin:1166`; `oxr_session_frame_end.c:1764` with per-type layer
   verification `:437-1005`) and the overlay create path (`oxr_session.c:1577-1582`).
+- **Upstream's prior reach toward exactly this** [external: GitLab, 2026-09-29]: the
+  `deferred-session-state` branch on `monado/monado` (Nov 2024, Pavlik — "st/oxr: Adjust how
+  session state changes take effect", "Support callbacks associated with polling events", a
+  synchronisation primitive for session-running vs `xrWaitFrame`), which is the plumbing the
+  IDLE-only session mode needs; MR **!1354** "Draft: Bubble compositor events through the
+  multi" (per-app compositor events through `multi_system_compositor` → `multi_compositor`);
+  `wallbraker/monado-collabora:jakob/comp/multi-interface` "[WIP] c/multi: Add listener
+  interface" (May 2023); and the 2020 `pb_multi_apps` lineage (`Anorak`, `Bobo1239` forks:
+  "work on multiple applications, initial overlay extension plumbing, monado-ctl utility",
+  "fix z-ordering of layers", "slot management") from which today's `comp_multi` and
+  `libmonado` descend. None implements containers; all four are the seams a container
+  implementation extends, by their own authors.
 
-What is missing, and where it would go (a proposal for a spike, not code):
+What is missing, and where it goes (the C-track, [implementation-path.md §3](../architecture/implementation-path.md);
+the contract is [specs/composition.md §3–§5](../../specs/composition.md)):
 
-| piece | spec requirement | Monado location | size yardstick |
+| piece | spec requirement | Monado location | size |
 |---|---|---|---|
-| `XrSpatialContainerEXT` handle, state, events | create/destroy/space/state/bounds; six events; `XR_ERROR_SPATIAL_CONTAINER_*` | new `oxr_spatial_container.c` + `oxr_objects.h` struct; events via `oxr_event.c` (455 lines today) | DisplayXR's `oxr_workspace.c` 1 619 lines for 29 entry points → ~600–900 for 11 |
-| session-state rewrite | `IDLE` for life; begin/end/exit/`xrLocateViews`/plain `xrEndFrame` → errors; `shouldRender=false` (`ext_spatial_container.adoc:1020-1093`) | `oxr_session.c` guards keyed on a `containers_enabled` flag from `XrSessionCreateInfoSpatialContainersEXT` (`:1000-1002`); `oxr_session_frame_end.c:1764` branch | small; the risk is the `xrt_session_event` mapping (`STATE_CHANGE` must not surface as VISIBLE/FOCUSED) |
-| per-container `xrt_compositor` slot | each container = one entry in `comp_multi`'s client array with its own latched layers, `visible`, `interactable`, `z_order`, bounds, pose | `comp_multi_compositor.c` (per-client) gains a container list, or a container *is* a `multi_compositor` child; `ipc_client_state` per container | the largest piece; DisplayXR keeps one slot per client (`ipc_server_handler.c:4364-4487` pose/visibility by slot) |
-| `xrLocateSpatialContainerViewsEXT` | bounds-fitted asymmetric FOV per container per view, decay, `shouldSubmitLayers`, `recommendedImageExtent` (`self_rendering.adoc:233-311`, `:386-437`) | new: fit a frustum to an oriented box from the head pose (a few dozen lines of math) + a policy input (extent scale) from the controller | new math; no Monado precedent |
+| `XrSpatialContainerEXT` handle, state, events | create/destroy/space/state/bounds; six events; `XR_ERROR_SPATIAL_CONTAINER_*` | new `oxr_spatial_container.c` + `oxr_objects.h` struct; events via `oxr_event.c` (455 lines today) | ~600–900 lines for 11 entry points (yardstick: Monado's own `oxr_api_space.c`-class files) |
+| session-state rewrite | `IDLE` for life; begin/end/exit/`xrLocateViews`/plain `xrEndFrame` → errors; `shouldRender=false` (`ext_spatial_container.adoc:1020-1093`) | `oxr_session.c` guards keyed on a `containers_enabled` flag from `XrSessionCreateInfoSpatialContainersEXT` (`:1000-1002`); `oxr_session_frame_end.c:1764` branch; builds on `deferred-session-state` | small; the risk is the `xrt_session_event` mapping (`STATE_CHANGE` must not surface as VISIBLE/FOCUSED) |
+| per-container `xrt_compositor` slot | each container = one entry in `comp_multi`'s client array with its own latched layers, `visible`, `interactable`, `z_order`, bounds, pose | `comp_multi_compositor.c` (per-client) gains a container list, or a container *is* a `multi_compositor` child; `ipc_client_state` per container | the largest piece |
+| `xrLocateSpatialContainerViewsEXT` | bounds-fitted asymmetric FOV per container per view, decay, `shouldSubmitLayers`, `recommendedImageExtent` (`self_rendering.adoc:233-311`, `:386-437`) | new: fit a frustum to an oriented box from the head pose + a policy input (extent scale, decay hint) from the controller | new math; no Monado precedent |
 | `xrEndFrame` grouping | `XrSpatialContainerLayerFrameEndInfoEXT` → per-container layer arrays; retain/clear (`:450-590`) | `oxr_session_frame_end.c` loop keyed by container; `comp_multi`'s retire/latch already distinguishes "delivered" from "retained" (`comp_multi_system.c:274-300`, research/67's !2769) | moderate |
 | graphics-presentation enumeration | `xrEnumerateSupportedSpatialContainerGraphicsPresentationsEXT` stable per instance | `oxr_api_system.c` | trivial |
-| **the policy seam** | who sets visible / interactable / bounds / pose / z-order / recommended extent | two comparable shapes: **(i)** DisplayXR's — a privileged *OpenXR session* with an extension (`xrActivateSpatialWorkspaceDXR`), authorised by peer identity; **(ii)** `libmonado`'s — a C API over the same IPC, extended from today's `set_client_primary` to per-container verbs | (i) ~30 entry points in DisplayXR; (ii) ~10 new `ipc_call_system_*` |
+| **the controller seam** (D5) | who sets visible / interactable / bounds / pose / z-order / recommended extent | **(i)** `libmonado` grown by per-container verbs over `ipc_call_system_*` (~10 new calls, event delivery by a blocking call or fd); **(ii)** the `comp_multi` listener interface of `jakob/comp/multi-interface` / !1354 exposed to one privileged IPC client — **open, decider the owner** | (i) ~10 IPC calls; (ii) the listener + one privileged client path |
+| **peer identity + leases** (D6) | server-derived identity at accept; the controller role as a lease; the no-controller default = today's primary/overlay rule | `ipc_server_process.c` accept path (`SO_PEERCRED`); a lease table in `ipc_server` above the compositor | small, and independently upstreamable — C0 |
+| **depth policy** (D4) | per-pixel resolve of depth-carrying container layers | `comp_render_cs.c:250-261` reads the bound depth it ignores today; the squasher orders by it | moderate; the required-vs-opt-in choice ruled first |
 
 **Upstream posture.** The spec's contributor list names Jakob Bornecrantz (NVIDIA, Monado's
 author) and Rylie Pavlik (Collabora, Monado's maintainer) (`ext_spatial_container.adoc:24,36`;
-`self_rendering.adoc:22,31`); no MR, issue or branch exists on `gitlab.freedesktop.org/monado`
-for it as of today [external: GitLab API]. A Mura implementation would be first, and shaped for
-upstream only if the policy seam is Monado-native (`libmonado`, shape ii) or an extension Monado
-would accept; DisplayXR's DXR seam is theirs.
+`self_rendering.adoc:22,31`); no MR, issue or branch implements it on
+`gitlab.freedesktop.org/monado` or its 200 most-active public forks as of today [external]. Mura's
+series is carried on the `mura-os/monado` fork (branch `mura`, one feature branch per upstreamable
+piece — ADR 0006 amd. 4 D13) and is shaped for upstream throughout: the extension is Khronos's,
+the seam is Monado-native, and the prerequisites (D6) are the kind of hardening upstream takes
+regardless.
 
-### 4c. Reference-implementation status
+### 4c. Reference-implementation status (verified 2026-09-29)
 
-- **Runtime side: none open.** Implementers named by the spec's authorship (Google, Meta,
-  ByteDance, Qualcomm, Varjo, Microsoft) ship closed runtimes; the SIGGRAPH 2026 BOF says
-  "ratified with multiple runtime implementers and engine support" [external]. Monado, WiVRn
-  (`6f9e146`) and DisplayXR do not implement the pair.
+- **One runtime implements the pair — Google's Android XR runtime, closed.** Evidence: Godot PR
+  #123736 (dsnopek, merged into 4.8, 2026-09-24) — "While testing OpenXR spatial containers
+  (added in #123124) on Android XR in immersive mode, I found that the ground wasn't where I
+  expected it to be" [external]; PR #123124 (the integration) is by `m4gr3d` (Fredia
+  Huya-Kouadio, Google), who is on the container spec's contributor list
+  (`ext_spatial_container.adoc`, "Fredia Huya-Kouadio, Godot Engine"); `godot_openxr_vendors`
+  PR #536 adds Android XR export for container apps [external]. Google's public Android XR
+  extension list and the Khronos runtime inventory do **not** list the pair — the inventory is
+  contributed data (`compute_known_extensions()` unions what runtimes and clients report), not
+  an audit — so the build is unidentified and not publicly available; Android XR's runtime is
+  Monado-derived (Collabora, public), which is why its shape (state tracker in the runtime,
+  placement policy in a system service beside it) is the closest comparable to the ruling. Used
+  here as mechanism evidence only (rule 2); internals not cited.
+- **No open runtime.** Monado (main, 16 branches, 200 forks, open MRs — §4b), WiVRn (`6f9e146`)
+  and DisplayXR: none. **Mura's would be the first open implementation**, not the first.
 - **Conformance: none yet.** OpenXR-CTS `main` and `devel` test the spatial-entity family
   (`test_XR_EXT_spatial_{anchor,marker_tracking,persistence,persistence_operations,plane_tracking}.cpp`)
-  and not the containers [external: GitHub tree]; the spec promises "a separate test
-  extension runtimes implement for CTS only, allowing CTS to control all the system policy"
+  and not the containers [external]; the spec promises "a separate test extension runtimes
+  implement for CTS only, allowing CTS to control all the system policy"
   (`ext_spatial_container.adoc:1225-1229`) — not in the registry at the pin.
-- **Client side: Godot master**, `modules/openxr/extensions/spatial_container/` — 902 lines
+- **The open client — Godot master**, `modules/openxr/extensions/spatial_container/` — 902 lines
   across three units: `openxr_spatial_container_extension.cpp` (events → signals,
   `:191-210`; bounds-mode requests gated on `supportsImmersive`, `:346-362`; play space vs
   container space by mode, `:380`; project settings `xr/openxr/extensions/spatial_container/
@@ -269,8 +284,8 @@ would accept; DisplayXR's DXR seam is theirs.
   `openxr_spatial_container_self_rendering_extension.cpp` (`xrBeginSpatialContainerRenderingEXT`
   `:186`; per-frame `xrLocateSpatialContainerViewsEXT` → `shouldSubmitLayers` `:314-319`;
   `retainPreviousSubmission` cleared per frame `:236`), `openxr_spatial_container_state.cpp`.
-  This is what a Mura runtime implementation would be tested against first — before the CTS.
-- **Architecture side: DisplayXR** (§4a) — the seam, the ADRs, the audit.
+  With the `godot_openxr_vendors` spatial-container sample [external], this is the conformance
+  substitute composition.md §7.3 names.
 
 ## 5. The spatial-entity family since research/21
 
@@ -328,148 +343,66 @@ is unchanged: it has the deprecated `XR_EXT_plane_detection` and nothing on the 
   installs and authorises — DisplayXR's opt-in flag is the right posture, and Mura's is polkit
   per action. Nothing here is a Mura dependency.
 
-## 7a. Proposed deltas per draft document
+## 7a. Deltas per document — the record of what rev 1 proposed and what became of it (rev 2)
 
-Every spec and design doc is a draft under development. Deltas are **forced** (a stale fact,
-or a semantic every consumer of the cited spec must honour) or **discretionary** (a judgment
-call, rule 4). Forced deltas are applied in this pass; discretionary ones wait for §9.
+Rev 1 of this doc listed proposed deltas, forced or discretionary, for the owner to rule. The
+ruling (ADR 0006 amendment 4, 2026-09-29) went further than any of them: the container pair is
+the 3D contract and `zxr-shell-v2` is retired. The disposition of each rev-1 item:
 
-### `protocols/zxr-shell-v2.xml` (rev 3 candidates — all discretionary)
+| rev-1 item | disposition |
+|---|---|
+| `zxr-shell-v2.xml` rev 3 candidates — per-frame retain, per-frame should-submit/recommended-extent hints, bounds-fitted frusta with mono decay, a denied event | **withdrawn** (D11): these are Monado implementation items under the spec (composition.md §3.7–§3.8); the XML is a retired hook and takes no further revisions |
+| `specs/zxr-core.md` §1/§7 — the enabled extension set, `EXTX_overlay` provisional, `views_change` handling | **applied** (rev 3.16) and **extended** (rev 3.20: §1 no 3D composition, §3 the `controller` module, §4 overflow-only projection, §5a container proxies, §8 container input Monado's, §10 the seam, §14 the fork ruled) |
+| `native-openxr-apps.md` §2 — the provisional dependency stated | **applied** (rev 0.3) and **extended** (rev 0.4 §1: bounded containers are windows; immersive = the game) |
+| `spatial-mapping.md` §8 / `places-model.md` — stationary reference space, `ANDROID_spatial_anchor_space`-style bridging | **open, unchanged** — not touched by the ruling; decider the mapping workstream |
+| `window-workspace-management.md` / the WM seam — the request-and-deny comparable | **applied** (§9 mechanism 1 and the `limits`/refusal comparable) |
+| ADR 0006 amendment draft | **superseded by the real amendment 4** |
 
-1. **Retain per frame.** Today a surface that misses a frame gets a placeholder and "the
-   compositor never re-presents previously submitted images" (`xml:472-479`). Proposal: a
-   per-surface `retain` request (latched, like `set_clipping_mode`) meaning "compose my last
-   submitted slot with its recorded transform until I submit again"; the compositor reprojects
-   using the slot's depth (the lineage has depth per pixel — the container runtime does not and
-   still retains). Semantics from `self_rendering.adoc:551-556`: later writes to a retained
-   slot must not show, so a retained slot stays *held* (not released) until replaced. Reason to
-   keep the current rule: motorcar's exactness argument (research/08 §1.5). Reason to change:
-   independent update rates are the spec's stated purpose and research/65's biggest lever for
-   static 3D content. **Decider: owner (§9 Q2).**
-2. **Per-frame render hints in `view_state`.** Add `should_submit` (bool) and
-   `recommended_extent` (w, h) per (view, surface) — or a per-surface `render_hint` event in
-   the frame snapshot — carrying the container's `shouldSubmitLayers` / `recommendedImageExtent`
-   (`self_rendering.adoc:386-437`), with the same rule: do not reallocate on a changed extent;
-   render into a sub-rect. zxr's `zxr_view.resolution` stays the allocation size. Reason: the
-   compositor knows a surface's projected size; the client cannot. **Discretionary** (it is an
-   optimisation with no correctness effect).
-3. **Bounds-fitted per-surface frusta and mono decay.** `view_state` is already per view per
-   frame; proposal: the compositor may send a *fitted* projection (asymmetric, minimal around
-   the acknowledged bounds, `self_rendering.adoc:278-283`) and may send the same view matrix
-   for both views (decay) with a `decayed` flag, keeping the view count constant
-   (`:265-275`). Reason: render cost for small/far volumes. Reason against: the composite is
-   per pixel with depth — a mono client image under stereo composition is only right at the
-   plane. **Decider: owner (§9 Q2).**
-4. **A denied event beside `configure`.** Containers deny visibility and mode requests with
-   events (`ext_spatial_container.adoc:476-480`, `:701-705`); zxr-shell-v2 has no client
-   request to deny (bounds are the compositor's) — nothing to add here; the WM seam has it
-   (`limits` + refusal). **No delta.** Recorded so the comparison is complete.
-
-### `specs/zxr-core.md`
-
-- **§1 / §7 (forced):** state the OpenXR extension set zxr enables and why, as a table
-  (§0 baseline), and that `XR_EXTX_overlay` is provisional at the pin with the ratified
-  alternative named (§3 row 11). Applied.
-- **§7 (forced):** handle `XrEventDataViewConfigurationViewsChangedEXT` when the runtime
-  offers `XR_EXT_view_configuration_views_change` — re-enumerate views, regrow swapchains
-  (grow-only, research/62 §8). Monado does not send it today; the handler is cheap and the
-  semantics are the spec's. Applied as a rule; built when Monado sends it.
-- **§14 (forced):** record the container fork as an open item with its decider (§9 Q1). Applied.
-- **§7 (discretionary):** `XR_KHR_visibility_mask` for the projection pass at M2;
-  `XR_EXT_local_floor` as the places model's floor; `XR_FB_display_refresh_rate` behind the
-  refresh-rate setting. Each is an enable-when-available with a measured gate; listed, not
-  ruled.
-
-### `docs/architecture/native-openxr-apps.md` §2 (forced)
-
-State that `XR_EXTX_overlay` is provisional (revision 1, 2018; `xr.xml` `provisional="true"`)
-and that the ratified session model for the same problem is `XR_EXT_spatial_container`, under
-which the shell and the game are both container clients ordered by the runtime; the ruling
-("an overlay session, always") stands until §9 Q1 is decided. Applied.
-
-### `docs/architecture/spatial-mapping.md` §8 and `places-model.md` (discretionary)
-
-- `XR_EXT_stationary_reference_space` as the OpenXR face of the *local* frame: the generation
-  id is the "relocalisation broke" signal apps get; the map frame stays Mura's. Proposed text
-  for §8; not applied (it touches the two-frame contract's wording).
-- `XR_ANDROID_spatial_anchor_space` as the `XrSpace`-bridge shape the frame graph wants from
-  the EXT family; proposed as a "reserved hook" line in places-model. Not applied.
-
-### `docs/architecture/window-workspace-management.md` / `zxr-window-management-v1.xml` (discretionary)
-
-The container spec's request-and-deny pattern (async, may take seconds, may show consent UI,
-denial as an event, no-op requests queue nothing, `ext_spatial_container.adoc:360-380`) is a
-comparable for the seam's `limits` and refusal semantics; the "first show is the app's, then
-the system's" rule (`:482-489`) is a comparable for the manager's `show`/`hide` after the
-first map. Proposed as two sentences in §12; not applied.
-
-### ADR 0006 (draft amendment text, not applied)
-
-> **Amendment 4 — the container pair.** `XR_EXT_spatial_container` and
-> `XR_EXT_spatial_container_self_rendering` (ratified 2026-08, published in 1.1.63) standardise
-> runtime-managed 3D windows for OpenXR-native apps. They do not replace `zxr-shell-v2`: the
-> lineage's per-pixel cross-client occlusion is not in their contract (the runtime may
-> precomposite each container to a stereo quad; depth-based volume clipping is "future
-> extensions"). Mura's position: [one of §4 (A)/(B)/(C), owner's ruling], with the policy seam
-> [DisplayXR-shaped privileged session / `libmonado`]. The three rev-3 candidates in research/79
-> §7a are adopted / declined as [ruling].
+The documents the ruling amended beyond this list: [specs/composition.md](../../specs/composition.md)
+(new, the normative contract), [zxr-shell-v2-composition.md](../architecture/zxr-shell-v2-composition.md)
+(superseded banner), `protocols/README.md` + the XML's description (retired), spatial-input §11,
+desktop-environment, spatial-sharing, perception-passthrough-hands §1b, zxr-architecture,
+component-registry, overview, budgets, ADRs 0007/0012/0013, repo-structure, perception-intake,
+spatialcast-portal, implementation-path (the C-track), `lib/contract`, `pkgs/zxr` comments.
 
 ## 8. Determinations (confident; the precedent named)
 
-1. **zxr-shell-v2 stays Mura's protocol for Wayland-native 3D clients.** The container pair
-   does not carry the lineage's cross-client depth interleave (`self_rendering.adoc:484-486`,
-   `:690-691`); motorcar's reason (research/08 §1.5) is untouched. No comparable does both;
-   DisplayXR's own compositor depth-tests *window quads* (`spec:125`), not client pixels.
-2. **The container pair is the ratified session model for multi-app OpenXR, and Mura's
-   fullscreen-game model is its immersive mode.** `ext_spatial_container.adoc:643-670`.
-   native-openxr-apps.md's *experience* is unchanged; its *mechanism* (`EXTX_overlay`) is now a
-   provisional dependency with a ratified alternative — stated, not decided (§9 Q1).
-3. **Three container semantics are worth having in zxr regardless of §9 Q1** — per-frame
-   should-submit/recommended-extent hints, an explicit retain, bounds-fitted frusta — because
-   they reduce client render cost and cost the compositor nothing it does not already know.
-   Their *protocol shape* is discretionary (§7a-1..3).
-4. **If Mura implements the pair, it implements it in Monado, not in zxr**, because the
-   spec's mechanism (per-client slots, z-order, squashing, visibility/focus events) is Monado's
-   multi-client compositor already (§4b), and the one open comparable that built a shell seam
-   on Monado (DisplayXR) put the mechanism in the runtime and the policy in the controller
-   (`XR_DXR_spatial_workspace.md:17`). What zxr would be is the controller.
-5. **Peer identity and leases before any seam.** DisplayXR's audit (`ADR-035:18-48`) is the
-   record of skipping them. Monado's IPC has the socket; `SO_PEERCRED` at accept and a
-   lease table with Monado's existing primary/overlay rule as the default policy are the
-   prerequisites of either seam shape.
-6. **Monado work items, in the order the corpus already wants them:** `EXT_view_configuration_
-   views_change` (event), `EXT_render_model` + `interaction_render_model` (controller drawing),
-   `FB_hand_tracking_aim` on the simulated hands (research/68), the EXT spatial spine
-   (research/21 §7), then the container pair if ruled. None is on Mura's critical path before M2.
+1. **The container pair is Mura's 3D-client contract and Monado composites everything** —
+   ruled (ADR 0006 amd. 4 D1–D2). Precedent: the specification's ownership text
+   (`rendering.adoc:1210`), the shipping platforms' shape, research/65's measured quad path.
+2. **`zxr-shell-v2` is a retired reserved hook** (D3). Precedent: adoption — Godot/Unity speak
+   containers; motorcar, wxrc, zwin and StardustXR's protocol all died without clients
+   (research/10).
+3. **Motorcar's per-pixel occlusion lives in Monado's depth policy** (D4). Precedent: the spec
+   leaves composition order and depth to the runtime (`self_rendering.adoc:476-486`,
+   `:690-691`); Monado binds the depth layer already (`comp_render_cs.c:250-261`).
+4. **The seam is Monado-native and the prerequisites come first** (D5, D6). Precedent: Monado's
+   own `libmonado` and `!1354` / `jakob/comp/multi-interface`; DisplayXR ADR-035's audit as
+   the record of the failure mode [external].
+5. **Mura's fullscreen-game model is the container spec's immersive mode**
+   (`ext_spatial_container.adoc:643-670`); native-openxr-apps.md's experience is unchanged.
+6. **Monado work items, in the order the C-track needs them:** peer identity + leases; the base
+   extension + IDLE-only session; self rendering; the seam; the depth policy; the dmabuf-import
+   swapchain. Beside them, unchanged from rev 1: `EXT_view_configuration_views_change`,
+   `EXT_render_model` + `interaction_render_model`, `FB_hand_tracking_aim` on the simulated hands
+   (research/68), the EXT spatial spine (research/21 §7).
+7. **The Monado series is carried on the `mura-os/monado` fork** (D13), upstream-first.
 
-## 9. Owner questions
+## 9. Open items (decider: the owner; the questions of rev 1 are ruled)
 
-**Q1 — Where do OpenXR-native bounded apps land?** *What is decided:* whether Mura implements
-`XR_EXT_spatial_container(_self_rendering)`, and where. *Why it is a decision:* Godot master
-and Unity 6.6 ship container clients; a Mura without a runtime-side implementation runs them
-as immersive 1.x sessions only; implementing it changes what Monado is on Mura. *Options (the
-comparables' positions):* **(A)** Monado implements, zxr is the controller (Android XR /
-Horizon OS shape; DisplayXR the open instance) — Monado work ≈ one `oxr_workspace.c` plus the
-per-container compositor slot, and a seam; **(B)** an API layer translates containers into
-zxr-shell-v2 clients (OpenComposite/xrizer shape) — keeps one compositor and the depth
-interleave for container apps too, adds a hop; **(C)** not implemented (the lineage today).
-*Consequences:* (A) two composition tiers on the device (Monado composites containers, zxr
-composites Wayland) and zxr's WM policy crosses IPC; (B) Mura owns a second OpenXR-facing
-codebase and container apps do not get runtime-fitted frusta unless zxr sends them; (C) no
-bounded multi-app from container-native engines.
-
-**Q2 — Which of the three container semantics enter zxr-shell-v2 rev 3, and how?** *What is
-decided:* §7a-1 (retain), §7a-2 (per-frame hints), §7a-3 (fitted frusta + decay). *Why:* each
-trades the lineage's exactness rule for client render cost. *Options:* adopt as proposed;
-adopt hints only (no semantic change); decline (motorcar's rule). *Consequences:* retain needs
-depth reprojection in the compositor (research/65's row, unmeasured); hints are free; decay
-changes what a stereo composite of a mono image means at depth.
-
-**Q3 — The policy seam shape, if Q1 = (A).** *Options:* DisplayXR's privileged OpenXR
-session with an extension (self-contained, upstream-unfriendly as DXR; Mura would author an
-`MNDX`/`EXT` one), or `libmonado` extended (Monado-native C API, no OpenXR surface, what zxr
-uses today). *Consequences:* the first makes zxr's WM a second OpenXR session with its own
-frame loop; the second keeps it a library call from the state loop.
+1. **The depth policy** (composition.md §4.3): a container app must submit
+   `XR_KHR_composition_layer_depth` to be interleaved (opt-in; quad order otherwise — the
+   shipping platforms' behaviour), or Mura's runtime treats a depth-less container as opaque at
+   its front face for interleaving. *Consequence:* the first is what every engine expects today;
+   the second makes every bounded container a solid for occlusion purposes. Before C4.
+2. **The seam shape** (composition.md §5.2): `libmonado` verbs or the `comp_multi` listener.
+   *Consequence:* the first keeps zxr's controller a library call from the state loop with the
+   1 Hz poll replaced by an event fd; the second is the upstream-sketched interface and puts the
+   seam in the compositor rather than the IPC layer. Before C3.
+3. **zxr's own windows as containers** (composition.md §6): one container per Wayland toplevel
+   or one for the whole shell. *Consequence:* per-toplevel gives Monado per-window visibility
+   (taskbar semantics) at N slots per frame; whole-shell keeps one slot and zxr's band order
+   inside it. After C3.
 
 ## 10. Appendix — every supported extension at the pin (253)
 

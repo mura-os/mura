@@ -1,6 +1,6 @@
 # Spatial input: targeting, hover, commit, focus, cursors, peripherals and text entry
 
-**Status: DRAFT rev 0.8 (2026-09-29; rev 0.7 + §13/§14 dwell in two layers — the accessibility toggle (`input.dwell.enabled`) and the input floor's automatic head-ray dwell when no select button exists (`Peripherals::floor_dwell`); every target has a select, so dwell is the a11y setting and the fault case, not the norm). Rev 0.7 (2026-09-29; rev 0.6 + §13 the body frame withdrawn — the default is the **world** frame on the shell's anchor, seeded where the scene appears and re-seated only by recenter; no comparable has a body frame, research/78 §9 F23). Rev 0.6 (2026-09-28; rev 0.5 + §13 the input floor as one rule for every surface, dwell global with its anchor on the hit point and progress on the reticle, and the body frame as the default placement — owner rulings; research/78 §7b, §9 F2). Rev 0.5 (2026-09-27; rev 0.4 + §6 layer-shell keyboard interactivity as the
+**Status: DRAFT rev 0.9 (2026-09-29 — §11 rewritten: 3D apps are Monado's spatial containers, their input is Monado's action system, zxr designates the interactable container over the seam; the `zxr-shell-v2` input objects withdrawn, ADR 0006 amendment 4; the §11 rewrite is the only change over rev 0.8). Rev 0.8 (2026-09-29; rev 0.7 + §13/§14 dwell in two layers — the accessibility toggle (`input.dwell.enabled`) and the input floor's automatic head-ray dwell when no select button exists (`Peripherals::floor_dwell`); every target has a select, so dwell is the a11y setting and the fault case, not the norm). Rev 0.7 (2026-09-29; rev 0.6 + §13 the body frame withdrawn — the default is the **world** frame on the shell's anchor, seeded where the scene appears and re-seated only by recenter; no comparable has a body frame, research/78 §9 F23). Rev 0.6 (2026-09-28; rev 0.5 + §13 the input floor as one rule for every surface, dwell global with its anchor on the hit point and progress on the reticle, and the body frame as the default placement — owner rulings; research/78 §7b, §9 F2). Rev 0.5 (2026-09-27; rev 0.4 + §6 layer-shell keyboard interactivity as the
 focus module's rules — the exclusive override, `on_demand` as a stack member, `none` never, the
 mode gate's exception as the trusted connection — [research/77](../research/77-shell-layer-mechanics-from-comparables.md);
 rev 0.4 = same day; rev 0.3 + §5 a ray-owned pointer is **released when gaze
@@ -450,8 +450,8 @@ picker (research/36 §9). Compositor-side uses of gaze beyond targeting — Look
 shell's own mic affordance, dwell — stay compositor-side. Fallback when gaze is sub-nominal or
 lost: tier 2/3/4 after the timeout (§3), surfaced as the tier change it is; never a guessed pose
 (the OpenXR extension's own rule for sub-nominal tracking, `ext_eye_gaze_interaction.adoc:147-158`).
-The M2 question — whether a 3D client may request gaze under a per-app permission (HoloLens'
-model; Android XR's "dangerous permission") — is recorded in §11, decider the owner at M2.
+The container question — whether a 3D app may request gaze under a per-app permission (HoloLens'
+model; Android XR's "dangerous permission") — is recorded in §11 as Monado-side gating, decider the owner.
 
 ## 10. Hand aim, pinch and poke: whose job (ruled)
 
@@ -485,14 +485,22 @@ The recogniser is never a Mura service and never an application's: what it produ
 by the *reserved* stage of §1a before any client, and the "suspend your gesture processing" rule
 native-openxr-apps §6 gives applications is the flag's meaning.
 
-## 11. 3D clients (M2)
+## 11. 3D containers (rev 0.9, 2026-09-29 — ADR 0006 amendment 4)
 
-`zxr-shell-v2`'s input objects take the standard's shape rather than motorcar's mouse-shaped
-`six_dof_pointer`: per hand, the aim/pinch/poke/grip poses with `pinch`, `grasp` and
-`aim_activate` values and their `ready` flags; per controller, the aim pose and the profile's
-buttons/axes; **exclusive capture** ordered by distance (StardustXR: a client that grabbed keeps
-the input until release); event-time compensation applies before delivery. Gaze is not
-delivered at M2 by default; the per-app permission model is the open item (§9).
+A 3D application is a Monado-hosted spatial container, not zxr's client; **its input is Monado's
+action system in the app's own session** (`xrSyncActions` applies to all of a session's
+containers, `ext_spatial_container.adoc:1237-1249`). zxr's part is to designate which
+container(s) are *interactable* through the controller seam ([specs/composition.md §5](../../specs/composition.md))
+by the same focus-on-commit rule as a plane (§6); Monado routes actions accordingly and zxr never
+sees a container's input. Per-container input filtering and an event channel are the working
+group's declared future extensions (`:1251-1266`); until then a container app receives the
+session's actions whenever any of its containers is interactable. The reserved system input
+(native-openxr-apps §6) is unchanged: it never reaches a container. **Gaze for 3D apps** is
+Monado's `XR_EXT_eye_gaze_interaction` gating, per session — the per-app permission model
+(HoloLens' per-app grant; Android XR's "dangerous permission" [external]) is a Monado-side
+policy item, decider the owner, at the C-track's seam rung. The rev 0.1–0.6 `zxr-shell-v2` input
+objects (aim/pinch/poke/grip per hand, exclusive capture by distance) are withdrawn with the
+protocol; the shape they took from the standard is what the standard itself now delivers.
 
 ## 12. Text entry
 
@@ -659,7 +667,7 @@ direct path and win over the resolved value until the next change.
 - Monado upstream (ADR 0013's list): `xrSyncActions` per-device fan-out; `FB_hand_tracking_aim`
   or an equivalent system-gesture flag; `XR_EXT_user_presence` and `MNDX_system_buttons` on the
   simulated devices, so the nested gate can exercise them without the injector.
-- 3D-client gaze permission (§9, §11) — the owner, at M2.
+- 3D-app gaze permission (§9, §11) — Monado-side gating; the owner, at the C-track seam rung.
 - Bar placement below (visionOS) vs above (HoloLens, wayvr) the plane — the shell's presentation;
   window-workspace-management.md §3 owns the affordance's geometry.
 - `xdg_toplevel_drag` (detachable tabs) — smithay lacks it; consumed when it exists, mapped onto

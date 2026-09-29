@@ -223,7 +223,7 @@ pub fn spawn(st: &mut Zxr, shape: Shape, flags: Flags, payload: Payload, parent:
     let head = head(st);
     let place = parent.and_then(|p| st.scene.get(p).map(|m| m.place)).unwrap_or_else(|| current_place(st));
     let Shape::Plane { size } = shape else {
-        // volumes (M2) take their pose from the client; place them at the spawn pose
+        // container proxies take their initial bounds from the app (`suggestedBounds`); place them at the spawn pose
         let pose = st.policy.cfg.spawn.spawn_pose(head);
         return add_world(st, place, pose, shape, flags, payload, false);
     };

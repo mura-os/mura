@@ -1,7 +1,8 @@
 # Perception: passthrough view-correction and hand cutout
 
-**Status:** design, extending [zxr-shell-v2-composition.md](zxr-shell-v2-composition.md).
-**Date:** 2026-09-22. Synthesizes research docs [13-passthrough](../research/13-passthrough.md),
+**Status:** design; re-grounded 2026-09-29 on [specs/composition.md](../../specs/composition.md)
+(ADR 0006 amendment 4) — see §1b. Originally extended [zxr-shell-v2-composition.md](zxr-shell-v2-composition.md) (superseded).
+**Date:** 2026-09-22 (re-grounded 2026-09-29). Synthesizes research docs [13-passthrough](../research/13-passthrough.md),
 [14-mobile-stereo-depth](../research/14-mobile-stereo-depth.md),
 [15-hand-segmentation-matting](../research/15-hand-segmentation-matting.md), and
 [16-perception-claims-audit](../research/16-perception-claims-audit.md). Service placement is decided
@@ -18,8 +19,9 @@ planes, persistence) is a separate runtime-layer track and is out of scope here.
 | **View correction (passthrough)** | reproject two cameras (displaced from the eyes, captured earlier) to each eye at display time, using a depth proxy | compositor **environment layer** (farthest contributor to the sort-last composition) |
 | **Hand cutout** | a camera-aligned **alpha matte + hand depth**, composited over virtual content per policy | compositor **foreground top layer** + a per-client policy enum |
 
-The unifying insight: **both are compositor-owned layers in the existing zxr-shell-v2 sort-last
-pipeline** ([composition §2/§7.4](zxr-shell-v2-composition.md)), not new machinery. Passthrough
+The unifying insight: **both are compositor-owned layers in the existing composition pipeline** —
+Monado's since 2026-09-29 (§1b; the original text said zxr's sort-last pipeline,
+[composition §2/§7.4](zxr-shell-v2-composition.md), superseded) — not new machinery. Passthrough
 writes real colour + `gl_FragDepth` as the environment; the nearest-depth resolve then gives correct
 per-pixel real/virtual occlusion **for free** — no new protocol, no vendor depth-test extension. The
 hand matte is applied after that resolve as a policy-driven top layer. Neither is ever a *client*:
@@ -44,6 +46,24 @@ bandwidth:**
 | (i) view-aligned cutout projection layer, submitted last | one RGBA image per eye, α = matte, colour = hand pixels, transparent elsewhere; may run at reduced resolution | a full-view store per eye: ~7 MB at 896×1007, ~28 MB at XR2-class; ÷4 at half resolution | exact by construction (view-aligned, any hand pose) | simplest; the projection-path bandwidth but only at camera rate and only with hands in view |
 | (ii) one billboard quad per hand, submitted last | a small swapchain (≈ 384²) per hand at the hand's depth, facing the viewer, covering its projected bounding box; matte reprojected from the camera onto the plane | ≈ 0.6 MB per hand; zero with no hand in view | approximate at the hand's edges: a hand is 10–20 cm deep at 40–60 cm, the billboard is flat, so the runtime's reprojection under head motion between camera and display is slightly off at the silhouette | the efficient shape; measure the silhouette error before adopting |
 | (iii) depth-correct ordering | windows the hand intersects are drawn in zxr's projection layer with the cutout, so a nearer window can hide the hand | those windows' render every frame | depth-correct | not what the ruling asks for (hands above, always); recorded because it is the only way to get occlusion *by* a window on Monado, which never depth-tests across layers |
+
+### §1b. Both layers are Monado's (2026-09-29, ADR 0006 amendment 4)
+
+Under the container ruling zxr composes no eye image, so the "environment colour+depth in
+sort-last composition" of §1/§3 and shape (iii) above — "drawn in zxr's projection layer" — no
+longer have a place to run. Both perception layers are **Monado-side layers**, which is where
+[ADR 0008](adr/0008-perception-services-placement.md) already put the services that produce
+them: the passthrough environment is the base layer of Monado's composition (the position
+`XR_FB_passthrough`'s layer takes in Monado today, `oxr_extension_support.py`), the cutout is
+Monado's last layer (α = matte), and per-pixel real/virtual occlusion is Monado's depth policy
+([composition.md §4.3](../../specs/composition.md)) applied to the environment's depth exactly as
+to a container's. **What this changes:** shape (iii) is re-read as "windows the hand intersects
+are depth-resolved by Monado", available if the depth policy is ruled that way; shapes (i) and
+(ii) are unchanged in cost and fidelity and remain the open choice (decider: the owner, at the
+passthrough rung, on measurement); the intake contract ([specs/perception-intake.md](../../specs/perception-intake.md))
+delivers to Monado's compositor rather than to zxr's render pass; the two hard rules of §3 (never
+block the display path; late is dropped) are Monado's frame-pacing rules already. The remainder of
+this document is the reasoning record and reads with this paragraph.
 
 No open-source XR compositor implements any of these (research/62 §3.5); the evidence is the
 compositing facts above and Mura's own perception research (13, 15). My read, labelled as
@@ -73,7 +93,7 @@ Three decoupled rates, and the asymmetry that justifies the whole structure:
 
 Passthrough+ measured photon-to-**texture** 49 ms vs photon-to-**geometry** 62 ms and stated colour
 freshness matters ~2× more than geometry freshness. Two hard rules fall out, both already required
-of zxr-shell-v2 clients and now imposed on perception too:
+of every layer submitter (Monado's frame pacing) and now imposed on perception too:
 
 - **Never block the display path.** A slow depth or matte update must never stall scanout; the warp
   reads the last *complete* snapshot and re-derives from the current head pose.
@@ -215,7 +235,7 @@ layer re-composites `αF_hand` per policy. Then `hidden` yields virtual content 
 All depth comparisons use one **canonical quantity — positive linear eye-space metres** (nearer =
 smaller), with one tested conversion from *each* producer (capsule/stereo metric `d_h`, and the
 environment's own depth `d_s`), never raw reverse-Z or disparity; the reverse-Z / near-far conversion
-to the shared depth attachment is a separate, tested step ([composition §2](zxr-shell-v2-composition.md)
+to Monado's depth attachment is a separate, tested step ([the depth-as-meaning record](zxr-shell-v2-composition.md) §2, superseded but kept;
 depth-meaning contract).
 
 ```

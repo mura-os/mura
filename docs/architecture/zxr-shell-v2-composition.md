@@ -1,7 +1,16 @@
 # zxr-shell-v2: the renderer-agnostic composition model and MVP
 
-**Status:** design note elaborating [adr/0006-compositor-strategy.md](adr/0006-compositor-strategy.md).
-**Date:** 2026-09-22.
+**Status: SUPERSEDED (2026-09-29)** by [ADR 0006 Amendment 4](adr/0006-compositor-strategy.md)
+and the normative [specs/composition.md](../../specs/composition.md). The colour+depth-into-one-
+projection-layer model below is the *historical* design: at the pinned OpenXR 1.1.63 the ratified
+`XR_EXT_spatial_container` + `_self_rendering` pair is Mura's 3D-client contract, implemented in
+Monado, which composites every container and every quad; zxr composites no 3D content and
+`zxr-shell-v2` is retired to a reserved hook. §2–§6 are kept as the record of the reasoning
+(renderer-agnosticism, depth-as-meaning, the scrutiny of the supplied research — §6's container
+finding is corrected in place); §7's MVP and milestones are withdrawn (the C-track in
+[implementation-path.md §3](implementation-path.md) replaces them).
+Originally: design note elaborating [adr/0006-compositor-strategy.md](adr/0006-compositor-strategy.md).
+**Date:** 2026-09-22 (superseded 2026-09-29).
 
 ADR 0006 decided *what* to build (a Wayland-native, client-renders / compositor-composites XR shell
 on Monado, `zxr-shell-v2`). This note works out the load-bearing *how*: the composition model that

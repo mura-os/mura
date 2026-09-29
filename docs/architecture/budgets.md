@@ -28,12 +28,14 @@ amendments; new work starts carrying the statement from now.
 
 Two clock domains, deliberately decoupled (ADR 0008's latest-complete rule):
 
-- **The display path (hard deadline, per refresh):** Monado's compositor + zxr's composition
-  pass + late-latch warp must fit the refresh period — **13.9 ms @ 72 Hz, 11.1 ms @ 90 Hz** —
-  minus the runtime's own compositor slice. zxr's composition is bounded and window-count-linear
-  (sort-last colour+depth resolve + quad rasterization); *nothing else is ever admitted to this
-  path* (no ML, no stereo matching, no policy/scripting, no effects beyond capped transforms —
-  composition doc §7.4 deadline rule, ADR 0008).
+- **The display path (hard deadline, per refresh):** Monado's compositor — the squasher over
+  every container's and zxr's layers, the depth policy, distortion — plus late-latch warp must fit
+  the refresh period — **13.9 ms @ 72 Hz, 11.1 ms @ 90 Hz**. Since 2026-09-29 the composition is
+  Monado's alone ([specs/composition.md](../../specs/composition.md); ADR 0006 amendment 4): zxr
+  contributes one panel pass per *commit* (not per frame) and an overflow pass only past the layer
+  cap; its per-frame cost is layer-count-linear in Monado's squasher (research/67 §2). *Nothing
+  else is ever admitted to this path* (no ML, no stereo matching, no policy/scripting, no effects
+  beyond capped transforms — ADR 0008's never-block rule).
 - **Async producers (rate-budgeted, never frame-blocking):** perception services (VIO, mapping,
   passthrough, cutout, hands, eyes), clients (their own render loops against forwarded pacing),
   shell/services (damage-driven). Each has a *rate* and an *occupancy* budget, not a slot in the
@@ -114,7 +116,7 @@ per the standing rule when hardware lands. The table is deliberately coarse — 
 ## 6. Cross-references
 
 Consumers and enforcement points: [overview.md](overview.md) invariant 9;
-[zxr-shell-v2-composition.md](zxr-shell-v2-composition.md) §7.4 deadline rule + §7.3
-constraints 6–9; [ADR 0008](adr/0008-perception-services-placement.md) (never-block rule);
+[specs/composition.md](../../specs/composition.md) §7 gates (the former composition-doc §7.4 deadline
+rule and §7.3 constraints 6–9, superseded); [ADR 0008](adr/0008-perception-services-placement.md) (never-block rule);
 [ADR 0015](adr/0015-docked-desktop-mode.md) (quiescence); perception/mapping backlogs (NPU +
 fan-out bounds); [component-registry.md](component-registry.md) (rows may cite lines above).

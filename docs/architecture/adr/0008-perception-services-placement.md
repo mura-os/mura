@@ -31,7 +31,9 @@ passthrough needs at exposure time). All three live in Monado today, fed by its 
 **Monado owns the cameras, the clock domain, and the calibration; the passthrough and hand-cutout
 services consume the same `xrt_frame` fan-out that already feeds Mercury and SLAM, and deliver
 their outputs to the zxr compositor as dmabuf layers with `wp_linux_drm_syncobj_v1` explicit-sync
-— the same transport zxr-shell-v2 already uses for client buffers.**
+— the same transport zxr uses for Wayland client buffers.** *(2026-09-29, ADR 0006 amendment 4:
+the consumer of these layers is Monado's compositor, not a zxr render pass —
+[perception-passthrough-hands.md §1b](../perception-passthrough-hands.md).)*
 
 *(Recast 2026-09-23 to the ADR 0010 corrected framing, resolving the review's in-process/sibling
 conflation — perception backlog #5/#7/#8, registry §10.3.)* What is decided here is **ownership**

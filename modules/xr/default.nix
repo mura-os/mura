@@ -6,6 +6,13 @@
 # §9 item 1). The services.monado module is upstream nixpkgs'; this module drives it
 # from the mura.* contract and layers per-device config. (The pre-D0 "unavailable in
 # this nixpkgs" stub is gone: the pinned nixpkgs provides the module.)
+#
+# The Monado the module runs is `pkgs.monado` after Mura's overlay (pkgs/monado/default.nix):
+# nixpkgs-xr's package with its `src` swapped for the pinned `mura-os/monado` fork — upstream
+# `main` plus Mura's upstream-shaped series, where the C-track lands (ADR 0006 amendment 4 D13:
+# the spatial-container pair, the controller seam, the depth policy, the dmabuf-import
+# swapchain; specs/composition.md). `services.monado.package` is the override point if a
+# profile needs a different build; nothing here is per-device (that is `mura.xr.monado.*`).
 { lib, config, pkgs, ... }:
 let
   cfg = config.mura.xr;

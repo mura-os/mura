@@ -35,7 +35,9 @@ The study (doc 31) establishes the facts this ADR decides on:
 - **The substrate forecloses our 3D tier**: Qt Quick 3D XR owns the OpenXR session, swapchains,
   and frame loop inside `kwin_wayland`; `XrView` runs `depthSubmissionEnabled: false`; there is
   no ingestion path for client-rendered colour+depth, hence no sort-last composition — the
-  entire reason zxr-shell-v2 exists ([composition doc](../zxr-shell-v2-composition.md) §2).
+  reason zxr-shell-v2 existed ([composition doc](../zxr-shell-v2-composition.md) §2; since
+  ADR 0006 amendment 4 that capability is Monado's depth policy over spatial containers,
+  [specs/composition.md §4](../../../specs/composition.md), and the protocol is a retired hook).
 - **The patch-carry cost is five upstreams**: the KWin fork (rebased per release, parallel 6.5/6.6
   branches), a per-Qt-point-release qtquick3d+qtbase series (passthrough/overlay/sRGB approved
   for Qt 6.11; RGBA16 approved-unscheduled; async-render and mono pending), two unmerged XWayland
@@ -61,7 +63,8 @@ Four parts; the first reaffirms ADR 0006, the rest extract the value.
 Mura does **not** build its compositor from KWin VR. Decisive reasons, in order:
 
 1. **3D-tier foreclosure.** The Qt-owned OpenXR session and depthless submission make
-   client-rendered colour+depth composition (zxr-shell-v2's core capability) structurally
+   client-rendered colour+depth composition (the lineage's core capability, now Monado's per
+   ADR 0006 amendment 4) structurally
    unreachable without forking Qt Quick 3D XR's render internals — a sixth upstream, deeper than
    all the others.
 2. **Perception-plane mismatch.** ADR 0008's Monado-side environment/hand-cutout dmabuf layers

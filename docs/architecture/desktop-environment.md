@@ -64,10 +64,13 @@ server; inside it lives a narrower compositing/rendering subsystem. The X11 ment
 display server plus a *replaceable* window manager — does not map onto Wayland: window-management
 policy is part of the compositor process, and anything exercising that authority from outside
 needs a compositor-granted privileged protocol. In this repository: **the zxr compositor** always
-means the authority-plane process (broad sense); **the composition engine** means the sort-last
-colour+depth subsystem inside it ([composition doc](zxr-shell-v2-composition.md) §2–§5, narrow
-sense). The named internal subsystems of the broad-sense compositor are listed in §3 under
-"Authority plane".
+means the authority-plane process (broad sense); **the composition engine** — the thing that
+puts pixels on the display — is **Monado** ([specs/composition.md](../../specs/composition.md);
+ADR 0006 amendment 4, 2026-09-29): zxr submits its 2D windows as OpenXR quad layers and
+composites no 3D content; OpenXR-native apps are Monado's spatial containers. (Until 2026-09-29
+"composition engine" meant a sort-last colour+depth subsystem inside zxr —
+[zxr-shell-v2-composition.md](zxr-shell-v2-composition.md), now superseded.) The named internal
+subsystems of the broad-sense compositor are listed in §3 under "Authority plane".
 
 **2. "Shell" means three things.** (a) The **desktop shell** — the launcher/panels/overview/OSD
 presentation layer: our shell plane. (b) **`xdg-shell`** — the Wayland protocol that gives
@@ -75,8 +78,9 @@ surfaces desktop-window *roles* (`xdg_toplevel`, `xdg_popup`); despite the name 
 do with (a) — every ordinary app uses it, no desktop-shell component need exist. (c)
 **Shell-integration privileged protocols** — layer-shell, `ext-workspace`, foreign-toplevel, the
 zxr shell-integration family (ADR 0012 §4) — the seams that (a) binds to talk to the compositor.
-`zxr-shell-v2` is named in tradition (b): it is a surface-role protocol for 3D clients, not a
-desktop shell.
+`zxr-shell-v2` was named in tradition (b): a surface-role protocol for 3D clients, not a
+desktop shell — now a retired reserved hook (ADR 0006 amendment 4); 3D clients speak OpenXR's
+`XR_EXT_spatial_container` to Monado.
 
 **3. "XDG" means three things.** (a) The **freedesktop Cross-Desktop Group specification
 family** — desktop entries (`.desktop`), base directories (`$XDG_*`), icon themes, MIME
@@ -116,11 +120,11 @@ flowchart TB
         seat["logind/seatd · systemd user session · mura-session.target"]
     end
     subgraph authplane ["Authority plane — the zxr compositor (ADR 0006)"]
-        wl["Wayland server: xdg-shell 2D tier + zxr-shell-v2 3D tier"]
+        wl["Wayland server: xdg-shell 2D tier (3D tier = Monado containers)"]
         wm["window + space model · focus · stacking · activation"]
         lock["lock enforcement (ADR 0007 I1–I3)"]
         cap["capture/injection authorization (doc 17)"]
-        compose["sort-last colour+depth composition → one OpenXR projection layer"]
+        compose["quad layers to Monado + the container controller seam (composition.md)"]
     end
     subgraph percplane ["Perception plane — Monado + frame-pipeline services (ADRs 0008–0011)"]
         vio["VIO/SLAM + mapping/anchor service (0009)"]
@@ -154,13 +158,14 @@ calibration from *system* state, IMU-only tracking) before any user exists.
 
 The zxr compositor and nothing else. It answers the authority question *yes* for: the Wayland
 protocol server (both tiers), the window and spatial-workspace ("places") model, focus/stacking/
-activation, input routing (6DoF ray/hand/controller events dispatched as `wl_seat` + zxr input),
+activation, input routing (ray/hand/controller events dispatched as `wl_seat`; container input is Monado's, the interactable container zxr's to designate),
 lock **enforcement** (invariants I1–I3 of ADR 0007 — no client buffer sampled, no input delivered,
 locked-hint only after a clean composition pass), capture/injection **authorization** (which
 clients may bind the capture globals; the EIS server for injection, doc
-[17 §8](../research/17-sharing-capture-stack.md)), and the sort-last colour+depth composition of
-every visible surface into **one** OpenXR projection layer per
-[zxr-shell-v2-composition.md](zxr-shell-v2-composition.md).
+[17 §8](../research/17-sharing-capture-stack.md)), the submission of every 2D window as an OpenXR
+quad layer, and the placement, visibility and interactability of every Monado-hosted 3D
+container through the controller seam ([specs/composition.md](../../specs/composition.md); ADR 0006
+amendment 4). Composition itself is Monado's.
 
 The authority plane is *mechanism-first*: per §4 below, policy and presentation are pushed out of
 it wherever a seam exists that doesn't compromise latency or the lock/capture invariants.
@@ -170,12 +175,12 @@ decomposes into **named subsystems**, each with a registry row:
 
 | Subsystem | What it owns | Registry evidence |
 |---|---|---|
-| Protocol server | core globals, `xdg-shell`, `zxr-shell-v2`, privileged globals + per-connection filtering | specified (ADR 0006) |
+| Protocol server | core globals, `xdg-shell`, privileged globals + per-connection filtering (`zxr-shell-v2` retired to a reserved hook) | specified (ADR 0006 amd. 4) |
 | Window + space model, WM policy | lifecycle, placement, stacking, states, rules; places = the typed frame graph ([places-model.md](places-model.md), ADR 0016) | window model partial; space model **specified** |
 | Input subsystem | seats, ray/6DoF/keyboard routing, focus, activation, shortcut interception, grabs | focus/activation missing |
 | Output paths | the OpenXR loop (Monado owns the HMD display — no desktop-style modesetting), the desktop dev window, and the docked flat-composition output (ADR 0015); `wlr-output-management` for non-HMD heads | dev + XR specified (composition §7); docked missing |
 | Scene graph | surface→world transforms, decoration nodes, damage tracking | implicit in composition doc — no explicit design |
-| Composition engine (narrow-sense "compositor") | sort-last colour+depth → one OpenXR projection layer; frame scheduling | specified (composition §2–§5, §7.4) |
+| Composition engine (narrow-sense "compositor") | **Monado**: quads + spatial containers, order and depth policy; zxr submits layers and drives the controller seam; frame scheduling per session | specified (specs/composition.md rev 0) |
 | Effects / animation module | open/close/move transitions under authority-owned comfort caps | missing |
 | Colour pipeline | `color-management`/`color-representation` protocols, panel calibration application, passthrough-vs-rendered matching | missing |
 | Privileged desktop interfaces | capture, EIS injection, dev-profile session-lock, the zxr shell-integration family | specified (ADR 0012) |
@@ -387,8 +392,8 @@ plane. Everything else in the graph descends from one or more of these:
  │   │   │       anchored/persistent places do not)
  │   │   └─ Xwayland integration (WM glue for rootless X clients)
  │   └─ window-local composition textures (feeds the capture seam, §6.3)
- ├─ 3D tier (zxr-shell-v2 colour+depth clients in the shared depth-tested space)
- │   └─ 3D decorations / manipulation affordances ──► input routing (hit volumes)
+ ├─ 3D tier (Monado-hosted spatial containers; zxr holds proxy nodes, ADR 0006 amd. 4)
+ │   └─ 3D decorations / manipulation affordances ──► input routing (hit volumes on proxies)
  ├─ lock state machine (I1–I3) ──► [S] mura-authd ──► PAM stack ──► PIN credential
  │   ├─ lock scene (in-process presentation, appliance profile)
  │   └─ doff/don + idle ladder ──► presence (HMD-only: XR_EXT_user_presence)
@@ -507,7 +512,7 @@ sharing service, consent/portal machinery, and (for anchored spaces) the mapping
    │    ├─ [H] IPD wizard
    │    └─ iris verifier ┄┄► PAM (parallel unlock path, never replacing it)
    └─ [P] avatar driver   ◇ S-1/R-1 gates (ADR 0010)
-        └─ derived face device ──► [H] avatar runtime (ordinary zxr 3D client
+        └─ derived face device ──► [H] avatar runtime (an OpenXR container app
                                     ──► [A] 3D tier + asset format)
 ```
 

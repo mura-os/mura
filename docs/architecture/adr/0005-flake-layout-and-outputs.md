@@ -53,6 +53,16 @@ solves XR-stack pinning and cross-pinning ([05](../../research/05-xr-userspace.m
 - The XR stack's update cadence is largely delegated to nixpkgs-xr; Mura pins it and layers
   per-device Monado patches on top.
 
+## Amendment (2026-09-29) — the `monado` input
+
+[ADR 0006 amendment 4](0006-compositor-strategy.md) D13: Mura's Monado is the `mura-os/monado`
+fork (branch `mura` = upstream `main` + Mura's upstream-shaped series). It enters the flake as a
+second XR input, `monado = { url = "github:mura-os/monado/mura"; flake = false; }`, and
+`pkgs/monado/default.nix` swaps nixpkgs-xr's Monado `src` for it — nixpkgs-xr's own override
+mechanism, so its package, features and module stay as they are. The bump is
+`nix flake update monado`; nixpkgs-xr keeps owning WiVRn and the rest. `mura.xr.monado.patches`
+remains for per-device experiments not yet on the fork.
+
 ## Alternatives considered
 
 - **Two entry points (Mobile NixOS):** rejected; the documented wart.

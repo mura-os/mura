@@ -1,13 +1,25 @@
 # Mura architecture: spatial sharing
 
 **Status:** design note (no ADR yet; ratification follows the first implementation spikes).
-**Date:** 2026-09-22. Synthesizes [17-sharing-capture-stack](../research/17-sharing-capture-stack.md),
+**Re-grounded 2026-09-29 (ADR 0006 amendment 4):** 3D apps are Monado's spatial containers and
+Monado composites everything ([specs/composition.md](../../specs/composition.md)); zxr composites
+only its own overflow. Consequences for this note: the **spectate tap (§3) moves to Monado** —
+zxr no longer owns a composed eye image to tap; Monado's `comp_target` / readback path
+(`vk_image_readback_to_xf_pool`, cited below) *is* the tap, as a Monado-side feature; **mode 3
+(share a 3D app)** is a *container* app's layers — "additional views" are additional container
+views the runtime locates (`xrLocateSpatialContainerViewsEXT` already returns per-container view
+sets, `ext_spatial_container_self_rendering.adoc:233-250`), so the observer-view hook of §8.1 is
+a **Monado** work item, not a `zxr-shell-v2` one; **per-app capture groups (§8.2)** bind to a
+container's layers in Monado; the proxied-client globals list (§5, §8.4) is unchanged — it is 2D
+Wayland proxying and stays zxr's. §8's title and items are re-labelled accordingly; the text of
+§3–§7 is kept as the reasoning record and is read with this paragraph.
+**Date:** 2026-09-22 (re-grounded 2026-09-29). Synthesizes [17-sharing-capture-stack](../research/17-sharing-capture-stack.md),
 [18-xr-streaming](../research/18-xr-streaming.md), [19-wayland-proxying](../research/19-wayland-proxying.md),
-and extends [zxr-shell-v2-composition.md](zxr-shell-v2-composition.md) / [adr/0006](adr/0006-compositor-strategy.md).
+and extends [specs/composition.md](../../specs/composition.md) / [adr/0006](adr/0006-compositor-strategy.md) (amendment 4).
 
 "Screen sharing" in a spatial compositor is not one feature. It decomposes by **capture point in our
 pipeline** — and one mode captures nothing at all. This note fixes the taxonomy, the per-mode
-mechanism, the security invariants, and the protocol hooks zxr-shell-v2 must reserve. §2.2
+mechanism, the security invariants, and the hooks Monado and zxr must reserve (§8). §2.2
 additionally fixes the **stills/capture taxonomy** (scope × projection × temporality) that
 screenshots and every capture session are points in.
 
@@ -75,11 +87,12 @@ custom metadata (`SPA_META_START_custom`), and `SPA_META_SyncTimeline` for expli
 Three implementation facts pin down mode 1 (from the mirroring analysis; Monado reference verified
 against the pinned clone):
 
-- **The tap is pre-distortion by construction, and it is ours.** zxr-shell-v2 is an OpenXR *client*
-  of Monado: we composite into rectilinear eye images and submit one projection layer; **Monado owns
-  the lens warp downstream** ([zxr-shell-v2-composition §7.4](zxr-shell-v2-composition.md)). Spectate
-  therefore taps **our own composed eye image, pre-`xrReleaseSwapchainImage`** — no inverse
-  distortion ever exists in the path, and no runtime cooperation is needed. Monado's
+- **The tap is pre-distortion by construction — and since 2026-09-29 it is Monado's, not ours.**
+  Under ADR 0006 amendment 4 zxr submits quads and composes no eye image; the rectilinear eye
+  images that exist pre-distortion are Monado's squasher output ([specs/composition.md §4](../../specs/composition.md)).
+  Spectate therefore taps **Monado's composed eye image before distortion** — no inverse
+  distortion ever exists in the path; the tap is a Monado-side feature (the C-track), and the
+  reference for it is already in Monado: Monado's
   `comp_mirror_to_debug_gui` (`monado/src/xrt/compositor/main/comp_mirror_to_debug_gui.{c,h}`:
   crop-blit → `vk_image_readback_to_xf_pool` → `u_sink`, with a `push_every_frame_out_of_X`
   throttle) is the reference implementation of exactly this shape; ours feeds the PipeWire
@@ -144,7 +157,7 @@ one ([17 §1.1](../research/17-sharing-capture-stack.md)).
 
 | Scope \ Projection | texture-space | flat-composition | head-view | observer-view | +depth |
 |---|---|---|---|---|---|
-| window | **preferred** (the M1 window screenshot) | degenerate (set of one) | invalid† | mode 2 alt | mode 3 (3D client) |
+| window | **preferred** (the M1 window screenshot) | degenerate (set of one) | invalid† | mode 2 alt | mode 3 (container app) |
 | window-set | — | **preferred** (ad-hoc or virtual screen) | invalid† | valid | open (capture-tool design decides) |
 | plane-region | **preferred** (region UX below) | valid | invalid† | — | — |
 | full-scene | undefined (no single buffer) | undefined | **preferred** (spectate/screenshot of "what I see") | valid (3rd-person spectator, §2.1) | valid |
@@ -226,7 +239,7 @@ surface layer — same plane treatment, same depth test, input as real Wayland e
 *our* scale. Mode 2 is reserved for whole-desktop mirroring and high-motion content past the
 damage≪area crossover ([19 §7.2](../research/19-wayland-proxying.md)).
 
-Hard consequences for zxr-shell-v2 (the [19 §8](../research/19-wayland-proxying.md) globals list):
+Hard consequences for zxr's Wayland surface (the [19 §8](../research/19-wayland-proxying.md) globals list):
 
 - **Must/should implement:** `wl_compositor` 6, `wl_shm`, `wl_seat` (real keymap fd), `wl_output` 4,
   `xdg_wm_base` 7, `wl_data_device_manager` 3, **`zwp_linux_dmabuf_v1` v4+ with real feedback
@@ -261,7 +274,7 @@ Hard consequences for zxr-shell-v2 (the [19 §8](../research/19-wayland-proxying
 Per [18](../research/18-xr-streaming.md), no existing engine carries what mode 3 needs, but WiVRn is
 the right template and the deltas are precise:
 
-- **Egress/ingress live inside zxr-shell-v2** (a bridge component), not in a fork of WiVRn: WiVRn's
+- **Egress/ingress live beside Monado** (a bridge component reading container layers, ADR 0006 amd. 4), not in a fork of WiVRn: WiVRn's
   endpoints are "whole squashed session ↔ one HMD"; ours are "one shared app's observer view-group ↔
   one observer compositor", N-way, tapped where the atomic submissions already exist pre-squash.
   WiVRn remains untouched as the whole-session-to-headset path.
@@ -342,10 +355,12 @@ an adopted design; the MVP is single-host-authoritative.
 - **Mode 5** is a small reliable control protocol (ordered messages for state, latest-wins for
   poses).
 
-## 8. Protocol hooks reserved in zxr-shell-v2
+## 8. Hooks reserved — in Monado for 3D containers, in zxr for 2D windows (re-labelled 2026-09-29)
 
-Recorded here so [zxr-shell-v2-composition.md](zxr-shell-v2-composition.md) §8 and the eventual
-`zxr-shell-v2.xml` account for them without redesign:
+Recorded here so the Mura Monado series ([specs/composition.md](../../specs/composition.md) §3–§5,
+the C-track) and zxr's Wayland surface account for them without redesign. Items 1, 2 and 5 are
+**Monado-side** (container views, container-layer capture, the container frame contract); items 3
+and 4 are zxr's (consent surface, proxied-client globals). Formerly "reserved in zxr-shell-v2":
 
 1. **Observer views:** view authorization/budget objects over the existing N-view mechanism —
    a view carries an origin (local HMD / named observer), a budget, and revocation; shared apps may

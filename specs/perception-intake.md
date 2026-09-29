@@ -61,7 +61,8 @@ geometry group (environment: required; hand_top: the hand-depth image):
   T_geom_to_colour    f32[16] alignment transform, column-major
   depth encoding:     fourcc + params u64 (FLOAT | FIXED_16(frac) | HILBERT8(order))
   depth_range:        near_m f32, far_m f32, min_stored f32, max_stored f32, reversed u32
-                      — the canonical mapping of zxr_frame_slot_v2.set_depth_range: stored
+                      — the canonical depth-range mapping (this record's own; formerly shared with the retired
+                      zxr_frame_slot_v2.set_depth_range): stored
                       s∈[min,max] → window depth → reciprocal-linear distance in [near,far]
   intrinsics          f32[4] fx fy cx cy (rectified) + baseline_m f32
   images[]                  depth, confidence (REQUIRED; classes measured/propagated/
@@ -151,8 +152,8 @@ records small and fixed-layout.
   generations immediately, composes without the layer from its next pass, **but retires nothing
   early**: registered images and timelines are retained until every submitted GPU use completes
   (or device loss makes completion impossible), then unmapped and closed. Abandoned release
-  points are closed unsignalled only after that retirement — the same rule as
-  `zxr_frame_slot_v2.destroy`.
+  points are closed unsignalled only after that retirement (the rule the retired
+  `zxr_frame_slot_v2.destroy` also stated).
 - **Device loss / producer restart**: a new registration with a higher `producer_epoch`
   supersedes the old identity; the old epoch's teardown follows the death rule. Epochs are
   independent of `calibration_ver_*`, which count calibration changes only.
