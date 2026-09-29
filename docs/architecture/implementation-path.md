@@ -568,6 +568,17 @@ commit, `Fixes:` trailer, the MR the owner's to open).*
 zxr's own windows move from `XR_EXTX_overlay` quads to container-hosted quads (composition §6)
 when the owner rules the per-toplevel vs whole-shell question — after C3, on no other rung.
 
+**The client every C gate runs** is `pkgs/spatial-container-sample` (composition §7.3; its
+README §3 maps its `SCS` log lines to the gates): C1 = `SCS ext present` + `caps`; C2 = the
+robot renders in the container in Monado's mirror; C3 = `visible`/`interactable`/`bounds`
+lines following zxr's placement; C4 = two instances (`--instance=1`, `--instance=2`) with
+overlapping bounds interleave. Its C0 baseline against today's Monado (`SCS ext absent`, an
+ordinary immersive session) is recorded in the README. **Godot master** (the container pair
+landed in #123124, 2026-09-08 — nixpkgs ships 4.7) is built once from the sibling clone
+`/run/media/j/tinystore/experiments/godot` @ `941ea18` with `nix develop .#godot` and passed
+to the wrapper as `GODOT`; a packaged `pkgs/godot` is registered in §5.1 (decider: the owner,
+when C1 is ready to test).
+
 ## 3b. Lifecycle: resume, doff, logout, user switch
 
 Resume is a boot sub-path, not an event: after suspend, the session re-enters through a reduced
@@ -737,6 +748,12 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   carries its first series (`wayland-resize`, rev 5.1); the former entry here — "needs the owner's
   GitHub credentials … the overlay is inert" — is closed (rev 5.2). What still waits on it:
   the C-track's own rulings (above) and, before C0 is written, research/80 §10's O1–O3.
+- **A packaged Godot master** (`pkgs/godot` = `godot_4.overrideAttrs { src = …master… }`) so
+  `dev-session --godot` carries the spatial-container client in its closure. Until then the
+  editor binary is built once from the sibling clone (`pkgs/spatial-container-sample/README.md`
+  §1) and the wrapper takes it from `GODOT`. Reasons to wait: nixpkgs' 4.7 recipe (its
+  `withBuiltins = false` postPatch and patch set) is untested against master, and no gate needs
+  a packaged Godot before C1 exists. Decider: the owner, when C1 is ready to test.
 - **Pre-groundwork specifications, and the rule that binds them**: a D-track rung does not
   start before its specification exists — D0 needs `profiles/` and the module-ownership table
   ([repo-structure.md](repo-structure.md)); D2 needs the posture table

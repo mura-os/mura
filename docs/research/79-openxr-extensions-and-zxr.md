@@ -285,7 +285,19 @@ regardless.
   `:186`; per-frame `xrLocateSpatialContainerViewsEXT` → `shouldSubmitLayers` `:314-319`;
   `retainPreviousSubmission` cleared per frame `:236`), `openxr_spatial_container_state.cpp`.
   With the `godot_openxr_vendors` spatial-container sample [external], this is the conformance
-  substitute composition.md §7.3 names.
+  substitute composition.md §7.3 names. **The engine side landed as godot#123124** (m4gr3d,
+  merged 2026-09-08 into `master`, milestone 4.8, over #123123 = thirdparty OpenXR 1.1.63;
+  reviewer BastiaanOlij: "This has already been extensively tested while the API was still
+  private") [external]. **m4gr3d's own sample applications** (hunted 2026-09-29, all public
+  [external]): the vendors sample (vendors PR #536, 2026-09-10; robot, 10-s bounded↔immersive
+  cycle, bounds → scale); `m4gr3d/Starter-Kit-3D-Platformer` and `Starter-Kit-Racing` on branch
+  `spatialize` (whole games in a `(2, 1, 1)` container, `world_scale = 15 / min(bounds)`);
+  `GodotVR/spatialize` (dsnopek), whose README's "OpenXR Spatial Containers" section is the
+  app-side idiom (`Engine.get_singleton(…)` → `is_enabled()` → `bounds_changed`). Nothing
+  container-related is pending on `m4gr3d/godot`'s branches. **Mura's client**,
+  `pkgs/spatial-container-sample`, is derived from the first, borrows the scale rule from the
+  second and the detection idiom from the third, and adds the `SCS` event log the C-track
+  gates read (its README).
 
 ## 5. The spatial-entity family since research/21
 

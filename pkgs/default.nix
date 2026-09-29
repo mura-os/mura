@@ -38,6 +38,10 @@ final: prev: {
     # The on-screen keyboard (shell-plane §3.2; research/75 §3.2): squeekboard's shape on the same
     # Slint platform — zxr's `--osk` child in every mode.
     osk = final.callPackage ./mura-osk { };
+    # The Godot spatial-container sample — the conformance client of specs/composition.md §7.3
+    # for the Monado C-track (XR_EXT_spatial_container + _self_rendering). A project + a
+    # wrapper; Godot master itself is built from the sibling clone (README beside it).
+    spatialContainerSample = final.callPackage ./spatial-container-sample { };
     # The plymouth theme (boot / failure feedback / recovery screen) is device-specific — it is
     # composited from assets/branding with the panel geometry — so modules/os/recovery.nix calls
     # pkgs/mura-plymouth-theme directly with the contract's values; no fixed overlay attribute.

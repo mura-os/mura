@@ -272,8 +272,15 @@ per-window runtime visibility). The seam (§5) is identical either way; the diff
    `one_projection_layer_fast_path` is taken (research/67's bench, `comp_renderer.c:1131`).
 3. **Godot unmodified.** Godot master's `spatial_container` module with
    `xr/openxr/extensions/spatial_container/enabled = true` (`doc/classes/ProjectSettings.xml:
-   3675-3681`) creates, shows, renders and closes a bounded container on Mura's Monado; the
-   `godot_openxr_vendors` spatial-container sample [external] runs.
+   3675-3681`) creates, shows, renders and closes a bounded container on Mura's Monado. **The
+   client is `pkgs/spatial-container-sample`** (`nix run .#spatial-container-sample`; inside the
+   dev loop `nix run .#dev-session -- --godot`): a Godot 4.8 project derived from the
+   `godot_openxr_vendors` spatial-container sample [external] (m4gr3d's, MIT) that emits one
+   `SCS <event> …` line per container event — `ext present|absent`, `caps`, `visible`,
+   `interactable`, `bounds`, `request_bounds_mode`/`…_denied`, `closed` — and submits
+   `XR_KHR_composition_layer_depth` (its README §3 maps each line to the item here that reads
+   it). Today, against Monado without the pair, it logs `SCS ext absent` and runs as an
+   immersive session — the C0 baseline every later run is diffed against.
 4. **zxr places it.** The same container's pose, bounds, visibility and interactability follow
    zxr's WM policy through the seam: spawn below the eye line, tidy, focus-on-commit, close from
    the window menu (window-workspace-management §3–§5 applied to a container proxy).

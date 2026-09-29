@@ -130,6 +130,8 @@
 
             # Rung-1 dev loop: nested session window + simulated-HMD Monado.
             dev-session = (pkgsFor system).callPackage ./pkgs/dev-session { };
+            # The Godot spatial-container conformance client (specs/composition.md §7.3).
+            spatial-container-sample = (pkgsFor system).mura.spatialContainerSample;
 
             # D-track VM tests (implementation-path §3c) — on demand, NOT in `nix flake check`
             # (each boots a VM and takes minutes): `nix build .#vm-test-default-image`.
@@ -163,6 +165,11 @@
           program = "${self.packages.${system}.frame-build}/bin/frame-build";
           meta.description = "Build Mura aarch64 artifacts on nixbuild.net without host configuration";
         };
+        spatial-container-sample = {
+          type = "app";
+          program = "${self.packages.${system}.spatial-container-sample}/bin/spatial-container-sample";
+          meta.description = "Godot spatial-container conformance client for the Monado C-track (specs/composition.md §7.3)";
+        };
       });
 
       formatter = forAll (system: treefmtEval.${system}.config.build.wrapper);
@@ -180,6 +187,24 @@
               rauc
               desync
             ];
+          };
+          # Building Godot master beside this repo (the spatial-container test client,
+          # pkgs/spatial-container-sample/README.md): every Linux dependency comes from
+          # nixpkgs' own godot_4 recipe (inputsFrom), so no hand-kept list drifts. nixpkgs
+          # ships 4.7-stable; the container pair is in master (#123124, 2026-09-08), so master
+          # is built from a full clone at /run/media/j/tinystore/experiments/godot with
+          # builtin_openxr=yes (the vendored 1.1.63 header; nixpkgs' openxr-loader is 1.1.62).
+          godot = pkgs.mkShell {
+            inputsFrom = [ pkgs.godot_4 ];
+            packages = with pkgs; [ scons python3 pkg-config ];
+            # scons builds a minimal ENV; the Nix compiler wrapper needs these to find headers
+            # and libraries (nixpkgs' recipe patches SConstruct to copy os.environ instead;
+            # Godot's own `import_env_vars` option does the same without a patch).
+            shellHook = ''
+              GODOT_IMPORT_ENV_VARS="$(env | grep -o '^NIX_[A-Za-z0-9_]*' | paste -sd,),PKG_CONFIG_PATH"
+              export GODOT_IMPORT_ENV_VARS
+              echo "godot dev shell: scons platform=linuxbsd target=editor builtin_openxr=yes use_sowrap=no import_env_vars=\"\$GODOT_IMPORT_ENV_VARS\" -j$(nproc)"
+            '';
           };
         });
 

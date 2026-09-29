@@ -44,6 +44,8 @@ The spatial session as a plain window on your desktop: a nested Wayland composit
 zxr M1; Alt+Return = terminal, Alt+Shift+E = quit) plus Monado running the **simulated HMD**
 (`XR_RUNTIME_JSON` exported inside the session; windowless null compositor by default). Flags:
 `--client` (xrgears OpenXR smoke — adds Monado's mirror window showing the composited XR view),
+`--godot` (the Godot spatial-container conformance client, `pkgs/spatial-container-sample` —
+needs a Godot master built once with `nix develop .#godot`, see its README),
 `--mirror`/`--no-mirror`, `--rotate` (canned head motion), `--controllers`, `--no-monado`,
 `--verbose`; `--zxr` runs zxr in the compositor slot (R0 frame path + the M1 input floor:
 `zxr ctl <sock> source hand-right value pinch 0.9` and friends inject synthetic input, `ctl journal`

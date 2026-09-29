@@ -49,13 +49,15 @@ writeShellApplication {
   # back to llvmpipe and mislabelled a whole set of host benches as dmabuf (research/65 §2.3,
   # research/67 §6): bench clients are taken from this PATH, never from a hard-coded path.
   # glmark2 / vkmark are the GPU-bound Wayland bench clients (research/69 Phase 0).
-  runtimeInputs = [ monado sway foot xrgears vulkan-tools glmark2 vkmark xterm coreutils gnugrep procps mura.zxr ];
+  runtimeInputs = [ monado sway foot xrgears vulkan-tools glmark2 vkmark xterm coreutils gnugrep procps mura.zxr mura.spatialContainerSample ];
   text = ''
     usage() {
       cat <<USAGE
     dev-session: Mura rung-1 dev loop (nested session + simulated-HMD Monado)
 
       --client       also launch xrgears inside the session (OpenXR smoke);
+      --godot        also launch the Godot spatial-container sample (pkgs/spatial-container-sample;
+                     needs GODOT= or the sibling clone's editor binary, see its README);
                      implies --mirror so you can see the XR view
       --sway         the 2D stand-in (sway) in the compositor slot instead of zxr
       --zxr          (the default) zxr as the session: foot spawned inside, Monado's mirror
@@ -77,10 +79,11 @@ writeShellApplication {
     USAGE
     }
 
-    client=0 rotate=0 controllers=0 monado_on=1 verbose=0 mirror=auto zxr=1 x11=0 qwerty=0
+    client=0 godot=0 rotate=0 controllers=0 monado_on=1 verbose=0 mirror=auto zxr=1 x11=0 qwerty=0
     zxr_args=()
     while [ $# -gt 0 ]; do a=$1; shift; case "$a" in
       --client) client=1 ;;
+      --godot) godot=1 ;;
       --zxr) zxr=1 ;;
       --sway) zxr=0 ;;
       --x11) x11=1 ;;
@@ -97,6 +100,7 @@ writeShellApplication {
     esac; done
     [ "$zxr" = 1 ] && [ "$mirror" = auto ] && mirror=1
     [ "$qwerty" = 1 ] && [ "$mirror" = auto ] && mirror=1
+    [ "$godot" = 1 ] && [ "$mirror" = auto ] && mirror=1
     [ "$mirror" = auto ] && mirror=$client
 
     # Preflight: we nest inside an existing graphical session.
@@ -180,6 +184,15 @@ writeShellApplication {
 
     if [ "$client" = 1 ]; then
       ( sleep 2; echo "[xrgears] starting"; exec xrgears ) > >(sed 's/^/[xrgears] /') 2>&1 &
+      pids+=($!)
+    fi
+
+    if [ "$godot" = 1 ]; then
+      # The spatial-container conformance client (composition.md §7.3). Its `SCS <event>` lines
+      # are the gate's evidence; `SCS ext absent` is the C0 baseline on today's Monado.
+      # `sed -u`: the SCS lines are read by a harness from a redirected log; a buffered sed
+      # would hold them until exit and drop them when the session is torn down.
+      ( sleep 2; echo "[godot] starting spatial-container-sample"; exec spatial-container-sample ) > >(sed -u 's/^/[godot] /') 2>&1 &
       pids+=($!)
     fi
 
