@@ -391,11 +391,13 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   The input floor's promise (first-run-onboarding §4.4: head-aim + dwell alone can log in)
   depends on the answer. A spatial-input item, not the greeter's; comparables to be read before
   it is decided. **Resolved 2026-09-28 (owner ruling, spatial-input §13):** neither shape — the
-  premise was wrong. Nothing the wearer aims at is head-locked: the scene lives on the **body**
-  frame, the default for every surface that asks for nothing (PICO Head Control Mode, Cardboard,
-  HoloLens tag-along, the visionOS HIG), and dwell is one global commit for every surface (KWin's
-  dwell clicker), anchored on the hit point on the target in the plane's pixels, so a moving head
-  over a still plane settles where it points. Gate 9 (j) re-measures.
+  premise was wrong. Nothing the wearer aims at is head-locked: the scene lives on the world
+  frame, the default for every surface that asks for nothing (F23 withdrew the body frame the
+  first resolution named), and dwell is anchored on the hit point on the target in the plane's
+  pixels, so a moving head over a still plane settles where it points. Gate 9 (j)/(k) measured.
+  *(Refined 2026-09-29, F24: dwell is not "one global commit for every surface" — it is the
+  accessibility toggle plus the head ray's automatic dwell when no select button exists; every
+  Mura target has a select, so dwell is the a11y setting and the fault case, not the norm.)*
 - **F3 — `start_session.env` values** `XDG_SESSION_TYPE=wayland`, `XDG_SESSION_DESKTOP=mura`,
   `XDG_CURRENT_DESKTOP=Mura` (determination 4 said "proposed"): now written; the wrapper sets
   `XDG_CURRENT_DESKTOP` itself (session.nix), so the greeter's value is the same name.
@@ -717,6 +719,31 @@ design; (c) changes the ADR. Greeter mode is unaffected (determination 2).
   the OSK's band still shrinks the greeter. F11 and F13's drift residue dissolve with it. *Judgment,
   flagged:* the anchor node is an internal scene detail (wayvr's word); the wearer-facing taxonomy
   is head/hand/world/docked.
+- **F24 — dwell has two layers, not one "global commit" (ruled 2026-09-29).** F2's resolution and
+  spatial-input §13 rev 0.6 had said dwell is "global — KWin's dwell clicker clicks whatever a
+  rested pointer is under", driven for whatever source the tier selects and gated only by
+  `input.dwell.enabled`. On the owner's target class — Galaxy XR, Play for Dream, Steam Frame —
+  that is wrong twice: every such device *has* a select button (or a controller/hand with one), so
+  dwell is never how the floor is normally driven; and KWin's dwell clicker is an *accessibility*
+  feature (`kwin/src/plugins/dwellclicker/metadata.json` `"Category": "Accessibility"`,
+  `EnabledByDefault: false`), the model for "a wearer who cannot press", not for "no button on the
+  device". The comparable for the latter is Cardboard's fuse — and a Cardboard has no button.
+  visionOS's own dwell is *Dwell Control* under Accessibility [external]. So dwell is **two
+  layers, one machine** (`input/a11y.rs` `dwell_active`): (1) the accessibility toggle
+  `input.dwell.enabled`, dwell on whatever pointer targets, off by default — KWin's model; (2) the
+  input floor's dwell, the head ray when no usable select button exists, automatic, derived at
+  runtime from `Peripherals::floor_dwell` (no device exposes the select key — a missing driver,
+  preflight P7's soft-fail; nested, no devices, so on unless `ZXR_HMD_BUTTONS` declares one). Only
+  the targeting tier's source is a candidate, so a held controller (its own button) silences the
+  head's floor dwell as it takes the tier (PICO Head Control Mode is a no-controller mode,
+  research/42 §4). This resolves the *scenario* F11 measured — a controller-ray dwell — as the
+  toggle doing its accessibility job, not a floor behaviour. Done: `dwell_active` and
+  `floor_dwell`, the `dwell_commits_floor` counter and the `settings:` line's `dwell_floor=`, the
+  `input.dwell.enabled` description (`preferences.nix`), spatial-input §13/§14 rev 0.8, first-run
+  §4.4, spec §8/§12 gate 9 (l). Measured nested (spec §12 (l)): a dwell-only login at the floor
+  with no toggle; no dwell with a select declared; F13's landing zone (0 empty submissions). Unit
+  tests for the gate and `floor_dwell`. *Also:* `input::theme`'s two env-setting tests now share a
+  `Mutex` (the "also seen" hygiene item), green at the default thread count.
 
 ## 10. Sources
 

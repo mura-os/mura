@@ -1,6 +1,6 @@
 # Spatial input: targeting, hover, commit, focus, cursors, peripherals and text entry
 
-**Status: DRAFT rev 0.7 (2026-09-29; rev 0.6 + §13 the body frame withdrawn — the default is the **world** frame on the shell's anchor, seeded where the scene appears and re-seated only by recenter; no comparable has a body frame, research/78 §9 F23). Rev 0.6 (2026-09-28; rev 0.5 + §13 the input floor as one rule for every surface, dwell global with its anchor on the hit point and progress on the reticle, and the body frame as the default placement — owner rulings; research/78 §7b, §9 F2). Rev 0.5 (2026-09-27; rev 0.4 + §6 layer-shell keyboard interactivity as the
+**Status: DRAFT rev 0.8 (2026-09-29; rev 0.7 + §13/§14 dwell in two layers — the accessibility toggle (`input.dwell.enabled`) and the input floor's automatic head-ray dwell when no select button exists (`Peripherals::floor_dwell`); every target has a select, so dwell is the a11y setting and the fault case, not the norm). Rev 0.7 (2026-09-29; rev 0.6 + §13 the body frame withdrawn — the default is the **world** frame on the shell's anchor, seeded where the scene appears and re-seated only by recenter; no comparable has a body frame, research/78 §9 F23). Rev 0.6 (2026-09-28; rev 0.5 + §13 the input floor as one rule for every surface, dwell global with its anchor on the hit point and progress on the reticle, and the body frame as the default placement — owner rulings; research/78 §7b, §9 F2). Rev 0.5 (2026-09-27; rev 0.4 + §6 layer-shell keyboard interactivity as the
 focus module's rules — the exclusive override, `on_demand` as a stack member, `none` never, the
 mode gate's exception as the trusted connection — [research/77](../research/77-shell-layer-mechanics-from-comparables.md);
 rev 0.4 = same day; rev 0.3 + §5 a ray-owned pointer is **released when gaze
@@ -522,11 +522,23 @@ window in the free floor — the same chain (§1a), nothing scene-specific; the 
 were only its first consumers (first-run-onboarding §4.4). Three consequences, from the
 comparables that built head-aim UIs:
 
-- **Dwell is global** (ruled): KWin's dwell clicker clicks whatever is under a pointer that
-  rested (`kwin/src/plugins/dwellclicker/dwellclicker.cpp:252-277`); MRTK3's per-interactable
-  opt-in (`StatefulInteractable.cs:76-95` `UseGazeDwell`) and Cardboard's fuse are the other
-  camp, and a Wayland compositor cannot see a client's widgets — the client's cursor shape
-  (`pointer` over a link) is the only signal, recorded as an option, not taken.
+- **Dwell has two layers (ruled 2026-09-29).** Every Mura target has a select button (Steam
+  Frame `KEY_SELECT`, Galaxy XR's top button, Play for Dream's controller/hand pinch), so dwell
+  is not the way the floor is normally driven — it is the *accessibility* setting and the
+  *fault* case. (1) **The accessibility toggle** `input.dwell.enabled` (off by default): dwell on
+  whatever pointer the tier selects, for a wearer who cannot press any button — KWin's dwell
+  clicker (`metadata.json` `Category: Accessibility`), GNOME's hover click, visionOS's Dwell
+  Control [external]. (2) **The input floor's dwell**, automatic and not a preference: the head
+  ray when no usable select button exists — no device exposes its key (a missing driver; preflight
+  P7's soft-fail, `mura-preflight/src/main.rs:260-275`) — derived at runtime by
+  `Peripherals::floor_dwell` (`input/libinput.rs`). Cardboard's fuse is the one comparable that
+  *ships* dwell as the only commit, and a Cardboard has no button; Mura's do, so this is the
+  degraded state, not the norm. Only the *targeting* tier's source is a candidate, so a held
+  controller (which has its own button) silences the head's floor dwell exactly as it takes the
+  tier (PICO's Head Control Mode is a no-controller mode, research/42 §4). A Wayland compositor
+  cannot see a client's widgets, so a per-widget dwell (MRTK3 `StatefulInteractable.cs:76-95`
+  `UseGazeDwell`) is not available; the client's cursor shape is the only signal, recorded as an
+  option, not taken. The two layers share one machine (`a11y.rs` `dwell_active`).
 - **The anchor is the hit point on the target, not the ray's direction.** KWin arms on pointer
   motion past `motionThreshold` in *screen pixels* and requires it "also after a click"
   (`:260-275`); the head ray's equivalent is motion of its hit point on the surface. A plane
@@ -593,7 +605,7 @@ can make gaze reach a client (§9).
 | `input.keyboard.repeat.{delay_ms,rate_hz}` | int [100, 2000] · 600; int [1, 100] · 25 | `apply` → `change_repeat_info`; the seat's default is the same | Hyprland/COSMIC 600/25; GNOME 500/33 |
 | `input.keyboard.numlock` | enum `off` \| `on` \| `remember` · `remember` | `apply` at start (`on`/`off`: niri's shape; `remember`: the state file under `XDG_STATE_HOME/mura/zxr/numlock`, cosmic-comp's `LastBoot`), `input/seat.rs` writes it on change | niri `numlock`, cosmic-comp `numlock_state` |
 | `input.osk.enabled`, `.suppress_after_key_s` | bool · true; int · 300 | `state.rs` `osk_suppressed` (disabled = permanent suppression); `input/text.rs` the window after a physical key | §12; StereoKit `platform.cpp:258` 5 min |
-| `input.dwell.{enabled,onset_ms,complete_ms,tolerance_deg}` | bool · false; int [50, 1000] · 200; int [200, 3000] · 750; double · 2.0 | `input/a11y.rs` `Dwell` | §13 (HoloLens 150–250 / 650–850 ms; MRTK3 gaze dwell 1.0 s, `StatefulInteractable.cs:84`; first-run §4.4's 400–600 ms is the literature's low end); KWin `dwellclicker.cpp:150-152`. The tolerance is applied to the **hit point** on the target at the plane's pixels-per-degree (§13, ruled 2026-09-28) |
+| `input.dwell.{enabled,onset_ms,complete_ms,tolerance_deg}` | bool · false; int [50, 1000] · 200; int [200, 3000] · 750; double · 2.0 | `input/a11y.rs` `Dwell` (`enabled` = the **accessibility toggle**, §13 ruled 2026-09-29 — dwell on any targeting pointer for a wearer who cannot press; the input floor's dwell on the head ray when no select exists is derived from `Peripherals::floor_dwell`, not this key, and reported as `dwell_floor` on `zxr ctl list`) | §13 (HoloLens 150–250 / 650–850 ms; MRTK3 gaze dwell 1.0 s, `StatefulInteractable.cs:84`; first-run §4.4's 400–600 ms is the literature's low end); KWin `dwellclicker.cpp:150-152` `Category: Accessibility`. The tolerance is applied to the **hit point** on the target at the plane's pixels-per-degree (§13, ruled 2026-09-28) |
 | `input.targeting.source` | enum `auto` \| `eyes` \| `hand` \| `controller` \| `head` · `auto` | `input/tier.rs` `Pin` — a **ceiling** on the §3 ladder: rungs above it are skipped, the ladder continues below it, the head stays the floor; direct touch is not aiming and is never pinned away | §13; visionOS Pointer Control [external]; HoloLens "head to aim rather than eyes" |
 | `input.magnetism.enabled` | bool · false | `input/hit.rs` — a poke whose ray misses is drawn to the nearest plane point within 0.07 m | §4; MRTK3 `ReticleMagnetism.cs:37` |
 | `input.hand.dominant` | enum `left` \| `right` · `right` | `input/bridge.rs` `BridgeCfg` (`Flags::DOMINANT`, the menu gesture's hand) | §10 |

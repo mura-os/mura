@@ -283,8 +283,9 @@ NixOS configuration.
 unusable. Every surface the compositor composes — the greeter, the lock, every welcome-surface
 item, an on-screen keyboard's keys, any Wayland window in the session — is fully operable at
 the floor**, on every target, with nothing configured; the pre-login scenes are only its first
-consumers, nothing about them is special (spatial-input §13, ruled 2026-09-28: one input chain,
-dwell global, the scene never head-locked). Grounding
+consumers, nothing about them is special (spatial-input §13, ruled 2026-09-28/29: one input chain,
+the scene never head-locked, and dwell in two layers — the accessibility toggle and, when a
+device has no usable select button, the head ray's automatic dwell). Grounding
 ([research/42 §4, §7](../research/42-input-bootstrap.md)): every relevant Monado driver keeps a
 3DoF IMU path; every target has power + volume and most a third button
 (`mura.hardware.input.hmdButtons`, `selectRole`); PICO ships this as "Head Control Mode" and
@@ -610,7 +611,7 @@ by overview invariant 10**: this machine has root, and it belongs to its wearer.
     `vm-test-default-image` / `vm-test-multi-user`.)
 13. A Wi-Fi network joined through the `mura-setup` web app is a system connection visible to
     the user who then logs in (§5; `50-mura-setup.rules`); the greeter offers no way to join one
-    and no polkit rule names the `greeter` user (rev 2.8, [multi-user.md §2](multi-user.md)); one
+    and no polkit rule names the `greeter` user (rev 2.8, [multi-user.md §2](multi-user.md); rev 2.9, 2026-09-29 — §4.4 dwell clarified as two layers: the accessibility toggle and the head ray's automatic dwell when no select button exists, spatial-input §13); one
     joined in the welcome surface by a passwordless user is that user's own connection, and a
     system connection once the caller can satisfy `settings.modify.system`. The welcome
     surface's time-zone card prompts through the polkit agent and succeeds only once a password

@@ -196,11 +196,17 @@ export component Greeter inherits Window {
         Text { text: root.hostname; color: Theme.dim; font-size: Theme.unit * 1.25; horizontal-alignment: center; accessible-role: text; accessible-label: root.hostname; }
     }
 
-    // the card
+    // the card. Top-anchored, not centred, and the conversation step keeps the username step's
+    // row heights, so the response field takes the slot `Next` held: a ray left resting on `Next`
+    // through the step change lands on a field (which only focuses), never on `Log in` — a
+    // dwell's re-fire would otherwise submit an empty response (research/78 §9 F13; gtkgreet and
+    // regreet keep their primary button in one place between steps by construction,
+    // `gtkgreet/window.c:175-181`, `regreet/src/gui/templates.rs:144-151`). Also removes the
+    // centring jump between steps.
     Rectangle {
         width: min(root.width - Theme.unit * 4, Theme.unit * 40);
         x: (root.width - self.width) / 2;
-        y: max(Theme.unit * 11, (root.height - self.height) / 2);
+        y: Theme.unit * 11;
         height: card.preferred-height + Theme.unit * 3;
         background: Theme.panel;
         border-radius: Theme.unit;
@@ -239,12 +245,16 @@ export component Greeter inherits Window {
                 clicked => { root.submit-username(root.username); }
             }
 
-            if root.conversing : Label { text: root.lock-mode ? root.username : root.username; color: Theme.dim; font-size: Theme.unit * 1.25; }
-
-            // the prompt, verbatim
+            // the conversation's header — the account and the prompt, verbatim — in the Username
+            // field's slot (the same height), so the response field below lands where `Next` was
+            if root.conversing : VerticalLayout {
+                height: Theme.unit * 4;
+                spacing: Theme.unit * 0.25;
+                Label { text: root.username; color: Theme.dim; font-size: Theme.unit * 1.25; }
+                Label { text: root.prompt-visible ? root.prompt-text : (root.busy ? "…" : ""); }
+            }
             if root.prompt-visible : VerticalLayout {
                 spacing: Theme.unit * 0.75;
-                Label { text: root.prompt-text; }
                 response-field := Field {
                     label: root.prompt-secret ? "•••" : "";
                     secret: root.prompt-secret;
@@ -264,7 +274,6 @@ export component Greeter inherits Window {
                     Btn { text: root.lock-mode ? "Unlock" : "Log in"; primary: true; enabled: !root.busy; clicked => { root.respond(root.response); } }
                 }
             }
-            if root.conversing && !root.prompt-visible : Label { text: root.busy ? "…" : ""; color: Theme.dim; }
 
             if root.info-text != "" : Label { text: root.info-text; color: Theme.dim; accessible-role: text; }
             if root.error-text != "" : Label { text: root.error-text; color: Theme.danger; accessible-role: text; }

@@ -123,8 +123,13 @@ fn env_theme() -> (String, u32) {
 mod tests {
     use super::*;
 
+    // both tests set the process environment; cargo runs tests on parallel threads, so they take
+    // one lock (research/78 §9 "also seen": green only under --test-threads=1 before)
+    static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn prefs_override_the_environment_and_default_falls_back_to_it() {
+        let _env = ENV.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("XCURSOR_THEME", "env-theme");
         std::env::set_var("XCURSOR_PATH", "/nonexistent");
         let t = Theme::from_prefs("default", 24);
@@ -138,6 +143,7 @@ mod tests {
 
     #[test]
     fn missing_theme_counts_misses_and_caches_them() {
+        let _env = ENV.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("XCURSOR_THEME", "mura-no-such-theme");
         std::env::set_var("XCURSOR_PATH", "/nonexistent");
         let mut t = Theme::from_env();

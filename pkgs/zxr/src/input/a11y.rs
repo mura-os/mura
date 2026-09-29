@@ -10,7 +10,12 @@
 //! that `Slot::Reserved` is ahead of this slot rather than behind it (see `reserved.rs`).
 //!
 //! **What is here now**
-//! - **Dwell as a commit method on any tier** (§13 line 421). The stage shape is KWin's dwell
+//! - **Dwell, in two layers** (§13, ruled 2026-09-29; [`dwell_active`]): the *accessibility toggle*
+//!   `input.dwell.enabled` — KWin's dwell clicker, GNOME's hover click, visionOS's Dwell Control — on
+//!   whatever pointer targets, for a wearer who cannot press; and the *input floor* — the head ray
+//!   when no usable select button exists (`Peripherals::floor_dwell`), automatic, the fault case
+//!   preflight P7 names. Every target device has a select, so the floor is the exception; the
+//!   toggle is the setting. The stage shape is KWin's dwell
 //!   clicker: a single-shot delay timer, then a dwell animation, then the click, with motion past
 //!   a threshold resetting the lot (`references/kwin/src/plugins/dwellclicker/dwellclicker.cpp:91-114`
 //!   for delay→dwell→click, `:150-153` for the two intervals being separate settings, `:163-183`
@@ -18,7 +23,7 @@
 //!   (`dwellclicker.cpp:194` `input()->addInputDevice(m_device.get())`); zxr's equivalent is a
 //!   `Button::Select` press and release queued as samples of the dwelling kind, so the whole chain
 //!   below — stabilize, tier, hit, grabs, seat — treats the dwell commit exactly like a physical
-//!   one. Off by default. **The anchor is the hit point on the target** (ruled 2026-09-28,
+//!   one. **The anchor is the hit point on the target** (ruled 2026-09-28,
 //!   spatial-input §13): KWin arms on the pointer's *position* moving past `motionThreshold`
 //!   (`dwellclicker.cpp:252-277`), and a ray's position is where it lands on a plane — so a plane
 //!   the head carries never reads as "still" while the head turns, and a still plane under a
@@ -88,7 +93,7 @@ enum Anchor {
 /// target under the same ray (MRTK3 `InteractorDwellManager`: the dwell belongs to the
 /// interactable it started on).
 pub struct Dwell {
-    kind: Option<SourceKind>,
+    pub(crate) kind: Option<SourceKind>,
     anchor: Option<Anchor>,
     /// running position of the pointer, in accumulated device units
     px: (f64, f64),
@@ -233,31 +238,67 @@ pub fn commit_samples(from: &Sample) -> [Sample; 2] {
     [one(true), one(false)]
 }
 
+/// Which layer, if any, makes dwell the commit for a sample of `kind` (spatial-input §13, ruled
+/// 2026-09-29). **Two layers, one machine:**
+/// - the **accessibility toggle** `input.dwell.enabled` — KWin's dwell clicker (`metadata.json`
+///   `Category: Accessibility`, `EnabledByDefault: false`), GNOME's hover click, visionOS Dwell
+///   Control [external]: for a wearer who cannot press any button, on *whatever* pointer targets;
+/// - the **input floor** — automatic, never a preference: the head ray on a device with no usable
+///   select button (Cardboard's fuse is the one comparable that ships this; Mura's targets all have
+///   a select, so this is the fault case P7 already names — a missing button driver), derived at
+///   runtime by `Peripherals::floor_dwell`.
+/// Only the tier's targeting source is a candidate (`drives`); a held controller silences the
+/// head's floor dwell exactly as it takes the tier (PICO's Head Control Mode is a *no-controller*
+/// mode, research/42 §4). Pure, so the gate is unit-tested.
+pub fn dwell_active(enabled: bool, floor: bool, kind: SourceKind) -> bool {
+    enabled || (floor && kind == SourceKind::Head)
+}
+
 /// The `Slot::A11y` stage.
 pub struct A11y {
-    /// `input.dwell.enabled` (§14 line 440). Off by default — §13 makes dwell "a commit method",
-    /// not the commit method.
+    /// `input.dwell.enabled` (§14): the accessibility toggle — dwell on whatever pointer targets.
+    /// Off by default; the floor's dwell below is not this key.
     pub enabled: bool,
+    /// the input floor's dwell: the head ray, when no usable select button exists (taken each tick
+    /// from `Peripherals::floor_dwell`)
+    pub floor: bool,
     /// `input.pointer.gain` (§14 line 441).
     pub gain: f64,
     dwell: Dwell,
+    /// commits by the accessibility toggle and by the floor, separately (the `a11y:` diagnostics line)
     pub dwell_commits: u64,
+    pub dwell_commits_floor: u64,
     /// the `Prefs::generation` last taken (settings.rs)
     prefs_gen: u64,
 }
 
 impl Default for A11y {
     fn default() -> Self {
-        A11y { enabled: false, gain: 1.0, dwell: Dwell::default(), dwell_commits: 0, prefs_gen: 0 }
+        A11y { enabled: false, floor: false, gain: 1.0, dwell: Dwell::default(), dwell_commits: 0, dwell_commits_floor: 0, prefs_gen: 0 }
     }
 }
 
 impl A11y {
-    /// `input.dwell.enabled`. The control-socket grammar this lane wants for it is in its report.
+    /// `input.dwell.enabled`, the accessibility toggle. The machine is reset only when the toggle
+    /// changes what is active for the settling kind — turning the toggle off must not cut a floor
+    /// settle in progress.
     pub fn set_dwell(&mut self, on: bool) {
+        let was = self.dwell.kind.map(|k| dwell_active(self.enabled, self.floor, k));
         self.enabled = on;
-        self.dwell.reset();
-        tracing::info!(on, "a11y: dwell as a commit method (spatial-input §13)");
+        let now = self.dwell.kind.map(|k| dwell_active(self.enabled, self.floor, k));
+        if was != now {
+            self.dwell.reset();
+        }
+        tracing::info!(on, floor = self.floor, "a11y: dwell click (the accessibility toggle; spatial-input §13)");
+    }
+
+    /// The floor's fact changed (a device came or went).
+    fn set_floor(&mut self, floor: bool) {
+        if self.floor == floor {
+            return;
+        }
+        self.floor = floor;
+        tracing::info!(floor, "a11y: the input floor's dwell (no usable select button ⇒ the head ray dwells)");
     }
 
     /// `input.pointer.gain`.
@@ -290,15 +331,19 @@ impl Stage for A11y {
         // selection, any targeting kind may.
         let targeting = st.input.tier.map(|t| t.targeting);
         let drives = s.kind == SourceKind::Pointer || targeting.map(|t| t == s.kind).unwrap_or(true);
-        if self.enabled && drives {
+        if drives && dwell_active(self.enabled, self.floor, s.kind) {
             // one ray cast per targeting sample while dwell is on (off by default): the anchor is
             // the point on the target, so the transform needs the hit before the hit stage runs
             let hit = hit_of(s, st);
             if self.dwell.step(s, hit, s.time_ns) {
                 let kind = s.kind;
                 st.input.queue.extend_from_slice(&commit_samples(s));
-                self.dwell_commits += 1;
-                tracing::info!(?kind, count = self.dwell_commits, "a11y: dwell commit");
+                if self.enabled {
+                    self.dwell_commits += 1;
+                } else {
+                    self.dwell_commits_floor += 1;
+                }
+                tracing::info!(?kind, a11y = self.dwell_commits, floor = self.dwell_commits_floor, "a11y: dwell commit");
             }
         }
         Flow::Continue
@@ -309,7 +354,9 @@ impl Stage for A11y {
     /// socket's direct pushes through `Input` (the harness's path, spatial-input §14).
     fn tick(&mut self, st: &mut Zxr, now_ns: u64) {
         // the reticle's fill (cursor.rs): the settle's progress on its target, this tick
-        st.input.dwell_progress = if self.enabled { self.dwell.progress(now_ns).map(|p| (self.dwell.target(), p)) } else { None };
+        self.set_floor(st.peripherals.floor_dwell());
+        let active = self.dwell.kind.map(|k| dwell_active(self.enabled, self.floor, k)).unwrap_or(false);
+        st.input.dwell_progress = if active { self.dwell.progress(now_ns).map(|p| (self.dwell.target(), p)) } else { None };
         if self.prefs_gen != st.prefs.generation {
             self.prefs_gen = st.prefs.generation;
             let p = &st.prefs;
@@ -520,10 +567,47 @@ mod tests {
     }
 
     #[test]
-    fn dwell_is_off_by_default() {
+    fn the_a11y_toggle_is_off_by_default_and_the_floor_is_derived() {
         let a = A11y::default();
-        assert!(!a.enabled);
+        assert!(!a.enabled && !a.floor);
         assert_eq!(a.gain, 1.0);
-        assert_eq!(a.dwell_commits, 0);
+        assert_eq!((a.dwell_commits, a.dwell_commits_floor), (0, 0));
+    }
+
+    /// The two layers (spatial-input §13, ruled 2026-09-29): the floor dwells on the head ray only
+    /// when no usable select exists; the accessibility toggle dwells on whatever targets.
+    #[test]
+    fn the_floor_dwells_on_the_head_ray_only_when_no_select_exists() {
+        assert!(dwell_active(false, true, SourceKind::Head));
+        assert!(!dwell_active(false, true, SourceKind::Controller(Side::Right)), "a controller has a button of its own");
+        assert!(!dwell_active(false, true, SourceKind::Hand(Side::Left)), "a hand pinches");
+        assert!(!dwell_active(false, false, SourceKind::Head), "a select exists: no floor dwell");
+    }
+
+    #[test]
+    fn the_a11y_toggle_dwells_on_any_targeting_kind() {
+        for k in [SourceKind::Head, SourceKind::Gaze, SourceKind::Controller(Side::Left), SourceKind::Hand(Side::Right), SourceKind::Pointer] {
+            assert!(dwell_active(true, false, k), "{k:?}");
+        }
+    }
+
+    #[test]
+    fn turning_the_toggle_off_keeps_a_floor_settle() {
+        let (m, _) = members();
+        let mut a = A11y { enabled: true, floor: true, ..A11y::default() };
+        let mut head = Sample::new(SourceKind::Head, 0);
+        head.pose = Some(crate::xr::math::pose_identity());
+        head.tracked = true;
+        a.dwell.step(&head, at(m, 0.0), 0);
+        a.set_dwell(false);
+        assert!(a.dwell.progress(500 * MS).is_some(), "the floor still dwells on the head: the settle survives the toggle");
+        // a controller settle under the toggle does not survive it: the floor never covered it
+        let mut c = Sample::new(SourceKind::Controller(Side::Right), 0);
+        c.pose = Some(crate::xr::math::pose_identity());
+        c.tracked = true;
+        let mut a = A11y { enabled: true, floor: true, ..A11y::default() };
+        a.dwell.step(&c, at(m, 0.0), 0);
+        a.set_dwell(false);
+        assert!(a.dwell.progress(500 * MS).is_none());
     }
 }

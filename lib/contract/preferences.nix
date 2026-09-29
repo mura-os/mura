@@ -204,7 +204,7 @@ in
         enabled = k "input.dwell" "enabled" {
           type = types.bool;
           default = false;
-          description = "Dwell as a commit method on any targeting tier (spatial-input §13). GNOME `dwell-click-enabled` false, KWin dwellclicker. Consumer: zxr input/a11y.rs.";
+          description = "Dwell click — the accessibility toggle: whatever pointer targets commits by resting on a target, for a wearer who cannot press a button (KWin dwellclicker, `Category: Accessibility`, off by default; GNOME `dwell-click-enabled` false; visionOS Dwell Control). The input floor's dwell — the head ray on a device whose select button is missing — is automatic and not this key (spatial-input §13, ruled 2026-09-29). Consumer: zxr input/a11y.rs.";
         };
         onsetMs = k "input.dwell" "onset_ms" {
           type = types.ints.between 50 1000;

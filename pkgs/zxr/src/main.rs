@@ -1150,7 +1150,7 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             s.push_str(&shell::describe(st));
             // the settings picture (settings.rs): where it came from and how often it moved
             s.push_str(&format!(
-                "settings: artifact={} keys={} generation={} reloads={} invalid={} cursor.ray={} pointer.gain={} dwell={} density_px_per_cm={:.1} targeting={} dominant={} xkb={}/{} repeat={}/{} theme={}@{} warp={} long_press_ms={}\n",
+                "settings: artifact={} keys={} generation={} reloads={} invalid={} cursor.ray={} pointer.gain={} dwell={} dwell_floor={} density_px_per_cm={:.1} targeting={} dominant={} xkb={}/{} repeat={}/{} theme={}@{} warp={} long_press_ms={}\n",
                 if st.settings.is_some() { st.prefs.artifact_generation.as_str() } else { "none (built-in defaults)" },
                 st.journal.settings_keys,
                 st.prefs.generation,
@@ -1159,6 +1159,7 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
                 st.prefs.cursor_ray,
                 st.prefs.pointer_gain,
                 st.prefs.dwell_enabled,
+                st.peripherals.floor_dwell(),
                 st.prefs.wm_density_px_per_cm,
                 st.prefs.targeting_source,
                 st.prefs.hand_dominant,

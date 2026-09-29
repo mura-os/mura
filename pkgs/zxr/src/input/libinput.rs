@@ -321,6 +321,39 @@ pub struct Peripherals {
     pub events: u64,
     pub events_unmapped: u64,
     pub hmd_buttons: u64,
+    /// whether some keyboard-class device exposes the contract's select key (`keyboard_has_key`,
+    /// recomputed on every device add/remove); `None` = no device enumeration at all (nested on a
+    /// host, `ZXR_NO_LIBINPUT`) — the input floor's runtime fact (a11y.rs `floor_dwell`)
+    pub select_present: Option<bool>,
+}
+
+impl Peripherals {
+    /// The input floor's dwell (spatial-input §13; a11y.rs): on for the head ray when **no usable
+    /// select button exists** — no select role declared, or no device present exposes its key.
+    /// Preflight P7 states the same fact at boot ("select missing ⇒ the greeter still starts,
+    /// dwell remains", implementation-path §5); this is the compositor's live copy, so a button
+    /// whose driver never appears, or a device that goes away, is covered too. Nested on a host
+    /// (no devices) the floor's dwell is on by construction unless `ZXR_HMD_BUTTONS` declares one.
+    pub fn floor_dwell(&self) -> bool {
+        match (self.roles.select, self.select_present) {
+            (None, _) => true,
+            (Some(_), Some(present)) => !present,
+            // declared, and no device enumeration to check it against (nested): the declaration stands
+            (Some(_), None) => false,
+        }
+    }
+
+    /// Recompute [`Peripherals::select_present`] from the known devices.
+    pub fn refresh_select_present(&mut self) {
+        let Some(code) = self.roles.select else {
+            self.select_present = None;
+            return;
+        };
+        // libinput's keycodes are evdev; `keyboard_has_key` takes the evdev code
+        // (`libinput_device_keyboard_has_key`, input-rs 0.10 `device.rs:594`)
+        let present = self.known.iter().any(|d| d.has_capability(smithay::reexports::input::DeviceCapability::Keyboard) && d.keyboard_has_key(code).unwrap_or(false));
+        self.select_present = Some(present);
+    }
 }
 
 /// The settings changed a device key: apply the new configuration to every known device.
@@ -389,6 +422,7 @@ pub fn start(st: &mut Zxr, handle: &LoopHandle<'static, Zxr>) -> Result<bool, St
                     // applies the gain; the rest of the device keys with it (`DeviceConfig`)
                     st.peripherals.config.apply(device);
                     st.peripherals.known.push(device.clone());
+                    st.peripherals.refresh_select_present();
                     if device.has_capability(DeviceCapability::Keyboard) {
                         if let Some(leds) = st.seat.get_keyboard().map(|k| k.led_state()) {
                             device.led_update(leds.into());
@@ -400,6 +434,7 @@ pub fn start(st: &mut Zxr, handle: &LoopHandle<'static, Zxr>) -> Result<bool, St
                 InputEvent::DeviceRemoved { device } => {
                     st.peripherals.devices = st.peripherals.devices.saturating_sub(1);
                     st.peripherals.known.retain(|d| d != device);
+                    st.peripherals.refresh_select_present();
                     tracing::info!(name = %device.name(), "libinput device removed");
                     return;
                 }
