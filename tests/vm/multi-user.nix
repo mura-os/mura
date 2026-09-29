@@ -112,11 +112,14 @@
         # no other local user may forge what the greeter shows pre-auth
         machine.fail("su -s /bin/sh mura -c 'echo x > /var/lib/mura/state/accounts/last-user'")
 
-    with subtest("D2: the greeter profile ships the one Mura polkit rule (greeter may add system Wi-Fi profiles)"):
-        # -R: the rules file is a symlink into the store; -r would not follow it
+    with subtest("D2: the greeter profile ships no polkit rule for the greeter user (no network menu, ruled 2026-09-29); mura-setup's scoped rule and the wheel time-zone rule are the Mura rules"):
+        # -R: the rules files are symlinks into the store; -r would not follow them
+        machine.fail("grep -Rq 'subject.user == \"greeter\"' /etc/polkit-1/rules.d/")
+        # the settings.modify.system grant that remains is the setup identity's (oob.nix, on every
+        # profile): pre-user Wi-Fi is onboarding's path, exercised in tests/vm/oob.nix
+        machine.succeed("grep -Rq 'subject.user == \"mura-setup\"' /etc/polkit-1/rules.d/")
         machine.succeed("grep -Rq 'NetworkManager.settings.modify.system' /etc/polkit-1/rules.d/")
-        machine.succeed("grep -Rq 'subject.user == \"greeter\"' /etc/polkit-1/rules.d/")
-        # NetworkManager itself arrives at D3; the rule's effect is exercised there
+        machine.succeed("grep -Rq 'subject.isInGroup(\"wheel\")' /etc/polkit-1/rules.d/")
 
     with subtest("D2: sshd is on with upstream defaults on the greeter profile too"):
         machine.wait_for_unit("sshd.service")

@@ -280,7 +280,8 @@
         assert '"ignore"' in out, out
         # -R: the rules file is a symlink into the store; -r would not follow it (vacuous pass)
         machine.succeed("grep -Rq 'polkit.addRule' /etc/polkit-1/rules.d/")
-        # the greeter rule is the greeter profile's; mura-setup's scoped rule (D3) is on both
+        # no profile ships a rule for the greeter user (ruled 2026-09-29, multi-user.md §2);
+        # mura-setup's scoped rule (D3) is on both
         machine.fail("grep -Rq 'subject.user == \"greeter\"' /etc/polkit-1/rules.d/")
         machine.succeed("grep -Rq 'subject.user == \"mura-setup\"' /etc/polkit-1/rules.d/")
 
