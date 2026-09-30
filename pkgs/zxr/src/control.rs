@@ -28,6 +28,9 @@ pub enum Command {
     /// a native app became / stopped being primary (the M1 observer's hook, driven by the harness):
     /// quiet follows unless `games.keep_planes`
     Primary(bool),
+    /// `monado primary <client id>`: ask the runtime to make that client primary through the
+    /// controller link (composition §5.3.3 — the lease holder's verb; refused otherwise)
+    MonadoPrimary(u32),
     /// `grab focused` — grab the focused plane with the head ray (kwin-vr's grab-window shortcut;
     /// the harness's direct path into the Grabs stage); `grab end` releases
     Grab(String),
@@ -114,6 +117,10 @@ pub fn parse(line: &str) -> Command {
         (Some("lock"), _) => Command::Lock,
         (Some("quiet"), Some(v)) => Command::Quiet(v == "on" || v == "1"),
         (Some("primary"), Some(v)) => Command::Primary(v == "on" || v == "1"),
+        (Some("monado"), Some("primary")) => match it.next().and_then(|s| s.parse().ok()) {
+            Some(id) => Command::MonadoPrimary(id),
+            None => Command::Unknown(line.to_string()),
+        },
         (Some("grab"), Some(v)) => Command::Grab(v.to_string()),
         (Some("wm"), Some(v)) => Command::Wm(v.to_string(), it.next().unwrap_or("").to_string()),
         (Some("hide"), Some(v)) => Command::Hide(v == "on" || v == "1"),

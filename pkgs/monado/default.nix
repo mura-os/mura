@@ -16,6 +16,14 @@
 #   - `wayland-resize` (2026-09-29, ccae7f3c1): the Wayland window target honours the
 #     compositor's configured size, acking a resize with its re-created images (upstream #152;
 #     research/78 §9 F26) — what lets tests/vm/scene.nix's picture fill the output.
+#   - `controller-lease` (2026-09-30, dd8ec00cc): C0 — a second listening socket
+#     (`monado_comp_ipc_control`), a class stamped on every connection at accept
+#     (app / controller / sandboxed_app), one controller lease (holder, pending queue,
+#     promote on disconnect), the system verbs gated on it (`XRT_ERROR_IPC_NOT_CONTROLLER`,
+#     `IPC_REQUIRE_CONTROLLER`), a controller verb registering sandbox listeners in the
+#     `wp_security_context_v1` shape, libmonado 1.9 (`mnd_root_create_with_socket`,
+#     `mnd_root_get_controller_state`), `monado-ctl --socket`. specs/composition.md §5.3 rev 1,
+#     ADR 0006 amendment 5. modules/xr wires the socket unit and sets the option.
 #
 # The version string carries the fork's short rev so `monado-service --version` and the closure
 # name say which Monado this is.

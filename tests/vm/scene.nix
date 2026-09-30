@@ -103,6 +103,40 @@ in
         assert "ns=mura-greeter" in listing and "ns=osk" in listing, "both trusted layers are in the scene"
         assert "layers_submitted=0 " not in listing, "zxr has submitted projection layers"
 
+    # C0 — admission classes and the controller lease (composition §5.3 rev 1, §7.7). The fork's
+    # service binds both sockets itself here (cage's child, no socket units); zxr connects to
+    # the control socket through libmonado and holds the lease. This Monado runs with upstream's
+    # default (IPC_REQUIRE_CONTROLLER unset), so (iii) is the legacy-open behaviour; the Mura
+    # session units set it true (modules/xr) and tests/vm/default-image.nix proves those units.
+    ctl = "XDG_RUNTIME_DIR=${runtimeDir} ${pkgs.monado}/bin/monado-ctl "
+    with subtest("C0 (ii): zxr holds the controller lease; a second controller is pending"):
+        machine.wait_until_succeeds(f"${zxr}/bin/zxr ctl {sock} list | grep -q 'controller=holder'", timeout=30)
+        status = machine.succeed(ctl + "--socket=control")   # monado-ctl on the control socket, behind zxr
+        print(status)
+        assert "Controller: pending" in status, "a second controller queues behind the holder"
+        assert "role: controller" in status and "role: app" in status, "classes are stamped at accept"
+
+    with subtest("C0 (i): a control verb from the application socket is refused while zxr holds the lease"):
+        out = machine.fail(ctl + "--socket=app -f 1 2>&1")
+        print(out)
+        assert "does not hold the controller lease" in out, "XRT_ERROR_IPC_NOT_CONTROLLER reaches the client"
+        assert "Controller: none" in machine.succeed(ctl + "--socket=app"), "an app-socket connection is never a controller"
+
+    with subtest("C0 (ii): the holder's restart releases the lease and the new zxr takes it"):
+        machine.succeed("systemctl restart mura-vm-scene-zxr")
+        machine.wait_until_succeeds("journalctl -u mura-vm-scene-zxr --no-pager | grep -c 'controller=holder' | grep -qE '^[2-9]'", timeout=120)
+        sock = machine.succeed("ls ${runtimeDir}/zxr-*.sock").strip().split()[0]
+        machine.wait_until_succeeds(f"${zxr}/bin/zxr ctl {sock} list | grep -q 'controller=holder'", timeout=30)
+
+    with subtest("C0 (iii): with no controller and the upstream default, the legacy verbs are open and the next controller is the holder"):
+        machine.succeed("systemctl stop mura-vm-scene-zxr")
+        machine.wait_until_succeeds(ctl + "--socket=app | grep -q 'Controller: none'", timeout=30)
+        machine.succeed(ctl + "--socket=app -f 1")   # set_focused: legacy-open while no holder
+        assert "Controller: holder" in machine.succeed(ctl + "--socket=control"), "monado-ctl on the control socket becomes the holder when nobody holds it"
+        machine.succeed("systemctl start mura-vm-scene-zxr")
+        machine.wait_until_succeeds("journalctl -u mura-vm-scene-zxr --no-pager | grep -q 'session state state=FOCUSED'", timeout=120)
+        machine.wait_until_succeeds("journalctl -u mura-vm-scene-zxr --no-pager | grep -c 'first frame committed' | grep -qE '^[2-9]'", timeout=60)
+
     with subtest("the screenshot is the scene, not a console or a blank output"):
         import time; time.sleep(5)  # let a few composited frames land on the scanout
         png = os.path.join(machine.out_dir, "scene.png")

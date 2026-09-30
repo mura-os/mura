@@ -38,11 +38,11 @@
     "monado": {
       "flake": false,
       "locked": {
-        "lastModified": 1790706123,
-        "narHash": "sha256-aN/XpB9H3SdOrcHj2fMCY6Q2swnIfMKsWPG3+e5odjg=",
+        "lastModified": 1790755382,
+        "narHash": "sha256-DAZkIoskGii+kyBvUeY3O0f5D4NaMoC8jXi1+ukW7wg=",
         "owner": "mura-os",
         "repo": "monado",
-        "rev": "ccae7f3c1621176d2f32cdae8a9922c488a66dcb",
+        "rev": "dd8ec00cc7a729279507f9282901d2e1ca840c6f",
         "type": "github"
       },
       "original": {

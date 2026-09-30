@@ -16,6 +16,7 @@
 , openxr-loader
 , vulkan-loader
 , xwayland-satellite
+, monado
 , mura
 }:
 rustPlatform.buildRustPackage {
@@ -44,6 +45,9 @@ rustPlatform.buildRustPackage {
   buildInputs = [ libxkbcommon libinput seatd udev ];
   GLSLC = "${shaderc.bin}/bin/glslc";
   MURA_OPENXR_LOADER = "${openxr-loader}/lib/libopenxr_loader.so.1";
+  # The controller link (src/monado.rs; composition §5.3 C0): libmonado from the same Monado
+  # the session runs (pkgs/monado: the fork, 1.9 with the control socket), dlopen'd by path.
+  MURA_LIBMONADO = "${monado}/lib/libmonado.so";
   MURA_XWAYLAND_SATELLITE = "${xwayland-satellite}/bin/xwayland-satellite";
   # readiness inside mura-compositor.service (session-bootstrap rev 4 §7): the wrapper's
   # `finalize` publishes the variables and sends READY=1

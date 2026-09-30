@@ -376,5 +376,10 @@ per-window runtime visibility). The seam (§5) is identical either way; the diff
    unset, `monado-ctl` on the control socket becomes the holder for its call; (iv) a
    connection classified `sandboxed_app` (the lease machine's unit test stands in where the
    VM has no Flatpak) receives the same refusal as (i).
+   *Demonstrated 2026-09-30 on fork `dd8ec00cc` (libmonado 1.9): (i)–(iii) in
+   `tests/vm/scene.nix` (zxr the holder through `pkgs/zxr/src/monado.rs`; `monado-ctl
+   --socket=app|control` the probe), (ii) again under the session's socket units in
+   `tests/vm/default-image.nix`, (iv) by the fork's `tests/tests_ipc_lease.cpp` and a host probe
+   through a registered sandbox listener.*
 8. **Budget.** Monado's per-container squasher cost measured on target hardware with N = 1, 4,
    16 containers, beside research/67's host numbers; recorded in budgets.md §3.

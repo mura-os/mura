@@ -50,11 +50,11 @@ compositor unit) is the one kept.
 | `mura-session start` (the wrapper) | the user | `pkgs/mura-session`, one static binary; the leader's child, in the session scope; writes `session.env`, exports the static class, binds the session to its own PID, `systemctl --user start --wait mura-session.target`, stops it on `SIGTERM/HUP/INT`, cleans up; returns only after teardown (§4) |
 | user `systemd --user` | the user | hosts the four static Mura units and everything under `graphical-session.target` |
 | `mura-compositor.service` | user unit (Mura, static) | **the compositor unit**: `Type=notify`, `NotifyAccess=all`, `EnvironmentFile=-%t/mura/session.env`, `TimeoutStartSec` = the readiness bound, `Restart=on-failure` + `RestartMode=direct`; `ExecStart` is the compositor — sway until M1 (**STAND-IN**) |
-| `mura-session.target` | user unit (Mura, static) | the XR session body named across the corpus and **what the wrapper `--wait`s on**: `Requires=mura-compositor.service`, `Wants=monado.socket`, `BindsTo=graphical-session.target`, ordered after `graphical-session-pre.target` and **before** `graphical-session.target` (§5) |
+| `mura-session.target` | user unit (Mura, static) | the XR session body named across the corpus and **what the wrapper `--wait`s on**: `Requires=mura-compositor.service`, `Wants=monado.socket monado-control.socket`, `BindsTo=graphical-session.target`, ordered after `graphical-session-pre.target` and **before** `graphical-session.target` (§5) |
 | `mura-session-bindpid@<pid>.service` | user unit (Mura, static template) | `waitpid -e <pid>` (util-linux) on the wrapper: a dead wrapper ends the session |
 | `mura-session-shutdown.target` | user unit (Mura, static) | the one-way exit: `Conflicts=` the whole graphical session, `StopWhenUnneeded`; every Mura unit's `OnSuccess=`/`OnFailure=` (`replace-irreversibly`) |
 | `mura-session finalize` | the user, inside the compositor unit (zxr's child) | the readiness hook (§4.5, §7): publishes the compositor-created variables and sends `READY=1` on the unit's `NOTIFY_SOCKET` |
-| `monado.socket`/`monado.service` (user) | the user | socket-activated OpenXR runtime; the session's *own* Monado instance (`services.monado`) |
+| `monado.socket` + `monado-control.socket`/`monado.service` (user) | the user | socket-activated OpenXR runtime; the session's *own* Monado instance (`services.monado`, plus Mura's `monado-control.socket` — the controller admission path, [composition §5.3](composition.md)) |
 | the compositor | the user | `zxr` (rev 4; sway was the stand-in through G2); binds its socket, then spawns `mura-session finalize` to publish its variables and signal readiness (§4.5, §7) |
 | `graphical-session-pre.target` / `graphical-session.target` | user units (upstream) | freedesktop's layering points; Mura adds nothing to them, only orders around them |
 
@@ -143,7 +143,7 @@ mura-session.target                                  ← what the wrapper --wait
 │     Restart=on-failure RestartMode=direct RestartSec=1s StartLimitBurst=3/60s
 │     TimeoutStartSec=<readiness bound> TimeoutStopSec=10s UnsetEnvironment=WAYLAND_DISPLAY DISPLAY
 │     OnSuccess=/OnFailure=mura-session-shutdown.target (replace-irreversibly) Slice=session.slice
-├── Wants=    monado.socket                          # the session's own Monado, socket-activated
+├── Wants=    monado.socket monado-control.socket    # the session's own Monado, socket-activated, both sockets (composition §5.3)
 ├── BindsTo=  graphical-session.target               # starts it; stops with it
 ├── After=    graphical-session-pre.target
 ├── Before=   graphical-session.target               # the compositor reaches it on readiness

@@ -208,6 +208,9 @@ pub struct Zxr {
     /// Set by the primary-client observer (libmonado, M1); the control socket toggles it for
     /// measurement.
     pub quiet: bool,
+    /// the controller link to the runtime (monado.rs; composition §5.3 C0): the lease standing
+    /// and the primary observer. `None` when libmonado could not be reached.
+    pub monado: Option<crate::monado::Link>,
     /// the input module (spatial-input §1a): the stage chain, the intake queue, presence
     pub input: crate::input::Input,
     /// research/69: release moment for buffers of non-sampled surfaces (`--debug-hold`)
@@ -553,6 +556,7 @@ impl Zxr {
             last_head_pose: None,
             debug_panels: DebugPanels::default(),
             quiet: false,
+            monado: None,
             input: crate::input::Input::default(),
             hold: HoldPolicy::default(),
             held_tick: Vec::new(),

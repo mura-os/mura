@@ -7,6 +7,7 @@
 mod control;
 mod input;
 mod journal;
+mod monado;
 mod render;
 mod policy;
 mod scene;
@@ -167,6 +168,9 @@ fn run() -> Result<i32, String> {
     // resolved in-process from the artifact and the per-user store, the store directory watched
     // on this loop — before the stages are built, so their first `*Cfg` is the resolved one
     settings::install(&mut st, &event_loop.handle());
+    // the controller link to Monado (monado.rs; composition §5.3 C0): the control socket, the
+    // lease, the primary observer at 1 Hz — before any client can become primary
+    monado::install(&mut st, &event_loop.handle());
     // the input chain (spatial-input §1a): the spine installs the R0 head-ray floor in the seat
     // slot; the stages replace it as they land
     st.input.chain.set(input::Slot::Seat, Box::new(input::HeadFloor));
@@ -1149,6 +1153,9 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             s.push('\n');
             // the shell layer (spec §11 rev 3.12): one `shell:` line per layer member, a `zone:` per frame
             s.push_str(&shell::describe(st));
+            // the runtime link (monado.rs): lease standing and the observed primary
+            s.push_str(&st.monado.as_ref().map(|l| l.describe()).unwrap_or_else(|| "monado: unavailable".into()));
+            s.push('\n');
             // the settings picture (settings.rs): where it came from and how often it moved
             s.push_str(&format!(
                 "settings: artifact={} keys={} generation={} reloads={} invalid={} cursor.ray={} pointer.gain={} dwell={} dwell_floor={} density_px_per_cm={:.1} targeting={} dominant={} xkb={}/{} repeat={}/{} theme={}@{} warp={} long_press_ms={}\n",
@@ -1184,6 +1191,13 @@ fn handle_control(st: &mut Zxr, cmd: control::Command) -> String {
             st.primary_changed(on);
             format!("primary {} quiet={} keep_planes={}", if on { "on" } else { "off" }, st.quiet, st.prefs.games_keep_planes)
         }
+        MonadoPrimary(id) => match st.monado.as_mut() {
+            Some(link) => match link.set_primary(id) {
+                Ok(()) => format!("monado primary {id}: ok ({})", link.describe()),
+                Err(e) => format!("monado primary {id}: refused: {e}"),
+            },
+            None => "monado primary: no runtime link".to_string(),
+        },
         Wm(verb, arg) => {
             let on = arg == "on" || arg == "1";
             let focused = st.scene.focused;

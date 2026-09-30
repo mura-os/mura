@@ -140,7 +140,7 @@ in
       systemd.user.targets.mura-session = {
         description = "Mura XR session (Monado + compositor + shell services)";
         requires = [ "mura-compositor.service" ];
-        wants = lib.optional config.services.monado.enable "monado.socket";
+        wants = lib.optionals config.services.monado.enable [ "monado.socket" "monado-control.socket" ];
         bindsTo = [ "graphical-session.target" ];
         before = [ "graphical-session.target" "mura-session-shutdown.target" ];
         after = [ "graphical-session-pre.target" ];

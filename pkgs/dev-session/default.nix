@@ -141,9 +141,12 @@ writeShellApplication {
 
     if [ "$monado_on" = 1 ]; then
       sock="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/monado_comp_ipc"
+      # C0 (composition §5.3): the fork's service binds a second, control socket beside the
+      # app socket; zxr connects there to become the controller. Wait for both.
+      ctl_sock="$sock"_control
       if [ -S "$sock" ] && ! pgrep -x monado-service >/dev/null; then
-        echo "dev-session: removing stale Monado socket (no live service) at $sock" >&2
-        rm -f "$sock"
+        echo "dev-session: removing stale Monado sockets (no live service) at $sock" >&2
+        rm -f "$sock" "$ctl_sock"
       fi
       if [ -S "$sock" ]; then
         echo "dev-session: a live Monado is already running at $sock — reusing it." >&2
@@ -177,8 +180,8 @@ writeShellApplication {
         monado-service > >(sed 's/^/[monado] /') 2>&1 &
         pids+=($!)
         # Give the service a moment to create its socket before clients race it.
-        for _ in $(seq 1 50); do [ -S "$sock" ] && break; sleep 0.1; done
-        [ -S "$sock" ] || { echo "[monado] service did not come up" >&2; exit 1; }
+        for _ in $(seq 1 50); do [ -S "$sock" ] && [ -S "$ctl_sock" ] && break; sleep 0.1; done
+        [ -S "$sock" ] && [ -S "$ctl_sock" ] || { echo "[monado] service did not come up (app + control sockets)" >&2; exit 1; }
       fi
     fi
 

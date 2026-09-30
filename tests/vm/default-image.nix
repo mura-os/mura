@@ -36,6 +36,7 @@
         machine.wait_until_succeeds(userctl + "is-active graphical-session.target", timeout=60)
         machine.succeed(userctl + "is-active mura-session.target")
         machine.succeed(userctl + "is-active monado.socket")      # the session's own Monado, socket-activated
+        machine.succeed(userctl + "is-active monado-control.socket")  # C0: the controller admission path (composition §5.3)
         # no ordering cycle in the user manager either (target Wants= imply After=)
         machine.fail("journalctl -b --no-pager _UID=1000 | grep -q 'ordering cycle'")
         # zxr is inside the unit, not a child of greetd

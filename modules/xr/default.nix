@@ -24,7 +24,40 @@ in
         enable = true;
         defaultRuntime = true; # materializes /etc/xdg/openxr/1/active_runtime.json
       };
-      systemd.user.services.monado.environment = cfg.environment;
+
+      # C0 — admission classes and the controller lease (specs/composition.md §5.3, ADR 0006
+      # amendment 5). The fork's service listens on two sockets and stamps each connection
+      # with its class at accept: `monado_comp_ipc` → app, `monado_comp_ipc_control` →
+      # controller (the fork's monado-control.in.socket; nixpkgs' module mirrors upstream's
+      # units in Nix rather than shipping the files, so the second unit is mirrored here the
+      # same way). systemd hands both fds to the service by name (FileDescriptorName=app /
+      # control, sd_listen_fds_with_names). The same $XDG_RUNTIME_DIR holds both; who may
+      # reach the control socket is the ordinary Unix question (0700 runtime dir; a sandbox
+      # that does not bind-mount it) — not a credential scheme (§5.3.1, 5.3.6).
+      systemd.user.services.monado = {
+        requires = [ "monado-control.socket" ];
+        environment = cfg.environment // {
+          # Mura's shell owns the session, so the control verbs are the lease holder's from
+          # first boot; upstream's default (false) keeps them open while no controller is
+          # connected for unmodified monado-ctl users (§5.3.3). A profile may still override.
+          IPC_REQUIRE_CONTROLLER = lib.mkDefault "true";
+        };
+      };
+      systemd.user.sockets.monado.socketConfig.FileDescriptorName = "app";
+      systemd.user.sockets.monado-control = {
+        description = "Monado XR service module control socket";
+        conflicts = [ "monado-dev.service" ];
+        unitConfig.ConditionUser = "!root";
+        socketConfig = {
+          ListenStream = "%t/monado_comp_ipc_control";
+          FileDescriptorName = "control";
+          Service = "monado.service";
+          RemoveOnStop = true;
+          FlushPending = true;
+        };
+        restartTriggers = [ config.services.monado.package ];
+        wantedBy = [ "sockets.target" ];
+      };
     })
 
     (lib.mkIf (cfg.runtime == "wivrn") {
