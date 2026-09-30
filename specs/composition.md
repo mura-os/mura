@@ -1,8 +1,12 @@
 # specs/composition: how a window reaches the display — quads, containers, Monado's order, the controller seam
 
-**Status:** rev 0 (2026-09-29). Normative for `pkgs/zxr` (the quad path, §2 — written from the
-code as built and checked against it) and for the Mura Monado series (§3–§5 — the contract
-Monado must meet; nothing built yet, the C-track in
+**Status:** rev 1 (2026-09-30 — §5.3 rewritten as the C0 specification: admission classes
+stamped by arrival path, the single controller lease with queue-and-promote, verb authorisation
+against the lease with an error not a disconnect, the sandbox class and the per-class list
+designed now, "authentication" withdrawn; §7.7 restated as four demonstrable items; ADR 0006
+amendment 5, research/80); rev 0 (2026-09-29). Normative for `pkgs/zxr` (the quad path, §2 —
+written from the code as built and checked against it) and for the Mura Monado series (§3–§5 —
+the contract Monado must meet; C0 is the first rung built, the C-track in
 [implementation-path.md §3](../docs/architecture/implementation-path.md)).
 **Design sources:** [ADR 0006 amendment 4](../docs/architecture/adr/0006-compositor-strategy.md)
 (the ruling), [research/79](../docs/research/79-openxr-extensions-and-zxr.md) (the container pair
@@ -17,7 +21,9 @@ With 3D content in Monado's containers, zxr runs no projection pass for it (a fu
 read of every client per eye per frame on a tiler, avoided); the quad path is unchanged from the
 measured M1 shape (research/65 §2.4: −47 % zxr CPU, 0 GPU for static UI under head motion);
 Monado's per-client squasher cost is measured (research/67 §2: +0.33 ms/frame at 16 quads on the
-host GPU). §7 names the gates.
+host GPU). §5.3 (rev 1) adds to the service one listening fd, one enum and one small metadata
+struct per client, one lease index, an O(1) check per control verb and one `/proc` stat per
+accept on the app socket — nothing per frame, no polling, no new process. §7 names the gates.
 
 ## 1. Ownership
 
@@ -243,14 +249,86 @@ multi" [external]) exposed to one privileged IPC client. Both are Monado-native;
 OpenXR extension of the app-facing kind. Rejected: a DisplayXR-style `xr*Workspace*` extension
 spoken by a second OpenXR session (non-standard; makes the WM a frame-loop client).
 
-5.3 **Prerequisites (conformance items, ADR 0006 amd. 4 D6).** (a) Peer identity is
-server-derived at accept — `SO_PEERCRED` on the IPC socket; `ipc_app_state.pid`
-(`ipc_protocol.h:399`) becomes informational. (b) The controller role is a **lease**: one
-holder; granted to a client whose peer identity is the session compositor's unit (the same
-trust root as zxr's socketpair, zxr-core §9); revoked on disconnect. (c) **Default policy
-without a controller**: Monado's existing primary/overlay rule (4.2) — containers of the main
-session visible and interactable, overlays above; the runtime is usable with no shell. (d)
-Every seam verb is authorised against the lease; unauthorised calls fail closed.
+5.3 **Prerequisites — admission classes and the controller lease (rev 1, 2026-09-30; ADR 0006
+amd. 4 D6, ruled in amd. 5; the comparables in [research/80](../docs/research/80-privileged-peer-identity-and-leases-from-comparables.md)).**
+Monado is the *enforcement point* for its own control verbs and nothing more: it knows which
+connection it is talking to, holds one lease, and checks the two on the verbs it already
+implements. It carries **no permission model, no grants** — every policy decision (which client
+is primary, focused, blocked; from C3, where every container is) stays zxr's, expressed through
+the verbs. Consent for sandboxed applications is a portal's, not Monado's and not this seam's.
+The former (b) said "authentication"; there is none among same-uid peers (KWin commit `4016406e`
+[external]: "anything not sandboxed can circumvent these checks anyway"; PipeWire draws its
+boundary at the sandbox, `module-access.c:214-218`), and the design does not pretend otherwise.
+
+5.3.1 **Admission classes.** Every IPC connection carries a `role`, set by the server once at
+accept from *how the connection arrived* and never from anything the client sends
+(`ipc_handle_instance_describe_client` writes `info` and the informational `pid` only —
+PipeWire refuses every `pipewire.sec.*` write, `impl-client.c:183-185`). Three classes exist:
+
+- **`controller`** — arrived on `$XDG_RUNTIME_DIR/monado_comp_ipc_control`. zxr's `libmonado`
+  root, `monado-ctl`, harnesses. PipeWire's `pipewire-0-manager` (`module-protocol-native.c:
+  1722-1738`; class = socket, `module-access.c:214-218, 349-354`). Under socket activation the
+  path is a second socket unit (`FileDescriptorName=control`); without it the service binds
+  both paths itself, as PipeWire always creates both.
+- **`app`** — arrived on `monado_comp_ipc` (the runtime manifest's path) and not sandboxed.
+  Every OpenXR application, zxr's own OpenXR session included. Unchanged.
+- **`sandboxed_app`** — either arrived on a listener a sandbox engine or portal registered
+  through a controller-class verb, tagged with `app_id`/`engine`/`instance_id`
+  (`wp_security_context_v1`'s shape: KWin `wayland/display.cpp:271-285`), or arrived on
+  `monado_comp_ipc` and the peer's `/proc/<pid>/root/.flatpak-info` exists (PipeWire
+  `flatpak-utils.h:66-105`) or its systemd user unit is `app-flatpak-*`/`snap.*` (KWin
+  `wayland/clientconnection.cpp:31-57`). The peer pid is read as a pidfd (`SO_PEERPIDFD`,
+  `SO_PEERCRED` only when unsupported — systemd `socket-util.c:960-980`); it is used **only to
+  lower** `app` to `sandboxed_app`, never to raise a class, so every failure of the lookup is
+  safe.
+
+Not an identity, and not proposed: the executable path or `.desktop` metadata (KWin built it
+2019, removed it 2023/2026 as "pseudo-security"; PipeWire removed it, MR !1727 [external]);
+a bare pid (racy — systemd `man/sd_pid_get_owner_uid.xml:296-299`); a client-declared name.
+
+5.3.2 **The controller lease.** One slot in server state, beside `global_state`.
+- A `controller` connection arrives and the slot is empty → it is the **holder**.
+- A `controller` connection arrives and the slot is held → it is **pending**, in arrival order
+  (seatd's non-VT-bound seat, `seat.c:232-244`). Not refused, not disconnected, not promoted.
+- The holder's connection closes → the first pending connection is promoted (seatd
+  `seat_activate`). A restarted zxr is a new client; no token survives the process (seatd
+  `seat.c:206-210`; kscreenlocker `greeter/main.cpp:71-72`).
+- No holder → **no new code**: `update_server_state_locked` (`ipc_server_process.c:607-665`)
+  falls through to the first displayable session, else the idle wallpaper — 4.2's default
+  order. The runtime is usable with no shell.
+- A live holder is never displaced (no comparable does).
+A controller-class client reads its own state (`none` / `holder` / `pending`) by a query verb;
+C0 pushes no event (the C3 event channel is where a push belongs).
+
+5.3.3 **Verb authorisation.** The system verbs — `set_primary_client`, `set_focused_client`,
+`toggle_io_client`, `set_client_io_blocks` (`ipc_server_handler.c:1563-1607`) and every C3
+seam verb — execute only for the lease **holder**; every other connection (`app`,
+`sandboxed_app`, pending controllers) receives an error result, `XRT_ERROR_IPC_NOT_CONTROLLER`,
+and **stays connected** (PipeWire `-EACCES`, `module-protocol-native.c:413-420`; seatd `EPERM`,
+`seat.c:663-667`). The check is against stored connection state, never against credentials
+again (unanimous across the comparables; sd-bus `bus-socket.c:289-291`). Read-only enumeration
+(`system_get_clients`, `system_get_client_info`) stays open to every class. **Retrofit of the
+four existing verbs:** the server option `IPC_REQUIRE_CONTROLLER` (upstream default `false`)
+leaves them callable from any connection *while no controller holds the lease* — today's
+`monado-ctl` behaviour for upstream users (PipeWire's `access.legacy`, `module-access.c:
+321-328`); Mura's `monado.service` sets it `true`, so on Mura they are the holder's from first
+boot. C3's verbs are gated unconditionally from their first commit.
+
+5.3.4 **Default policy without a controller** is 4.2 — Monado's primary/overlay rule; the
+runtime is usable with no shell. Restated here because it is the one rule this section adds no
+code for.
+
+5.3.5 **Per-class restriction list.** A static list of runtime-owned capabilities hidden from
+`sandboxed_app` connections (KWin's `allowInterface`, `wayland_server.cpp:147-164`; Hyprland
+`Compositor.cpp:267-272`). **Today it is empty beyond 5.3.3's control verbs**; when
+passthrough, eye tracking or scene data land as runtime capabilities they go on it, and a
+sandboxed application obtains them through a portal. It is a list in configuration, not a
+policy engine; Monado does not know why an entry is there.
+
+5.3.6 **Non-goals.** No same-uid authentication claim; no credential-derived heuristics
+(5.3.1); no pid as identity; no permission bits or grant verbs in Monado's IPC (that is
+PipeWire's core competence, not an OpenXR runtime's); no displacement of a live holder; no lease
+persisted across a controller restart.
 
 ## 6. zxr's own windows as containers (D7 — the transition rule)
 
@@ -289,8 +367,14 @@ per-window runtime visibility). The seam (§5) is identical either way; the diff
    method, implementation-path §3).
 6. **Session-state conformance.** Every rule in 3.1 (IDLE-only; errors from begin/end/exit/
    `xrLocateViews`/core-layer `xrEndFrame`; `shouldRender = false`) holds against a probe client.
-7. **Seam prerequisites.** 5.3 (a)–(d) demonstrated: a client with the wrong peer identity is
-   refused the controller lease; the runtime composes containers correctly with no controller
-   connected.
+7. **Seam prerequisites.** 5.3 demonstrated on the fork's `controller-lease` series:
+   (i) a probe on `monado_comp_ipc` (class `app`) calling a control verb receives
+   `XRT_ERROR_IPC_NOT_CONTROLLER` and its connection survives; (ii) a controller connects and
+   reads `holder`; a second controller reads `pending`; the holder disconnects and the second
+   reads `holder` (zxr's D4 restart follows this path); (iii) with no controller connected the
+   runtime composes by 4.2 — the picture is unchanged and, with `IPC_REQUIRE_CONTROLLER`
+   unset, `monado-ctl` on the control socket becomes the holder for its call; (iv) a
+   connection classified `sandboxed_app` (the lease machine's unit test stands in where the
+   VM has no Flatpak) receives the same refusal as (i).
 8. **Budget.** Monado's per-container squasher cost measured on target hardware with N = 1, 4,
    16 containers, beside research/67's host numbers; recorded in budgets.md §3.

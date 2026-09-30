@@ -1,6 +1,6 @@
 # The implementation path: distribution groundwork and the compositor, in dependency order
 
-**Status:** accepted plan of record (**rev 5.2, 2026-09-29 — research/80 registered as C0's specification pass, C0 waits on its §10 rulings; the stale fork-creation entry in §5.1 closed; rev 5.1, same day — the fork's first series, `wayland-resize`, registered in §5.1 (research/78 §9 F26); rev 5, same day — the C-track (Monado's container pair on the `mura-os/monado` fork) as a third axis, M2–M4 re-cut onto it, the former `zxr-shell-v2` M2 withdrawn, ADR 0006 amendment 4; §5.1 the C-track rulings and the fork's creation registered;** 2026-09-23; rev 2 same day — the boot-to-desktop coverage
+**Status:** accepted plan of record (**rev 5.3, 2026-09-30 — C0 specified: research/80 §10 O1–O3 ruled (ADR 0006 amendment 5), §3 C0 restated to composition §5.3 rev 1, the `controller-lease` series registered in §5.1; rev 5.2, 2026-09-29 — research/80 registered as C0's specification pass, C0 waits on its §10 rulings; the stale fork-creation entry in §5.1 closed; rev 5.1, same day — the fork's first series, `wayland-resize`, registered in §5.1 (research/78 §9 F26); rev 5, same day — the C-track (Monado's container pair on the `mura-os/monado` fork) as a third axis, M2–M4 re-cut onto it, the former `zxr-shell-v2` M2 withdrawn, ADR 0006 amendment 4; §5.1 the C-track rulings and the fork's creation registered;** 2026-09-23; rev 2 same day — the boot-to-desktop coverage
 review absorbed: stages B1a/B1b/B6a/B9, the F-track from
 [first-run-onboarding.md](first-run-onboarding.md), and the lifecycle section; rev 3 / 3.1,
 2026-09-24 — ADR 0017 rev 2 and the research/42 review absorbed; **rev 4, 2026-09-24 — two
@@ -531,17 +531,18 @@ the ack deferred to the re-created images; upstream #152, research/78 §9 F26. I
 fix for `vm-test-scene`'s picture, not a C rung, and follows the same discipline (upstream-shaped
 commit, `Fixes:` trailer, the MR the owner's to open).*
 
-- **C0 — peer identity and leases.** Peer credentials at IPC accept (a pidfd where the kernel
-  gives one — the pid alone is racy, research/80 §4); the controller role as a lease; the
-  no-controller default = Monado's primary/overlay rule. Gate: composition §7.7. Prerequisite for
-  every later rung and independently upstreamable. *Its specification pass is
-  [research/80](../research/80-privileged-peer-identity-and-leases-from-comparables.md) (rev 5.2,
-  2026-09-29): the determinations (§9 — class at accept, error not disconnect, the existing
-  fallback is the default) are settled; C0 does not start until the owner rules §10's O1 (the
-  identity primitive: controller socket / peer's user unit / inherited fd), O2 (a second
-  controller: refuse / queue / disconnect) and O3 (the four existing verbs: gate now / flag /
-  new verbs only) — the same "a rung does not start before its specification exists" rule as the
-  D-track's.*
+- **C0 — admission classes and the controller lease** (composition §5.3 rev 1; ADR 0006
+  amendment 5, 2026-09-30). Every IPC connection is classed at accept by the listener it arrived
+  on — `controller` (`monado_comp_ipc_control`), `app`, `sandboxed_app` (a registered
+  sandbox listener, or a Flatpak/snap peer lowered from `app`); one controller lease, a second
+  controller pending and promoted on the holder's disconnect; the system verbs execute for the
+  holder and return `XRT_ERROR_IPC_NOT_CONTROLLER` to everyone else without disconnecting;
+  `IPC_REQUIRE_CONTROLLER` (upstream default open while no holder; Mura closed); the
+  no-controller default = Monado's primary/overlay rule, unchanged. Gate: composition §7.7 (i)–(iv).
+  Prerequisite for every later rung and independently upstreamable. *Specification pass:
+  [research/80](../research/80-privileged-peer-identity-and-leases-from-comparables.md) (rev 5.2);
+  its §10 O1–O3 ruled 2026-09-30 (rev 5.3) — listener class, queue, legacy flag — the fork
+  series is `controller-lease`.*
 - **C1 — `XR_EXT_spatial_container`.** Handle, state, six events, the IDLE-only session
   (`oxr_session.c` guards), container space, capabilities and graphics-presentation enumeration.
   Gate: composition §7.6 against a probe client; Godot's module creates and shows a container.
@@ -747,7 +748,9 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
 - **The `mura-os/monado` fork** (D13) exists, is pinned (`inputs.monado`, `pkgs/monado`) and
   carries its first series (`wayland-resize`, rev 5.1); the former entry here — "needs the owner's
   GitHub credentials … the overlay is inert" — is closed (rev 5.2). What still waits on it:
-  the C-track's own rulings (above) and, before C0 is written, research/80 §10's O1–O3.
+  the C-track's own rulings (above). *Research/80 §10's O1–O3 were ruled 2026-09-30 (ADR 0006
+  amendment 5; rev 5.3) and C0's series, `controller-lease`, is the fork's second — registered
+  here until its rev is pinned.*
 - **A packaged Godot master** (`pkgs/godot` = `godot_4.overrideAttrs { src = …master… }`) so
   `dev-session --godot` carries the spatial-container client in its closure. Until then the
   editor binary is built once from the sibling clone (`pkgs/spatial-container-sample/README.md`

@@ -409,6 +409,17 @@ hard gate on an existing verb for same-uid peers.** Refused calls return an erro
 
 Each with the comparables' actual positions and the consequence of each. None is invented.
 
+> **Ruled 2026-09-30** ([ADR 0006 amendment 5](../architecture/adr/0006-compositor-strategy.md);
+> normative text in [composition §5.3 rev 1](../../specs/composition.md)). The owner's criteria:
+> consistent with existing systems, efficient, secure as far as same-uid allows, not foreclosing
+> sandboxed clients. **O1 → (A)**, the listening socket is the class, with the sandbox class
+> (`wp_security_context_v1`'s listener shape plus PipeWire/KWin's Flatpak lowering) designed
+> now; (B) and (C) not taken for the reasons §8 gives. **O2 → queue** (seatd non-VT-bound),
+> promoted on the holder's disconnect. **O3 → (ii)**, the `access.legacy` shape:
+> `IPC_REQUIRE_CONTROLLER`, upstream default open while no holder, Mura's unit closed. The
+> boundary Monado/zxr: Monado enforces (class, lease, static list, fd admission), zxr holds
+> policy; no permission model enters the runtime.
+
 **O1 — the identity primitive for the controller class.** The comparables offer three that are
 real; they split on who the spawner is, and Mura's layout (§0: zxr is a systemd user unit, Monado
 is socket-activated, neither spawns the other) is the deciding fact.

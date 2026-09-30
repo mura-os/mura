@@ -4,8 +4,11 @@
 compositor base; evidence in [39-compositor-base-landscape](../../research/39-compositor-base-landscape.md));
 **amended 2026-09-29 (Amendment 4, below): the 3D-client contract is `XR_EXT_spatial_container`
 + `_self_rendering` implemented in Monado; `zxr-shell-v2` is retired to a reserved hook.**
+**Amended 2026-09-30 (Amendment 5): C0 ruled — admission classes by arrival path, one
+controller lease with queue-and-promote, verbs check the lease; Monado enforces, zxr holds
+policy; no permission model in the runtime.**
 **Date:** 2026-09-22 (amended 2026-09-23; amended 2026-09-26 — §Program shape, below; amended
-2026-09-29 — Amendment 4)
+2026-09-29 — Amendment 4; amended 2026-09-30 — Amendment 5)
 **Context sources:** [08-wxrc](../../research/08-wxrc.md) (Motorcar→wxrc→wxrd lineage + code),
 [09-wxrc-ecosystem-gap-2026](../../research/09-wxrc-ecosystem-gap-2026.md) (2026 patch archaeology),
 [10-xr-wayland-protocol-comparison](../../research/10-xr-wayland-protocol-comparison.md) (five-model
@@ -449,3 +452,84 @@ nothing to the quad path; Monado's squasher cost per extra client is measured (r
 +0.33 ms/frame at 16 quads, equal for 1–4); memory — no zxr-side colour+depth slots per 3D
 client; IPC — the seam is per policy change, not per frame; gates in
 [specs/composition.md §7](../../../specs/composition.md).
+
+## Amendment 5 (2026-09-30) — C0 ruled: admission classes, the controller lease, and where enforcement stops
+
+**Context.** Amendment 4 D6 required "server-derived peer identity at IPC accept" and a lease
+before any seam, and [specs/composition.md §5.3 rev 0](../../../specs/composition.md) wrote it
+as `SO_PEERCRED` and a client "whose peer identity is the session compositor's unit". zxr and
+every OpenXR application run as the same uid, so `SO_PEERCRED` distinguishes nothing; the
+identity primitive was a real design decision. [research/80](../../research/80-privileged-peer-identity-and-leases-from-comparables.md)
+read the shipping per-user services that face the same problem (PipeWire/WirePlumber, seatd,
+libei and its embedders, systemd, KWin/kscreenlocker, Hyprland; AOSP as the counter-example) and
+brought three items to the owner (§10 O1–O3). The owner set the criteria on 2026-09-30 —
+consistent with existing systems, efficient, secure as far as same-uid allows, and not
+foreclosing sandboxed clients later — and under those criteria the evidence was decisive.
+
+### Decisions
+
+1. **Identity is the admission path, never peer inspection for trust** (O1 → research/80's
+   option A, with the sandbox class designed now). A connection's class is stamped once at accept
+   from which listener it arrived on: `controller` (`monado_comp_ipc_control`), `app`
+   (`monado_comp_ipc`), `sandboxed_app` (a listener a sandbox engine registered through a
+   controller verb — `wp_security_context_v1`'s shape — or an `app` arrival whose peer is a
+   Flatpak/snap, detected as PipeWire and KWin detect it; the lookup may only *lower* a class).
+   Precedent: PipeWire's `-manager` socket (`module-access.c:214-218`, MR !1727 [external]);
+   KWin's security-context listener (`wayland/display.cpp:271-285`) and `isSandboxed`
+   (`wayland/clientconnection.cpp:31-57`). **Not taken:** the peer's systemd user unit as the
+   gate (option B — systemd's own primitive, used by no per-user service for authorisation; a
+   hard user-manager dependency for the role; a same-uid process can be placed under any unit
+   with `systemd-run --user`, so it changes no boundary); an inherited fd (option C — the
+   comparables' strongest identity, but it requires Monado to spawn zxr or zxr to spawn Monado,
+   and Mura's socket-activated runtime and independently restarting compositor (ADR 0007 D4) have
+   no such ancestry); exe-path or `.desktop` identity (KWin built and removed it, PipeWire
+   removed it); any pid-based check (racy, `pidref.c`).
+2. **One lease; a second controller queues and is promoted on the holder's disconnect** (O2 →
+   seatd's non-VT-bound seat, `seat.c:232-244`). **Not taken:** refuse with `EBUSY` (seatd
+   VT-bound, Hyprland `sendDenied`) — right when the role is bound to a physical resource or
+   re-grant is itself a security event; here it would only make zxr's restart path need a retry
+   loop. No displacement of a live holder; no persistence across restart.
+3. **Verbs check the lease, return an error, keep the connection** (unanimous). **The four
+   existing system verbs are gated behind `IPC_REQUIRE_CONTROLLER`, upstream default open while
+   no holder exists, Mura's unit closed** (O3 → PipeWire's `access.legacy` shape,
+   `module-access.c:321-328`: mechanism upstream, conservative default, policy in the distro's
+   configuration). **Not taken:** gating unconditionally (no precedent for a hard gate on an
+   existing verb; a behaviour change for every upstream `monado-ctl` user); not gating existing
+   verbs at all (KWin's position — would leave the DisplayXR failure mode on exactly the verbs
+   zxr relies on). C3's verbs are gated from their first commit.
+4. **Monado is the enforcement point and nothing more.** It stamps the class, holds the lease,
+   checks both on its verbs, keeps one static per-class restriction list (empty today beyond the
+   control verbs), and admits pre-connected fds with a class — the parts any multi-client service
+   needs to know which connection it is talking to. It grows **no permission model, no grant
+   verbs, no per-object permission bits** (PipeWire's, because media routing *is* policy; not an
+   OpenXR runtime's). Policy — primary, focus, IO blocking, from C3 container placement — is zxr's
+   through the verbs it already calls. Consent for sandboxed applications is a future portal's
+   (libei `README.md:236-242`: the portal authenticates and hands over the fd, then "has no further
+   influence"); its natural Mura backend is zxr, as `xdg-desktop-portal-gnome` is gnome-shell's —
+   a statement about a future component's shape, not a decision here.
+5. **The wording "authentication" is withdrawn** from composition §5.3(b). The design is *role
+   separation by admission path* plus a *fail-closed default*; it is not a boundary against a
+   hostile process running as the wearer, because none exists among unsandboxed same-uid peers
+   and the wearer is the administrator (overview invariant 10).
+6. **The series is `controller-lease` on the fork**, upstream-shaped, nothing Mura-specific in
+   it; the option name and socket filename follow Monado's existing conventions and upstream may
+   rename them. The client side is `libmonado` (a named-socket constructor, a controller-state
+   query, a distinct "not the controller" result) and `monado-ctl` on the control socket.
+
+### Consequences
+
+- composition §5.3 is rewritten as the normative C0 specification (rev 1); §7.7 becomes four
+  demonstrable items. research/80 §10 O1–O3 are marked ruled.
+- `monado-ctl` on Mura loses the four verbs while zxr runs (it is pending); the administrator
+  drives the shell through `zxr ctl` or stops zxr. Upstream users see no change.
+- The sandbox class costs one `/proc` stat per accept on the app socket and defines the seam a
+  Flatpak'd OpenXR application will cross; nothing about it changes when a portal arrives.
+- zxr gains its `libmonado` binding (the M1 "primary-client observer", `pkgs/zxr/src/state.rs`)
+  as the controller connection; it connects to the control path in every mode and falls back to
+  the app socket, with a warning, against a runtime without the series.
+
+**Budget impact** (overview invariant 9): service — one listening fd, one enum + one small
+metadata struct per client, one lease index and pending list, O(1) per control verb, one
+`/proc` stat per accept; nothing per frame; no new process, no polling in the runtime. zxr —
+one additional IPC connection and a 1 Hz state poll (the poll M1 already named); no frame-path
+cost.
