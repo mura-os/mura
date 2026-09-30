@@ -113,6 +113,27 @@ hosts one but the viewer's feet when none does. `Q` quits with `SCS quit`.
 | `SCS closed` | `…ClosedEXT` → the sample quits | §7.4 (close from the window menu) |
 | two instances, `--instance=1` and `--instance=2`, overlapping bounds | — | §7.5 (depth interleave; both submit depth) |
 
+**What C1 alone changes here — and what it cannot gate.** Godot's module hard-couples the
+base extension to `_self_rendering` (`openxr_spatial_container_extension.cpp:54-56`,
+`is_enabled()` requires both; the header: "For now we are hardcoding self rendering as the
+rendering mechanism", `.h:148-149`). Against a runtime advertising only `XR_EXT_spatial_container`
+(C1) it never chains `XrSessionCreateInfoSpatialContainersEXT`, never reads
+`XrSystemSpatialContainerPropertiesEXT`, and runs an ordinary immersive session — the
+registry itself gives it no valid `graphicsPresentation` without #814
+([research/81 §3](../../docs/research/81-spatial-container-runtime-design-from-comparables.md)).
+So the C1 rows are exactly:
+
+| line | C0 (today) | C1 | reads |
+|---|---|---|---|
+| `[godot] OpenXR: Enabled extension XR_EXT_spatial_container` (needs `--verbose`; `openxr_api.cpp:661-665`) | absent | **present** — the one line that shows C1 landed | the extension is advertised and Godot enables it on the instance (monado-containers §11 items 1–2) |
+| `SCS ext …` | `absent` | **still `absent`** — `main.gd:65` asks the singleton's `is_enabled()`, which is both extensions; GDScript has no per-extension query (`is_extension_supported` is not script-bound) | nothing |
+| `[godot] OpenXR: Max spatial container count:` | `0` | still `0` — Godot's unconditional print when `is_enabled()` is false, **not** the runtime's value | nothing; the runtime's count is read by the probe |
+| `SCS session begun/visible/focused` | present | present — the session is ordinary | monado-containers §11 item 2 (enabled-but-not-opted-in is legal; the run must not regress) |
+| `SCS caps …`, `visible`, `interactable`, `bounds`, `closed` | absent | **absent** | — (C2) |
+
+The C1 gate is the probe, [specs/monado-containers.md §11](../../specs/monado-containers.md);
+this sample rejoins at C2, when `_self_rendering` is advertised and every row above lights.
+
 ## 4. Files
 
 `project.godot` (settings above), `main.tscn` (XROrigin3D + camera, light, `Content/` with the

@@ -354,6 +354,14 @@ repos=(
   # stays the upstream study pin). DisplayXR was pinned briefly and dropped: non-standard
   # extension, Windows compositor, nothing that transfers; its ADR-035 audit is cited [external].
   'godot|https://github.com/godotengine/godot.git|'
+  # --- C1 runtime design (docs/research/81, specs/monado-containers.md) ---
+  # openxr-sdk = the release headers Monado vendors verbatim (src/external/openxr_includes);
+  # the `openxr-headers-1.1.63` series copies include/openxr/ from this tag. openxr-cts = the
+  # conformance suite at the matching release: no spatial-container test exists (the spec
+  # promises a separate test extension); its policy-dependent tests (test_XR_EXT_user_presence,
+  # test_XR_MND_headless) are the shape of Mura's C1 probe. Both pinned at tags, not branches.
+  'openxr-sdk|https://github.com/KhronosGroup/OpenXR-SDK.git|release-1.1.63'
+  'openxr-cts|https://github.com/KhronosGroup/OpenXR-CTS.git|openxr-cts-1.1.63.0'
 )
 
 mkdir -p .logs

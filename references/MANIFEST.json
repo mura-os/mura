@@ -225,5 +225,7 @@
   "phoc": {"url": "https://gitlab.gnome.org/World/Phosh/phoc.git", "commit": "6bf71f77f43138136adb4efb4796c8e35d9fe3b2", "ref": "main", "cloned": "2026-09-27T19:33:00Z"},
   "gtk-layer-shell": {"url": "https://github.com/wmww/gtk-layer-shell.git", "commit": "eb7876471dea74697c0212198d1a8e6d83aa5583", "ref": "master", "cloned": "2026-09-27T19:33:00Z"},
   "layer-shell-qt": {"url": "https://invent.kde.org/plasma/layer-shell-qt.git", "commit": "440e99dfff02460561a61312f4d90d5cc470b21d", "ref": "master", "cloned": "2026-09-27T19:33:00Z"},
-  "godot": {"url": "https://github.com/godotengine/godot.git", "commit": "941ea1816d654e4ffeac10a260d64a8555890cf6", "ref": "master", "cloned": "2026-09-29T09:33:08Z"}
+  "godot": {"url": "https://github.com/godotengine/godot.git", "commit": "941ea1816d654e4ffeac10a260d64a8555890cf6", "ref": "master", "cloned": "2026-09-29T09:33:08Z"},
+  "openxr-sdk": {"url": "https://github.com/KhronosGroup/OpenXR-SDK.git", "commit": "f2448a8797c85814aa892efc1ab8707900fbcc78", "ref": "release-1.1.63", "cloned": "2026-09-30T08:21:00Z"},
+  "openxr-cts": {"url": "https://github.com/KhronosGroup/OpenXR-CTS.git", "commit": "c4d9194d67985b8f8ebd2b4c87c972dfe61955c4", "ref": "openxr-cts-1.1.63.0", "cloned": "2026-09-30T08:21:00Z"}
 }

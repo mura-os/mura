@@ -1,6 +1,6 @@
 # The implementation path: distribution groundwork and the compositor, in dependency order
 
-**Status:** accepted plan of record (**rev 5.3, 2026-09-30 — C0 specified: research/80 §10 O1–O3 ruled (ADR 0006 amendment 5), §3 C0 restated to composition §5.3 rev 1, the `controller-lease` series registered in §5.1; rev 5.2, 2026-09-29 — research/80 registered as C0's specification pass, C0 waits on its §10 rulings; the stale fork-creation entry in §5.1 closed; rev 5.1, same day — the fork's first series, `wayland-resize`, registered in §5.1 (research/78 §9 F26); rev 5, same day — the C-track (Monado's container pair on the `mura-os/monado` fork) as a third axis, M2–M4 re-cut onto it, the former `zxr-shell-v2` M2 withdrawn, ADR 0006 amendment 4; §5.1 the C-track rulings and the fork's creation registered;** 2026-09-23; rev 2 same day — the boot-to-desktop coverage
+**Status:** accepted plan of record (**rev 5.4, 2026-09-30 — C1 specified: research/81 + specs/monado-containers.md rev 0, §3 C1 restated to the decided model with the probe as its gate, the `openxr-headers-1.1.63` and `spatial-container` series registered pending in §5.1, C0's `controller-lease` recorded as landed; rev 5.3, 2026-09-30 — C0 specified: research/80 §10 O1–O3 ruled (ADR 0006 amendment 5), §3 C0 restated to composition §5.3 rev 1, the `controller-lease` series registered in §5.1; rev 5.2, 2026-09-29 — research/80 registered as C0's specification pass, C0 waits on its §10 rulings; the stale fork-creation entry in §5.1 closed; rev 5.1, same day — the fork's first series, `wayland-resize`, registered in §5.1 (research/78 §9 F26); rev 5, same day — the C-track (Monado's container pair on the `mura-os/monado` fork) as a third axis, M2–M4 re-cut onto it, the former `zxr-shell-v2` M2 withdrawn, ADR 0006 amendment 4; §5.1 the C-track rulings and the fork's creation registered;** 2026-09-23; rev 2 same day — the boot-to-desktop coverage
 review absorbed: stages B1a/B1b/B6a/B9, the F-track from
 [first-run-onboarding.md](first-run-onboarding.md), and the lifecycle section; rev 3 / 3.1,
 2026-09-24 — ADR 0017 rev 2 and the research/42 review absorbed; **rev 4, 2026-09-24 — two
@@ -543,9 +543,21 @@ commit, `Fixes:` trailer, the MR the owner's to open).*
   [research/80](../research/80-privileged-peer-identity-and-leases-from-comparables.md) (rev 5.2);
   its §10 O1–O3 ruled 2026-09-30 (rev 5.3) — listener class, queue, legacy flag — the fork
   series is `controller-lease`.*
-- **C1 — `XR_EXT_spatial_container`.** Handle, state, six events, the IDLE-only session
-  (`oxr_session.c` guards), container space, capabilities and graphics-presentation enumeration.
-  Gate: composition §7.6 against a probe client; Godot's module creates and shows a container.
+- **C1 — `XR_EXT_spatial_container`** (specified: [specs/monado-containers.md](../../specs/monado-containers.md)
+  rev 0, its comparables in [research/81](../research/81-spatial-container-runtime-design-from-comparables.md);
+  rev 5.4). The record lives in the service (`ipc_client_state`, under `global_state.lock`,
+  beside C0's lease) behind one `xrt` vtable implemented twice (IPC proxy; in-process direct);
+  the state tracker is a latch. The session is a third shape — compositor present, state frozen
+  at IDLE, `xrt_comp_begin_session` + `oxr_frame_sync_begin_session` called internally so
+  `xrWaitFrame` paces with `shouldRender = false`; the six events are new `xrt_session_event`
+  types through the session's sink; the container space is a server-created `xrt_space`
+  (unlocatable = the overseer's zero relation); `maxSpatialContainerCount` a fixed per-client
+  array; the presentation list empty until C2. **Gate: the probe** (spec §11, eleven groups) —
+  Godot's module cannot exercise #811 without #814 and contributes only a no-regression run.
+  **Prerequisite series:** `openxr-headers-1.1.63` (one upstream-shaped commit; §5.1). C1 is
+  rebased on C0's tip: both edit `ipc_server.h`, `ipc_server_handler.c`, `ipc_server_process.c`
+  and `ipc_protocol.h` (research/81 §8.2). Owner items before the series is written: spec §7
+  (the no-controller default), research/81 §7.2–§7.6.
 - **C2 — `_self_rendering`.** Per-container `comp_multi` slot; `xrLocateSpatialContainerViewsEXT`
   with bounds-fitted FOV and decay; grouped `xrEndFrame` with submit/clear/retain; pixel
   clipping. Gate: composition §7.3 (Godot renders into it) and §7.2 (fast path preserved).
@@ -569,8 +581,9 @@ commit, `Fixes:` trailer, the MR the owner's to open).*
 zxr's own windows move from `XR_EXTX_overlay` quads to container-hosted quads (composition §6)
 when the owner rules the per-toplevel vs whole-shell question — after C3, on no other rung.
 
-**The client every C gate runs** is `pkgs/spatial-container-sample` (composition §7.3; its
-README §3 maps its `SCS` log lines to the gates): C1 = `SCS ext present` + `caps`; C2 = the
+**The client every C gate from C2 on runs** is `pkgs/spatial-container-sample` (composition
+§7.3; its README §3 maps its `SCS` log lines to the gates): C1 = **the probe**, not the sample
+(the sample's C1 contribution is a no-regression run — research/81 §3.1, README §3); C2 = the
 robot renders in the container in Monado's mirror; C3 = `visible`/`interactable`/`bounds`
 lines following zxr's placement; C4 = two instances (`--instance=1`, `--instance=2`) with
 overlapping bounds interleave. Its C0 baseline against today's Monado (`SCS ext absent`, an
@@ -578,7 +591,7 @@ ordinary immersive session) is recorded in the README. **Godot master** (the con
 landed in #123124, 2026-09-08 — nixpkgs ships 4.7) is built once from the sibling clone
 `/run/media/j/tinystore/experiments/godot` @ `941ea18` with `nix develop .#godot` and passed
 to the wrapper as `GODOT`; a packaged `pkgs/godot` is registered in §5.1 (decider: the owner,
-when C1 is ready to test).
+when C2 is ready to test).
 
 ## 3b. Lifecycle: resume, doff, logout, user switch
 
@@ -749,14 +762,24 @@ nowhere else. Anything phrased as "deferred" elsewhere is a defect to sweep into
   carries its first series (`wayland-resize`, rev 5.1); the former entry here — "needs the owner's
   GitHub credentials … the overlay is inert" — is closed (rev 5.2). What still waits on it:
   the C-track's own rulings (above). *Research/80 §10's O1–O3 were ruled 2026-09-30 (ADR 0006
-  amendment 5; rev 5.3) and C0's series, `controller-lease`, is the fork's second — registered
-  here until its rev is pinned.*
+  amendment 5; rev 5.3) and C0's series, `controller-lease`, is the fork's second — landed on
+  `mura` as `39eb2a6d5..dd8ec00cc` (four commits), registered here until its rev is pinned.*
+  *C1's specification pass is done (rev 5.4, 2026-09-30: research/81 + specs/monado-containers.md
+  rev 0). Two series are registered pending: **`openxr-headers-1.1.63`** (prerequisite —
+  one commit replacing the seven vendored SDK headers from `references/openxr-sdk` @
+  `release-1.1.63` plus the exhaustive-switch fixes the compiler forces and a `doc/changes`
+  fragment; upstream's own shape across its last six bumps, research/81 §2.3) and
+  **`spatial-container`** (C1 — the spec's §2–§8, ≈2,100–2,300 lines over ~30 files, research/81
+  §8.2; rebased on `controller-lease`). Neither starts before the owner items in the spec §7
+  and research/81 §7 are ruled. The probe (`pkgs/spatial-container-probe`, Rust on `openxrs`
+  regenerated from the pinned 1.1.63 registry) is C1's gate and is written with the series.*
 - **A packaged Godot master** (`pkgs/godot` = `godot_4.overrideAttrs { src = …master… }`) so
   `dev-session --godot` carries the spatial-container client in its closure. Until then the
   editor binary is built once from the sibling clone (`pkgs/spatial-container-sample/README.md`
   §1) and the wrapper takes it from `GODOT`. Reasons to wait: nixpkgs' 4.7 recipe (its
   `withBuiltins = false` postPatch and patch set) is untested against master, and no gate needs
-  a packaged Godot before C1 exists. Decider: the owner, when C1 is ready to test.
+  a packaged Godot before C2 exists (C1's gate is the probe — rev 5.4). Decider: the owner,
+  when C2 is ready to test.
 - **Pre-groundwork specifications, and the rule that binds them**: a D-track rung does not
   start before its specification exists — D0 needs `profiles/` and the module-ownership table
   ([repo-structure.md](repo-structure.md)); D2 needs the posture table

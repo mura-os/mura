@@ -1,6 +1,8 @@
 # specs/composition: how a window reaches the display — quads, containers, Monado's order, the controller seam
 
-**Status:** rev 1 (2026-09-30 — §5.3 rewritten as the C0 specification: admission classes
+**Status:** rev 1.1 (2026-09-30 — §3 points at [monado-containers.md](monado-containers.md), the
+runtime-internal design for C1; §7.6 names the probe as the C1 gate and bounds the Godot
+sample's C1 rows); rev 1 (2026-09-30 — §5.3 rewritten as the C0 specification: admission classes
 stamped by arrival path, the single controller lease with queue-and-promote, verb authorisation
 against the lease with an error not a disconnect, the sandbox class and the per-class list
 designed now, "authentication" withdrawn; §7.7 restated as four demonstrable items; ADR 0006
@@ -112,7 +114,10 @@ The pair as published: `XR_EXT_spatial_container` (#811) and
 `XR_EXT_spatial_container_self_rendering` (#814, `depends` on 811). Every rule below is the
 specification's; Monado's implementation is conformant when it meets them and Godot's
 `spatial_container` module (`references/godot/modules/openxr/extensions/spatial_container/`)
-runs unmodified against it (§7).
+runs unmodified against it (§7). *Where inside Monado each rule is honoured — which process
+owns the record, which lock, which existing seam carries the events, how the IDLE-only session
+is held — is [monado-containers.md](monado-containers.md) (rev 0, C1; research/81 its
+comparables record). This section stays the app-facing contract.*
 
 3.1 **Session.** A session opts in by chaining `XrSessionCreateInfoSpatialContainersEXT`
 (`ext_spatial_container.adoc:1000-1002`). It is then "effectively 'headless'" (`:1010`): it
@@ -366,7 +371,12 @@ per-window runtime visibility). The seam (§5) is identical either way; the diff
    show per-pixel occlusion (4.3), measured against a single-process ground truth (the M3
    method, implementation-path §3).
 6. **Session-state conformance.** Every rule in 3.1 (IDLE-only; errors from begin/end/exit/
-   `xrLocateViews`/core-layer `xrEndFrame`; `shouldRender = false`) holds against a probe client.
+   `xrLocateViews`/core-layer `xrEndFrame`; `shouldRender = false`) holds against a probe client
+   — **the C1 gate**: the probe is `pkgs/spatial-container-probe` (Rust on `openxrs` regenerated
+   from the pinned 1.1.63 registry; its eleven assertion groups are
+   [monado-containers.md §11](monado-containers.md)). Godot's module cannot stand in for it:
+   without #814 it degrades to an ordinary immersive session and exercises none of #811
+   (research/81 §3.1), so item 3 contributes to C1 only a no-regression run (its README §3).
 7. **Seam prerequisites.** 5.3 demonstrated on the fork's `controller-lease` series:
    (i) a probe on `monado_comp_ipc` (class `app`) calling a control verb receives
    `XRT_ERROR_IPC_NOT_CONTROLLER` and its connection survives; (ii) a controller connects and
